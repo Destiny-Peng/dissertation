@@ -1,0 +1,38 @@
+diff --git a/evqa/inference.py b/evqa/inference.py
+index 7bb8ca2..7b4a25f 100644
+--- a/evqa/inference.py
++++ b/evqa/inference.py
+@@ -48,6 +48,12 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--temperature", type=float, default=0.0, help="Generation temperature")
+     parser.add_argument("--window_size", type=int, default=8, help="Number of images per inference window")
+     parser.add_argument("--tp", type=int, default=1, help="Parallel degree for model inference")
++    parser.add_argument(
++        "--gpu_memory_utilization",
++        type=float,
++        default=None,
++        help="Maximum fraction of visible GPU memory reserved by vLLM",
++    )
+ 
+     parser.add_argument("--frame_dir", type=str, default=None, help="Directory to store extracted frames")
+     parser.add_argument("--keep_frames", action="store_true", help="Keep extracted frames after completion")
+@@ -408,6 +414,8 @@ def infer_progress_from_video(
+ 
+ def main() -> None:
+     args = parse_args()
++    if args.gpu_memory_utilization is not None and not 0.0 < args.gpu_memory_utilization <= 1.0:
++        raise ValueError("--gpu_memory_utilization must be in (0, 1]")
+     video_path = Path(args.video_path).expanduser().resolve()
+     output_path = Path(args.output_path).expanduser().resolve() if args.output_path else (
+         video_path.with_name(f"{video_path.stem}_progress.jsonl")
+@@ -429,6 +437,11 @@ def main() -> None:
+         enable_value_head=args.enable_value_head,
+         tp=args.tp,
+         use_lora=args.use_lora,
++        engine_kwargs=(
++            {"gpu_memory_utilization": args.gpu_memory_utilization}
++            if args.gpu_memory_utilization is not None
++            else None
++        ),
+     )
+ 
+     print(f"Done. Wrote {len(records)} records to: {output_path}")

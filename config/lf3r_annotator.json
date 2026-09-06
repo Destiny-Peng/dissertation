@@ -1,0 +1,14 @@
+{
+  "surface_raised_color": "#202c38",
+  "accent_color": "#8eb8ff",
+  "control_color": "#0c1218",
+  "muted_color": "#a9b6c1",
+  "text_color": "#eef4f8",
+  "surface_color": "#17212b",
+  "background_color": "#111821",
+  "font_scale": 1.2,
+  "review_font_scale": 1.0,
+  "analysis_font_scale": 1.0,
+  "control_font_scale": 1.0,
+  "density": "comfortable"
+}

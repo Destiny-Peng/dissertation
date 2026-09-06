@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "rollout_id": "libero_10-task03-ep002-natural-3ddbc9d2a5",
+  "updated_at": "2026-08-24T12:46:47.833009+00:00",
+  "created_at": "2026-08-24T12:46:40.542722+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "timeout_no_progress",
+  "confidence": 5,
+  "causal_onset_frame": null,
+  "observable_onset_frame": null,
+  "terminal_failure_frame": null,
+  "notes": "the arm doesn't move at all"
+}

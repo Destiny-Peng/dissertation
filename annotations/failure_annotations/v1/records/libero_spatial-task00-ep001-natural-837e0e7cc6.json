@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_spatial-task00-ep001-natural-837e0e7cc6",
+  "updated_at": "2026-09-03T13:53:00.196861+00:00",
+  "created_at": "2026-09-03T13:45:58.628183+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "grasp_failure",
+  "confidence": 4,
+  "failure_events": [
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 117,
+      "observable_onset_frame": 130,
+      "terminal_failure_frame": 157,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 117,
+  "observable_onset_frame": 130,
+  "terminal_failure_frame": 157,
+  "recovery_frame": null,
+  "notes": ""
+}

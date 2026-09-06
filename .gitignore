@@ -1,0 +1,50 @@
+# Rebuildable or large project-local artifacts. Keep their manifests,
+# reports, and provenance notes in tracked LF3R-owned files instead.
+/cache/
+/checkpoints/
+/conda_envs/
+/datasets/
+/logs
+/outputs/
+/migration_reports
+/WeeklySummary
+
+# Upstream repositories are managed as pinned clones/submodules, not copied
+# into the LF3R root history. Local patches should live under patches/ or in
+# a fork/branch of the corresponding upstream repository.
+/repos/
+
+# Local bootstrap distribution kept under tools; rebuild it separately.
+/tools/miniforge3/
+/tools/**/.venv/
+/tools/**/node_modules/
+
+# Python and local tool state.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+
+# Local editor and OS state.
+.DS_Store
+.vscode/
+.idea/
+
+# Large generated media/model artifacts if they appear outside ignored roots.
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.pkl
+*.npz
+*.npy
+*.pt
+*.pth
+*.safetensors
+*.ckpt
+*.bin
+*.log

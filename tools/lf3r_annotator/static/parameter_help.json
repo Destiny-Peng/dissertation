@@ -1,0 +1,356 @@
+{
+  "baseline": {
+    "baseline": {
+      "cli": "--baseline NAME",
+      "default": "required",
+      "applies_to": "all baseline runs",
+      "description": "Selects SAFE, ProcVLM, RynnValue, or Robo-Dopamine and determines the runner, environment, checkpoint defaults, and raw-output contract."
+    },
+    "scope": {
+      "cli": "--partition NAME",
+      "default": "natural_observation",
+      "applies_to": "batch baseline",
+      "description": "Selects the rollout partition. The web scope maps to --partition plus an optional --dataset-role: all, natural_observation, controlled_analysis, primary_natural, or reference_natural."
+    },
+    "partition": {
+      "cli": "--partition NAME",
+      "default": "natural_observation",
+      "applies_to": "all baseline runs",
+      "description": "Selects natural observations, controlled analysis, or all manifest records."
+    },
+    "dataset_role": {
+      "cli": "--dataset-role ROLE",
+      "default": "unset",
+      "applies_to": "all baseline runs",
+      "description": "Further restricts selection to an exact manifest dataset_role such as primary_natural or reference_natural."
+    },
+    "rollout_id": {
+      "cli": "--rollout-id ID",
+      "default": "unset",
+      "applies_to": "all baseline runs",
+      "description": "Selects an exact rollout ID; the command-line runner accepts this option repeatedly."
+    },
+    "start_index": {
+      "cli": "--start-index N",
+      "default": "0",
+      "applies_to": "all baseline runs; scope-relative for worker ranges",
+      "description": "Starts positional selection after partition, dataset-role, and rollout-ID filters. Worker rows use the same scope-relative index space."
+    },
+    "limit": {
+      "cli": "--limit N",
+      "default": "unset",
+      "applies_to": "all baseline runs",
+      "description": "Keeps at most N records after the preceding filters; leave empty to process the complete selected scope."
+    },
+    "gpu": {
+      "cli": "--gpu ID[,ID...]",
+      "default": "0",
+      "applies_to": "all baseline runs",
+      "description": "Sets CUDA_VISIBLE_DEVICES. With explicit worker rows, each worker receives its one numeric GPU ID and duplicate IDs are allowed. --gpu 0,1 supplies IDs for automatic worker assignment when parallel workers are requested. A legacy single ProcVLM/Robo-Dopamine worker may still expose a comma-separated tensor-parallel GPU list."
+    },
+    "memory_utilization": {
+      "cli": "--vllm-free-memory-fraction VALUE",
+      "default": "0.80",
+      "applies_to": "ProcVLM and Robo-Dopamine",
+      "description": "Targets the requested fraction of currently free GPU memory. The runner reads free and total memory immediately before the persistent vLLM worker and converts it to the total-memory value expected downstream. It is not a fraction of total memory, and utilization percentage is not a gate.",
+      "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
+      "aliases": [
+        "--vllm-gpu-memory-utilization VALUE"
+      ]
+    },
+    "vllm_free_memory_fraction": {
+      "cli": "--vllm-free-memory-fraction VALUE",
+      "default": "0.80",
+      "applies_to": "ProcVLM and Robo-Dopamine",
+      "description": "Targets the requested fraction of currently free GPU memory. The runner converts this free-memory target to a vLLM total-memory fraction after measuring nvidia-smi free/total memory; GPU utilization is recorded only.",
+      "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
+      "aliases": [
+        "--vllm-gpu-memory-utilization VALUE"
+      ]
+    },
+    "model_path": {
+      "cli": "--model-path PATH",
+      "default": "configured checkpoint",
+      "applies_to": "ProcVLM, RynnValue, and Robo-Dopamine",
+      "description": "Overrides the configured local model checkpoint. SAFE uses its official handcrafted signals and does not use this option."
+    },
+    "dtype": {
+      "cli": "--dtype TYPE",
+      "default": "bf16",
+      "applies_to": "ProcVLM and Robo-Dopamine",
+      "description": "Sets the model and inference dtype.",
+      "forwarded_as": "--torch_dtype TYPE"
+    },
+    "tensor_parallel_size": {
+      "cli": "--tensor-parallel-size N",
+      "default": "1",
+      "applies_to": "ProcVLM and Robo-Dopamine",
+      "description": "Sets the vLLM/model tensor-parallel degree. Pair --gpu 0,1 with --tensor-parallel-size 2.",
+      "forwarded_as": "--tp N"
+    },
+    "procvlm_window_size": {
+      "cli": "--procvlm-window-size N",
+      "default": "4",
+      "applies_to": "ProcVLM",
+      "description": "Number of sampled images supplied in each temporal inference window. Larger windows add context and memory use.",
+      "forwarded_as": "--window_size N"
+    },
+    "procvlm_max_sampled_frames": {
+      "cli": "--procvlm-max-sampled-frames N",
+      "default": "unset; upstream default 512",
+      "applies_to": "ProcVLM",
+      "description": "Optional cap on frames sent to ProcVLM. If empty, the upstream 512-frame cap remains active.",
+      "forwarded_as": "--max_sampled_frames N"
+    },
+    "procvlm_max_new_tokens": {
+      "cli": "--procvlm-max-new-tokens N",
+      "default": "4096",
+      "applies_to": "ProcVLM",
+      "description": "Maximum generated tokens for each frame/window response; larger values increase time and KV-cache demand.",
+      "forwarded_as": "--max_new_tokens N"
+    },
+    "rynn_num_frames": {
+      "cli": "--rynn-num-frames N",
+      "default": "16",
+      "applies_to": "RynnValue",
+      "description": "Number of uniformly sampled frames used for each prefix value prediction. Zero/all-frame-per-prefix mode is disabled because variable-length prefixes can exhaust GPU memory.",
+      "forwarded_as": "--num_frames N"
+    },
+    "rynn_num_steps": {
+      "cli": "--rynn-num-steps N",
+      "default": "deprecated",
+      "applies_to": "RynnValue",
+      "description": "Deprecated compatibility option. The runner ignores this requested count and computes the upstream endpoint count from --rynn-evaluation-interval for each rollout.",
+      "forwarded_as": "--num_steps N (computed per rollout)"
+    },
+    "rynn_batch_size": {
+      "cli": "--rynn-batch-size N",
+      "default": "1",
+      "applies_to": "RynnValue",
+      "description": "Prefix sub-samples per forward pass. Any positive value is accepted and forwarded to the official worker; it is independent of rollout worker parallelism and increasing it can improve throughput but increases peak GPU memory.",
+      "forwarded_as": "--batch_size N"
+    },
+    "rynn_max_image_side": {
+      "cli": "--rynn-max-image-side N",
+      "default": "448",
+      "applies_to": "RynnValue",
+      "description": "Caps the longer side of each frame before inference; lower values reduce memory and compute.",
+      "forwarded_as": "--max_image_side N"
+    },
+    "rynn_max_new_tokens": {
+      "cli": "--rynn-max-new-tokens N",
+      "default": "128",
+      "applies_to": "RynnValue",
+      "description": "Maximum generated tokens for the analysis text block; it does not change value-head sample count.",
+      "forwarded_as": "--max_new_tokens N"
+    },
+    "robot_description": {
+      "cli": "--robot-description TEXT",
+      "default": "Franka Panda description",
+      "applies_to": "RynnValue",
+      "description": "Robot embodiment text included in RynnValue metadata.",
+      "forwarded_as": "--robot_description TEXT"
+    },
+    "camera_description": {
+      "cli": "--camera-description TEXT",
+      "default": "fixed third-person agent-view description",
+      "applies_to": "RynnValue",
+      "description": "Camera viewpoint text included in RynnValue metadata.",
+      "forwarded_as": "--camera_description TEXT"
+    },
+    "robo_frame_interval": {
+      "cli": "--robo-frame-interval N",
+      "default": "4",
+      "applies_to": "Robo-Dopamine",
+      "description": "Samples every N source frames while retaining frame 0 and the final frame.",
+      "forwarded_as": "--frame-interval N"
+    },
+    "robo_batch_size": {
+      "cli": "--robo-batch-size N",
+      "default": "1",
+      "applies_to": "Robo-Dopamine",
+      "description": "Number of sampled inputs per inference batch; lower it to reduce peak memory.",
+      "forwarded_as": "--batch-size N"
+    },
+    "robo_eval_mode": {
+      "cli": "--robo-eval-mode {fused,forward,incremental,backward}",
+      "default": "fused",
+      "applies_to": "Robo-Dopamine",
+      "description": "Fused runs the official incremental, forward, and backward perspectives once per rollout and averages their native progress outputs. The other values retain the single-perspective compatibility modes.",
+      "forwarded_as": "--eval-mode fused; wrapper expands to --eval-modes incremental forward backward"
+    },
+    "goal_image": {
+      "cli": "--goal-image PATH",
+      "default": "examples/blank_goal.png",
+      "applies_to": "Robo-Dopamine",
+      "description": "Goal/reference image for the official pipeline; the configured blank goal is used when omitted.",
+      "forwarded_as": "--goal-image PATH"
+    },
+    "render_video": {
+      "cli": "--render-video",
+      "default": "off",
+      "applies_to": "RynnValue and Robo-Dopamine",
+      "description": "Enables optional baseline visualization video. It is accepted by SAFE and ProcVLM but not forwarded by their wrappers."
+    },
+    "validate_environment": {
+      "cli": "--validate-environment",
+      "default": "off",
+      "applies_to": "all baseline runs",
+      "description": "Imports core packages in the selected existing environment before workers start; it does not perform model inference."
+    },
+    "dry_run": {
+      "cli": "--dry-run",
+      "default": "off",
+      "applies_to": "all baseline runs",
+      "description": "Validates selection and paths and records planned commands without loading a model or creating raw outputs."
+    },
+    "continue_on_error": {
+      "cli": "--continue-on-error",
+      "default": "off",
+      "applies_to": "all baseline runs",
+      "description": "Continues later isolated rollouts after an ordinary worker failure. In worker mode, SAFE and RynnValue continue other rollout shards; persistent ProcVLM and Robo-Dopamine workers isolate ordinary per-rollout failures, while engine-fatal failures remain resumable."
+    },
+    "manifest": {
+      "cli": "--manifest PATH",
+      "default": "required for new runs",
+      "applies_to": "command-line baseline runs",
+      "description": "Versioned LF3R JSONL manifest. The web UI supplies the current project manifest."
+    },
+    "data_root": {
+      "cli": "--data-root PATH",
+      "default": "project root",
+      "applies_to": "command-line baseline runs",
+      "description": "Root for relative media and CSV paths. The web UI always keeps this within the project."
+    },
+    "output_dir": {
+      "cli": "--output-dir PATH",
+      "default": "required for new runs",
+      "applies_to": "command-line baseline runs",
+      "description": "Parent directory for timestamped baseline output. The web UI chooses outputs/baselines/web_runs."
+    },
+    "logs_dir": {
+      "cli": "--logs-dir PATH",
+      "default": "logs/baselines",
+      "applies_to": "command-line baseline runs",
+      "description": "Directory for combined runner logs."
+    },
+    "resume_run": {
+      "cli": "--resume-run PATH",
+      "default": "unset",
+      "applies_to": "ProcVLM and Robo-Dopamine",
+      "description": "Resumes an interrupted persistent run from its saved plan; web batch keeps the command-line resume capability outside the browser."
+    },
+    "rynn_evaluation_interval": {
+      "cli": "--rynn-evaluation-interval K",
+      "default": "8",
+      "applies_to": "RynnValue",
+      "description": "Target source-video frame interval. Before each rollout command, LF3R computes ceil((T-1)/K)+1 approximate endpoints and passes that count as the upstream --num_steps value; upstream still samples endpoints uniformly, so the realized spacing is approximate.",
+      "forwarded_as": "per-rollout --num_steps N (computed by the LF3R runner)"
+    },
+    "end_index": {
+      "cli": "--end-index N",
+      "default": "scope end",
+      "applies_to": "all baseline runs; exclusive worker-range end",
+      "description": "Exclusive end of the selected rollout range, so [start,end) contains end-start positions. It is mutually exclusive with --limit. Explicit worker rows must fit inside this total range.",
+      "forwarded_as": "--end-index N"
+    },
+    "parallel_workers": {
+      "cli": "--parallel-workers N",
+      "default": "1",
+      "applies_to": "all baseline runs",
+      "description": "Number of independent rollout workers. Each worker owns one scope-relative shard and processes that shard sequentially; ProcVLM and Robo-Dopamine initialize one independent persistent model engine per worker, SAFE runs per-rollout workers, and RynnValue keeps its temporal batch_size unchanged.",
+      "forwarded_as": "--parallel-workers N"
+    },
+    "worker_spec": {
+      "cli": "--worker-spec GPU:START:END",
+      "default": "unset; automatic continuous split",
+      "applies_to": "all baseline runs",
+      "description": "Explicit scope-relative right-open worker shard. Repeat it for each worker. Each row uses one numeric GPU ID; repeated GPU IDs are allowed, overlapping ranges are deduplicated in first-worker order, and gaps mark the aggregate run partial.",
+      "forwarded_as": "--worker-spec GPU:START:END"
+    }
+  },
+  "rollout": {
+    "gpu": {
+      "cli": "--gpu GPU_ID (wrapper positional)",
+      "default": "0",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Single numeric CUDA device used by the selected-suite wrapper. The wrapper performs the memory-only gate; GPU utilization is logged but does not block.",
+      "forwarded_as": "CUDA_VISIBLE_DEVICES=GPU_ID"
+    },
+    "task_start": {
+      "cli": "--task-start N",
+      "default": "0",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "First selected-suite LIBERO task index, inclusive. Both supported suites currently expose task indices 0 through 9.",
+      "forwarded_as": "--task_start_index N"
+    },
+    "task_end": {
+      "cli": "--task-end N",
+      "default": "3",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Last selected-suite LIBERO task index, inclusive. It must be at least task-start and at most 9.",
+      "forwarded_as": "--task_end_index N"
+    },
+    "trials": {
+      "cli": "--trials N",
+      "default": "1",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Episodes generated per selected task, from 1 through 50.",
+      "forwarded_as": "--num_trials_per_task N"
+    },
+    "seed": {
+      "cli": "--seed N",
+      "default": "7",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Non-negative evaluation seed used by the official evaluator.",
+      "forwarded_as": "--seed N"
+    },
+    "run_note": {
+      "cli": "--run-note NAME",
+      "default": "server-generated timestamped prefix",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Unique run note. The server creates a suite-specific timestamped prefix and refuses to overwrite an existing output directory. Spatial runs use lf3r-data-natural-libero-spatial-256-.",
+      "forwarded_as": "wrapper positional RUN_NOTE -> --run-note NAME"
+    },
+    "log_safe_features": {
+      "cli": "--log-safe-features",
+      "default": "true in the web UI; false for direct CLI unless supplied",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Saves official OpenVLA hidden states and LF3R SAFE numeric sidecars for each generated episode. Disable to save only the normal video/CSV/log outputs.",
+      "forwarded_as": "wrapper optional flag -> output_hidden_states=True"
+    },
+    "task_suite": {
+      "cli": "--task-suite {libero_10,libero_spatial}",
+      "default": "libero_10",
+      "applies_to": "OpenVLA natural rollout generator",
+      "description": "Selects the natural LIBERO suite. LIBERO-Spatial uses the existing Spatial checkpoint with native 256x256 simulator and replay frames while policy preprocessing remains 224x224; LIBERO-10 keeps the existing output root.",
+      "forwarded_as": "--task_suite_name=SUITE to the official evaluator; wrapper selects the suite output root"
+    }
+  },
+  "settings": {
+    "font_scale": {
+      "cli": "shared setting (no CLI flag)",
+      "default": "100%; 75%\u0013160%",
+      "applies_to": "all pages",
+      "description": "Global root typography scale. It combines with the active page category scale and uses rem-based CSS."
+    },
+    "review_font_scale": {
+      "cli": "shared setting (no CLI flag)",
+      "default": "100%; 85%\u0013130%",
+      "applies_to": "Review page",
+      "description": "Review-only typography multiplier for queue, video controls, baseline cards, and annotation form."
+    },
+    "analysis_font_scale": {
+      "cli": "shared setting (no CLI flag)",
+      "default": "100%; 85%\u0013130%",
+      "applies_to": "Analysis page",
+      "description": "Analysis-only typography multiplier for filters, tables, charts, and job panels."
+    },
+    "control_font_scale": {
+      "cli": "shared setting (no CLI flag)",
+      "default": "100%; 85%\u0013130%",
+      "applies_to": "controls and help",
+      "description": "Typography multiplier for controls and contextual help text."
+    }
+  }
+}

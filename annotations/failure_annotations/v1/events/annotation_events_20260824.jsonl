@@ -1,0 +1,9 @@
+{"timestamp": "2026-08-24T12:42:03.137967+00:00", "rollout_id": "libero_10-task00-ep004-natural-40939ce57b", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:44:28.576395+00:00", "rollout_id": "libero_10-task00-ep001-natural-477e2f3af1", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:44:33.913615+00:00", "rollout_id": "libero_10-task00-ep004-natural-40939ce57b", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:46:02.574614+00:00", "rollout_id": "libero_10-task01-ep002-natural-e137d2c325", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:46:40.542722+00:00", "rollout_id": "libero_10-task03-ep002-natural-3ddbc9d2a5", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:46:47.833009+00:00", "rollout_id": "libero_10-task03-ep002-natural-3ddbc9d2a5", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:48:00.091387+00:00", "rollout_id": "libero_10-task03-ep003-natural-2286b7b4af", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T12:48:50.207632+00:00", "rollout_id": "libero_10-task03-ep004-natural-2666becf69", "review_status": "complete", "annotator": "Jacy"}
+{"timestamp": "2026-08-24T14:10:18.650645+00:00", "rollout_id": "libero_10-task00-ep000-natural-07acb763b6", "review_status": "complete", "annotator": "Jacy", "outcome_label": "recovered_success", "failure_event_count": 2}

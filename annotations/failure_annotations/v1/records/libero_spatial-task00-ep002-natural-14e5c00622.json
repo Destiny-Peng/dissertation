@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_spatial-task00-ep002-natural-14e5c00622",
+  "updated_at": "2026-09-03T13:53:03.847733+00:00",
+  "created_at": "2026-09-03T13:46:06.698074+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "success",
+  "failure_type": "none_success",
+  "confidence": 4,
+  "failure_events": [],
+  "causal_onset_frame": null,
+  "observable_onset_frame": null,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}

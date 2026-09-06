@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LF3R Failure Review</title>
+  <meta name="description" content="Local annotation workspace for LF3R robot failure rollouts">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">L3</div>
+      <div>
+        <p class="eyebrow">LF3R DATA OPERATIONS</p>
+        <h1 id="pageTitle">Failure Review</h1>
+      </div>
+    </div>
+    <nav class="page-navigation" aria-label="Primary navigation">
+      <a href="#/review" data-route="review">Review</a>
+      <a href="#/analysis" data-route="analysis">Analysis</a>
+      <a href="#/settings" data-route="settings">Settings</a>
+    </nav>
+    <div class="dataset-summary">
+      <span id="datasetStatus" class="status-dot">Loading dataset…</span>
+      <span id="progressSummary">0 / 0 reviewed</span>
+    </div>
+  </header>
+
+  <main id="reviewWorkspace" class="workspace app-view" data-view="review">
+    <aside class="queue-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">REVIEW QUEUE</p>
+          <h2>Rollouts</h2>
+        </div>
+        <span id="visibleCount" class="count-chip">0</span>
+      </div>
+
+      <label class="search-box">
+        <span class="sr-only">Search rollouts</span>
+        <input id="searchInput" type="search" placeholder="Search task or rollout…">
+        <kbd>/</kbd>
+      </label>
+
+      <div class="filter-grid">
+        <label>
+          <span>Origin</span>
+          <select id="originFilter">
+            <option value="all">All origins</option>
+            <option value="natural_policy">Natural only</option>
+            <option value="controlled_injected">Controlled only</option>
+          </select>
+        </label>
+        <label>
+          <span>Outcome</span>
+          <select id="outcomeFilter">
+            <option value="all">All outcomes</option>
+            <option value="failure">Failure</option>
+            <option value="success">Success</option>
+            <option value="recovered_success">Recovered Success</option>
+          </select>
+        </label>
+        <label>
+          <span>Review</span>
+          <select id="reviewFilter">
+            <option value="all">All states</option>
+            <option value="unreviewed">Unreviewed</option>
+            <option value="in_progress">In progress</option>
+            <option value="complete">Complete</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="partition-key">
+        <span><i class="key-dot natural"></i> Natural observation</span>
+        <span><i class="key-dot controlled"></i> Controlled analysis</span>
+      </div>
+
+      <div id="rolloutList" class="rollout-list" aria-live="polite"></div>
+    </aside>
+
+    <section class="review-stage">
+      <div id="emptyState" class="empty-state">
+        <p class="eyebrow">NO ROLLOUT SELECTED</p>
+        <h2>Choose a trajectory from the review queue.</h2>
+        <p>Natural and controlled-injection data remain visibly separated throughout review.</p>
+      </div>
+
+      <div id="reviewContent" class="review-content hidden">
+        <section class="media-column">
+          <div class="task-header">
+            <div>
+              <div id="recordBadges" class="badge-row"></div>
+              <h2 id="taskTitle">Task</h2>
+              <p id="recordMeta" class="record-meta"></p>
+            </div>
+            <div class="navigation-actions">
+              <button id="previousButton" class="ghost-button" type="button">← Previous</button>
+              <button id="nextButton" class="ghost-button" type="button">Next →</button>
+            </div>
+          </div>
+
+          <div class="video-shell">
+            <video id="rolloutVideo" preload="metadata" playsinline></video>
+            <button id="playOverlay" class="play-overlay" type="button" aria-label="Play video">▶</button>
+            <div class="video-readout">
+              <span id="timeReadout">00:00.000</span>
+              <span id="frameReadout">Frame 0 / 0</span>
+            </div>
+          </div>
+
+          <div class="transport">
+            <button id="playButton" class="transport-main" type="button">Play</button>
+            <button data-step="-10" type="button">−10</button>
+            <button data-step="-1" type="button">−1 frame</button>
+            <button data-step="1" type="button">+1 frame</button>
+            <button data-step="10" type="button">+10</button>
+            <label class="speed-control">Speed
+              <select id="speedSelect">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="timeline-wrap">
+            <div class="timeline-track">
+              <input id="frameSlider" type="range" min="0" max="1" step="1" value="0" aria-label="Video frame">
+              <div id="timelineMarkers" class="timeline-markers" aria-hidden="true"></div>
+            </div>
+            <div class="timeline-legend">
+              <span><i class="marker causal"></i>Causal / injected</span>
+              <span><i class="marker observable"></i>Observable</span>
+              <span><i class="marker terminal"></i>Terminal</span>
+              <span><i class="marker recovery"></i>Recovered</span>
+            </div>
+          </div>
+
+          <div class="known-event" id="knownEvent">
+            <span class="known-label">GROUND TRUTH EVENT</span>
+            <span id="knownEventText">No injected event; annotate only what is visible.</span>
+          </div>
+
+          <section class="evaluation-panel" aria-labelledby="evaluationTitle">
+            <div class="evaluation-heading">
+              <div>
+                <p class="eyebrow">BASELINE EVALUATION</p>
+                <h2 id="evaluationTitle">Model outputs</h2>
+              </div>
+              <button id="reloadEvaluation" class="ghost-button" type="button">Refresh</button>
+            </div>
+            <div id="evaluationStatus" class="evaluation-status">Loading baseline outputs…</div>
+            <div class="baseline-controls">
+              <label data-cli-help="baseline.gpu">GPU <input id="baselineGpu" type="text" inputmode="numeric" value="0" maxlength="15"></label>
+              <label data-cli-help="baseline.vllm_free_memory_fraction">Free memory <input id="baselineMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
+              <span>One rollout at a time; the value targets currently free GPU memory. Robo-Dopamine uses fused by default.</span>
+            </div>
+            <div id="evaluationMethods" class="evaluation-methods" aria-live="polite"></div>
+          </section>
+
+          <section class="evaluation-panel batch-panel" aria-labelledby="baselineBatchTitle">
+            <div class="evaluation-heading">
+              <div>
+                <p class="eyebrow">BATCH BASELINE</p>
+                <h2 id="baselineBatchTitle">Run one method over a rollout scope</h2>
+              </div>
+            </div>
+            <div id="baselineBatchStatus" class="evaluation-status" role="status">Batch inference is idle.</div>
+            <form id="baselineBatchForm" class="batch-form">
+              <div class="batch-control-grid">
+                <label data-cli-help="baseline.baseline"><span>Baseline method</span>
+                  <select id="baselineBatchMethod">
+                    <option value="safe">SAFE</option>
+                    <option value="procvlm">ProcVLM</option>
+                    <option value="rynnvalue">RynnValue</option>
+                    <option value="robo_dopamine">Robo-Dopamine</option>
+                  </select>
+                </label>
+                <label data-cli-help="baseline.scope"><span>Rollout scope</span>
+                  <select id="baselineBatchScope">
+                    <option value="natural_observation" selected>All natural observations</option>
+                    <option value="all">All manifest rollouts</option>
+                    <option value="primary_natural">Primary natural</option>
+                    <option value="reference_natural">Reference natural</option>
+                    <option value="controlled_analysis">Controlled analysis</option>
+                  </select>
+                </label>
+                <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text" inputmode="numeric" value="0" maxlength="31"></label>
+                <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input id="baselineBatchMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
+                <label data-cli-help="baseline.start_index"><span>Total start index (inclusive)</span><input id="baselineBatchStartIndex" type="number" min="0" step="1" value="0"></label>
+                <label id="baselineBatchLimitField" class="hidden" data-cli-help="baseline.limit"><span>Limit (legacy compatibility)</span><input id="baselineBatchLimit" type="number" min="1" step="1" placeholder="Use worker range"></label>
+                <label id="baselineBatchEndField" data-cli-help="baseline.end_index"><span>Total end index (exclusive)</span><input id="baselineBatchEndIndex" type="number" min="1" step="1" placeholder="Scope end"></label>
+              </div>
+              <div id="baselineBatchRynnParallel" class="rynn-parallel-panel baseline-worker-panel">
+                <div class="baseline-worker-heading rynn-parallel-heading">
+                  <div><strong>Baseline rollout workers</strong><small>Each method can split rollouts across independent workers. Every row uses the scope-relative right-open range <code>[start, end)</code>.</small></div>
+                  <button id="baselineBatchAddWorker" class="ghost-button" type="button" aria-label="Add baseline worker">+ Worker</button>
+                </div>
+                <div id="baselineBatchWorkers" class="baseline-worker-list rynn-worker-list" aria-live="polite"></div>
+                <p id="baselineBatchWorkerSummary" class="batch-selection-note">Worker assignment: loading…</p>
+              </div>
+              <p id="baselineBatchSelection" class="batch-selection-note">Scope selection: loading…</p>
+              <p class="batch-resource-warning">GPU resources are user-managed. Jobs may use overlapping GPU IDs; the server does not schedule or block GPU contention.</p>
+              <details id="baselineBatchAdvanced" class="batch-advanced">
+                <summary>Advanced runner parameters</summary>
+                <div class="batch-advanced-grid">
+                  <label data-cli-help="baseline.model_path" data-batch-methods="procvlm,rynnvalue,robo_dopamine"><span>Model path (optional)</span><input data-batch-option="model_path" type="text" placeholder="Use configured checkpoint"></label>
+                  <label data-cli-help="baseline.dtype" data-batch-methods="procvlm,robo_dopamine"><span>Dtype</span><input data-batch-option="dtype" type="text" value="bf16"></label>
+                  <label data-cli-help="baseline.tensor_parallel_size" data-batch-methods="procvlm,robo_dopamine"><span>Tensor parallel size</span><input data-batch-option="tensor_parallel_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.procvlm_window_size" data-batch-methods="procvlm"><span>Window size</span><input data-batch-option="procvlm_window_size" type="number" min="1" step="1" value="4"></label>
+                  <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1" placeholder="Runner default"></label>
+                  <label data-cli-help="baseline.procvlm_max_new_tokens" data-batch-methods="procvlm"><span>Max new tokens</span><input data-batch-option="procvlm_max_new_tokens" type="number" min="1" step="1" value="4096"></label>
+                  <label data-cli-help="baseline.rynn_num_frames" data-batch-methods="rynnvalue"><span>Frames per prefix</span><input data-batch-option="rynn_num_frames" type="number" min="1" step="1" value="16"></label>
+                  <label data-cli-help="baseline.rynn_evaluation_interval" data-batch-methods="rynnvalue"><span>Target frame interval</span><input data-batch-option="rynn_evaluation_interval" type="number" min="1" step="1" value="8"></label>
+                  <label data-cli-help="baseline.rynn_batch_size" data-batch-methods="rynnvalue"><span>Batch size</span><input data-batch-option="rynn_batch_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.rynn_max_image_side" data-batch-methods="rynnvalue"><span>Max image side</span><input data-batch-option="rynn_max_image_side" type="number" min="1" step="1" value="448"></label>
+                  <label data-cli-help="baseline.rynn_max_new_tokens" data-batch-methods="rynnvalue"><span>Max new tokens</span><input data-batch-option="rynn_max_new_tokens" type="number" min="1" step="1" value="128"></label>
+                  <label data-cli-help="baseline.robot_description" data-batch-methods="rynnvalue"><span>Robot description</span><input data-batch-option="robot_description" type="text" value="A Franka Panda 7-DoF robot arm with a parallel-jaw gripper."></label>
+                  <label data-cli-help="baseline.camera_description" data-batch-methods="rynnvalue"><span>Camera description</span><input data-batch-option="camera_description" type="text" value="A fixed third-person agent-view RGB camera observing the robot workspace."></label>
+                  <label data-cli-help="baseline.robo_frame_interval" data-batch-methods="robo_dopamine"><span>Frame interval</span><input data-batch-option="robo_frame_interval" type="number" min="1" step="1" value="4"></label>
+                  <label data-cli-help="baseline.robo_batch_size" data-batch-methods="robo_dopamine"><span>Batch size</span><input data-batch-option="robo_batch_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.robo_eval_mode" data-batch-methods="robo_dopamine"><span>Eval mode</span><select data-batch-option="robo_eval_mode"><option value="fused" selected>Fused (all three perspectives)</option><option value="forward">Forward</option><option value="incremental">Incremental</option><option value="backward">Backward</option></select></label>
+                  <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image (optional)</span><input data-batch-option="goal_image" type="text" placeholder="Project-relative image path"></label>
+                </div>
+                <div class="batch-check-grid">
+                  <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render baseline video</label>
+                  <label data-cli-help="baseline.validate_environment"><input data-batch-option="validate_environment" type="checkbox"> Validate environment first</label>
+                  <label data-cli-help="baseline.dry_run"><input data-batch-option="dry_run" type="checkbox"> Plan only (dry run)</label>
+                </div>
+              </details>
+              <button id="baselineBatchRun" class="save-button" type="submit">Run batch baseline</button>
+            </form>
+            <div id="baselineBatchJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent baseline job"></div>
+            <pre id="baselineBatchLog" class="job-log" aria-label="Latest batch baseline log"></pre>
+          </section>
+
+          <section class="evaluation-panel rollout-generation-panel" aria-labelledby="rolloutGenerationTitle">
+            <div class="evaluation-heading">
+              <div>
+                <p class="eyebrow">ROLLOUT GENERATION</p>
+                <h2 id="rolloutGenerationTitle">Generate natural rollouts</h2>
+              </div>
+              <span id="rolloutGenerationBadge" class="analysis-badge">Idle</span>
+            </div>
+            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. LIBERO-Spatial uses native 256x256 simulator/replay frames while keeping the OpenVLA policy input at 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
+            <form id="rolloutGenerationForm" class="rollout-generation-form">
+              <div class="rollout-generation-grid">
+                <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite"><option value="libero_10">LIBERO-10 natural (existing output)</option><option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option></select></label>
+                <label data-cli-help="rollout.gpu"><span>GPU</span><input id="rolloutGenerationGpu" type="text" inputmode="numeric" value="0" maxlength="8"></label>
+                <label data-cli-help="rollout.task_start"><span>Task start (inclusive)</span><input id="rolloutGenerationTaskStart" type="number" min="0" max="9" step="1" value="0"></label>
+                <label data-cli-help="rollout.task_end"><span>Task end (inclusive)</span><input id="rolloutGenerationTaskEnd" type="number" min="0" max="9" step="1" value="3"></label>
+                <label data-cli-help="rollout.trials"><span>Trials per task</span><input id="rolloutGenerationTrials" type="number" min="1" max="50" step="1" value="1"></label>
+                <label data-cli-help="rollout.seed"><span>Seed</span><input id="rolloutGenerationSeed" type="number" min="0" step="1" value="7"></label>
+                <label data-cli-help="rollout.run_note"><span>Run-note label (optional)</span><input id="rolloutGenerationLabel" type="text" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="web"></label>
+              </div>
+              <div class="batch-check-grid rollout-generation-options">
+                <label data-cli-help="rollout.log_safe_features"><input id="rolloutGenerationLogSafeFeatures" type="checkbox" checked> Save latent / SAFE hidden states</label>
+              </div>
+              <p id="rolloutGenerationSelection" class="batch-selection-note">Requested output: 4 rollout(s); run note is generated automatically.</p>
+              <button id="rolloutGenerationRun" class="save-button" type="submit">Generate rollouts</button>
+            </form>
+            <div id="rolloutGenerationStatus" class="evaluation-status" role="status">Generation is idle.</div>
+            <div id="rolloutGenerationJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent rollout generation job"></div>
+            <pre id="rolloutGenerationLog" class="job-log" aria-label="Latest rollout generation log"></pre>
+          </section>
+
+          <details class="shortcuts">
+            <summary>Keyboard controls</summary>
+            <div>
+              <span><kbd>Space</kbd> play/pause</span>
+              <span><kbd>←</kbd><kbd>→</kbd> one frame</span>
+              <span><kbd>Shift</kbd> + arrows ten frames</span>
+              <span><kbd>1</kbd> active event causal</span>
+              <span><kbd>2</kbd> active event observable</span>
+              <span><kbd>3</kbd> active event terminal</span>
+              <span><kbd>S</kbd> save</span>
+            </div>
+          </details>
+        </section>
+
+        <aside class="annotation-panel">
+          <div class="annotation-heading">
+            <div>
+              <p class="eyebrow">ANNOTATION</p>
+              <h2>Failure boundaries</h2>
+            </div>
+            <span id="saveState" class="save-state">Not saved</span>
+          </div>
+
+          <form id="annotationForm">
+            <label class="field">
+              <span>Annotator <b>required</b></span>
+              <input id="annotatorInput" name="annotator" maxlength="100" placeholder="Name or reviewer ID" required>
+            </label>
+
+            <div class="two-column">
+              <label class="field">
+                <span>Outcome label</span>
+                <select id="outcomeLabel" name="outcome_label">
+                  <option value="success">Clean Success</option>
+                  <option value="failure">Failure</option>
+                  <option value="recovered_success">Recovered Success</option>
+                  <option value="uncertain">Uncertain</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Review status</span>
+                <select id="reviewStatus" name="review_status">
+                  <option value="in_progress">In progress</option>
+                  <option value="complete">Complete</option>
+                  <option value="unreviewed">Unreviewed</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Primary / default failure type</span>
+              <select id="failureType" name="failure_type">
+                <option value="none_success">No failure / success</option>
+                <option value="grasp_failure">Grasp failure</option>
+                <option value="placement_failure">Placement failure</option>
+                <option value="dropped_object">Dropped object</option>
+                <option value="wrong_object">Wrong object</option>
+                <option value="collision">Collision</option>
+                <option value="timeout_no_progress">Timeout / no progress</option>
+                <option value="control_error">Control error</option>
+                <option value="observation_error">Observation error</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+
+            <section class="failure-events-section" aria-labelledby="failureEventsTitle">
+              <div class="failure-events-heading">
+                <div>
+                  <span id="failureEventsTitle">Failure events</span>
+                  <small>Add one event for every failed attempt or deviation.</small>
+                </div>
+                <span id="failureEventCount" class="count-chip">0</span>
+              </div>
+              <div id="failureEvents" class="failure-events"></div>
+              <button id="addFailureEvent" class="ghost-button add-event-button" type="button">+ Add failure event</button>
+            </section>
+
+            <label class="field">
+              <span>Confidence</span>
+              <select id="confidence" name="confidence">
+                <option value="">Not set</option>
+                <option value="1">1 — low</option>
+                <option value="2">2</option>
+                <option value="3">3 — medium</option>
+                <option value="4">4</option>
+                <option value="5">5 — high</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Notes</span>
+              <textarea id="notes" name="notes" maxlength="5000" rows="5"
+                placeholder="Describe evidence, ambiguity, or recovery behavior…"></textarea>
+            </label>
+
+            <div id="formError" class="form-error" role="alert"></div>
+            <button id="saveButton" class="save-button" type="submit">Save annotation <kbd>S</kbd></button>
+          </form>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <main id="analysisView" class="page-view app-view hidden" data-view="analysis">
+    <div class="page-container analysis-page-container">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">DATASET ANALYSIS</p>
+          <h2>Failure localization dashboard</h2>
+          <p class="page-subtitle">Conclusion-first view of the annotated primary natural set. Detailed rows, legacy comparisons, and downloadable artifacts are available on demand.</p>
+        </div>
+        <button id="analysisRefresh" class="ghost-button" type="button">Refresh analysis</button>
+      </div>
+
+      <div id="analysisStatus" class="analysis-status" role="status">Loading analysis...</div>
+
+      <nav class="analysis-subtabs" aria-label="Analysis sections">
+        <a href="#/analysis/overview" data-analysis-tab="overview" class="active" aria-current="page">Overview</a>
+        <a href="#/analysis/comparison" data-analysis-tab="comparison">Method comparison</a>
+        <a href="#/analysis/failures" data-analysis-tab="failures">Failure types</a>
+        <a href="#/analysis/events" data-analysis-tab="events">Event explorer</a>
+        <a href="#/analysis/signals" data-analysis-tab="signals">Signal shape</a>
+        <a href="#/analysis/archive" data-analysis-tab="archive">Archive &amp; downloads</a>
+      </nav>
+
+      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle">
+        <div class="analysis-card-heading">
+          <div>
+            <p class="eyebrow">LIVE SCOPE</p>
+            <h3 id="analysisFiltersTitle">Current annotations</h3>
+          </div>
+          <button id="analysisResetFilters" class="ghost-button" type="button">Reset filters</button>
+        </div>
+        <div class="analysis-filter-grid">
+          <label><span>Partition</span>
+            <select id="analysisPartitionFilter" data-analysis-live-filter="partition">
+              <option value="primary_natural" selected>Primary natural (default)</option>
+              <option value="natural_observation">All natural observations</option>
+              <option value="reference_natural">Reference natural</option>
+              <option value="controlled_analysis">Controlled analysis</option>
+              <option value="all">All partitions</option>
+            </select>
+          </label>
+          <label><span>Task suite</span>
+            <select id="analysisSuiteFilter" data-analysis-live-filter="suite"><option value="all">All suites</option></select>
+          </label>
+          <label><span>Task</span>
+            <select id="analysisTaskFilter" data-analysis-live-filter="task"><option value="all">All tasks</option></select>
+          </label>
+          <label><span>Outcome</span>
+            <select id="analysisOutcomeFilter" data-analysis-live-filter="outcome">
+              <option value="all">All outcomes</option>
+              <option value="clean_success">Clean success</option>
+              <option value="recovered_success">Recovered success</option>
+              <option value="terminal_failure">Terminal failure</option>
+              <option value="uncertain">Uncertain</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section id="analysisTabOverview" class="analysis-tab-panel" data-analysis-panel="overview">
+        <section class="analysis-card analysis-run-card" aria-labelledby="analysisRunTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">TEMPORAL ANALYSIS RUNNER</p><h3 id="analysisRunTitle">Run temporal analysis</h3></div>
+            <span id="analysisRunBadge" class="analysis-badge">Idle</span>
+          </div>
+          <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a run for each method and keep the default primary natural scope for a fair comparison.</p>
+          <p id="analysisEnvironmentStatus" class="analysis-run-selection" role="status">Checking the dedicated Analysis environment...</p>
+          <form id="analysisRunForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Rollout scope</span>
+                <select id="analysisRunScope">
+                  <option value="primary_natural" selected>Primary natural (default)</option>
+                  <option value="natural_observation">All natural observations</option>
+                  <option value="all">All manifest rollouts</option>
+                  <option value="reference_natural">Reference natural</option>
+                  <option value="controlled_analysis">Controlled analysis</option>
+                </select>
+              </label>
+              <label data-analysis-run-label="safe"><span>SAFE run</span><select id="analysisRunSafe" data-analysis-run-method="safe"><option value="">Loading compatible runs...</option></select></label>
+              <label data-analysis-run-label="procvlm"><span>ProcVLM run</span><select id="analysisRunProcvlm" data-analysis-run-method="procvlm"><option value="">Loading compatible runs...</option></select></label>
+              <label data-analysis-run-label="rynnvalue"><span>RynnValue source run(s)</span><select id="analysisRunRynnvalue" data-analysis-run-method="rynnvalue" multiple size="5" aria-label="RynnValue source runs"><option value="">Loading compatible runs...</option></select><small class="analysis-run-field-help">Ctrl/Cmd-click to merge disjoint source runs by rollout ID.</small></label>
+              <label data-analysis-run-label="robo_dopamine"><span>Robo-Dopamine run</span><select id="analysisRunRoboDopamine" data-analysis-run-method="robo_dopamine"><option value="">Loading compatible runs...</option></select></label>
+            </div>
+            <p id="analysisRunSelection" class="analysis-run-selection">Select a scope to discover compatible completed runs.</p>
+            <details class="analysis-run-advanced">
+              <summary>Advanced analysis parameters</summary>
+              <div class="analysis-run-advanced-grid">
+                <label><span>Pre-event window (frames)</span><input id="analysisPreWindow" type="number" min="1" step="1" value="60"></label>
+                <label><span>Post-event window (frames)</span><input id="analysisPostWindow" type="number" min="1" step="1" value="60"></label>
+                <label><span>Background stride (frames)</span><input id="analysisBackgroundStride" type="number" min="1" step="1" value="30"></label>
+                <label><span>Output label</span><input id="analysisOutputLabel" type="text" value="web_analysis" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]*"></label>
+              </div>
+            </details>
+            <button id="analysisRunButton" class="save-button" type="submit" disabled>Run temporal analysis</button>
+          </form>
+          <pre id="analysisRunLog" class="job-log" aria-label="Latest temporal analysis log"></pre>
+          <div id="analysisRunJobs" class="persistent-job-list" aria-live="polite" aria-label="Persistent temporal analysis jobs"></div>
+        </section>
+
+        <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
+        <section class="analysis-card primary-analysis-card" aria-labelledby="analysisConclusionTitle">
+          <div class="analysis-card-heading"><div><p class="eyebrow">READ THIS FIRST</p><h3 id="analysisConclusionTitle">Current scope and conclusions</h3></div></div>
+          <div id="analysisTopConclusions" class="analysis-conclusions"></div>
+        </section>
+
+        <div class="analysis-grid analysis-grid-two">
+          <section class="analysis-card" aria-labelledby="analysisOutcomeTitle">
+            <div class="analysis-card-heading"><div><p class="eyebrow">OUTCOMES</p><h3 id="analysisOutcomeTitle">Trajectory outcomes</h3></div></div>
+            <div id="analysisOutcomeChart" class="analysis-chart"></div>
+          </section>
+          <section class="analysis-card" aria-labelledby="analysisFailureTypeTitle">
+            <div class="analysis-card-heading"><div><p class="eyebrow">EVENT TAXONOMY</p><h3 id="analysisFailureTypeTitle">Failure event types</h3></div></div>
+            <div id="analysisFailureTypeChart" class="analysis-chart"></div>
+          </section>
+        </div>
+        <div class="analysis-grid analysis-grid-two">
+          <section class="analysis-card" aria-labelledby="analysisTimingTitle">
+            <div class="analysis-card-heading"><div><p class="eyebrow">TEMPORAL BOUNDARIES</p><h3 id="analysisTimingTitle">Onset and recovery timing</h3></div></div>
+            <div id="analysisTimingChart" class="analysis-chart"></div>
+          </section>
+          <section class="analysis-card" aria-labelledby="analysisTaskTitle">
+            <div class="analysis-card-heading"><div><p class="eyebrow">TASK COMPARISON</p><h3 id="analysisTaskTitle">Outcome by task</h3></div></div>
+            <div id="analysisTaskChart" class="analysis-chart"></div>
+          </section>
+        </div>
+        <section class="analysis-card" aria-labelledby="analysisCoverageTitle">
+          <div class="analysis-card-heading"><div><p class="eyebrow">BASELINE COVERAGE</p><h3 id="analysisCoverageTitle">Available method outputs</h3></div></div>
+          <div id="analysisCoverageChart" class="analysis-chart"></div>
+          <div id="analysisOverviewProvenance" class="analysis-provenance"></div>
+        </section>
+      </section>
+
+      <section id="analysisTabComparison" class="analysis-tab-panel hidden" data-analysis-panel="comparison">
+        <section class="analysis-card changepoint-card primary-analysis-card" aria-labelledby="analysisChangePointTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">METHOD COMPARISON</p><h3 id="analysisChangePointTitle">Failure localization at a glance</h3></div>
+            <span id="analysisChangePointBadge" class="analysis-badge">Unavailable</span>
+          </div>
+          <p id="analysisChangePointStatus" class="analysis-status">Default: Q95 threshold, local level feature, 16-frame scale, all observable events.</p>
+          <p class="analysis-card-note">Categorical labels are shortened for readability. Hover or focus a row for the complete method, signal, feature, scale, and threshold metadata. Every native signal remains separate; no best signal is selected.</p>
+          <div class="analysis-filter-grid changepoint-filter-grid">
+            <label><span>Method</span><select id="analysisChangePointMethod" data-analysis-changepoint-filter="method"><option value="all">All methods</option><option value="safe">SAFE</option><option value="procvlm">ProcVLM</option><option value="rynnvalue">RynnValue</option><option value="robo_dopamine">Robo-Dopamine</option></select></label>
+            <label><span>Signal</span><select id="analysisChangePointSignal" data-analysis-changepoint-filter="signal"><option value="all">All native signals</option></select></label>
+            <label><span>Local feature</span><select id="analysisChangePointFeature" data-analysis-changepoint-filter="feature"><option value="level" selected>Local level change</option><option value="variance">Local variance change</option><option value="slope">Local slope change</option><option value="all">All features</option></select></label>
+            <label><span>Scale</span><select id="analysisChangePointScale" data-analysis-changepoint-filter="scale"><option value="16" selected>16 frames (default)</option><option value="all">All scales</option></select></label>
+            <label><span>Threshold</span><select id="analysisChangePointThreshold" data-analysis-changepoint-filter="threshold"><option value="q95" selected>Q95 (primary)</option><option value="q90">Q90</option><option value="q99">Q99</option></select></label>
+            <label><span>Outcome</span><select id="analysisChangePointOutcome" data-analysis-changepoint-filter="outcome"><option value="all">All events</option><option value="recovered_success">Recovered success</option><option value="terminal_failure">Terminal failure</option><option value="uncertain">Uncertain</option></select></label>
+            <label><span>Task</span><select id="analysisChangePointTask" data-analysis-changepoint-filter="task"><option value="all">All tasks</option></select></label>
+          </div>
+          <div id="analysisChangePointProvenance" class="analysis-provenance"></div>
+          <div class="analysis-comparison-grid">
+            <div><h4>Recall and clean-success false alarm</h4><div id="analysisChangePointRecallChart" class="analysis-chart"></div></div>
+            <div><h4>Localization error and tolerance hits</h4><div id="analysisChangePointErrorChart" class="analysis-chart"></div></div>
+          </div>
+          <div class="analysis-card-subsection">
+            <h4>Selected metric rows</h4>
+            <div id="analysisChangePointComparison" class="analysis-table-wrap"></div>
+          </div>
+        </section>
+      </section>
+
+      <section id="analysisTabFailures" class="analysis-tab-panel hidden" data-analysis-panel="failures">
+        <section class="analysis-card localization-card" aria-labelledby="analysisFailuresPageTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">FAILURE TYPES</p><h3 id="analysisFailuresPageTitle">Failure type x method / signal</h3></div>
+            <span id="analysisLocalizationBadge" class="analysis-badge">Unavailable</span>
+          </div>
+          <p id="analysisLocalizationStatus" class="analysis-status">Select one metric to compare failure types. Cells show value and sample count.</p>
+          <div class="analysis-filter-grid localization-filter-grid">
+            <label><span>Metric</span><select id="analysisFailureMetric" data-analysis-failure-filter="metric"><option value="recall">Recall</option><option value="false_alarm">False alarm</option><option value="f1">F1</option><option value="localization_error">Median localization error</option><option value="auroc">AUROC</option></select></label>
+            <label><span>Method</span><select id="analysisLocalizationMethod" data-analysis-localization-filter="method"><option value="all">All methods</option><option value="safe">SAFE</option><option value="procvlm">ProcVLM</option><option value="rynnvalue">RynnValue</option><option value="robo_dopamine">Robo-Dopamine</option></select></label>
+            <label><span>Signal</span><select id="analysisLocalizationSignal" data-analysis-localization-filter="signal"><option value="all">All native signals</option></select></label>
+            <label><span>Threshold</span><select id="analysisLocalizationThreshold" data-analysis-localization-filter="threshold"><option value="q95" selected>Q95 (primary)</option><option value="q90">Q90</option><option value="q99">Q99</option></select></label>
+            <label><span>Outcome</span><select id="analysisLocalizationOutcome" data-analysis-localization-filter="outcome"><option value="all">All events</option><option value="recovered_success">Recovered success</option><option value="terminal_failure">Terminal failure</option><option value="uncertain">Uncertain</option></select></label>
+            <label><span>Task</span><select id="analysisLocalizationTask" data-analysis-localization-filter="task"><option value="all">All tasks</option></select></label>
+          </div>
+          <div id="analysisLocalizationProvenance" class="analysis-provenance"></div>
+          <div id="analysisChangePointFailureType" class="analysis-table-wrap analysis-heatmap-host"></div>
+          <div id="analysisLocalizationFailureType" class="analysis-table-wrap hidden"></div>
+        </section>
+      </section>
+
+      <section id="analysisTabEvents" class="analysis-tab-panel hidden" data-analysis-panel="events">
+        <section class="analysis-card" aria-labelledby="analysisEventsPageTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">EVENT EXPLORER</p><h3 id="analysisEventsPageTitle">Inspect event-level rows</h3></div>
+            <span id="analysisDetailsCount" class="analysis-badge">0 rows</span>
+          </div>
+          <p class="analysis-card-note">Rows are loaded from the selected snapshot on demand. Use Review for video context; the dashboard never dumps the full CSV.</p>
+          <div class="analysis-filter-grid details-filter-grid">
+            <label><span>Dataset</span><select id="analysisDetailsKind" data-analysis-details-filter="kind"><option value="changepoint_events">Change-point events</option><option value="localization_events">Localization events</option><option value="event_triggered_peaks">Event-triggered peaks</option><option value="legacy_anomalies">Legacy anomalies</option></select></label>
+            <label><span>Method</span><select id="analysisDetailsMethod" data-analysis-details-filter="method"><option value="all">All methods</option></select></label>
+            <label><span>Signal</span><select id="analysisDetailsSignal" data-analysis-details-filter="signal"><option value="all">All native signals</option></select></label>
+            <label><span>Feature</span><select id="analysisDetailsFeature" data-analysis-details-filter="feature"><option value="all">All features</option></select></label>
+            <label><span>Scale</span><select id="analysisDetailsScale" data-analysis-details-filter="scale"><option value="all">All scales</option></select></label>
+            <label><span>Threshold</span><select id="analysisDetailsThreshold" data-analysis-details-filter="threshold"><option value="all">All thresholds</option><option value="q95">Q95</option><option value="q90">Q90</option><option value="q99">Q99</option></select></label>
+            <label><span>Outcome</span><select id="analysisDetailsOutcome" data-analysis-details-filter="outcome"><option value="all">All outcomes</option><option value="recovered_success">Recovered success</option><option value="terminal_failure">Terminal failure</option><option value="uncertain">Uncertain</option></select></label>
+            <label><span>Failure type</span><select id="analysisDetailsFailureType" data-analysis-details-filter="failure_type"><option value="all">All failure types</option></select></label>
+            <label><span>Task</span><select id="analysisDetailsTask" data-analysis-details-filter="task"><option value="all">All tasks</option></select></label>
+            <label><span>Sort</span><select id="analysisDetailsSort" data-analysis-details-filter="sort"><option value="score">Event score</option><option value="localization_error">Localization error</option><option value="recall">Recall</option><option value="false_alarm">False alarm</option><option value="rollout">Rollout</option><option value="task">Task</option></select></label>
+          </div>
+          <div id="analysisDetailsStatus" class="analysis-status" role="status"></div>
+          <div id="analysisDetailsTable" class="analysis-table-wrap"></div>
+          <div class="page-navigation" aria-label="Event explorer pages">
+            <button id="analysisDetailsPrevious" class="ghost-button" type="button">Previous</button>
+            <span id="analysisDetailsPage">Page 1</span>
+            <button id="analysisDetailsNext" class="ghost-button" type="button">Next</button>
+          </div>
+          <div id="analysisChangePointEvents" class="hidden"></div>
+          <div id="analysisLocalizationEvents" class="hidden"></div>
+        </section>
+      </section>
+
+      <section id="analysisTabSignals" class="analysis-tab-panel hidden" data-analysis-panel="signals">
+        <section class="analysis-card event-triggered-card" aria-labelledby="analysisEventTriggeredTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">SIGNAL SHAPE</p><h3 id="analysisEventTriggeredTitle">Onset-aligned signal response</h3></div>
+            <span id="analysisEventTriggeredBadge" class="analysis-badge">Unavailable</span>
+          </div>
+          <p id="analysisEventTriggeredStatus" class="analysis-status">Choose one method, signal, and event group to show a single compact curve.</p>
+          <p class="analysis-card-note">The x axis is relative frame -60 to +60. Lines show case/control medians, shaded ranges show IQR, and the onset marker is fixed at zero. Native sample positions are retained; this is a descriptive diagnostic.</p>
+          <div class="analysis-filter-grid event-triggered-filter-grid">
+            <label><span>Method</span><select id="analysisEventTriggeredMethod" data-analysis-event-triggered-filter="method"><option value="all">All methods</option><option value="safe">SAFE</option><option value="procvlm">ProcVLM</option><option value="rynnvalue">RynnValue</option><option value="robo_dopamine">Robo-Dopamine</option></select></label>
+            <label><span>Signal</span><select id="analysisEventTriggeredSignal" data-analysis-event-triggered-filter="signal"><option value="all">All native signals</option></select></label>
+            <label><span>Event group</span><select id="analysisEventTriggeredGroup" data-analysis-event-triggered-filter="event_group"><option value="terminal_failure">Terminal failure</option><option value="recovered_success">Recovered success</option><option value="uncertain">Uncertain</option><option value="all">All event groups</option></select></label>
+            <label><span>Change-score scale</span><select id="analysisEventTriggeredScale" data-analysis-event-triggered-filter="scale"><option value="all">All scales</option></select></label>
+          </div>
+          <div id="analysisEventTriggeredProvenance" class="analysis-provenance"></div>
+          <div class="analysis-grid analysis-grid-two event-triggered-chart-grid">
+            <div><h4>Case / control signal</h4><div id="analysisEventTriggeredSignalChart" class="analysis-chart"></div></div>
+            <div><h4>Local change score</h4><div id="analysisEventTriggeredChangeChart" class="analysis-chart"></div></div>
+          </div>
+          <div class="analysis-card-subsection"><h4>Separation summary</h4><div id="analysisEventTriggeredSummary" class="analysis-table-wrap"></div></div>
+          <div class="analysis-card-subsection"><h4>Peak events</h4><div id="analysisEventTriggeredPeaks" class="analysis-table-wrap"></div></div>
+        </section>
+      </section>
+
+      <section id="analysisTabArchive" class="analysis-tab-panel hidden" data-analysis-panel="archive">
+        <section class="analysis-card legacy-analysis-card" aria-labelledby="baselineSnapshotTitle">
+          <div class="analysis-card-heading">
+            <div><p class="eyebrow">ARCHIVE &amp; DOWNLOADS</p><h3 id="baselineSnapshotTitle" data-comparison-file="comparison_with_full_136_20260827.csv">Legacy temporal comparison</h3></div>
+            <span id="analysisSnapshotBadge" class="analysis-badge">Loading</span>
+          </div>
+          <p class="analysis-card-note">Legacy outputs are comparison-only. They are collapsed by default so the page stays readable; use the links below to download complete artifacts.</p>
+          <p id="analysisSnapshotStatus" class="analysis-status"></p>
+          <details class="analysis-legacy-details">
+            <summary>Show legacy summary charts</summary>
+            <div class="analysis-filter-grid snapshot-filter-grid">
+              <label><span>Method</span><select id="analysisSnapshotMethod" data-analysis-snapshot-filter="method"><option value="all">All methods</option><option value="safe">SAFE</option><option value="procvlm">ProcVLM</option><option value="rynnvalue">RynnValue</option><option value="robo_dopamine">Robo-Dopamine</option></select></label>
+              <label><span>Snapshot outcome</span><select id="analysisSnapshotOutcome" data-analysis-snapshot-filter="outcome"><option value="all">All snapshot outcomes</option><option value="recovered_success">Recovered success</option><option value="terminal_failure">Terminal failure</option><option value="uncertain">Uncertain</option></select></label>
+              <label><span>Snapshot task</span><select id="analysisSnapshotTask" data-analysis-snapshot-filter="task"><option value="all">All tasks</option></select></label>
+            </div>
+            <div class="analysis-grid analysis-grid-two baseline-chart-grid">
+              <div><h4>Onset threshold / direction</h4><div id="analysisThresholdChart" class="analysis-chart"></div></div>
+              <div><h4>Largest normalized responses</h4><div id="analysisAnomalies" class="analysis-table-wrap"></div></div>
+            </div>
+            <div class="analysis-grid analysis-grid-three baseline-chart-grid">
+              <div><h4>Response magnitude</h4><div id="analysisResponseChart" class="analysis-chart"></div></div>
+              <div><h4>Post-event persistence</h4><div id="analysisPersistenceChart" class="analysis-chart"></div></div>
+              <div><h4>Recovery to baseline</h4><div id="analysisRecoveryChart" class="analysis-chart"></div></div>
+            </div>
+          </details>
+          <div id="analysisArchiveLinks" class="analysis-artifact-links"></div>
+          <div id="analysisProvenance" class="analysis-provenance"></div>
+        </section>
+
+        <section class="analysis-card localization-card legacy-analysis-card" aria-labelledby="analysisLocalizationTitle">
+          <div class="analysis-card-heading"><div><p class="eyebrow">COMPATIBILITY</p><h3 id="analysisLocalizationTitle">Legacy threshold diagnostics</h3></div></div>
+          <p class="analysis-card-note">The detailed localization view is now under Failure types and Event explorer. This compatibility section remains for older links.</p>
+        </section>
+        <div id="analysisLocalizationRecallChart" class="hidden"></div>
+        <div id="analysisLocalizationErrorChart" class="hidden"></div>
+      </section>
+    </div>
+  </main>
+
+  <main id="settingsView" class="page-view app-view hidden" data-view="settings">
+    <div class="page-container settings-container">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">SHARED APPEARANCE</p>
+          <h2>Annotator settings</h2>
+          <p class="page-subtitle">These values are saved in the project and apply to every browser using this local annotator.</p>
+        </div>
+      </div>
+      <div id="settingsStatus" class="analysis-status" role="status">Loading shared settings…</div>
+      <form id="settingsForm" class="settings-form">
+        <section class="analysis-card">
+          <div class="analysis-card-heading"><div><p class="eyebrow">PRESETS</p><h3>Theme starting points</h3></div></div>
+          <div class="settings-presets">
+            <button type="button" class="settings-preset" data-settings-preset="midnight">Midnight</button>
+            <button type="button" class="settings-preset" data-settings-preset="slate">Slate</button>
+            <button type="button" class="settings-preset" data-settings-preset="warm">Warm</button>
+          </div>
+        </section>
+        <div class="analysis-grid analysis-grid-two">
+          <section class="analysis-card">
+            <div class="analysis-card-heading"><div><p class="eyebrow">COLORS</p><h3>Theme colors</h3></div></div>
+            <div class="settings-color-grid">
+              <label><span>Background</span><input id="settingsBackground" data-settings-field="background_color" type="color"><output data-settings-value="background_color"></output></label>
+              <label><span>Panel</span><input id="settingsSurface" data-settings-field="surface_color" type="color"><output data-settings-value="surface_color"></output></label>
+              <label><span>Raised panel</span><input id="settingsRaised" data-settings-field="surface_raised_color" type="color"><output data-settings-value="surface_raised_color"></output></label>
+              <label><span>Controls</span><input id="settingsControl" data-settings-field="control_color" type="color"><output data-settings-value="control_color"></output></label>
+              <label><span>Text</span><input id="settingsText" data-settings-field="text_color" type="color"><output data-settings-value="text_color"></output></label>
+              <label><span>Muted text</span><input id="settingsMuted" data-settings-field="muted_color" type="color"><output data-settings-value="muted_color"></output></label>
+              <label><span>Accent</span><input id="settingsAccent" data-settings-field="accent_color" type="color"><output data-settings-value="accent_color"></output></label>
+            </div>
+          </section>
+          <section class="analysis-card">
+            <div class="analysis-card-heading"><div><p class="eyebrow">READABILITY</p><h3>Typography and spacing</h3></div></div>
+                        <label class="settings-range-field" data-cli-help="settings.font_scale"><span>Global font scale <output id="settingsFontScaleValue">100%</output></span><input id="settingsFontScale" data-settings-field="font_scale" type="range" min="0.75" max="1.60" step="0.05" value="1"></label>
+            <label class="settings-range-field" data-cli-help="settings.review_font_scale"><span>Review scale <output id="settingsReviewFontScaleValue">100%</output></span><input id="settingsReviewFontScale" data-settings-field="review_font_scale" type="range" min="0.85" max="1.30" step="0.05" value="1"></label>
+            <label class="settings-range-field" data-cli-help="settings.analysis_font_scale"><span>Analysis scale <output id="settingsAnalysisFontScaleValue">100%</output></span><input id="settingsAnalysisFontScale" data-settings-field="analysis_font_scale" type="range" min="0.85" max="1.30" step="0.05" value="1"></label>
+            <label class="settings-range-field" data-cli-help="settings.control_font_scale"><span>Control and help scale <output id="settingsControlFontScaleValue">100%</output></span><input id="settingsControlFontScale" data-settings-field="control_font_scale" type="range" min="0.85" max="1.30" step="0.05" value="1"></label>
+            <label class="field"><span>Density</span><select id="settingsDensity" data-settings-field="density"><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option value="spacious">Spacious</option></select></label>
+            <p class="settings-help">Semantic event colors stay fixed so causal, observable, terminal, recovery, and controlled markers retain their meaning.</p>
+          </section>
+        </div>
+        <div class="settings-actions">
+          <button id="settingsReset" class="ghost-button" type="button">Restore defaults</button>
+          <span class="settings-actions-spacer"></span>
+          <button id="settingsSave" class="save-button" type="submit">Save shared settings</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+  <script src="/static/workspace.js" defer></script>
+</body>
+
+</html>

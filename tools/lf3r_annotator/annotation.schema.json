@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lf3r.local/schemas/failure-annotation-v2.json",
+  "title": "LF3R Failure Annotation (v1/v2 compatible)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "rollout_id",
+    "annotator",
+    "review_status",
+    "outcome_label",
+    "failure_type",
+    "causal_onset_frame",
+    "observable_onset_frame",
+    "terminal_failure_frame",
+    "notes",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "enum": [1, 2] },
+    "rollout_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,160}$" },
+    "annotator": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "review_status": { "enum": ["unreviewed", "in_progress", "complete"] },
+    "outcome_label": { "enum": ["success", "failure", "recovered_success", "uncertain"] },
+    "failure_type": {
+      "enum": [
+        "none_success",
+        "grasp_failure",
+        "placement_failure",
+        "dropped_object",
+        "wrong_object",
+        "collision",
+        "timeout_no_progress",
+        "control_error",
+        "observation_error",
+        "other"
+      ]
+    },
+    "confidence": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+    "failure_events": {
+      "type": "array",
+      "description": "Ordered, variable-length failed attempts or deviations. No fixed item limit is imposed.",
+      "items": {
+        "type": "object",
+        "required": [
+          "failure_type",
+          "causal_onset_frame",
+          "observable_onset_frame",
+          "terminal_failure_frame",
+          "recovery_frame",
+          "notes"
+        ],
+        "properties": {
+          "failure_type": {
+            "enum": [
+              "none_success",
+              "grasp_failure",
+              "placement_failure",
+              "dropped_object",
+              "wrong_object",
+              "collision",
+              "timeout_no_progress",
+              "control_error",
+              "observation_error",
+              "other"
+            ]
+          },
+          "causal_onset_frame": { "type": ["integer", "null"], "minimum": 0 },
+          "observable_onset_frame": { "type": ["integer", "null"], "minimum": 0 },
+          "terminal_failure_frame": { "type": ["integer", "null"], "minimum": 0 },
+          "recovery_frame": { "type": ["integer", "null"], "minimum": 0 },
+          "notes": { "type": "string", "maxLength": 1000 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "causal_onset_frame": { "type": ["integer", "null"], "minimum": 0 },
+    "observable_onset_frame": { "type": ["integer", "null"], "minimum": 0 },
+    "terminal_failure_frame": { "type": ["integer", "null"], "minimum": 0 },
+    "recovery_frame": { "type": ["integer", "null"], "minimum": 0 },
+    "notes": { "type": "string", "maxLength": 5000 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

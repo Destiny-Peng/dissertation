@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "rollout_id": "libero_10-task01-ep002-natural-e137d2c325",
+  "updated_at": "2026-08-24T12:46:02.574614+00:00",
+  "created_at": "2026-08-24T12:46:02.574614+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "timeout_no_progress",
+  "confidence": 4,
+  "causal_onset_frame": 216,
+  "observable_onset_frame": 276,
+  "terminal_failure_frame": null,
+  "notes": "the arm stopped movement"
+}

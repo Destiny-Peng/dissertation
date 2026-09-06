@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "rollout_id": "libero_10-task00-ep004-natural-40939ce57b",
+  "updated_at": "2026-08-24T12:44:33.913615+00:00",
+  "created_at": "2026-08-24T12:42:03.137967+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "grasp_failure",
+  "confidence": 4,
+  "causal_onset_frame": 391,
+  "observable_onset_frame": 437,
+  "terminal_failure_frame": null,
+  "notes": "Doesn't grasp successfully due to the gripper"
+}

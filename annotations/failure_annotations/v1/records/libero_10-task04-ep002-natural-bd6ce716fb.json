@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_10-task04-ep002-natural-bd6ce716fb",
+  "updated_at": "2026-08-25T09:57:52.557672+00:00",
+  "created_at": "2026-08-25T09:57:52.557672+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "success",
+  "failure_type": "none_success",
+  "confidence": 5,
+  "failure_events": [],
+  "causal_onset_frame": null,
+  "observable_onset_frame": null,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}

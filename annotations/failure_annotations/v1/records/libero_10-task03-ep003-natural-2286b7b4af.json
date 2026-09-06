@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "rollout_id": "libero_10-task03-ep003-natural-2286b7b4af",
+  "updated_at": "2026-08-24T12:48:00.091387+00:00",
+  "created_at": "2026-08-24T12:48:00.091387+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "grasp_failure",
+  "confidence": 4,
+  "causal_onset_frame": 82,
+  "observable_onset_frame": 115,
+  "terminal_failure_frame": null,
+  "notes": ""
+}

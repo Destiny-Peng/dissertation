@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_10-task05-ep004-natural-589700db94",
+  "updated_at": "2026-08-25T10:02:40.214993+00:00",
+  "created_at": "2026-08-25T10:02:39.916286+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "placement_failure",
+  "confidence": 4,
+  "failure_events": [
+    {
+      "failure_type": "placement_failure",
+      "causal_onset_frame": 166,
+      "observable_onset_frame": 182,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 166,
+  "observable_onset_frame": 182,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}
