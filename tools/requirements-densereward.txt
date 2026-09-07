@@ -1,0 +1,7 @@
+# DenseReward official model-card validation environment.
+# Install torch/torchvision first from the cu128 index in setup_densereward_env.sh.
+transformers==5.2.0
+accelerate==1.13.0
+qwen-vl-utils==0.0.14
+pillow
+numpy

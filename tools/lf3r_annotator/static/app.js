@@ -1193,8 +1193,8 @@ function renderEvaluationPanel(payload) {
   var methods = payload && payload.methods ? payload.methods : {};
   var available = payload && payload.available_methods ? payload.available_methods.length : 0;
   var record = selectedRollout();
-  byId("evaluationStatus").textContent = available + " / 4 baseline outputs available for this rollout.";
-  byId("evaluationMethods").innerHTML = ["safe", "procvlm", "rynnvalue", "robo_dopamine"].map(function (method) {
+  byId("evaluationStatus").textContent = available + " / 5 baseline outputs available for this rollout.";
+  byId("evaluationMethods").innerHTML = ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].map(function (method) {
     return renderEvaluationCard(method, methods[method] || {
       method: method,
       label: method,

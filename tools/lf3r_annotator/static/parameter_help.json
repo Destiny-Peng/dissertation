@@ -4,7 +4,7 @@
       "cli": "--baseline NAME",
       "default": "required",
       "applies_to": "all baseline runs",
-      "description": "Selects SAFE, ProcVLM, RynnValue, or Robo-Dopamine and determines the runner, environment, checkpoint defaults, and raw-output contract."
+      "description": "Selects SAFE, ProcVLM, RynnValue, Robo-Dopamine, or DenseReward and determines the runner, environment, checkpoint defaults, and raw-output contract."
     },
     "scope": {
       "cli": "--partition NAME",
@@ -71,7 +71,7 @@
     "model_path": {
       "cli": "--model-path PATH",
       "default": "configured checkpoint",
-      "applies_to": "ProcVLM, RynnValue, and Robo-Dopamine",
+      "applies_to": "ProcVLM, RynnValue, Robo-Dopamine, and DenseReward",
       "description": "Overrides the configured local model checkpoint. SAFE uses its official handcrafted signals and does not use this option."
     },
     "dtype": {
@@ -185,6 +185,20 @@
       "applies_to": "Robo-Dopamine",
       "description": "Goal/reference image for the official pipeline; the configured blank goal is used when omitted.",
       "forwarded_as": "--goal-image PATH"
+    },
+    "densereward_frame_interval": {
+      "cli": "--densereward-frame-interval N",
+      "default": "1",
+      "applies_to": "DenseReward",
+      "description": "Runs the official 3-frame DenseReward prompt at current frames 2, 2+N, 2+2N, ... . Each call receives three consecutive RGB frames ordered oldest to current; larger intervals reduce the number of model calls and temporal resolution.",
+      "forwarded_as": "worker --frame-interval N"
+    },
+    "densereward_max_new_tokens": {
+      "cli": "--densereward-max-new-tokens N",
+      "default": "32",
+      "applies_to": "DenseReward",
+      "description": "Maximum generated tokens for the official <think>reason</think> plus scalar reward response. The model-card path uses greedy decoding; 32 is the validated default.",
+      "forwarded_as": "worker --max-new-tokens N"
     },
     "render_video": {
       "cli": "--render-video",

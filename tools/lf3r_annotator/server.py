@@ -50,12 +50,14 @@ FAILURE_TYPES = {
 }
 OUTCOME_LABELS = {"success", "failure", "recovered_success", "uncertain"}
 REVIEW_STATUSES = {"unreviewed", "in_progress", "complete"}
-BASELINE_METHODS = ("safe", "procvlm", "rynnvalue", "robo_dopamine")
+BASELINE_METHODS = ("safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward")
+ANALYSIS_BASELINE_METHODS = ("safe", "procvlm", "rynnvalue", "robo_dopamine")
 BASELINE_LABELS = {
     "safe": "SAFE",
     "procvlm": "ProcVLM",
     "rynnvalue": "RynnValue",
     "robo_dopamine": "Robo-Dopamine",
+    "densereward": "DenseReward",
 }
 BASELINE_RUN_STATUSES = {"complete", "complete_with_errors"}
 RUN_SCOPES = (
@@ -90,6 +92,10 @@ BASELINE_METHOD_OPTION_FIELDS = {
         "robo_batch_size", "robo_eval_mode", "goal_image",
         "render_video", "validate_environment", "dry_run",
     },
+    "densereward": {
+        "model_path", "densereward_frame_interval", "densereward_max_new_tokens",
+        "validate_environment", "dry_run",
+    },
 }
 BASELINE_ADVANCED_FIELDS = {
     "model_path",
@@ -110,6 +116,8 @@ BASELINE_ADVANCED_FIELDS = {
     "robo_batch_size",
     "robo_eval_mode",
     "goal_image",
+    "densereward_frame_interval",
+    "densereward_max_new_tokens",
     "render_video",
     "validate_environment",
     "dry_run",
@@ -851,7 +859,7 @@ class AnalysisService:
                 "latest_annotation_update": latest_annotation_update,
             },
             "parameters": metadata.get("parameters") or {},
-            "methods": metadata.get("methods") or list(BASELINE_METHODS),
+            "methods": metadata.get("methods") or list(ANALYSIS_BASELINE_METHODS),
             "signals_by_method": metadata.get("signals_by_method") or {},
             "event_group_counts": metadata.get("event_group_counts") or {},
             "counts": counts,
@@ -1005,7 +1013,7 @@ class AnalysisService:
                 "native_sampling_preserved": metadata.get("native_sampling_preserved"),
                 "threshold_calibration": metadata.get("threshold_calibration"),
             },
-            "methods": metadata.get("methods") or list(BASELINE_METHODS),
+            "methods": metadata.get("methods") or list(ANALYSIS_BASELINE_METHODS),
             "features": metadata.get("features") or [],
             "feature_labels": metadata.get("feature_labels") or {},
             "local_scales_frames": metadata.get("local_scales_frames") or [],
@@ -1463,7 +1471,7 @@ class AnalysisService:
                 "source": None,
                 "freshness": {},
                 "parameters": {},
-                "methods": list(BASELINE_METHODS),
+                "methods": list(ANALYSIS_BASELINE_METHODS),
                 "orientation": {},
                 "signal_units": {},
                 "method_coverage": [],
@@ -1569,7 +1577,7 @@ class AnalysisService:
                 "frame_coordinate": metadata.get("frame_coordinate"),
                 "native_sampling_preserved": metadata.get("native_sampling_preserved"),
             },
-            "methods": metadata.get("methods") or list(BASELINE_METHODS),
+            "methods": metadata.get("methods") or list(ANALYSIS_BASELINE_METHODS),
             "orientation": metadata.get("orientation") or {},
             "signal_units": metadata.get("signal_units") or {},
             "method_coverage": tables["method_coverage"],
@@ -2081,6 +2089,42 @@ class BaselineService:
         return self._pack("robo_dopamine", run_summary, samples, files, raw_frames, {"_total_frames": total_frames, "kind": "model_scores_and_progress"})
 
     
+    def _read_densereward(self, run_path: Path, rollout: dict[str, Any], run_summary: dict[str, Any]) -> dict[str, Any]:
+        output_dir = run_path / "raw" / rollout["id"]
+        path = output_dir / "densereward_raw.jsonl"
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        total_frames = int(rollout["total_frames"])
+        samples = []
+        raw_frames = []
+        for row in self._read_jsonl(path):
+            if row.get("frame_index") in (None, ""):
+                continue
+            raw_frame = int(row["frame_index"])
+            reward = self._number(row.get("reward"))
+            if reward is None:
+                continue
+            sample = {
+                "frame": min(max(raw_frame, 0), total_frames - 1),
+                "raw_frame": raw_frame,
+                "signals": {"reward": reward},
+                "model_output": str(row.get("raw_text", ""))[:12000],
+                "reasoning": str(row.get("reason", ""))[:2000],
+                "sampled_frame_indices": [int(item) for item in (row.get("sampled_frame_indices") or [])],
+            }
+            samples.append(sample)
+            raw_frames.append(raw_frame)
+        worker_result = output_dir / "worker_result.json"
+        files = [path, worker_result] if worker_result.is_file() else [path]
+        return self._pack(
+            "densereward",
+            run_summary,
+            samples,
+            files,
+            raw_frames,
+            {"_total_frames": total_frames, "kind": "three_frame_reward_score"},
+        )
+
     def _read_jsonl(self, path: Path) -> list[dict[str, Any]]:
         rows = []
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -2097,6 +2141,8 @@ class BaselineService:
             return self._read_rynnvalue(run_path, rollout, run_summary)
         if method == "robo_dopamine":
             return self._read_robo_dopamine(run_path, rollout, run_summary)
+        if method == "densereward":
+            return self._read_densereward(run_path, rollout, run_summary)
         raise ValidationError("Unknown baseline method")
 
     def evaluation(self, rollout: dict[str, Any]) -> dict[str, Any]:
@@ -2226,6 +2272,8 @@ class BaselineService:
             "rynn_max_new_tokens": (1, 1000000),
             "robo_frame_interval": (1, 1000000),
             "robo_batch_size": (1, 4096),
+            "densereward_frame_interval": (1, 1000000),
+            "densereward_max_new_tokens": (1, 1000000),
         }
         for name, (minimum, maximum) in integer_fields.items():
             if name in options and options[name] is not None:
@@ -2452,6 +2500,8 @@ class BaselineService:
             "robo_batch_size": "--robo-batch-size",
             "robo_eval_mode": "--robo-eval-mode",
             "goal_image": "--goal-image",
+            "densereward_frame_interval": "--densereward-frame-interval",
+            "densereward_max_new_tokens": "--densereward-max-new-tokens",
         }
         for name, flag in flag_values.items():
             if name in options and options[name] not in (None, ""):
@@ -2507,7 +2557,7 @@ class BaselineService:
             "command": command,
             "gpu": gpu,
             "memory_utilization": utilization,
-            "memory_scope": "free_gpu_memory",
+            "memory_scope": "not_applicable" if baseline == "densereward" else "free_gpu_memory",
             "run_parent": self._relative(run_parent),
             "started_at": None,
             "finished_at": None,
@@ -2626,7 +2676,7 @@ class BaselineService:
         # persistent-engine behavior. Explicit rows or parallel_workers opt
         # into the aggregate worker runner for every baseline method.
         use_worker_plan = (
-            baseline == "rynnvalue"
+            baseline in {"rynnvalue", "densereward"}
             or raw_workers is not None
             or worker_plan["parallel_workers"] > 1
         )
@@ -2945,11 +2995,11 @@ class AnalysisJobService:
     ) -> dict[str, list[tuple[Path, dict[str, Any]]]]:
         if not isinstance(raw_runs, dict):
             raise ValidationError("runs must be an object containing all baseline methods")
-        missing_methods = [method for method in BASELINE_METHODS if not raw_runs.get(method)]
+        missing_methods = [method for method in ANALYSIS_BASELINE_METHODS if not raw_runs.get(method)]
         if missing_methods:
             raise ValidationError("Missing analysis run(s): " + ", ".join(missing_methods))
         validated: dict[str, list[tuple[Path, dict[str, Any]]]] = {}
-        for method in BASELINE_METHODS:
+        for method in ANALYSIS_BASELINE_METHODS:
             raw_value = raw_runs[method]
             raw_values = raw_value if isinstance(raw_value, list) else [raw_value]
             if method != "rynnvalue" and len(raw_values) != 1:

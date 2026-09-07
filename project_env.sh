@@ -46,6 +46,9 @@ export LF3R_ENV_ROBODOPAMINE="${CONDA_ENVS}/LF3R-robo-dopamine"
 # Project-local uv venv used by temporal analysis. The path preserves the requested ananlyse spelling.
 export LF3R_ENV_ANALYSE="${CONDA_ENVS}/LF3R-ananlyse"
 export LF3R_ANALYSIS_PYTHON="${LF3R_ENV_ANALYSE}/bin/python"
+export LF3R_ENV_DENSEREWARD="${CONDA_ENVS}/LF3R-densereward"
+export LF3R_DENSEREWARD_PYTHON="${LF3R_ENV_DENSEREWARD}/bin/python"
+export LF3R_DENSEREWARD_CHECKPOINT="${CHECKPOINTS}/densereward-3frame-thinking"
 
 # ------------------------------------------------------------
 # Timestamp helpers

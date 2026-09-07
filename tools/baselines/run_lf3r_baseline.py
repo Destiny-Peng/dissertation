@@ -22,6 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TOOLS_ROOT = Path(__file__).resolve().parent
 DEFAULT_MANIFEST = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"
 VLLM_BASELINES = {"procvlm", "robo_dopamine"}
+PERSISTENT_BASELINES = VLLM_BASELINES | {"densereward"}
 PROCVLM_FATAL_EXIT_CODE = 70
 ROBODOPAMINE_FATAL_EXIT_CODE = 70
 
@@ -53,6 +54,13 @@ BASELINES = {
         "entrypoint": TOOLS_ROOT / "robo_dopamine_persistent_worker.py",
         "checkpoint": PROJECT_ROOT / "checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview",
         "imports": "import cv2, transformers, vllm; print(cv2.__version__, transformers.__version__)",
+    },
+    "densereward": {
+        "python": PROJECT_ROOT / "conda_envs/LF3R-densereward/bin/python",
+        "repo": PROJECT_ROOT,
+        "entrypoint": TOOLS_ROOT / "densereward_worker.py",
+        "checkpoint": PROJECT_ROOT / "checkpoints/densereward-3frame-thinking",
+        "imports": "import av, PIL, qwen_vl_utils, torch, transformers; print(torch.__version__, transformers.__version__)",
     },
 }
 
@@ -312,6 +320,69 @@ def build_procvlm_worker_command(
         command.extend(["--vllm-total-memory-fraction", str(vllm_total_memory_fraction)])
     if args.procvlm_max_sampled_frames is not None:
         command.extend(["--max-sampled-frames", str(args.procvlm_max_sampled_frames)])
+    if resume:
+        command.append("--resume")
+    return command
+
+
+def build_densereward_job_specs(
+    records: list[dict[str, Any]], args: argparse.Namespace, raw_root: Path
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        rollout_id = str(record.get("rollout_id", record.get("id", "")))
+        if not rollout_id:
+            raise ValueError("DenseReward job is missing rollout ID")
+        video_value = record.get("video_path")
+        if video_value is None:
+            raise ValueError(f"DenseReward job {rollout_id} is missing video path")
+        video_path = Path(video_value).expanduser()
+        video = (
+            video_path.resolve()
+            if video_path.is_absolute()
+            else resolve_record_path(str(video_value), args.data_root)
+        )
+        if not video.is_file():
+            raise FileNotFoundError(f"Input for {rollout_id} does not exist: {video}")
+        task = record.get("task", record.get("task_description"))
+        if task is None:
+            raise ValueError(f"DenseReward job {rollout_id} is missing task description")
+        output_dir = Path(record.get("raw_output_dir", raw_root / rollout_id)).expanduser().resolve()
+        specs.append({
+            "job_index": int(record.get("job_index", index)),
+            "rollout_id": rollout_id,
+            "video_path": str(video),
+            "task": str(task),
+            "raw_output_dir": str(output_dir),
+            "output_path": str(output_dir / "densereward_raw.jsonl"),
+            "frame_interval": int(args.densereward_frame_interval),
+            "max_new_tokens": int(args.densereward_max_new_tokens),
+        })
+    return specs
+
+
+def build_densereward_worker_command(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    model_path: Path,
+    plan_path: Path,
+    jobs_path: Path,
+    progress_path: Path,
+    state_path: Path,
+    *,
+    resume: bool,
+) -> list[str]:
+    command = [
+        str(config["python"]),
+        str(TOOLS_ROOT / "densereward_worker.py"),
+        "--model-path", str(model_path),
+        "--jobs-file", str(plan_path),
+        "--jobs-output-file", str(jobs_path),
+        "--progress-file", str(progress_path),
+        "--state-file", str(state_path),
+        "--frame-interval", str(args.densereward_frame_interval),
+        "--max-new-tokens", str(args.densereward_max_new_tokens),
+    ]
     if resume:
         command.append("--resume")
     return command
@@ -1590,6 +1661,8 @@ def _persistent_worker_record(
     })
     if baseline == "procvlm":
         value["output_path"] = str(output_dir / "procvlm_raw.jsonl")
+    elif baseline == "densereward":
+        value["output_path"] = str(output_dir / "densereward_raw.jsonl")
     return value
 
 
@@ -1637,13 +1710,15 @@ def run_persistent_parallel(
             from robo_dopamine_runner import build_job_specs
 
             specs = build_job_specs(worker_records, args, config, raw_root)
+        elif args.baseline == "densereward":
+            specs = build_densereward_job_specs(worker_records, args, raw_root)
         else:
             raise ValueError(
                 f"Persistent parallel workers are not supported for {args.baseline}"
             )
 
         setup_error: str | None = None
-        if args.dry_run:
+        if args.dry_run and args.baseline in VLLM_BASELINES:
             memory_budget: dict[str, Any] = {
                 "scope": "free_gpu_memory",
                 "requested_free_fraction": args.vllm_free_memory_fraction,
@@ -1651,7 +1726,15 @@ def run_persistent_parallel(
                 "resolution": "deferred_until_execution",
             }
             total_memory_fraction = None
-        else:
+        elif args.dry_run:
+            memory_budget = {
+                "scope": "not_applicable",
+                "requested_free_fraction": args.vllm_free_memory_fraction,
+                "resolution": "not_used",
+                "description": "DenseReward uses Transformers device_map=auto; no vLLM memory conversion is applied",
+            }
+            total_memory_fraction = None
+        elif args.baseline in VLLM_BASELINES:
             try:
                 total_memory_fraction, memory_budget = resolve_vllm_memory_budget(
                     str(assignment["gpu"]), args.vllm_free_memory_fraction
@@ -1664,6 +1747,14 @@ def run_persistent_parallel(
                     "error": str(error),
                 }
                 setup_error = str(error)
+        else:
+            total_memory_fraction = None
+            memory_budget = {
+                "scope": "not_applicable",
+                "requested_free_fraction": args.vllm_free_memory_fraction,
+                "resolution": "not_used",
+                "description": "DenseReward uses Transformers device_map=auto; no vLLM memory conversion is applied",
+            }
 
         if args.baseline == "procvlm":
             command = build_procvlm_worker_command(
@@ -1678,7 +1769,7 @@ def run_persistent_parallel(
                 total_memory_fraction,
                 resume=False,
             )
-        else:
+        elif args.baseline == "robo_dopamine":
             from robo_dopamine_runner import build_worker_command
 
             command = build_worker_command(
@@ -1691,6 +1782,17 @@ def run_persistent_parallel(
                 worker_state_path,
                 memory_budget,
                 total_memory_fraction,
+                resume=False,
+            )
+        else:
+            command = build_densereward_worker_command(
+                args,
+                config,
+                model_path,
+                worker_plan_path,
+                worker_jobs_path,
+                worker_progress_path,
+                worker_state_path,
                 resume=False,
             )
         decorated_specs = []
@@ -2078,6 +2180,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robo-frame-interval", type=int, default=4)
     parser.add_argument("--robo-batch-size", type=int, default=1)
     parser.add_argument(
+        "--densereward-frame-interval",
+        type=int,
+        default=1,
+        help="Evaluate one DenseReward 3-frame window every N source frames; the first current frame is 2",
+    )
+    parser.add_argument(
+        "--densereward-max-new-tokens",
+        type=int,
+        default=32,
+        help="Maximum generated tokens for each official DenseReward response",
+    )
+    parser.add_argument(
         "--robo-eval-mode",
         choices=("fused", "forward", "incremental", "backward"),
         default="fused",
@@ -2129,6 +2243,7 @@ def parse_args() -> argparse.Namespace:
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",
         "rynn_evaluation_interval", "rynn_batch_size",
         "rynn_max_image_side", "rynn_max_new_tokens", "robo_frame_interval", "robo_batch_size",
+        "densereward_frame_interval", "densereward_max_new_tokens",
     ):
         if getattr(args, name) < 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
@@ -2146,6 +2261,11 @@ def parse_args() -> argparse.Namespace:
             parser.error("--rynn-evaluation-interval must be positive")
         if args.rynn_batch_size < 1:
             parser.error("--rynn-batch-size must be positive")
+    if args.baseline == "densereward":
+        if args.densereward_frame_interval < 1:
+            parser.error("--densereward-frame-interval must be positive")
+        if args.densereward_max_new_tokens < 1:
+            parser.error("--densereward-max-new-tokens must be positive")
     return args
 
 
@@ -2172,7 +2292,7 @@ def main() -> int:
     manifest_records = load_jsonl(args.manifest)
     worker_plan = None
     scope_records: list[dict[str, Any]] | None = None
-    if args.baseline == "rynnvalue" or args.worker_spec or args.parallel_workers != 1:
+    if args.baseline in {"rynnvalue", "densereward"} or args.worker_spec or args.parallel_workers != 1:
         scope_records = filter_records(args, manifest_records)
         if not scope_records:
             raise ValueError("No rollouts matched the requested filters")
@@ -2251,7 +2371,7 @@ def main() -> int:
             metadata=metadata,
             plan=worker_plan,
         )
-    if worker_plan is not None and args.baseline in VLLM_BASELINES:
+    if worker_plan is not None and args.baseline in PERSISTENT_BASELINES:
         return run_persistent_parallel(
             args=args,
             config=config,

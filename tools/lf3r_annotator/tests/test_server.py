@@ -175,13 +175,35 @@ class ServerTest(unittest.TestCase):
         )
         (robo_root / "jobs.jsonl").write_text(json.dumps({"rollout_id": self.rollout["id"], "status": "complete"}) + "\n", encoding="utf-8")
 
+        dense_root = baseline_root / "densereward_test"
+        dense_raw = dense_root / "raw" / self.rollout["id"]
+        dense_raw.mkdir(parents=True)
+        (dense_root / "run.json").write_text(
+            json.dumps({**run_metadata, "baseline": "densereward"}) + "\n", encoding="utf-8"
+        )
+        (dense_raw / "densereward_raw.jsonl").write_text(
+            json.dumps({
+                "frame_index": 2,
+                "sampled_frame_indices": [0, 1, 2],
+                "reward": 0.521,
+                "reason": "correct",
+                "raw_text": "<think>correct</think>\n\n0.521",
+            }) + "\n",
+            encoding="utf-8",
+        )
+        (dense_raw / "worker_result.json").write_text(
+            json.dumps({"baseline": "densereward", "raw_model_output": str(dense_raw / "densereward_raw.jsonl")}),
+            encoding="utf-8",
+        )
+        (dense_root / "jobs.jsonl").write_text(json.dumps({"rollout_id": self.rollout["id"], "status": "complete"}) + "\n", encoding="utf-8")
+
     def test_baseline_evaluation_reads_all_output_types(self) -> None:
         self.seed_baseline_outputs()
         with self.request("/api/baselines/sample-rollout") as response:
             evaluation = json.load(response)["evaluation"]
         self.assertEqual(
             set(evaluation["available_methods"]),
-            {"safe", "procvlm", "rynnvalue", "robo_dopamine"},
+            {"safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"},
         )
         methods = evaluation["methods"]
         self.assertEqual(methods["safe"]["sample_count"], 2)
@@ -189,6 +211,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(methods["procvlm"]["validation"]["status"], "warning")
         self.assertEqual(methods["rynnvalue"]["samples"][0]["analysis_text"], "looks stable")
         self.assertEqual(methods["robo_dopamine"]["samples"][0]["pred"], "<score>+3.3%</score>")
+        self.assertEqual(methods["densereward"]["samples"][0]["signals"]["reward"], 0.521)
 
 
     def test_robo_dopamine_web_command_defaults_to_fused(self) -> None:
@@ -430,7 +453,7 @@ class ServerTest(unittest.TestCase):
         roots = {}
         baseline_root = self.root / "outputs" / "baselines" / "analysis_inputs"
         extra_id = "extra-rollout"
-        for method in ("safe", "procvlm", "rynnvalue", "robo_dopamine"):
+        for method in ("safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"):
             root = baseline_root / method
             root.mkdir(parents=True, exist_ok=True)
             ids = [] if method == missing_method else [self.rollout["id"]]
@@ -551,7 +574,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         with self.request("/api/baselines/runs?scope=primary_natural") as response:
             payload = json.load(response)
         self.assertEqual(payload["scope"], "primary_natural")
-        self.assertEqual(len(payload["runs"]), 4)
+        self.assertEqual(len(payload["runs"]), 5)
         self.assertTrue(all(run["compatible"] for run in payload["runs"]))
         with self.request("/api/baselines/runs?scope=controlled_analysis") as response:
             controlled = json.load(response)
@@ -640,7 +663,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
         runner.write_text("# fake all-method worker runner\n", encoding="utf-8")
-        for method in ("safe", "procvlm", "rynnvalue", "robo_dopamine"):
+        for method in ("safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"):
             with self.request(
                 "/api/baselines/run-batch",
                 {

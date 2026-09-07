@@ -179,6 +179,7 @@
                     <option value="procvlm">ProcVLM</option>
                     <option value="rynnvalue">RynnValue</option>
                     <option value="robo_dopamine">Robo-Dopamine</option>
+                    <option value="densereward">DenseReward</option>
                   </select>
                 </label>
                 <label data-cli-help="baseline.scope"><span>Rollout scope</span>
@@ -209,12 +210,14 @@
               <details id="baselineBatchAdvanced" class="batch-advanced">
                 <summary>Advanced runner parameters</summary>
                 <div class="batch-advanced-grid">
-                  <label data-cli-help="baseline.model_path" data-batch-methods="procvlm,rynnvalue,robo_dopamine"><span>Model path (optional)</span><input data-batch-option="model_path" type="text" placeholder="Use configured checkpoint"></label>
+                  <label data-cli-help="baseline.model_path" data-batch-methods="procvlm,rynnvalue,robo_dopamine,densereward"><span>Model path (optional)</span><input data-batch-option="model_path" type="text" placeholder="Use configured checkpoint"></label>
                   <label data-cli-help="baseline.dtype" data-batch-methods="procvlm,robo_dopamine"><span>Dtype</span><input data-batch-option="dtype" type="text" value="bf16"></label>
                   <label data-cli-help="baseline.tensor_parallel_size" data-batch-methods="procvlm,robo_dopamine"><span>Tensor parallel size</span><input data-batch-option="tensor_parallel_size" type="number" min="1" step="1" value="1"></label>
                   <label data-cli-help="baseline.procvlm_window_size" data-batch-methods="procvlm"><span>Window size</span><input data-batch-option="procvlm_window_size" type="number" min="1" step="1" value="4"></label>
                   <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1" placeholder="Runner default"></label>
                   <label data-cli-help="baseline.procvlm_max_new_tokens" data-batch-methods="procvlm"><span>Max new tokens</span><input data-batch-option="procvlm_max_new_tokens" type="number" min="1" step="1" value="4096"></label>
+                  <label data-cli-help="baseline.densereward_frame_interval" data-batch-methods="densereward"><span>Frame interval</span><input data-batch-option="densereward_frame_interval" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.densereward_max_new_tokens" data-batch-methods="densereward"><span>Max new tokens</span><input data-batch-option="densereward_max_new_tokens" type="number" min="1" step="1" value="32"></label>
                   <label data-cli-help="baseline.rynn_num_frames" data-batch-methods="rynnvalue"><span>Frames per prefix</span><input data-batch-option="rynn_num_frames" type="number" min="1" step="1" value="16"></label>
                   <label data-cli-help="baseline.rynn_evaluation_interval" data-batch-methods="rynnvalue"><span>Target frame interval</span><input data-batch-option="rynn_evaluation_interval" type="number" min="1" step="1" value="8"></label>
                   <label data-cli-help="baseline.rynn_batch_size" data-batch-methods="rynnvalue"><span>Batch size</span><input data-batch-option="rynn_batch_size" type="number" min="1" step="1" value="1"></label>

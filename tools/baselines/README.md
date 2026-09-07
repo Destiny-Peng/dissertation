@@ -10,6 +10,7 @@ These wrappers run existing baseline implementations over the versioned LF3R man
 | `procvlm`       | `repos/ProcVLM/.venv`           | JSONL including each unmodified`model_output`                 |
 | `rynnvalue`     | `repos/RynnValue/.venv`         | Value-head samples, frame indices, and generated analysis JSON  |
 | `robo_dopamine` | `conda_envs/LF3R-robo-dopamine` | Official`pred_vllm.json`, including raw `<score>` responses |
+| `densereward`  | `conda_envs/LF3R-densereward`      | Official three-frame reward JSONL, raw reasoning, and scalar reward |
 
 SAFE publishes no trained detector checkpoint in the local checkout, so `safe` intentionally runs only its official handcrafted OpenVLA signals. FAIL-Detect is not exposed as an LF3R runner: its official policy/UQ checkpoints and required policy embeddings are absent. The earlier synthetic schema smoke is not presented as a reproduced baseline.
 
@@ -23,19 +24,19 @@ The annotator web forms use the same runner interface. Their canonical tooltip m
 bash tools/baselines/run_baseline.sh [OPTIONS]
 ```
 
-`run_baseline.sh` only loads the project environment and forwards options to `run_lf3r_baseline.py`. The runner validates the manifest and local paths, then launches one persistent worker for a legacy single-worker request or multiple independent rollout workers when `--parallel-workers`/`--worker-spec` is supplied. SAFE workers execute per-rollout extraction, while ProcVLM and Robo-Dopamine workers each own an independent persistent model engine. No extra persistence flag is required. Use `python3 tools/baselines/run_lf3r_baseline.py --help` for the argparse-generated option list.
+`run_baseline.sh` only loads the project environment and forwards options to `run_lf3r_baseline.py`. The runner validates the manifest and local paths, then launches one persistent worker for a legacy single-worker request or multiple independent rollout workers when `--parallel-workers`/`--worker-spec` is supplied. SAFE workers execute per-rollout extraction, while ProcVLM, Robo-Dopamine, and DenseReward workers each own an independent persistent model engine. No extra persistence flag is required. Use `python3 tools/baselines/run_lf3r_baseline.py --help` for the argparse-generated option list.
 
 ### Required, path, and selection parameters
 
 | Option                  | Default                 | Applies to                        | Meaning and effect                                                                                                                                                                        |
 | ----------------------- | ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--baseline NAME`     | required                | all                               | Selects`safe`, `procvlm`, `rynnvalue`, or `robo_dopamine`. This chooses the existing repository, Python environment, checkpoint default, worker command, and raw-output contract. |
+| `--baseline NAME`     | required                | all                               | Selects`safe`, `procvlm`, `rynnvalue`, `robo_dopamine`, or `densereward`. This chooses the existing repository, Python environment, checkpoint default, worker command, and raw-output contract. |
 | `--manifest PATH`     | required for new runs  | all                               | Versioned LF3R JSONL manifest. Relative media and CSV paths in each record are resolved under `--data-root`; it is restored from `run.json` when `--resume-run` is used.                                                                             |
 | `--data-root PATH`    | project root            | all                               | Root used for relative`video_path` and `csv_path` values. Source media are read in place and are not copied or modified.                                                              |
 | `--output-dir PATH`   | required for new runs  | all                               | Parent directory for a new timestamped run directory. The runner refuses to overwrite an existing timestamped directory; it is inferred from the saved run when resuming.                                                                  |
 | `--logs-dir PATH`     | `logs/baselines`      | all                               | Directory for the timestamped combined stdout and stderr log. |
 | `--resume-run PATH`   | unset                 | ProcVLM, Robo-Dopamine                     | Reopens an existing persistent run directory, reads its saved baseline-specific job plan, and runs only rollouts whose status is not terminal. The manifest hash and local model paths are rechecked. |
-| `--model-path PATH`   | configured checkpoint   | ProcVLM, RynnValue, Robo-Dopamine | Overrides the local checkpoint configured for the selected baseline. SAFE has no configured model checkpoint; do not pass this option for SAFE.                                           |
+| `--model-path PATH`   | configured checkpoint   | ProcVLM, RynnValue, Robo-Dopamine, DenseReward | Overrides the local checkpoint configured for the selected baseline. SAFE has no configured model checkpoint; do not pass this option for SAFE.                                           |
 | `--partition NAME`    | `natural_observation` | all                               | Selects`natural_observation`, `controlled_analysis`, or `all`. The default excludes injected and controlled-analysis rollouts.                                                      |
 | `--dataset-role ROLE` | unset                   | all                               | Exact match against the manifest field`dataset_role`, for example `primary_natural`.                                                                                                  |
 | `--rollout-id ID`     | unset                   | all                               | Selects a rollout by ID. Repeat the option for several IDs; manifest order is preserved. IDs are checked against the full manifest before other filters.                                  |
@@ -45,7 +46,7 @@ bash tools/baselines/run_baseline.sh [OPTIONS]
 
 Selection is applied in this order: `partition → dataset role → rollout IDs → start index → limit`. An empty result is an error rather than a successful no-op.
 
-For model baselines, omitting `--model-path` selects the configured local checkpoint: `checkpoints/ProcVLM-2B`, `checkpoints/RynnValue-4B`, or `checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview`. SAFE uses the manifest `csv_path` and its official handcrafted feature code instead of a trained checkpoint. Each selected model record must provide `id`, `video_path`, and `task_description`; SAFE records must provide `id` and `csv_path`.
+For model baselines, omitting `--model-path` selects the configured local checkpoint: `checkpoints/ProcVLM-2B`, `checkpoints/RynnValue-4B`, `checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview`, or `checkpoints/densereward-3frame-thinking`. SAFE uses the manifest `csv_path` and its official handcrafted feature code instead of a trained checkpoint. Each selected model record must provide `id`, `video_path`, and `task_description`; SAFE records must provide `id` and `csv_path`.
 
 ### Execution, GPU, and failure-handling parameters
 
@@ -134,11 +135,22 @@ bash tools/baselines/run_baseline.sh \
   --continue-on-error
 ```
 
-The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE and Robo-Dopamine; the worker table in the annotator sends these flags for all four methods. A legacy invocation with no worker options keeps the existing single-worker behavior, including ProcVLM/Robo-Dopamine multi-GPU tensor parallel configuration.
+The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE, Robo-Dopamine, and DenseReward; the worker table in the annotator sends these flags for all five methods. A legacy invocation with no worker options keeps the existing single-worker behavior, including ProcVLM/Robo-Dopamine multi-GPU tensor parallel configuration.
 
 RynnValue keeps its existing temporal semantics inside each rollout worker: `--rynn-batch-size` is the prefix batch size, and `--rynn-evaluation-interval` is converted to the official sampler's approximate endpoint count. Each RynnValue rollout subprocess receives one `CUDA_VISIBLE_DEVICES` value.
 
 Overlapping explicit ranges are accepted. The first worker in command order owns a repeated rollout; later workers record `duplicate_assignment` and never overwrite the shared `raw/<rollout-id>` directory. Gaps are also accepted and recorded as partial coverage, so the aggregate run finishes as `complete_with_errors` and cannot satisfy a full-scope Analysis selection. One invocation creates one aggregate `run.json`, `jobs.jsonl`, and `commands.jsonl`; each record includes worker index, GPU, range, command, timestamps, and return code.
+
+### DenseReward parameters
+
+DenseReward uses the official `densereward-3frame-thinking` model-card path. One persistent worker loads the processor and BF16 model once, then sends exactly three consecutive RGB PIL frames—oldest to current—together with the task instruction in one model call. The first current frame is frame `2`; with interval `K`, calls are made at `2, 2+K, 2+2K, ...`. This is a sampling choice owned by the LF3R wrapper, not an interpolation or a change to the official prompt.
+
+| Option | Default | Forwarded worker option | Meaning |
+| --- | --- | --- | --- |
+| `--densereward-frame-interval N` | `1` | `--frame-interval N` | Evaluates every Nth current frame after the initial three-frame window. Larger values reduce model calls and temporal resolution. |
+| `--densereward-max-new-tokens N` | `32` | `--max-new-tokens N` | Maximum greedy response length for `<think>reason</think>` and the scalar reward. |
+
+Each rollout writes `raw/<rollout-id>/densereward_raw.jsonl` and `worker_result.json`. Rows preserve `frame_index`, `sampled_frame_indices`, raw text, parsed reason, reward, token lengths, and frame interval. The Review page maps the scalar to the `reward` signal and keeps it independent from `progress`/`hop`. DenseReward does not participate in the existing four-method temporal-analysis CLI yet; its outputs are available for Review and run discovery without changing the existing Analysis input contract. The web free-memory field is accepted for a common form but no vLLM memory conversion or GPU-utilization admission gate is applied to DenseReward.
 
 ### Robo-Dopamine parameters
 
@@ -339,9 +351,9 @@ bash tools/baselines/run_baseline.sh \
   --gpu 0
 ```
 
-The same interface selects `safe`, `procvlm`, `robo_dopamine`, or `rynnvalue`. Natural rollouts are the default. Use `--dataset-role primary_natural`, repeated `--rollout-id`, or `--start-index` plus `--limit` to create reproducible chunks. Pass `--model-path` to override a local checkpoint. Optional visualization is disabled by default; `--render-video` enables it without changing raw-output capture.
+The same interface selects `safe`, `procvlm`, `robo_dopamine`, `rynnvalue`, or `densereward`. Natural rollouts are the default. Use `--dataset-role primary_natural`, repeated `--rollout-id`, or `--start-index` plus `--limit` to create reproducible chunks. Pass `--model-path` to override a local checkpoint. Optional visualization is disabled by default; `--render-video` enables it without changing raw-output capture.
 
-The current dense-sampling smoke defaults are deliberate: ProcVLM uses `--procvlm-window-size 4` and omits `--procvlm-max-sampled-frames`, leaving its upstream cap of 512 so short rollouts are sampled densely; `--procvlm-max-sampled-frames` is available only as an explicit optional cap. Robo-Dopamine uses `--robo-frame-interval 4`. Both vLLM-backed workers default to `--vllm-free-memory-fraction 0.80` (the older `--vllm-gpu-memory-utilization` spelling remains an alias). For actual inference, the runner reads current `nvidia-smi` free/total memory immediately before the persistent worker and converts the target to the vLLM total-memory parameter; the measured budget is recorded in `commands.jsonl`. Each selected ProcVLM or Robo-Dopamine run creates one vLLM process and reuses its engine across all selected rollouts. Dry-run plans defer this conversion.
+The current dense-sampling smoke defaults are deliberate: ProcVLM uses `--procvlm-window-size 4` and omits `--procvlm-max-sampled-frames`, leaving its upstream cap of 512 so short rollouts are sampled densely; `--procvlm-max-sampled-frames` is available only as an explicit optional cap. Robo-Dopamine uses `--robo-frame-interval 4`. DenseReward uses the official three-consecutive-frame prompt with `--densereward-frame-interval 1` by default and `--densereward-max-new-tokens 32`; it is not vLLM-backed and does not use the free-memory conversion. Both vLLM-backed workers default to `--vllm-free-memory-fraction 0.80` (the older `--vllm-gpu-memory-utilization` spelling remains an alias). For actual inference, the runner reads current `nvidia-smi` free/total memory immediately before the persistent worker and converts the target to the vLLM total-memory parameter; the measured budget is recorded in `commands.jsonl`. Each selected ProcVLM or Robo-Dopamine run creates one vLLM process and reuses its engine across all selected rollouts. Dry-run plans defer this conversion.
 
 ## Run artifacts
 
@@ -358,6 +370,7 @@ outputs/baselines/<baseline>_<timestamp>/
 ├── robo_dopamine_jobs.jsonl      # persistent Robo-Dopamine job plan and command metadata
 ├── robo_dopamine_progress.jsonl  # append-only engine, rollout, and fatal progress
 ├── robo_dopamine_state.json      # atomic resumable worker state snapshot
+├── workers/worker-*/densereward_jobs.jsonl # DenseReward persistent worker plans
 └── raw/<rollout-id>/ # baseline-native raw outputs
 
 logs/baselines/<baseline>_<timestamp>.log
@@ -365,7 +378,7 @@ logs/baselines/<baseline>_<timestamp>.log
 
 Outputs are never written beside rollout media, and timestamped run directories are created with overwrite protection. The three baseline-specific `procvlm_*` or `robo_dopamine_*` files are created for legacy single persistent runs. Worker-mode ProcVLM/Robo-Dopamine runs place one plan/progress/state group under `workers/worker-*/`; SAFE and RynnValue use the common aggregate files. All worker-mode methods isolate ordinary per-rollout failures and continue other worker ranges.
 
-Full-dataset execution is intentionally not performed by validation. A legacy ProcVLM/Robo-Dopamine invocation uses one persistent worker per selected run, while an explicit worker-mode invocation starts one worker per shard for all four methods; SAFE workers are per-rollout commands and model baselines each load one engine per shard. Use chunks and GPU assignments appropriate to the available memory.
+Full-dataset execution is intentionally not performed by validation. A legacy ProcVLM/Robo-Dopamine invocation uses one persistent worker per selected run, while an explicit worker-mode invocation starts one worker per shard for all five methods; SAFE workers are per-rollout commands and model baselines each load one engine per shard. Use chunks and GPU assignments appropriate to the available memory.
 
 ## Useful bash example
 

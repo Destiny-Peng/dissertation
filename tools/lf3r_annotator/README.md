@@ -169,7 +169,7 @@ Append-only save events are kept in `annotations/failure_annotations/v1/events/`
 
 Selecting a rollout loads any completed baseline output that is available for that exact rollout. The Review page also exposes a one-method batch panel and an OpenVLA/LIBERO-10 natural rollout-generation panel.
 
-- GET /api/baselines/<rollout-id> returns normalized samples for SAFE, ProcVLM, RynnValue, and Robo-Dopamine, together with the source run and parser validation status.
+- GET /api/baselines/<rollout-id> returns normalized samples for SAFE, ProcVLM, RynnValue, Robo-Dopamine, and DenseReward, together with the source run and parser validation status.
 - Missing outputs are explicit rather than silently treated as zero or failure. A warning is shown when a baseline emits a raw frame index outside the video bounds; the displayed sample is clipped only for alignment and the raw index remains visible.
 - Each baseline signal chart uses the full video frame domain (0 ... total_frames-1) and overlays the same color-coded causal/observable/terminal/recovery markers as the playback timeline. The curve and onset overlay share a responsive plot track with the video timeline, so they resize together; markers refresh while editing.
 - The baseline chart legend is interactive: click or keyboard-focus a signal label to show/hide that curve. Visibility is remembered per rollout and method during the current page session. Multi-perspective Robo-Dopamine charts show fused `progress` and `hop` by default; incremental/forward/backward component progress and hop curves remain available from the labels.
@@ -181,7 +181,7 @@ The server remains loopback-only. Existing completed outputs are read-only from 
 
 ### Batch baseline runs from Review
 
-The Review page has a **Batch baseline** panel. Select one method per request and a rollout scope. All four methods use the same worker table with one GPU ID and a right-open `[start,end)` range per worker. The selected method determines whether a worker runs SAFE per-rollout extraction or owns an independent persistent ProcVLM, RynnValue, or Robo-Dopamine engine.
+The Review page has a **Batch baseline** panel. Select one method per request and a rollout scope. All five methods use the same worker table with one GPU ID and a right-open `[start,end)` range per worker. The selected method determines whether a worker runs SAFE per-rollout extraction or owns an independent persistent ProcVLM, RynnValue, Robo-Dopamine, or DenseReward engine.
 
 | Web scope | Runner selection |
 | --- | --- |
@@ -193,7 +193,9 @@ The Review page has a **Batch baseline** panel. Select one method per request an
 
 `Total start index` and `Total end index` define the scope-relative total range for every method, with `end` excluded. The old `Limit` field remains a CLI/API compatibility option but is not used by the worker table. Adding or removing a worker recomputes all worker ranges evenly; after the number of workers is fixed, any row can be edited manually. The panel reports each worker count, overlap, gap, repeated GPU, and the number of unique rollouts that will actually execute.
 
-All methods use rollout-level parallelism. A two-worker range `[10,20)` is represented as `[10,15)` and `[15,20)` by default. SAFE workers run per-rollout commands; ProcVLM and Robo-Dopamine load one independent persistent engine per worker; RynnValue keeps its selected temporal `batch_size` unchanged. Every worker receives one `CUDA_VISIBLE_DEVICES` value. The GPU list is user-controlled: reuse of the same GPU is allowed, no utilization/memory/conflict admission check is performed for this scheduler, and a comma GPU list is only legacy tensor-parallel input when no worker rows are used. The resulting `outputs/baselines/web_runs/<job-id>/` contains one aggregate timestamped run with shared `raw/<rollout-id>` output and worker progress. Overlap is accepted but later duplicate assignments are recorded and skipped; a gap leaves the aggregate run partial and unsuitable as a complete Analysis input.
+All methods use rollout-level parallelism. A two-worker range `[10,20)` is represented as `[10,15)` and `[15,20)` by default. SAFE workers run per-rollout commands; ProcVLM, Robo-Dopamine, and DenseReward load one independent persistent engine per worker; RynnValue keeps its selected temporal `batch_size` unchanged. Every worker receives one `CUDA_VISIBLE_DEVICES` value. The GPU list is user-controlled: reuse of the same GPU is allowed, no utilization/memory/conflict admission check is performed for this scheduler, and a comma GPU list is only legacy tensor-parallel input when no worker rows are used. The resulting `outputs/baselines/web_runs/<job-id>/` contains one aggregate timestamped run with shared `raw/<rollout-id>` output and worker progress. Overlap is accepted but later duplicate assignments are recorded and skipped; a gap leaves the aggregate run partial and unsuitable as a complete Analysis input.
+
+DenseReward is available in the same selector for both the single-rollout button and Batch baseline panel. Its advanced web fields are `--densereward-frame-interval` (default `1`) and `--densereward-max-new-tokens` (default `32`). The worker calls the official 3-frame model path once per sampled current frame, stores `reward` in `densereward_raw.jsonl`, and reuses the model instance across the worker's assigned rollouts. DenseReward is currently a Review baseline; the existing temporal Analysis runner still compares the four methods for which its analyzer has signal adapters.
 
 The API equivalent is `POST /api/baselines/run-batch` with `baseline`, `scope`, `gpu`, `memory_utilization`, `start_index`, `end_index`, `workers`, `parallel_workers`, and an `options` object. A RynnValue example is:
 
