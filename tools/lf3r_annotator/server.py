@@ -2180,6 +2180,7 @@ class BaselineService:
                 methods[method] = selected
         return {
             "rollout_id": rollout["id"],
+            "method_order": list(BASELINE_METHODS),
             "methods": methods,
             "available_methods": [method for method, result in methods.items() if result["available"]],
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),

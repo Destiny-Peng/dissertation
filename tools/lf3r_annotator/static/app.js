@@ -1191,10 +1191,13 @@ function renderEvaluationCard(method, result, record) {
 function renderEvaluationPanel(payload) {
   state.evaluation = payload;
   var methods = payload && payload.methods ? payload.methods : {};
+  var methodOrder = payload && Array.isArray(payload.method_order) && payload.method_order.length
+    ? payload.method_order
+    : ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"];
   var available = payload && payload.available_methods ? payload.available_methods.length : 0;
   var record = selectedRollout();
-  byId("evaluationStatus").textContent = available + " / 5 baseline outputs available for this rollout.";
-  byId("evaluationMethods").innerHTML = ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].map(function (method) {
+  byId("evaluationStatus").textContent = available + " / " + methodOrder.length + " baseline outputs available for this rollout.";
+  byId("evaluationMethods").innerHTML = methodOrder.map(function (method) {
     return renderEvaluationCard(method, methods[method] || {
       method: method,
       label: method,
