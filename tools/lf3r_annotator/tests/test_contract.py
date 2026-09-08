@@ -45,6 +45,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "saveButton",
             "evaluationMethods",
             "evaluationStatus",
+            "instructionVariantControl",
+            "instructionCondition",
+            "instructionVariantNote",
             "reloadEvaluation",
             "baselineGpu",
             "baselineMemoryUtilization",
@@ -87,7 +90,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("sessionStorage", javascript)
         for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
             self.assertIn(endpoint, frontend_javascript)
-        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "task_suite", "libero_spatial", "native 256x256"]:
+        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "task_suite", "libero_spatial", "native 256x256", "instruction_variants", "instructionCondition", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_"]:
             self.assertIn(marker, javascript)
 
         for marker in [
@@ -139,6 +142,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             ".rynn-worker-row",
             ".persistent-job-workers",
             ".batch-resource-warning",
+            ".evaluation-run-controls",
         ]:
             self.assertIn(marker, styles)
 

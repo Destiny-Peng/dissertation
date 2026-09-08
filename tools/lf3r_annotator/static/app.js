@@ -9,8 +9,14 @@ var state = {
   activeFailureEvent: null,
   dirty: false,
   evaluation: null,
+  instructionCondition: "full_instruction",
   evaluationRequest: 0,
   evaluationSignalVisibility: {},
+  baselineRuns: null,
+  baselineRunsLoading: null,
+  baselineRunSelections: {},
+  baselineRunAll: {},
+  baselineRunNotice: "",
   baselineJob: null,
   baselineBatchJob: null,
   baselineBatchJobs: {},
@@ -519,6 +525,74 @@ function maybeSelectRollout(id) {
   selectRollout(id);
 }
 
+var INSTRUCTION_CONDITION_ORDER = ["full_instruction", "subtask_a", "subtask_b"];
+
+function instructionConditionLabel(condition, option) {
+  if (option && option.label) return option.label;
+  if (condition === "full_instruction") return "Full instruction";
+  if (condition === "subtask_a") return "A";
+  if (condition === "subtask_b") return "B";
+  return condition;
+}
+
+function currentInstructionVariant(record) {
+  var options = record && record.instruction_variants ? record.instruction_variants : {};
+  var condition = state.instructionCondition;
+  if (!options[condition]) condition = "full_instruction";
+  state.instructionCondition = condition;
+  return options[condition] || {
+    condition: "full_instruction",
+    label: "Full instruction",
+    instruction: record ? record.task_description : "",
+    available: true,
+    counterfactual: false
+  };
+}
+
+function updateInstructionVariantHeader(record) {
+  var variant = currentInstructionVariant(record);
+  var condition = variant.condition || state.instructionCondition;
+  var instruction = variant.instruction || record.task_description || (record.task_suite + " task " + record.task_id);
+  byId("taskTitle").textContent = instruction;
+  byId("recordMeta").textContent = record.id
+    + " - task " + record.task_id
+    + " - episode " + record.episode_index
+    + " - " + record.fps + " fps"
+    + " - " + instructionConditionLabel(condition, variant);
+  var note;
+  if (condition === "full_instruction") {
+    note = "Original full instruction. Existing completed baseline outputs are classified here.";
+  } else if (variant.available) {
+    note = "Counterfactual " + instructionConditionLabel(condition, variant)
+      + " label on the same video and annotation. No baseline output has been run for this condition yet.";
+  } else {
+    note = "This rollout has no validated " + instructionConditionLabel(condition, variant) + " instruction variant.";
+  }
+  byId("instructionVariantNote").textContent = note;
+}
+
+function renderInstructionVariantControl(record) {
+  var select = byId("instructionCondition");
+  var options = record && record.instruction_variants ? record.instruction_variants : {};
+  var conditions = INSTRUCTION_CONDITION_ORDER.filter(function (condition) {
+    return Boolean(options[condition]);
+  });
+  if (!conditions.length) conditions = ["full_instruction"];
+  var current = conditions.indexOf(state.instructionCondition) >= 0
+    ? state.instructionCondition
+    : "full_instruction";
+  state.instructionCondition = current;
+  select.innerHTML = conditions.map(function (condition) {
+    var option = options[condition] || { condition: condition };
+    var label = instructionConditionLabel(condition, option);
+    var suffix = condition === "full_instruction" ? "" : " - counterfactual";
+    return '<option value="' + escapeHtml(condition) + '">'
+      + escapeHtml(label + suffix) + "</option>";
+  }).join("");
+  select.value = current;
+  updateInstructionVariantHeader(record);
+}
+
 function selectRollout(id) {
   var record = state.rollouts.find(function (item) { return item.id === id; });
   if (!record) return;
@@ -533,8 +607,7 @@ function selectRollout(id) {
   byId("recordBadges").innerHTML = badge(isControlled(record) ? "controlled injection" : "natural policy", originClass)
     + badge(record.analysis_partition, originClass)
     + badge(effectiveOutcome(record), effectiveOutcome(record));
-  byId("taskTitle").textContent = record.task_description || (record.task_suite + " task " + record.task_id);
-  byId("recordMeta").textContent = record.id + " · task " + record.task_id + " · episode " + record.episode_index + " · " + record.fps + " fps";
+  renderInstructionVariantControl(record);
   byId("frameSlider").max = Math.max(0, Number(record.total_frames) - 1);
 
   var video = byId("rolloutVideo");
@@ -1139,6 +1212,110 @@ function compactSampleOutput(sample) {
   return text.length > 220 ? text.slice(0, 217) + "..." : text;
 }
 
+var BASELINE_AUTO_RUN = "__automatic__";
+
+function baselineRunPreferenceKey(method, record, condition) {
+  return String(condition || "full_instruction") + "::" + String(record && record.id || "") + "::" + String(method || "");
+}
+
+function baselineRunAllKey(method, condition) {
+  return String(condition || "full_instruction") + "::" + String(method || "");
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function baselineRunOverride(method, record, condition) {
+  var allKey = baselineRunAllKey(method, condition);
+  if (hasOwn(state.baselineRunAll, allKey) && state.baselineRunAll[allKey] !== BASELINE_AUTO_RUN) {
+    return state.baselineRunAll[allKey];
+  }
+  var localKey = baselineRunPreferenceKey(method, record, condition);
+  if (hasOwn(state.baselineRunSelections, localKey)
+      && state.baselineRunSelections[localKey] !== BASELINE_AUTO_RUN) {
+    return state.baselineRunSelections[localKey];
+  }
+  return "";
+}
+
+function baselineRunSelectionValue(method, record, condition) {
+  var allKey = baselineRunAllKey(method, condition);
+  if (hasOwn(state.baselineRunAll, allKey)) return state.baselineRunAll[allKey];
+  var localKey = baselineRunPreferenceKey(method, record, condition);
+  if (hasOwn(state.baselineRunSelections, localKey)) return state.baselineRunSelections[localKey];
+  return BASELINE_AUTO_RUN;
+}
+
+function baselineRunDisplay(run) {
+  var root = String(run && run.run_root || "unknown");
+  var parts = root.split("/");
+  var shortRoot = parts.slice(Math.max(0, parts.length - 2)).join("/");
+  var completed = run && run.completed_jobs != null ? run.completed_jobs : 0;
+  var selected = run && run.selected_rollouts != null ? run.selected_rollouts : (run && run.run_rollout_count || 0);
+  var when = run && (run.completed_at || run.created_at);
+  var date = when ? formatDate(when) : "unknown time";
+  var status = run && run.status ? " · " + run.status : "";
+  return date + " · " + completed + "/" + selected + status + " · " + shortRoot;
+}
+
+function baselineRunOptions(method, record, condition) {
+  if (!Array.isArray(state.baselineRuns) || !record) return [];
+  return state.baselineRuns.filter(function (run) {
+    if ((run.method || run.baseline) !== method) return false;
+    var ids = Array.isArray(run.run_rollout_ids) ? run.run_rollout_ids : [];
+    if (ids.indexOf(record.id) === -1) return false;
+    var runCondition = run.instruction_condition || "unknown";
+    if (condition === "full_instruction") return runCondition === "full_instruction" || runCondition === "unknown";
+    return runCondition === condition;
+  });
+}
+
+function renderBaselineRunControls(method, result, record) {
+  var condition = state.instructionCondition || "full_instruction";
+  var selected = baselineRunSelectionValue(method, record, condition);
+  var options = baselineRunOptions(method, record, condition);
+  var optionHtml = '<option value="' + BASELINE_AUTO_RUN + '"' + (selected === BASELINE_AUTO_RUN ? " selected" : "") + '>Automatic · newest available</option>';
+  options.forEach(function (run) {
+    var root = String(run.run_root || "");
+    optionHtml += '<option value="' + escapeHtml(root) + '" title="' + escapeHtml(root) + '"'
+      + (selected === root ? " selected" : "") + '>'
+      + escapeHtml(baselineRunDisplay(run)) + '</option>';
+  });
+  var allKey = baselineRunAllKey(method, condition);
+  var applied = hasOwn(state.baselineRunAll, allKey) && state.baselineRunAll[allKey] !== BASELINE_AUTO_RUN;
+  var note = applied ? "Applied to all rollouts" : "This rollout";
+  var disabled = options.length === 0 ? " disabled" : "";
+  return '<div class="evaluation-run-controls">'
+    + '<label><span>Result run</span><select data-evaluation-run-select data-evaluation-method="' + escapeHtml(method)
+    + '" aria-label="' + escapeHtml((result.label || method) + " result run") + '"' + disabled + '>'
+    + optionHtml + '</select></label>'
+    + '<button type="button" class="ghost-button" data-apply-baseline-run data-evaluation-method="' + escapeHtml(method)
+    + '"' + disabled + '>Apply to all</button>'
+    + '<small>' + escapeHtml(note) + (options.length ? " · " + options.length + " run(s) cover this rollout" : " · no completed run covers this rollout") + '</small>'
+    + '</div>';
+}
+
+async function loadBaselineRunCatalog() {
+  if (Array.isArray(state.baselineRuns)) return state.baselineRuns;
+  if (state.baselineRunsLoading) return state.baselineRunsLoading;
+  state.baselineRunsLoading = fetch("/api/baselines/runs?scope=all", { cache: "no-store" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("Could not load baseline run catalog");
+      return response.json();
+    })
+    .then(function (payload) {
+      state.baselineRuns = payload.runs || [];
+      return state.baselineRuns;
+    })
+    .catch(function (error) {
+      state.baselineRuns = [];
+      state.baselineRunNotice = error.message;
+      return state.baselineRuns;
+    });
+  return state.baselineRunsLoading;
+}
+
 function renderEvaluationHistory(result) {
   var samples = result.samples || [];
   if (!samples.length) return '<div class="evaluation-empty">No per-frame output history.</div>';
@@ -1154,6 +1331,7 @@ function renderEvaluationHistory(result) {
 
 function renderEvaluationCard(method, result, record) {
   var available = Boolean(result.available);
+  var viewingCondition = state.instructionCondition || "full_instruction";
   var validation = result.validation || {};
   var status = validation.status || (available ? "ok" : "missing");
   var run = result.run;
@@ -1161,9 +1339,12 @@ function renderEvaluationCard(method, result, record) {
     ? "run " + (run.run_root || "unknown") + "  -  " + (run.status || "unknown")
       + (run.failed_jobs ? "  -  " + run.failed_jobs + " failed jobs" : "")
     : "No completed run discovered";
-  var action = '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method) + '">'
-    + (available ? "Re-run rollout" : "Run baseline") + "</button>";
-  var body = '<div class="evaluation-meta">' + escapeHtml(runText) + "</div>"
+  var action = viewingCondition === "full_instruction"
+    ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method) + '">'
+      + (available ? "Re-run rollout" : "Run baseline") + "</button>"
+    : '<span class="evaluation-meta">Condition view only</span>';
+  var body = renderBaselineRunControls(method, result, record)
+    + '<div class="evaluation-meta">' + escapeHtml(runText) + "</div>"
     + '<div class="evaluation-meta">' + (available ? escapeHtml(result.sample_count + " samples  -  " + (result.kind || "parsed output")) : "") + "</div>";
   if (available) {
     body += renderSignalChart(method, result, record)
@@ -1196,7 +1377,21 @@ function renderEvaluationPanel(payload) {
     : ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"];
   var available = payload && payload.available_methods ? payload.available_methods.length : 0;
   var record = selectedRollout();
-  byId("evaluationStatus").textContent = available + " / " + methodOrder.length + " baseline outputs available for this rollout.";
+  var conditionLabel = payload && payload.condition_label
+    ? payload.condition_label
+    : instructionConditionLabel(state.instructionCondition);
+  if (payload && payload.variant_available === false) {
+    byId("evaluationStatus").textContent = conditionLabel + " is not available for this rollout.";
+  } else if ((payload && payload.condition) !== "full_instruction") {
+    byId("evaluationStatus").textContent = conditionLabel + ": " + available + " / " + methodOrder.length
+      + " variant baseline outputs available. Full-instruction results are not reused.";
+  } else {
+    byId("evaluationStatus").textContent = available + " / " + methodOrder.length + " baseline outputs available for this rollout.";
+  }
+  if (state.baselineRunNotice) {
+    byId("evaluationStatus").textContent += " · " + state.baselineRunNotice;
+    state.baselineRunNotice = "";
+  }
   byId("evaluationMethods").innerHTML = methodOrder.map(function (method) {
     return renderEvaluationCard(method, methods[method] || {
       method: method,
@@ -1225,17 +1420,32 @@ function updateEvaluationCurrent() {
 
 async function loadEvaluation(rolloutId) {
   var requestId = ++state.evaluationRequest;
+  var condition = state.instructionCondition || "full_instruction";
+  var record = state.rollouts.find(function (item) { return item.id === rolloutId; }) || null;
   state.evaluation = null;
   byId("evaluationStatus").textContent = "Loading baseline outputs...";
   byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Reading completed baseline runs...</div>';
   try {
-    var response = await fetch("/api/baselines/" + encodeURIComponent(rolloutId), { cache: "no-store" });
+    await loadBaselineRunCatalog();
+    var query = ["condition=" + encodeURIComponent(condition)];
+    ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].forEach(function (method) {
+      var override = baselineRunOverride(method, record, condition);
+      if (override) query.push("run_" + method + "=" + encodeURIComponent(override));
+    });
+    var response = await fetch(
+      "/api/baselines/" + encodeURIComponent(rolloutId) + "?" + query.join("&"),
+      { cache: "no-store" }
+    );
     var payload = await response.json();
-    if (requestId !== state.evaluationRequest || state.selectedId !== rolloutId) return;
+    if (requestId !== state.evaluationRequest
+      || state.selectedId !== rolloutId
+      || state.instructionCondition !== condition) return;
     if (!response.ok) throw new Error(payload.error || "Could not load baseline outputs");
     renderEvaluationPanel(payload.evaluation);
   } catch (error) {
-    if (requestId !== state.evaluationRequest || state.selectedId !== rolloutId) return;
+    if (requestId !== state.evaluationRequest
+      || state.selectedId !== rolloutId
+      || state.instructionCondition !== condition) return;
     byId("evaluationStatus").textContent = "Baseline output error: " + error.message;
     byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Select Refresh to try again.</div>';
   }
@@ -1925,7 +2135,41 @@ function installEvents() {
   byId("reloadEvaluation").addEventListener("click", function () {
     if (state.selectedId) loadEvaluation(state.selectedId);
   });
+  byId("instructionCondition").addEventListener("change", function () {
+    state.instructionCondition = this.value || "full_instruction";
+    var record = selectedRollout();
+    if (!record) return;
+    renderInstructionVariantControl(record);
+    loadEvaluation(record.id);
+  });
+  byId("evaluationMethods").addEventListener("change", function (event) {
+    var select = event.target.closest("[data-evaluation-run-select]");
+    if (!select) return;
+    var record = selectedRollout();
+    if (!record) return;
+    var method = select.dataset.evaluationMethod;
+    var key = baselineRunPreferenceKey(method, record, state.instructionCondition);
+    state.baselineRunSelections[key] = select.value || BASELINE_AUTO_RUN;
+    loadEvaluation(record.id);
+  });
   byId("evaluationMethods").addEventListener("click", function (event) {
+    var applyButton = event.target.closest("[data-apply-baseline-run]");
+    if (applyButton) {
+      var record = selectedRollout();
+      if (!record) return;
+      var method = applyButton.dataset.evaluationMethod;
+      var card = applyButton.closest("[data-evaluation-method]");
+      var select = card && card.querySelector("[data-evaluation-run-select]");
+      var value = select ? (select.value || BASELINE_AUTO_RUN) : BASELINE_AUTO_RUN;
+      var key = baselineRunAllKey(method, state.instructionCondition);
+      if (value === BASELINE_AUTO_RUN) delete state.baselineRunAll[key];
+      else state.baselineRunAll[key] = value;
+      state.baselineRunNotice = value === BASELINE_AUTO_RUN
+        ? (method + " reverted to automatic run selection for all rollouts")
+        : (method + " run applied to all rollouts when that run contains the rollout");
+      loadEvaluation(record.id);
+      return;
+    }
     var signalButton = event.target.closest("[data-evaluation-signal-toggle]");
     if (signalButton) {
       toggleEvaluationSignal(signalButton);

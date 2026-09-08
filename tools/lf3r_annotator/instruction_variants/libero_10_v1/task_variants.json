@@ -1,0 +1,343 @@
+{
+  "artifact": "libero10_instruction_variants",
+  "label_semantics": "subtask_a and subtask_b are canonical source-task/object labels. They do not encode which subtask the recorded trajectory executed first.",
+  "output_namespace": "outputs/baselines/instruction_variants/libero_10",
+  "schema_version": 1,
+  "source_manifest": "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
+  "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
+  "tasks": {
+    "0": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put both the alphabet soup and the tomato sauce in the basket",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put both the alphabet soup and the tomato sauce in the basket",
+      "goal_atoms": [
+        "(in alphabet_soup_1 basket_1_contain_region)",
+        "(in tomato_sauce_1 basket_1_contain_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_tomato_sauce_in_the_basket.bddl",
+      "source_bddl_sha256": "2e661058917f683a25bce480015197f0a2c1911bcbc2b9dd9d947199069c9618",
+      "subtasks": [
+        {
+          "goal_atom": "(in alphabet_soup_1 basket_1_contain_region)",
+          "instruction": "pick up the alphabet soup and put it in the basket",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "alphabet_soup_1",
+          "source_target": "basket_1_contain_region"
+        },
+        {
+          "goal_atom": "(in tomato_sauce_1 basket_1_contain_region)",
+          "instruction": "pick up the tomato sauce and put it in the basket",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "tomato_sauce_1",
+          "source_target": "basket_1_contain_region"
+        }
+      ],
+      "task_id": 0
+    },
+    "1": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put both the cream cheese box and the butter in the basket",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put both the cream cheese box and the butter in the basket",
+      "goal_atoms": [
+        "(in cream_cheese_1 basket_1_contain_region)",
+        "(in butter_1 basket_1_contain_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/LIVING_ROOM_SCENE2_put_both_the_cream_cheese_box_and_the_butter_in_the_basket.bddl",
+      "source_bddl_sha256": "3f552805c7ab34c44debcf38a48b8131d6fee3011dd86c039650b84e0f77d058",
+      "subtasks": [
+        {
+          "goal_atom": "(in cream_cheese_1 basket_1_contain_region)",
+          "instruction": "pick up the cream cheese box and put it in the basket",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "cream_cheese_1",
+          "source_target": "basket_1_contain_region"
+        },
+        {
+          "goal_atom": "(in butter_1 basket_1_contain_region)",
+          "instruction": "pick up the butter and put it in the basket",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "butter_1",
+          "source_target": "basket_1_contain_region"
+        }
+      ],
+      "task_id": 1
+    },
+    "2": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "turn on the stove and put the moka pot on it",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "turn on the stove and put the moka pot on it",
+      "goal_atoms": [
+        "(turnon flat_stove_1)",
+        "(on moka_pot_1 flat_stove_1_cook_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/KITCHEN_SCENE3_turn_on_the_stove_and_put_the_moka_pot_on_it.bddl",
+      "source_bddl_sha256": "491835cc2eb6956f7ce3d1ee4e266377116168fe453e6529fe105e3b0333635d",
+      "subtasks": [
+        {
+          "goal_atom": "(turnon flat_stove_1)",
+          "instruction": "turn on the stove",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "flat_stove_1",
+          "source_target": null
+        },
+        {
+          "goal_atom": "(on moka_pot_1 flat_stove_1_cook_region)",
+          "instruction": "put the moka pot on the stove",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "moka_pot_1",
+          "source_target": "flat_stove_1_cook_region"
+        }
+      ],
+      "task_id": 2
+    },
+    "3": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put the black bowl in the bottom drawer of the cabinet and close it",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put the black bowl in the bottom drawer of the cabinet and close it",
+      "goal_atoms": [
+        "(close white_cabinet_1_bottom_region)",
+        "(in akita_black_bowl_1 white_cabinet_1_bottom_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/KITCHEN_SCENE4_put_the_black_bowl_in_the_bottom_drawer_of_the_cabinet_and_close_it.bddl",
+      "source_bddl_sha256": "5255fe54d7f25fad4dee8fa30a30033d8cb908f1708d953c91ab609264fb4fb8",
+      "subtasks": [
+        {
+          "goal_atom": "(in akita_black_bowl_1 white_cabinet_1_bottom_region)",
+          "instruction": "put the black bowl in the bottom drawer of the cabinet",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "akita_black_bowl_1",
+          "source_target": "white_cabinet_1_bottom_region"
+        },
+        {
+          "goal_atom": "(close white_cabinet_1_bottom_region)",
+          "instruction": "close the bottom drawer of the cabinet",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "white_cabinet_1_bottom_region",
+          "source_target": null
+        }
+      ],
+      "task_id": 3
+    },
+    "4": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put the white mug on the left plate and put the yellow and white mug on the right plate",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put the white mug on the left plate and put the yellow and white mug on the right plate",
+      "goal_atoms": [
+        "(on porcelain_mug_1 plate_1)",
+        "(on white_yellow_mug_1 plate_2)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/LIVING_ROOM_SCENE5_put_the_white_mug_on_the_left_plate_and_put_the_yellow_and_white_mug_on_the_right_plate.bddl",
+      "source_bddl_sha256": "0c6749b920bff1e1efe47ffb0e0b801a3e6959a650e710f376dd2b812c74e865",
+      "subtasks": [
+        {
+          "goal_atom": "(on porcelain_mug_1 plate_1)",
+          "instruction": "put the white mug on the left plate",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "porcelain_mug_1",
+          "source_target": "plate_1"
+        },
+        {
+          "goal_atom": "(on white_yellow_mug_1 plate_2)",
+          "instruction": "put the yellow and white mug on the right plate",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "white_yellow_mug_1",
+          "source_target": "plate_2"
+        }
+      ],
+      "task_id": 4
+    },
+    "5": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "pick up the book and place it in the back compartment of the caddy",
+      "compatibility": "incompatible_single_atomic_goal",
+      "full_instruction": "pick up the book and place it in the back compartment of the caddy",
+      "goal_atoms": [
+        "(in black_book_1 desk_caddy_1_back_contain_region)"
+      ],
+      "incompatibility_reason": "The official task has one unique goal atom. Splitting the surface phrase into 'pick up' and 'place' would create an invalid or underspecified standalone instruction.",
+      "order_basis": "not_applicable",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_back_compartment_of_the_caddy.bddl",
+      "source_bddl_sha256": "07ca32c940d70c065e870452ef9c63e6dfa1d8506e6a86cf9b3763f652ba2d9f",
+      "subtasks": [],
+      "task_id": 5
+    },
+    "6": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put the white mug on the plate and put the chocolate pudding to the right of the plate",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put the white mug on the plate and put the chocolate pudding to the right of the plate",
+      "goal_atoms": [
+        "(on porcelain_mug_1 plate_1)",
+        "(on chocolate_pudding_1 living_room_table_plate_right_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/LIVING_ROOM_SCENE6_put_the_white_mug_on_the_plate_and_put_the_chocolate_pudding_to_the_right_of_the_plate.bddl",
+      "source_bddl_sha256": "dbc9464b424cdc9b771b92d0b8a8c185b1b539f6a4133b323dc858bcf8f6a9c2",
+      "subtasks": [
+        {
+          "goal_atom": "(on porcelain_mug_1 plate_1)",
+          "instruction": "put the white mug on the plate",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "porcelain_mug_1",
+          "source_target": "plate_1"
+        },
+        {
+          "goal_atom": "(on chocolate_pudding_1 living_room_table_plate_right_region)",
+          "instruction": "put the chocolate pudding to the right of the plate",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "chocolate_pudding_1",
+          "source_target": "living_room_table_plate_right_region"
+        }
+      ],
+      "task_id": 6
+    },
+    "7": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put both the alphabet soup and the cream cheese box in the basket",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put both the alphabet soup and the cream cheese box in the basket",
+      "goal_atoms": [
+        "(in alphabet_soup_1 basket_1_contain_region)",
+        "(in cream_cheese_1 basket_1_contain_region)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/LIVING_ROOM_SCENE1_put_both_the_alphabet_soup_and_the_cream_cheese_box_in_the_basket.bddl",
+      "source_bddl_sha256": "e27ab37f512fe42e35771d6130f531e6a9656929e7b4c60b348b81360cf5675d",
+      "subtasks": [
+        {
+          "goal_atom": "(in alphabet_soup_1 basket_1_contain_region)",
+          "instruction": "pick up the alphabet soup and put it in the basket",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "alphabet_soup_1",
+          "source_target": "basket_1_contain_region"
+        },
+        {
+          "goal_atom": "(in cream_cheese_1 basket_1_contain_region)",
+          "instruction": "pick up the cream cheese box and put it in the basket",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "cream_cheese_1",
+          "source_target": "basket_1_contain_region"
+        }
+      ],
+      "task_id": 7
+    },
+    "8": {
+      "auxiliary_goal_atoms": [
+        "(Turnon flat_stove_1)"
+      ],
+      "bddl_language": "put both moka pots on the stove",
+      "compatibility": "compatible_two_atomic_goals_with_initial_condition",
+      "full_instruction": "put both moka pots on the stove",
+      "goal_atoms": [
+        "(on moka_pot_1 flat_stove_1_cook_region)",
+        "(on moka_pot_2 flat_stove_1_cook_region)",
+        "(turnon flat_stove_1)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "official_object_identifier_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/KITCHEN_SCENE8_put_both_moka_pots_on_the_stove.bddl",
+      "source_bddl_sha256": "ae1299a707d3e810096ad648948c517de40474bcdacca93a15e17d191e34454a",
+      "subtasks": [
+        {
+          "goal_atom": "(on moka_pot_1 flat_stove_1_cook_region)",
+          "instruction": "put the right moka pot on the stove",
+          "label": "subtask_a",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "moka_pot_1",
+          "source_target": "flat_stove_1_cook_region"
+        },
+        {
+          "goal_atom": "(on moka_pot_2 flat_stove_1_cook_region)",
+          "instruction": "put the left moka pot on the stove",
+          "label": "subtask_b",
+          "official_language_match": false,
+          "semantic_validation": "source_bddl_object_region_and_goal_atom",
+          "source_object": "moka_pot_2",
+          "source_target": "flat_stove_1_cook_region"
+        }
+      ],
+      "task_id": 8
+    },
+    "9": {
+      "auxiliary_goal_atoms": [],
+      "bddl_language": "put the yellow and white mug in the microwave and close it",
+      "compatibility": "compatible_two_atomic_goals",
+      "full_instruction": "put the yellow and white mug in the microwave and close it",
+      "goal_atoms": [
+        "(in white_yellow_mug_1 microwave_1_heating_region)",
+        "(close microwave_1)"
+      ],
+      "incompatibility_reason": null,
+      "order_basis": "source_instruction_clause_order_only",
+      "source_bddl": "repos/LIBERO/libero/libero/bddl_files/libero_10/KITCHEN_SCENE6_put_the_yellow_and_white_mug_in_the_microwave_and_close_it.bddl",
+      "source_bddl_sha256": "456d145f92be049f445fc77673dc583d9d17ea7afe92f6ffcb2fd1fa5565d420",
+      "subtasks": [
+        {
+          "goal_atom": "(in white_yellow_mug_1 microwave_1_heating_region)",
+          "instruction": "put the yellow and white mug in the microwave",
+          "label": "subtask_a",
+          "official_language_match": false,
+          "semantic_validation": "source_bddl_goal_atom_and_template",
+          "source_object": "white_yellow_mug_1",
+          "source_target": "microwave_1_heating_region"
+        },
+        {
+          "goal_atom": "(close microwave_1)",
+          "instruction": "close the microwave",
+          "label": "subtask_b",
+          "official_language_match": true,
+          "semantic_validation": "official_bddl_goal_atom",
+          "source_object": "microwave_1",
+          "source_target": null
+        }
+      ],
+      "task_id": 9
+    }
+  }
+}

@@ -173,8 +173,21 @@ Selecting a rollout loads any completed baseline output that is available for th
 - Missing outputs are explicit rather than silently treated as zero or failure. A warning is shown when a baseline emits a raw frame index outside the video bounds; the displayed sample is clipped only for alignment and the raw index remains visible.
 - Each baseline signal chart uses the full video frame domain (0 ... total_frames-1) and overlays the same color-coded causal/observable/terminal/recovery markers as the playback timeline. The curve and onset overlay share a responsive plot track with the video timeline, so they resize together; markers refresh while editing.
 - The baseline chart legend is interactive: click or keyboard-focus a signal label to show/hide that curve. Visibility is remembered per rollout and method during the current page session. Multi-perspective Robo-Dopamine charts show fused `progress` and `hop` by default; incremental/forward/backward component progress and hop curves remain available from the labels.
+- Each baseline card has a **Result run** selector. `Automatic` keeps the existing newest-readable-run behavior; selecting a concrete run makes only the current rollout read that run. **Apply to all** stores the same run choice for the current instruction condition while navigating Review. Other rollouts use it only when that run contains their raw output; otherwise the card explicitly shows unavailable and never silently mixes in another run. Selecting `Automatic` and applying it clears the method-wide override.
+- The selector is populated from `GET /api/baselines/runs?scope=all`; run paths remain project-local and are validated server-side under `outputs/baselines`.
 - The per-method **Run baseline** button calls POST /api/baselines/run/<rollout-id>. It is deliberately bounded to one rollout; independent method jobs may run at the same time and each is tracked separately until its parsed result is refreshed.
 - GPU selects CUDA_VISIBLE_DEVICES; Memory is the target fraction of currently free GPU memory. The runner converts it to the vLLM total-memory parameter immediately before each model worker. The gate is based on whether available GPU memory can satisfy the run. GPU utilization percentage is informational and is not required to be 100%.
+
+#### Instruction-condition view
+
+The Review header exposes an **Instruction condition** selector for the same rollout video and annotation:
+
+- **Full instruction** uses the original main-manifest rollout ID and existing baseline outputs.
+- **A** and **B** use the prepared diagnostic rows in tools/lf3r_annotator/instruction_variants/libero_10_v1/manifest.jsonl. They are canonical single-subtask labels on the same video, not claims about execution order.
+- A/B baseline cards remain explicitly unavailable until a baseline is run against the variant manifest. The UI never reuses a full-instruction raw directory for an A/B view.
+- The completed Robo-Dopamine aggregate run outputs/baselines/web_runs/robo_dopamine-batch-326e663e25bc/robo_dopamine_20260908_105724_234057/ is recorded as full_instruction in run.json (166/166 complete, 0 failed). No raw output was moved or copied.
+
+The selector changes only the displayed instruction and condition-aware baseline lookup. Annotation files, video paths, and the rollout queue remain keyed by the original source rollout ID. Tasks without two validated atomic goals expose only Full instruction.
 
 The server remains loopback-only. Existing completed outputs are read-only from the annotator; an explicit Run baseline action creates a timestamped run under outputs/baselines/web_runs/ and a project-local log under logs/baselines/web_runs/.
 
@@ -299,6 +312,15 @@ For every recognized rollout it:
 6. atomically rewrites `manifest.jsonl` and `summary.json`.
 
 Unknown run-name provenance is skipped instead of guessed. Only registered controlled run names receive injection metadata. A natural LIBERO-10 record becomes `primary_natural`; natural rollouts from other suites remain `reference_natural`.
+
+### LIBERO-10 instruction-variant diagnostic manifest
+
+The separate `tools/lf3r_annotator/instruction_variants/libero_10_v1/manifest.jsonl` contains the original `full_instruction` rows and validated `subtask_a`/`subtask_b` rows for the compatible two-goal LIBERO-10 tasks. It preserves each source rollout's video and provenance, marks counterfactual rows with `instruction_variant` and `instruction_type`, and assigns them the isolated output namespace `outputs/baselines/instruction_variants/libero_10/`. A/B labels are canonical task/object labels, not observed execution order. Task 5 is intentionally full-instruction-only because its official BDDL has one unique goal atom. Rebuild or validate it with:
+
+    python3 tools/prepare_libero10_instruction_variants.py
+    python3 tools/prepare_libero10_instruction_variants.py --check-only
+
+This preparation step is read-only with respect to the source manifest, media, annotations, and existing baseline outputs; it does not run inference.
 
 ## Generate natural LIBERO-10 data
 

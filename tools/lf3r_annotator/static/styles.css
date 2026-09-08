@@ -234,6 +234,24 @@ kbd {
 .task-header { margin-bottom: 18px; }
 .task-header h2 { max-width: 760px; margin: 9px 0 7px; font-size: 1.3125rem; line-height: 1.25; }
 .record-meta { margin: 0; color: var(--muted); font: 0.6875rem/1.5 "SFMono-Regular", Consolas, monospace; }
+.instruction-variant-control {
+  display: grid;
+  grid-template-columns: auto minmax(10rem, 16rem);
+  align-items: center;
+  gap: 5px 9px;
+  max-width: 34rem;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: .6875rem;
+}
+.instruction-variant-control select { min-width: 0; }
+.instruction-variant-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: .625rem;
+  line-height: 1.45;
+}
 .navigation-actions { display: flex; gap: 7px; white-space: nowrap; }
 .ghost-button { padding: 8px 10px; font-size: 0.6875rem; background: transparent; }
 
@@ -350,6 +368,47 @@ kbd {
 .evaluation-card-title { display: flex; align-items: center; gap: 7px; font-size: 0.75rem; font-weight: 700; }
 .evaluation-card-actions { display: flex; align-items: center; gap: 6px; }
 .evaluation-card-actions .ghost-button { padding: 5px 7px; font-size: 0.625rem; }
+.evaluation-run-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px 8px;
+  margin-top: 8px;
+  padding: 7px;
+  background: rgba(17, 21, 26, .72);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+}
+.evaluation-run-controls label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  color: var(--muted);
+  font-size: .5625rem;
+}
+.evaluation-run-controls label span { letter-spacing: .04em; text-transform: uppercase; }
+.evaluation-run-controls select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .625rem;
+}
+.evaluation-run-controls button {
+  min-width: 7rem;
+  padding: 5px 7px;
+  font-size: .625rem;
+  white-space: normal;
+}
+.evaluation-run-controls small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: .5625rem;
+  line-height: 1.35;
+}
 .evaluation-badge { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font: 0.5625rem "SFMono-Regular", Consolas, monospace; text-transform: uppercase; }
 .evaluation-badge.ok { color: var(--natural); border-color: rgba(103, 217, 181, .35); }
 .evaluation-badge.warning { color: var(--causal); border-color: rgba(231, 193, 92, .4); }
@@ -599,6 +658,8 @@ body[data-density="spacious"] { --density-scale: 1.14; }
 @media (max-width: 850px) {
   .analysis-grid-two, .analysis-filter-grid { grid-template-columns: 1fr; }
   .settings-color-grid { grid-template-columns: 1fr; }
+  .instruction-variant-control { grid-template-columns: 1fr; }
+  .instruction-variant-note { grid-column: auto; }
 }
 
 
@@ -1118,8 +1179,13 @@ body[data-view] .analysis-svg {
     grid-template-columns: minmax(4rem, 5rem) minmax(0, 1fr) minmax(2rem, auto);
   }
   .rollout-generation-grid,
-  .analysis-filter-grid {
+  .analysis-filter-grid,
+  .evaluation-run-controls {
     grid-template-columns: 1fr;
+  }
+  .evaluation-run-controls button,
+  .evaluation-run-controls small {
+    grid-column: auto;
   }
 }
 

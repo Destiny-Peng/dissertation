@@ -60,6 +60,12 @@ BASELINE_LABELS = {
     "densereward": "DenseReward",
 }
 BASELINE_RUN_STATUSES = {"complete", "complete_with_errors"}
+INSTRUCTION_VARIANT_CONDITIONS = ("full_instruction", "subtask_a", "subtask_b")
+INSTRUCTION_VARIANT_LABELS = {
+    "full_instruction": "Full instruction",
+    "subtask_a": "A",
+    "subtask_b": "B",
+}
 RUN_SCOPES = (
     "all",
     "natural_observation",
@@ -1898,12 +1904,63 @@ class BaselineService:
         candidates.sort(key=lambda item: item[0], reverse=True)
         return [(path, metadata) for _, path, metadata in candidates]
 
+    def _explicit_run_candidate(
+        self,
+        method: str,
+        run_root: Any,
+        allowed_conditions: set[str],
+    ) -> tuple[Path, dict[str, Any]]:
+        if not isinstance(run_root, (str, Path)) or not str(run_root).strip():
+            raise ValidationError(f"{method} run selection must be a project-relative run path")
+        path = self._project_path(str(run_root))
+        try:
+            path.relative_to(self.baseline_root.resolve())
+        except ValueError as exc:
+            raise ValidationError(f"Selected {method} run must be inside outputs/baselines") from exc
+        metadata_path = path / "run.json"
+        if not metadata_path.is_file():
+            raise ValidationError(f"Selected {method} run.json is missing")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValidationError(f"Selected {method} run metadata is invalid") from exc
+        if metadata.get("baseline") != method:
+            raise ValidationError(f"Selected run is not a {method} run")
+        if metadata.get("status") not in BASELINE_RUN_STATUSES:
+            raise ValidationError(f"Selected {method} run is not complete")
+        condition = self._run_instruction_condition(metadata)
+        if condition not in allowed_conditions:
+            allowed = ", ".join(sorted(allowed_conditions))
+            raise ValidationError(
+                f"Selected {method} run is for instruction condition {condition!r}; expected {allowed}"
+            )
+        return path, metadata
+
     @staticmethod
     def _metadata_count(metadata: dict[str, Any], field: str) -> int:
         try:
             return int(metadata.get(field) or 0)
         except (TypeError, ValueError):
             return 0
+
+    def _run_instruction_condition(self, metadata: dict[str, Any]) -> str:
+        explicit = metadata.get("instruction_variant") or metadata.get("instruction_condition")
+        if explicit in INSTRUCTION_VARIANT_CONDITIONS:
+            return str(explicit)
+        manifest = metadata.get("manifest")
+        if manifest:
+            try:
+                resolved = self._project_path(str(manifest))
+            except (ValidationError, OSError):
+                resolved = None
+            if resolved == self.manifest_path:
+                return "full_instruction"
+            if resolved is not None:
+                path_text = resolved.as_posix()
+                for condition in ("subtask_a", "subtask_b", "full_instruction"):
+                    if f"instruction_variants/libero_10/{condition}" in path_text:
+                        return condition
+        return "unknown"
 
     def _run_summary(self, run_path: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1915,6 +1972,7 @@ class BaselineService:
             "failed_jobs": self._metadata_count(metadata, "failed_jobs"),
             "run_root": self._relative(run_path),
             "completed_at": metadata.get("completed_at"),
+            "instruction_condition": self._run_instruction_condition(metadata),
         }
 
     def _pack(
@@ -2145,22 +2203,65 @@ class BaselineService:
             return self._read_densereward(run_path, rollout, run_summary)
         raise ValidationError("Unknown baseline method")
 
-    def evaluation(self, rollout: dict[str, Any]) -> dict[str, Any]:
+    def evaluation(
+        self,
+        rollout: dict[str, Any],
+        *,
+        condition: str = "full_instruction",
+        source_rollout_id: str | None = None,
+        variant_available: bool = True,
+        unavailable_reason: str | None = None,
+        run_overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if condition not in INSTRUCTION_VARIANT_CONDITIONS:
+            raise ValidationError(
+                "condition must be one of: " + ", ".join(INSTRUCTION_VARIANT_CONDITIONS)
+            )
         methods = {}
+        allowed_conditions = (
+            {condition, "unknown"} if condition == "full_instruction" else {condition}
+        )
         for method in BASELINE_METHODS:
-            candidates = self._run_candidates(method)
+            requested_run = (run_overrides or {}).get(method)
+            explicit_run = None
+            if variant_available and requested_run:
+                explicit_run = self._explicit_run_candidate(
+                    method,
+                    requested_run,
+                    allowed_conditions,
+                )
+                candidates = [explicit_run]
+            else:
+                candidates = self._run_candidates(method) if variant_available else []
             errors = []
             selected = None
             for run_path, metadata in candidates:
+                run_summary = self._run_summary(run_path, metadata)
+                if run_summary["instruction_condition"] not in allowed_conditions:
+                    continue
                 try:
-                    selected = self._read_method(method, run_path, rollout, self._run_summary(run_path, metadata))
+                    selected = self._read_method(method, run_path, rollout, run_summary)
                     break
                 except FileNotFoundError:
                     continue
                 except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
                     errors.append(str(error))
+            selection = {
+                "mode": "explicit" if explicit_run else "automatic",
+                "requested_run_root": (
+                    self._relative(explicit_run[0]) if explicit_run else None
+                ),
+            }
             if selected is None:
-                run = self._run_summary(*candidates[0]) if candidates else None
+                compatible_runs = [
+                    self._run_summary(run_path, metadata)
+                    for run_path, metadata in candidates
+                    if self._run_instruction_condition(metadata) in allowed_conditions
+                ]
+                run = compatible_runs[0] if compatible_runs else None
+                message = unavailable_reason or (
+                    errors[-1] if errors else "No usable raw output for this rollout"
+                )
                 methods[method] = {
                     "available": False,
                     "method": method,
@@ -2171,18 +2272,30 @@ class BaselineService:
                     "raw_files": [],
                     "validation": {
                         "status": "missing",
-                        "message": errors[-1] if errors else "No usable raw output for this rollout",
+                        "message": (
+                            "Selected run has no usable output for this rollout"
+                            if explicit_run and not errors
+                            else message
+                        ),
                         "raw_sample_count": 0,
                         "out_of_range_raw_frames": [],
                     },
+                    "run_selection": selection,
                 }
             else:
+                selected["run_selection"] = selection
                 methods[method] = selected
         return {
             "rollout_id": rollout["id"],
+            "source_rollout_id": source_rollout_id or rollout["id"],
+            "condition": condition,
+            "condition_label": INSTRUCTION_VARIANT_LABELS[condition],
+            "variant_available": variant_available,
             "method_order": list(BASELINE_METHODS),
             "methods": methods,
-            "available_methods": [method for method, result in methods.items() if result["available"]],
+            "available_methods": [
+                method for method, result in methods.items() if result["available"]
+            ],
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         }
 
@@ -3583,6 +3696,15 @@ class LF3RApplication:
         self.project_root = project_root.resolve()
         self.manifest_path = manifest_path.resolve()
         self.static_dir = (Path(__file__).resolve().parent / "static").resolve()
+        self.instruction_variant_manifest_path = (
+            self.project_root
+            / "tools"
+            / "lf3r_annotator"
+            / "instruction_variants"
+            / "libero_10_v1"
+            / "manifest.jsonl"
+        )
+        self._instruction_variant_index: dict[str, dict[str, dict[str, Any]]] | None = None
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
@@ -3609,6 +3731,90 @@ class LF3RApplication:
             self.project_root, self.manifest_path, self.job_coordinator, self.tmux
         )
         self.tmux.recover()
+
+    def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
+        if self._instruction_variant_index is not None:
+            return self._instruction_variant_index
+        path = self.instruction_variant_manifest_path
+        if not path.is_file():
+            self._instruction_variant_index = {}
+            return self._instruction_variant_index
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in load_manifest_records(path):
+            source_id = row.get("source_rollout_id") or row.get("source_id")
+            condition = row.get("instruction_variant") or row.get("condition")
+            if not isinstance(source_id, str) or not ROLLOUT_ID_RE.fullmatch(source_id):
+                raise ValidationError("Invalid source rollout id in instruction variant manifest")
+            if condition not in {"subtask_a", "subtask_b"}:
+                continue
+            if row.get("id") != source_id + "--" + condition:
+                raise ValidationError("Instruction variant id does not match its source and condition")
+            if condition in grouped.setdefault(source_id, {}):
+                raise ValidationError("Duplicate instruction variant for " + source_id + ": " + condition)
+            grouped[source_id][condition] = row
+        self._instruction_variant_index = grouped
+        return grouped
+
+    def instruction_variant_options(self, record: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        source_id = str(record["id"])
+        options: dict[str, dict[str, Any]] = {
+            "full_instruction": {
+                "id": source_id,
+                "condition": "full_instruction",
+                "label": INSTRUCTION_VARIANT_LABELS["full_instruction"],
+                "instruction": record.get("task_description", ""),
+                "instruction_type": "original_full_instruction",
+                "available": True,
+                "counterfactual": False,
+            }
+        }
+        variants = self.load_instruction_variant_records().get(source_id, {})
+        for condition in ("subtask_a", "subtask_b"):
+            row = variants.get(condition)
+            if row is None:
+                continue
+            if row.get("video_path") != record.get("video_path"):
+                raise ValidationError("Instruction variant video does not match source rollout: " + source_id)
+            options[condition] = {
+                "id": row["id"],
+                "condition": condition,
+                "label": row.get("subtask_label") or INSTRUCTION_VARIANT_LABELS[condition],
+                "instruction": row.get("task_description") or row.get("instruction", ""),
+                "instruction_type": row.get("instruction_type", "counterfactual_single_subtask"),
+                "subtask_label": row.get("subtask_label"),
+                "subtask_subject": row.get("subtask_subject"),
+                "subtask_target": row.get("subtask_target"),
+                "available": True,
+                "counterfactual": True,
+            }
+        return options
+
+    def instruction_variant_for(
+        self,
+        record: dict[str, Any],
+        condition: str,
+    ) -> dict[str, Any] | None:
+        if condition not in INSTRUCTION_VARIANT_CONDITIONS:
+            raise ValidationError(
+                "condition must be one of: " + ", ".join(INSTRUCTION_VARIANT_CONDITIONS)
+            )
+        if condition == "full_instruction":
+            variant = dict(record)
+            variant.update({
+                "condition": "full_instruction",
+                "instruction_variant": "full_instruction",
+                "instruction_type": "original_full_instruction",
+                "instruction": record.get("task_description", ""),
+                "original_full_instruction": record.get("task_description", ""),
+                "source_rollout_id": record["id"],
+            })
+            return variant
+        row = self.load_instruction_variant_records().get(record["id"], {}).get(condition)
+        if row is None:
+            return None
+        if row.get("video_path") != record.get("video_path"):
+            raise ValidationError("Instruction variant video does not match source rollout: " + record["id"])
+        return dict(row)
 
     def load_rollouts(self) -> list[dict[str, Any]]:
         if not self.manifest_path.exists():
@@ -3732,13 +3938,19 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 records = []
                 for record in self.app.load_rollouts():
                     annotation = self.app.store.read(record["id"])
-                    records.append(
-                        {
-                            **record,
-                            "annotation": annotation,
-                            "annotation_status": annotation["review_status"] if annotation else "unreviewed",
-                        }
-                    )
+                    enriched = {
+                        **record,
+                        "annotation": annotation,
+                        "annotation_status": annotation["review_status"] if annotation else "unreviewed",
+                    }
+                    options = self.app.instruction_variant_options(record)
+                    enriched["instruction_variants"] = options
+                    enriched["instruction_variant_conditions"] = list(options)
+                    if self.app.instruction_variant_manifest_path.is_file():
+                        enriched["instruction_variant_manifest"] = str(
+                            self.app.instruction_variant_manifest_path.relative_to(self.app.project_root)
+                        )
+                    records.append(enriched)
                 self.json_response(HTTPStatus.OK, {"rollouts": records})
                 return
             if path == "/api/baselines/runs":
@@ -3834,7 +4046,44 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if not rollout:
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
-                self.json_response(HTTPStatus.OK, {"evaluation": self.app.baselines.evaluation(rollout)})
+                condition = query.get("condition", ["full_instruction"])[0] or "full_instruction"
+                run_overrides = {
+                    method: query.get("run_" + method, [""])[0]
+                    for method in BASELINE_METHODS
+                    if query.get("run_" + method, [""])[0]
+                }
+                variant = self.app.instruction_variant_for(rollout, condition)
+                if variant is None:
+                    evaluation = self.app.baselines.evaluation(
+                        rollout,
+                        condition=condition,
+                        source_rollout_id=rollout_id,
+                        variant_available=False,
+                        unavailable_reason=(
+                            "No prepared " + INSTRUCTION_VARIANT_LABELS[condition]
+                            + " variant exists for this rollout."
+                        ),
+                        run_overrides=run_overrides,
+                    )
+                    evaluation.update({
+                        "variant_id": None,
+                        "instruction": None,
+                        "instruction_type": None,
+                    })
+                else:
+                    evaluation = self.app.baselines.evaluation(
+                        variant,
+                        condition=condition,
+                        source_rollout_id=rollout_id,
+                        variant_available=True,
+                        run_overrides=run_overrides,
+                    )
+                    evaluation.update({
+                        "variant_id": variant["id"],
+                        "instruction": variant.get("task_description") or variant.get("instruction", ""),
+                        "instruction_type": variant.get("instruction_type"),
+                    })
+                self.json_response(HTTPStatus.OK, {"evaluation": evaluation})
                 return
             if path.startswith("/api/annotations/"):
                 rollout_id = path.rsplit("/", 1)[-1]

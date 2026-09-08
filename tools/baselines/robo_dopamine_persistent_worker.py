@@ -41,7 +41,21 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
     repo = str(args.repo.resolve())
     if repo not in sys.path:
         sys.path.insert(0, repo)
-    import examples.inference as official
+    # The official module sets CUDA_VISIBLE_DEVICES=0 at import time.  Preserve
+    # the worker assignment so vLLM sees the GPU selected by the parent runner.
+    requested_cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    requested_local_rank = os.environ.get("LOCAL_RANK")
+    try:
+        import examples.inference as official
+    finally:
+        if requested_cuda_visible is None:
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = requested_cuda_visible
+        if requested_local_rank is None:
+            os.environ.pop("LOCAL_RANK", None)
+        else:
+            os.environ["LOCAL_RANK"] = requested_local_rank
 
     # The official constructor hard-codes 0.9. Patch only its module-local LLM
     # symbol so the runner's free-memory-derived budget remains authoritative.

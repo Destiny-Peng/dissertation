@@ -214,6 +214,26 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(methods["densereward"]["samples"][0]["signals"]["reward"], 0.521)
 
 
+    def test_baseline_run_override_and_path_validation(self) -> None:
+        self.seed_baseline_outputs()
+        with self.request(
+            "/api/baselines/sample-rollout?run_safe=outputs/baselines/safe_test"
+        ) as response:
+            evaluation = json.load(response)["evaluation"]
+        selected = evaluation["methods"]["safe"]
+        self.assertEqual(selected["run"]["run_root"], "outputs/baselines/safe_test")
+        self.assertEqual(selected["run_selection"]["mode"], "explicit")
+        self.assertEqual(
+            selected["run_selection"]["requested_run_root"],
+            "outputs/baselines/safe_test",
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(
+                "/api/baselines/sample-rollout?run_safe=../../outside-run"
+            )
+        self.assertEqual(caught.exception.code, 400)
+
     def test_robo_dopamine_web_command_defaults_to_fused(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
@@ -285,6 +305,48 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.status, 206)
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/16")
             self.assertEqual(response.read(), b"2345")
+
+    def test_instruction_variant_selector_is_explicit_and_does_not_reuse_full_outputs(self) -> None:
+        variant_root = self.root / "tools" / "lf3r_annotator" / "instruction_variants" / "libero_10_v1"
+        variant_root.mkdir(parents=True)
+        rows = []
+        for condition, label, instruction in (
+            ("subtask_a", "A", "pick up the test object"),
+            ("subtask_b", "B", "place the test object"),
+        ):
+            rows.append({
+                "id": self.rollout["id"] + "--" + condition,
+                "source_rollout_id": self.rollout["id"],
+                "source_id": self.rollout["id"],
+                "instruction_variant": condition,
+                "condition": condition,
+                "subtask_label": label,
+                "instruction_type": "counterfactual_single_subtask",
+                "task_description": instruction,
+                "instruction": instruction,
+                "video_path": self.rollout["video_path"],
+            })
+        (variant_root / "manifest.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+
+        with self.request("/api/rollouts") as response:
+            record = json.load(response)["rollouts"][0]
+        self.assertEqual(
+            list(record["instruction_variants"]),
+            ["full_instruction", "subtask_a", "subtask_b"],
+        )
+        self.assertEqual(record["instruction_variants"]["subtask_a"]["label"], "A")
+        self.assertTrue(record["instruction_variants"]["subtask_b"]["counterfactual"])
+
+        with self.request("/api/baselines/sample-rollout?condition=subtask_a") as response:
+            evaluation = json.load(response)["evaluation"]
+        self.assertEqual(evaluation["condition"], "subtask_a")
+        self.assertTrue(evaluation["variant_available"])
+        self.assertEqual(evaluation["variant_id"], "sample-rollout--subtask_a")
+        self.assertEqual(evaluation["available_methods"], [])
+        self.assertTrue(all(result["run"] is None for result in evaluation["methods"].values()))
 
     def test_annotation_is_saved_and_reloaded(self) -> None:
         payload = {

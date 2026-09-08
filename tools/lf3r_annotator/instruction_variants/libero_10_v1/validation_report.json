@@ -1,0 +1,61 @@
+{
+  "compatible_rollouts": 115,
+  "compatible_tasks": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    6,
+    7,
+    8,
+    9
+  ],
+  "condition_counts": {
+    "full_instruction": 125,
+    "subtask_a": 115,
+    "subtask_b": 115
+  },
+  "generated_at": "2026-09-08T04:12:28.602189+00:00",
+  "generated_rows": 355,
+  "incompatible_tasks": [
+    5
+  ],
+  "output_directory": "tools/lf3r_annotator/instruction_variants/libero_10_v1",
+  "output_namespace": "outputs/baselines/instruction_variants/libero_10",
+  "schema_version": 1,
+  "source_excluded_ids": [],
+  "source_excluded_libero10_rows": 0,
+  "source_libero10_rows": 125,
+  "source_manifest": "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
+  "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
+  "source_manifest_total_rows": 166,
+  "source_rollouts": 125,
+  "source_selected_rows": 125,
+  "task_row_counts": {
+    "0": 48,
+    "1": 48,
+    "2": 48,
+    "3": 48,
+    "4": 33,
+    "5": 10,
+    "6": 30,
+    "7": 30,
+    "8": 30,
+    "9": 30
+  },
+  "valid": true,
+  "validated_task_spec_count": 10,
+  "validation_checks": [
+    "Every source primary_natural LIBERO-10 rollout has one full_instruction row.",
+    "Every compatible source rollout has exactly one subtask_a and one subtask_b row.",
+    "Task 5 is retained as full_instruction only because its official BDDL has one unique goal atom.",
+    "Every generated subtask goal atom is present in the corresponding official LIBERO-10 BDDL.",
+    "Official atomic language templates are checked against the upstream BDDL language corpus.",
+    "Non-template subtask wording is checked against its source BDDL object/goal atom and single-clause grammar.",
+    "A/B labels are canonical and make no claim about observed trajectory execution order.",
+    "Every variant preserves the source video path, task ID, episode ID, and full instruction.",
+    "Every variant uses an isolated diagnostic role and output namespace.",
+    "No source manifest, video, CSV, annotation, or existing baseline output is written by this tool."
+  ]
+}
