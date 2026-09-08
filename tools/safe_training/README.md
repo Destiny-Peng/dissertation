@@ -5,7 +5,7 @@ This directory contains LF3R-owned setup and wrappers for the official `vla-safe
 ## Environment
 
 ```bash
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
+source project_env.sh
 bash tools/setup_safe_training_env.sh
 uv pip check --python "$LF3R_SAFE_PYTHON"
 ```
