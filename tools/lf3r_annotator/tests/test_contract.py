@@ -49,8 +49,6 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "instructionCondition",
             "instructionVariantNote",
             "reloadEvaluation",
-            "baselineGpu",
-            "baselineMemoryUtilization",
             "baselineBatchForm",
             "baselineBatchMethod",
             "baselineBatchScope",
@@ -86,6 +84,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             self.assertIn('id="' + element_id + '"', html)
         self.assertIn("/api/videos/", javascript)
         self.assertIn("/api/annotations/", javascript)
+        self.assertNotIn('id="baselineGpu"', html)
+        self.assertNotIn('id="baselineMemoryUtilization"', html)
         self.assertIn("first_environment_timestep", javascript)
         self.assertIn("sessionStorage", javascript)
         for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
@@ -103,6 +103,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "evaluationSignalVisibility",
             "click labels to show/hide",
             "frameDomainMax",
+            "evaluation-current-body",
+            "textEntries",
             "video frames 0-",
         ]:
             self.assertIn(marker, javascript)

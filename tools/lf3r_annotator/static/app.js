@@ -1065,13 +1065,22 @@ function nearestEvaluationSample(samples, frame) {
 function sampleOutputText(sample) {
   if (!sample) return "No output at this frame.";
   var parts = [];
+  var textEntries = [];
+  // ProcVLM reasoning is derived from model_output by removing the final
+  // progress sentence. Showing both therefore duplicates the same text.
+  if (sample.model_output != null && sample.model_output !== "") {
+    textEntries.push(["Model output", sample.model_output]);
+  } else if (sample.reasoning != null && sample.reasoning !== "") {
+    textEntries.push(["Reasoning", sample.reasoning]);
+  }
   [
-    ["Model output", sample.model_output],
-    ["Reasoning", sample.reasoning],
     ["Analysis", sample.analysis_text],
     ["Parsed analysis", sample.parsed_analysis],
     ["Prediction", sample.pred]
   ].forEach(function (entry) {
+    textEntries.push(entry);
+  });
+  textEntries.forEach(function (entry) {
     if (entry[1] == null || entry[1] === "") return;
     var value = typeof entry[1] === "string" ? entry[1] : JSON.stringify(entry[1], null, 2);
     parts.push(entry[0] + ":\n" + value);
@@ -1334,23 +1343,16 @@ function renderEvaluationCard(method, result, record) {
   var viewingCondition = state.instructionCondition || "full_instruction";
   var validation = result.validation || {};
   var status = validation.status || (available ? "ok" : "missing");
-  var run = result.run;
-  var runText = run
-    ? "run " + (run.run_root || "unknown") + "  -  " + (run.status || "unknown")
-      + (run.failed_jobs ? "  -  " + run.failed_jobs + " failed jobs" : "")
-    : "No completed run discovered";
   var action = viewingCondition === "full_instruction"
     ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method) + '">'
       + (available ? "Re-run rollout" : "Run baseline") + "</button>"
     : '<span class="evaluation-meta">Condition view only</span>';
-  var body = renderBaselineRunControls(method, result, record)
-    + '<div class="evaluation-meta">' + escapeHtml(runText) + "</div>"
-    + '<div class="evaluation-meta">' + (available ? escapeHtml(result.sample_count + " samples  -  " + (result.kind || "parsed output")) : "") + "</div>";
+  var body = renderBaselineRunControls(method, result, record);
   if (available) {
     body += renderSignalChart(method, result, record)
       + '<div class="evaluation-current">'
       + '<div class="evaluation-current-frame" data-current-frame>At video frame -</div>'
-      + '<div><div class="evaluation-signals" data-current-signals>No numeric signals.</div>'
+      + '<div class="evaluation-current-body"><div class="evaluation-signals" data-current-signals>No numeric signals.</div>'
       + '<pre class="evaluation-output" data-current-output>No output at this frame.</pre></div></div>'
       + renderEvaluationHistory(result);
   } else {
@@ -1358,9 +1360,6 @@ function renderEvaluationCard(method, result, record) {
   }
   if (validation.message && available && status !== "ok") {
     body += '<div class="evaluation-meta">' + escapeHtml(validation.message) + "</div>";
-  }
-  if (result.raw_files && result.raw_files.length) {
-    body += '<div class="evaluation-source">Source: ' + escapeHtml(result.raw_files.join(", ")) + "</div>";
   }
   return '<article class="evaluation-card ' + (available ? "available" : "unavailable") + '" data-evaluation-method="' + escapeHtml(method) + '">'
     + '<div class="evaluation-card-header"><div class="evaluation-card-title">' + escapeHtml(result.label || method)
@@ -2018,18 +2017,9 @@ async function pollRolloutGenerationJob(jobId) {
 async function startBaselineRun(method) {
   var record = selectedRollout();
   if (!record) return;
-  var gpu = byId("baselineGpu").value.trim();
-  var memory = Number(byId("baselineMemoryUtilization").value);
-  if (!/^\d+(,\d+)*$/.test(gpu)) {
-    byId("evaluationStatus").textContent = "GPU must be a numeric CUDA device index or comma-separated list.";
-    byId("baselineGpu").focus();
-    return;
-  }
-  if (!Number.isFinite(memory) || memory <= 0 || memory > 1) {
-    byId("evaluationStatus").textContent = "Free-memory fraction must be between 0 and 1.";
-    byId("baselineMemoryUtilization").focus();
-    return;
-  }
+  // Single-rollout reruns use the same stable defaults as the former compact controls.
+  var gpu = "0";
+  var memory = 0.80;
   if (!window.confirm("Run " + method + " for this one rollout? This launches GPU inference.")) return;
   byId("evaluationStatus").textContent = "Starting " + method + " rollout validation...";
   try {

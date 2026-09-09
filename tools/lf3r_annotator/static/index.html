@@ -160,11 +160,6 @@
               <button id="reloadEvaluation" class="ghost-button" type="button">Refresh</button>
             </div>
             <div id="evaluationStatus" class="evaluation-status">Loading baseline outputs…</div>
-            <div class="baseline-controls">
-              <label data-cli-help="baseline.gpu">GPU <input id="baselineGpu" type="text" inputmode="numeric" value="0" maxlength="15"></label>
-              <label data-cli-help="baseline.vllm_free_memory_fraction">Free memory <input id="baselineMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
-              <span>One rollout at a time; the value targets currently free GPU memory. Robo-Dopamine uses fused by default.</span>
-            </div>
             <div id="evaluationMethods" class="evaluation-methods" aria-live="polite"></div>
           </section>
 
