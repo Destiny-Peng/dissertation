@@ -735,6 +735,20 @@ def filter_records(args: argparse.Namespace, records: list[dict[str, Any]]) -> l
     if len(ids) != len(set(ids)):
         raise ValueError("Manifest has duplicate rollout IDs")
     selected = records
+    instruction_condition = getattr(args, "instruction_condition", "full_instruction")
+    if instruction_condition == "full_instruction":
+        selected = [
+            record
+            for record in selected
+            if record.get("instruction_variant") in (None, "full_instruction")
+        ]
+    else:
+        selected = [
+            record
+            for record in selected
+            if record.get("instruction_variant") == instruction_condition
+            or record.get("condition") == instruction_condition
+        ]
     if args.partition != "all":
         selected = [record for record in selected if record.get("analysis_partition") == args.partition]
     if args.dataset_role:
@@ -2104,6 +2118,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True, choices=sorted(BASELINES))
     parser.add_argument("--manifest", type=Path, default=None, help="Input LF3R JSONL manifest")
+    parser.add_argument(
+        "--instruction-condition",
+        choices=("full_instruction", "subtask_a", "subtask_b"),
+        default="full_instruction",
+        help="Instruction variant to select from a combined variant manifest",
+    )
     parser.add_argument("--data-root", type=Path, default=None, help="Root for relative video/csv paths")
     parser.add_argument("--output-dir", type=Path, default=None, help="Parent directory for timestamped run output")
     parser.add_argument("--logs-dir", type=Path, default=None)
@@ -2322,6 +2342,8 @@ def main() -> int:
         "dry_run": args.dry_run,
         "manifest": str(args.manifest),
         "manifest_sha256": file_sha256(args.manifest),
+        "instruction_condition": args.instruction_condition,
+        "instruction_variant": args.instruction_condition,
         "data_root": str(args.data_root),
         "output_root": str(run_root),
         "log_path": str(log_path),

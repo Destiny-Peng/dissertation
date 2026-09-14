@@ -449,6 +449,16 @@ def validate_run_scope(scope: Any) -> str:
     return value
 
 
+def validate_instruction_condition(condition: Any) -> str:
+    value = str(condition or "full_instruction")
+    if value not in INSTRUCTION_VARIANT_CONDITIONS:
+        raise ValidationError(
+            "instruction_condition must be one of: "
+            + ", ".join(INSTRUCTION_VARIANT_CONDITIONS)
+        )
+    return value
+
+
 def record_matches_scope(record: dict[str, Any], scope: str) -> bool:
     if scope == "all":
         return True
@@ -1844,6 +1854,17 @@ class BaselineService:
         self.manifest_path = manifest_path.resolve()
         self.baseline_root = self.project_root / "outputs" / "baselines"
         self.web_output_root = self.baseline_root / "web_runs"
+        self.variant_manifest_path = (
+            self.project_root
+            / "tools"
+            / "lf3r_annotator"
+            / "instruction_variants"
+            / "libero_10_v1"
+            / "manifest.jsonl"
+        )
+        self.variant_output_root = (
+            self.baseline_root / "instruction_variants" / "libero_10"
+        )
         self.web_logs_root = self.project_root / "logs" / "baselines" / "web_runs"
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
@@ -2073,25 +2094,75 @@ class BaselineService:
         raw = json.loads(path.read_text(encoding="utf-8"))
         values = raw["values"]
         indices = raw["sampled_indices"]
-        samples = []
-        raw_frames = []
+        relative_values = raw.get("relative_values")
+        if not isinstance(relative_values, list):
+            relative_values = []
+            # Be tolerant of a raw file produced by an intermediate wrapper
+            # that retained only the complete per-prefix rows.  The Review
+            # timeline uses the last native relative slot for each prefix.
+            for row in raw.get("relative_values_by_prefix") or []:
+                if not isinstance(row, list):
+                    row = [row]
+                selected = None
+                for item in reversed(row):
+                    selected = self._number(item)
+                    if selected is not None:
+                        break
+                relative_values.append(selected)
+        relative_indices = raw.get("relative_sampled_indices")
+        if not isinstance(relative_indices, list):
+            relative_indices = list(indices) if relative_values else []
         parsed = raw.get("parsed_analysis")
         analysis_text = raw.get("analysis_text")
-        for index, value in zip(indices, values):
+        samples = []
+        raw_frames = []
+        relative_sample_count = 0
+        for position, (index, value) in enumerate(zip(indices, values)):
             number = self._number(value)
             if number is None:
                 continue
             raw_frame = int(index)
             frame = min(max(raw_frame, 0), total_frames - 1)
+            signals = {"value": number}
+            relative_number = (
+                self._number(relative_values[position])
+                if position < len(relative_values)
+                else None
+            )
+            if relative_number is not None:
+                signals["relative_value"] = relative_number
+                relative_sample_count += 1
             samples.append({
                 "frame": frame,
                 "raw_frame": raw_frame,
-                "signals": {"value": number},
+                "signals": signals,
                 "analysis_text": str(analysis_text)[:12000] if analysis_text else None,
                 "parsed_analysis": parsed,
             })
             raw_frames.append(raw_frame)
-        return self._pack("rynnvalue", run_summary, samples, [path], raw_frames, {"_total_frames": int(rollout["total_frames"]), "kind": "value_head_and_analysis"})
+        relative_output = {
+            "available": relative_sample_count > 0,
+            "signal": "relative_value",
+            "official_head": "<relative_value>",
+            "semantics": "signed temporal displacement between consecutive sampled observations",
+            "aligned_to": "sampled_indices; last native relative slot per prefix",
+            "complete_slot_rows_preserved": isinstance(raw.get("relative_values_by_prefix"), list),
+            "prefix_count": len(relative_values),
+            "aligned_prefix_count": len(relative_indices),
+            "finite_aligned_sample_count": relative_sample_count,
+        }
+        return self._pack(
+            "rynnvalue",
+            run_summary,
+            samples,
+            [path],
+            raw_frames,
+            {
+                "_total_frames": int(rollout["total_frames"]),
+                "kind": "value_and_relative_heads_and_analysis",
+                "relative_output": relative_output,
+            },
+        )
 
     def _read_robo_dopamine(self, run_path: Path, rollout: dict[str, Any], run_summary: dict[str, Any]) -> dict[str, Any]:
         result_path = run_path / "raw" / rollout["id"] / "worker_result.json"
@@ -2302,28 +2373,115 @@ class BaselineService:
     def _manifest_records(self) -> list[dict[str, Any]]:
         return load_manifest_records(self.manifest_path)
 
-    def list_runs(self, scope: Any = "natural_observation") -> list[dict[str, Any]]:
+    def _manifest_for_condition(self, condition: str) -> Path:
+        condition = validate_instruction_condition(condition)
+        if condition == "full_instruction":
+            return self.manifest_path
+        if not self.variant_manifest_path.is_file():
+            raise ValidationError(
+                "Instruction-variant manifest is unavailable; run "
+                "tools/prepare_libero10_instruction_variants.py first"
+            )
+        return self.variant_manifest_path
+
+    def _condition_records(self, condition: str, scope: str) -> list[dict[str, Any]]:
+        condition = validate_instruction_condition(condition)
+        source_records = select_scope_records(self._manifest_records(), scope)
+        if condition == "full_instruction":
+            return source_records
+
+        variant_records = load_manifest_records(self._manifest_for_condition(condition))
+        by_source: dict[str, dict[str, Any]] = {}
+        for record in variant_records:
+            row_condition = record.get("instruction_variant") or record.get("condition")
+            if row_condition != condition:
+                continue
+            source_id = record.get("source_rollout_id") or record.get("source_id")
+            if isinstance(source_id, str):
+                by_source[source_id] = record
+        return [
+            by_source[record["id"]]
+            for record in source_records
+            if record["id"] in by_source
+        ]
+
+    def _variant_record_for_source(
+        self,
+        source_rollout_id: str,
+        condition: str,
+    ) -> dict[str, Any]:
+        records = self._condition_records(condition, "all")
+        for record in records:
+            source_id = record.get("source_rollout_id") or record.get("source_id")
+            if source_id == source_rollout_id:
+                return record
+        raise ValidationError(
+            f"No prepared {INSTRUCTION_VARIANT_LABELS[condition]} variant exists "
+            f"for rollout {source_rollout_id}"
+        )
+
+    def list_runs(
+        self,
+        scope: Any = "natural_observation",
+        condition: Any = "full_instruction",
+    ) -> list[dict[str, Any]]:
         scope = validate_run_scope(scope)
-        selected_ids = {record["id"] for record in select_scope_records(self._manifest_records(), scope)}
+        condition = validate_instruction_condition(condition)
+        selected_ids = {
+            record["id"] for record in self._condition_records(condition, scope)
+        }
+        variant_by_id: dict[str, dict[str, Any]] = {}
+        if condition != "full_instruction":
+            variant_by_id = {
+                record["id"]: record
+                for record in load_manifest_records(self._manifest_for_condition(condition))
+            }
         summaries = []
         for method in BASELINE_METHODS:
             for run_path, metadata in self._run_candidates(method):
+                run_condition = self._run_instruction_condition(metadata)
+                if condition == "full_instruction":
+                    if run_condition not in {"full_instruction", "unknown"}:
+                        continue
+                elif run_condition != condition:
+                    continue
                 run_ids = run_rollout_ids(run_path)
                 missing = selected_ids - run_ids if run_ids else selected_ids
+                source_ids = {
+                    (
+                        variant_by_id[rollout_id].get("source_rollout_id")
+                        or variant_by_id[rollout_id].get("source_id")
+                        or rollout_id
+                    )
+                    for rollout_id in run_ids
+                    if rollout_id in variant_by_id
+                }
+                if condition == "full_instruction":
+                    source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
                     "run_rollout_count": len(run_ids),
                     "run_rollout_ids": sorted(run_ids),
+                    "run_source_rollout_ids": sorted(source_ids),
                     "selected_scope_rollouts": len(selected_ids),
-                    "compatible": bool(selected_ids) and not missing and summary["selected_rollouts"] >= len(selected_ids),
-                    "partial_compatible": method == "rynnvalue" and bool(selected_ids.intersection(run_ids)),
+                    "compatible": bool(selected_ids)
+                    and not missing
+                    and summary["selected_rollouts"] >= len(selected_ids),
+                    "partial_compatible": bool(selected_ids.intersection(run_ids)),
                     "missing_rollouts": len(missing),
                     "scope": scope,
+                    "instruction_condition": run_condition,
                 })
                 summaries.append(summary)
-        summaries.sort(key=lambda item: (str(item.get("baseline")), str(item.get("completed_at") or item.get("created_at") or "")), reverse=True)
+        summaries.sort(
+            key=lambda item: (
+                str(item.get("baseline")),
+                str(item.get("completed_at") or item.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
         return summaries
 
     def _validate_gpu(self, value: Any) -> str:
@@ -2557,14 +2715,20 @@ class BaselineService:
         end_index: int | None = None,
         worker_assignments: list[dict[str, Any]] | None = None,
         parallel_workers: int = 1,
+        manifest_path: Path | None = None,
+        instruction_condition: str = "full_instruction",
+        rollout_ids: list[str] | None = None,
     ) -> list[str]:
         runner = self.project_root / "tools" / "baselines" / "run_lf3r_baseline.py"
         if not runner.is_file():
             raise ValidationError("Baseline runner is not installed")
+        instruction_condition = validate_instruction_condition(instruction_condition)
+        selected_manifest = manifest_path or self._manifest_for_condition(instruction_condition)
         command = [
             sys.executable, str(runner),
             "--baseline", baseline,
-            "--manifest", str(self.manifest_path),
+            "--manifest", str(selected_manifest),
+            "--instruction-condition", instruction_condition,
             "--data-root", str(self.project_root),
             "--output-dir", str(run_parent),
             "--logs-dir", str(self.web_logs_root),
@@ -2572,7 +2736,16 @@ class BaselineService:
             "--vllm-free-memory-fraction", str(utilization),
             "--continue-on-error",
         ]
-        if scope in {"primary_natural", "reference_natural"}:
+        if instruction_condition != "full_instruction":
+            # Variant rows use the diagnostic partition. Restrict the runner
+            # to the source-scope IDs selected above so a primary/reference
+            # request cannot expand to every row in the combined variant
+            # manifest. Positional ranges remain scope-relative after this
+            # explicit ID filter.
+            command.extend(["--partition", "all"])
+            for rollout_id in rollout_ids or []:
+                command.extend(["--rollout-id", str(rollout_id)])
+        elif scope in {"primary_natural", "reference_natural"}:
             command.extend(["--partition", "natural_observation", "--dataset-role", scope])
         else:
             command.extend(["--partition", scope])
@@ -2646,6 +2819,9 @@ class BaselineService:
         unique_selected_rollouts: int | None = None,
         overlaps: list[int] | None = None,
         gaps: list[int] | None = None,
+        instruction_condition: str = "full_instruction",
+        manifest_path: Path | None = None,
+        variant_rollout_id: str | None = None,
     ) -> dict[str, Any]:
         return {
             "job_id": job_id,
@@ -2653,6 +2829,9 @@ class BaselineService:
             "baseline_mode": "rollout" if rollout_id else "batch",
             "baseline": baseline,
             "rollout_id": rollout_id,
+            "variant_rollout_id": variant_rollout_id,
+            "instruction_condition": instruction_condition,
+            "manifest": self._relative(manifest_path) if manifest_path else self._relative(self.manifest_path),
             "scope": scope,
             "selected_rollouts": selected_count,
             "unique_selected_rollouts": (
@@ -2683,9 +2862,28 @@ class BaselineService:
             "interpreter": str(sys.executable),
         }
 
-    def start_run(self, rollout: dict[str, Any], baseline: str, gpu: str, memory_utilization: Any = 0.80) -> dict[str, Any]:
+    def start_run(
+        self,
+        rollout: dict[str, Any],
+        baseline: str,
+        gpu: str,
+        memory_utilization: Any = 0.80,
+        instruction_condition: Any = "full_instruction",
+    ) -> dict[str, Any]:
         if baseline not in BASELINE_METHODS:
             raise ValidationError("Invalid baseline method")
+        instruction_condition = validate_instruction_condition(instruction_condition)
+        run_rollout = rollout
+        if instruction_condition != "full_instruction":
+            run_rollout = self._variant_record_for_source(
+                str(rollout["id"]), instruction_condition
+            )
+        manifest_path = self._manifest_for_condition(instruction_condition)
+        output_parent = (
+            self.web_output_root
+            if instruction_condition == "full_instruction"
+            else self.variant_output_root / instruction_condition
+        )
         gpu = self._validate_gpu(gpu)
         if isinstance(memory_utilization, bool):
             raise ValidationError("memory_utilization must be a number")
@@ -2695,19 +2893,41 @@ class BaselineService:
             raise ValidationError("memory_utilization must be a number") from error
         if not math.isfinite(utilization) or not 0.0 < utilization <= 1.0:
             raise ValidationError("memory_utilization must be in (0, 1]")
-        self.web_output_root.mkdir(parents=True, exist_ok=True)
+        output_parent.mkdir(parents=True, exist_ok=True)
         self.web_logs_root.mkdir(parents=True, exist_ok=True)
         job_id = baseline + "-" + uuid.uuid4().hex[:12]
         self.coordinator.acquire(job_id, "baseline")
         try:
             command = self._baseline_command(
-                baseline, "all", gpu, utilization, self.web_output_root, {},
-                start_index=0, limit=None,
+                baseline,
+                "all",
+                gpu,
+                utilization,
+                output_parent,
+                {},
+                start_index=0,
+                limit=None,
+                manifest_path=manifest_path,
+                instruction_condition=instruction_condition,
             )
-            command.extend(["--rollout-id", rollout["id"]])
+            command.extend(["--rollout-id", run_rollout["id"]])
             job = self._new_job(
-                command, baseline, "all", 1, gpu, utilization,
-                self.web_output_root, job_id, rollout["id"],
+                command,
+                baseline,
+                "all",
+                1,
+                gpu,
+                utilization,
+                output_parent,
+                job_id,
+                str(rollout["id"]),
+                instruction_condition=instruction_condition,
+                manifest_path=manifest_path,
+                variant_rollout_id=(
+                    str(run_rollout["id"])
+                    if run_rollout["id"] != rollout["id"]
+                    else None
+                ),
             )
             with self.jobs_lock:
                 self.jobs[job_id] = job
@@ -2731,7 +2951,7 @@ class BaselineService:
             raise ValidationError("Batch request must be a JSON object")
         allowed_fields = {
             "baseline", "scope", "gpu", "memory_utilization", "start_index", "end_index",
-            "limit", "parallel_workers", "workers", "options",
+            "limit", "parallel_workers", "workers", "options", "instruction_condition",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -2739,8 +2959,11 @@ class BaselineService:
         baseline = str(payload.get("baseline", ""))
         if baseline not in BASELINE_METHODS:
             raise ValidationError("Invalid baseline method")
+        instruction_condition = validate_instruction_condition(
+            payload.get("instruction_condition", "full_instruction")
+        )
         scope = validate_run_scope(payload.get("scope"))
-        records = select_scope_records(self._manifest_records(), scope)
+        records = self._condition_records(instruction_condition, scope)
         if not records:
             raise ValidationError(f"No rollouts matched scope {scope}")
         gpu = self._validate_gpu(payload.get("gpu", "0"))
@@ -2798,12 +3021,17 @@ class BaselineService:
         if baseline == "robo_dopamine":
             options.setdefault("robo_eval_mode", "fused")
         selected_count = total_end - start_index
-        self.web_output_root.mkdir(parents=True, exist_ok=True)
+        output_parent = (
+            self.web_output_root
+            if instruction_condition == "full_instruction"
+            else self.variant_output_root / instruction_condition / "web_runs"
+        )
+        output_parent.mkdir(parents=True, exist_ok=True)
         self.web_logs_root.mkdir(parents=True, exist_ok=True)
         job_id = baseline + "-batch-" + uuid.uuid4().hex[:12]
         self.coordinator.acquire(job_id, "baseline")
         try:
-            run_parent = self.web_output_root / job_id
+            run_parent = output_parent / job_id
             run_parent.mkdir(parents=True, exist_ok=False)
             command = self._baseline_command(
                 baseline,
@@ -2819,6 +3047,13 @@ class BaselineService:
                     worker_plan["worker_assignments"] if use_worker_plan else None
                 ),
                 parallel_workers=(worker_plan["parallel_workers"] if use_worker_plan else 1),
+                manifest_path=self._manifest_for_condition(instruction_condition),
+                instruction_condition=instruction_condition,
+                rollout_ids=(
+                    [str(record["id"]) for record in records]
+                    if instruction_condition != "full_instruction"
+                    else None
+                ),
             )
             job = self._new_job(
                 command,
@@ -2835,6 +3070,8 @@ class BaselineService:
                 unique_selected_rollouts=(worker_plan["unique_selected_rollouts"] if use_worker_plan else selected_count),
                 overlaps=(worker_plan["overlaps"] if use_worker_plan else None),
                 gaps=(worker_plan["gaps"] if use_worker_plan else None),
+                instruction_condition=instruction_condition,
+                manifest_path=self._manifest_for_condition(instruction_condition),
             )
             job["options"] = options
             job["start_index"] = start_index
@@ -3440,6 +3677,15 @@ class RolloutGenerationService:
             raise ValidationError("gpu must be one numeric CUDA device index")
         return gpu
 
+    @classmethod
+    def _resolution(cls, value: Any, name: str, default: int) -> int:
+        if value is None or value == "":
+            return int(default)
+        resolution = cls._integer(value, name, 64, 2048)
+        if resolution % 2:
+            raise ValidationError(f"{name} must be an even integer between 64 and 2048")
+        return resolution
+
     @staticmethod
     def _task_suite(value: Any) -> str:
         suite = str(value or "libero_10").strip()
@@ -3502,7 +3748,7 @@ class RolloutGenerationService:
             raise ValidationError("Rollout generation request must be a JSON object")
         allowed = {
             "task_suite", "gpu", "task_start", "task_end", "trials", "seed",
-            "run_label", "log_safe_features",
+            "run_label", "log_safe_features", "render_resolution", "record_resolution",
         }
         unknown = set(payload) - allowed
         if unknown:
@@ -3515,6 +3761,12 @@ class RolloutGenerationService:
         task_suite = self._task_suite(payload.get("task_suite", "libero_10"))
         config = GENERATION_CONFIGS[task_suite]
         gpu = self._gpu(payload.get("gpu", "0"))
+        render_resolution = self._resolution(
+            payload.get("render_resolution"), "render_resolution", int(config["render_resolution"])
+        )
+        record_resolution = self._resolution(
+            payload.get("record_resolution"), "record_resolution", int(config["record_resolution"])
+        )
         max_task = int(config["max_task"])
         task_start = self._integer(payload.get("task_start", 0), "task_start", 0, max_task)
         task_end = self._integer(payload.get("task_end", 3), "task_end", 0, max_task)
@@ -3548,6 +3800,14 @@ class RolloutGenerationService:
         ]
         if log_safe_features:
             command.append("--log-safe-features")
+        command.extend(
+            [
+                "--render-resolution",
+                str(render_resolution),
+                "--record-resolution",
+                str(record_resolution),
+            ]
+        )
         expected = (task_end - task_start + 1) * trials
         job = {
             "job_id": job_id,
@@ -3566,9 +3826,9 @@ class RolloutGenerationService:
             "requested_rollouts": expected,
             "expected_rollouts": expected,
             "completed_rollouts": 0,
-            "render_resolution": config["render_resolution"],
+            "render_resolution": render_resolution,
             "policy_resolution": config["policy_resolution"],
-            "record_resolution": config["record_resolution"],
+            "record_resolution": record_resolution,
             "generator_script": self._relative(script),
             "output_root": self._relative(output_root),
             "run_root": self._relative(output_dir),
@@ -3955,9 +4215,14 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/baselines/runs":
                 scope = query.get("scope", ["natural_observation"])[0]
+                condition = query.get("condition", ["full_instruction"])[0]
                 self.json_response(
                     HTTPStatus.OK,
-                    {"scope": scope, "runs": self.app.baselines.list_runs(scope)},
+                    {
+                        "scope": scope,
+                        "condition": condition,
+                        "runs": self.app.baselines.list_runs(scope, condition),
+                    },
                 )
                 return
             if path == "/api/jobs":
@@ -4196,6 +4461,10 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     str(payload.get("baseline", "")),
                     str(payload.get("gpu", "0")),
                     payload.get("memory_utilization", 0.80),
+                    payload.get(
+                        "instruction_condition",
+                        payload.get("condition", "full_instruction"),
+                    ),
                 )
                 self.json_response(HTTPStatus.ACCEPTED, {"job": job})
                 return

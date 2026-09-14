@@ -26,7 +26,27 @@ def main() -> None:
         (rynn_infer / "inference.py").write_text("""
 import argparse
 import numpy as np
+import torch
 from pathlib import Path
+
+class FakeModel:
+    def to(self, *args, **kwargs):
+        return self
+    def eval(self):
+        return self
+    def __call__(self, **kwargs):
+        batch_size = int(kwargs["input_ids"].shape[0])
+        assert batch_size == 2
+        return type("Output", (), {
+            "relative": type("Relative", (), {
+                "pred_value": torch.tensor([0.125, 0.25, 0.5, -0.25])
+            })()
+        })()
+
+class AutoModel:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        return FakeModel()
 
 def build_output_path(args):
     return str(Path(args.output_path) / "fake_official_run")
@@ -47,6 +67,10 @@ def main():
     assert int(args.num_frames) == 16
     assert int(args.num_steps) == 3
     assert int(args.batch_size) == 4
+    model = AutoModel.from_pretrained(args.model_path)
+    model = model.to(device="cpu")
+    model.eval()
+    model(input_ids=torch.ones((2, 3), dtype=torch.long))
     Path(build_output_path(args)).mkdir(parents=True, exist_ok=True)
     parse_analysis("unmodified generated analysis")
     save_video_with_trend(images=[], value=[1.25, 0.75],
@@ -77,6 +101,10 @@ def main():
         )
         assert rynn_raw["values"] == [1.25, 0.75]
         assert rynn_raw["sampled_indices"] == [0, 9]
+        assert rynn_raw["relative_values"] == [0.25, -0.25]
+        assert rynn_raw["relative_values_by_prefix"] == [[0.125, 0.25], [0.5, -0.25]]
+        assert rynn_raw["relative_sampled_indices"] == [0, 9]
+        assert rynn_raw["relative_output_available"] is True
         assert rynn_raw["analysis_text"] == "unmodified generated analysis"
         assert rynn_raw["num_frames"] == 16
         assert rynn_raw["num_frames_mode"] == "uniform_subsample"

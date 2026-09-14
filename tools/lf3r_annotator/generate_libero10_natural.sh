@@ -6,22 +6,54 @@ PROJECT_ROOT_GUESS="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 source "$PROJECT_ROOT_GUESS/project_env.sh"
 test "$PROJECT_ROOT" = "$PROJECT_ROOT_GUESS"
 
-GPU_ID="${1:?usage: generate_libero10_natural.sh GPU_ID [TASK_START] [TASK_END] [TRIALS] [SEED] [RUN_NOTE] [--log-safe-features]}"
+GPU_ID="${1:?usage: generate_libero10_natural.sh GPU_ID [TASK_START] [TASK_END] [TRIALS] [SEED] [RUN_NOTE] [options]}"
 TASK_START="${2:-0}"
 TASK_END="${3:-3}"
 TRIALS="${4:-1}"
 SEED="${5:-7}"
 RUN_NOTE="${6:-lf3r-data-natural-libero10-$(lf3r_file_timestamp)}"
-SAFE_FEATURE_MODE="${7:-}"
-if [[ -n "$SAFE_FEATURE_MODE" && "$SAFE_FEATURE_MODE" != "--log-safe-features" ]]; then
-    echo "optional seventh argument must be --log-safe-features" >&2
-    exit 2
-fi
-if [[ "$SAFE_FEATURE_MODE" == "--log-safe-features" ]]; then
-    SAFE_FEATURE_ARGS=(--log-safe-features)
-else
-    SAFE_FEATURE_ARGS=()
-fi
+shift $(( $# >= 6 ? 6 : $# ))
+SAFE_FEATURE_MODE="disabled"
+SAFE_FEATURE_ARGS=()
+RESOLUTION_ARGS=()
+RENDER_RESOLUTION=""
+RECORD_RESOLUTION=""
+while (($# > 0)); do
+    case "$1" in
+        --log-safe-features)
+            SAFE_FEATURE_MODE="enabled"
+            SAFE_FEATURE_ARGS+=(--log-safe-features)
+            shift
+            ;;
+        --render-resolution)
+            [[ $# -ge 2 ]] || { echo "--render-resolution requires a value" >&2; exit 2; }
+            RENDER_RESOLUTION="$2"
+            RESOLUTION_ARGS+=(--render-resolution "$2")
+            shift 2
+            ;;
+        --record-resolution)
+            [[ $# -ge 2 ]] || { echo "--record-resolution requires a value" >&2; exit 2; }
+            RECORD_RESOLUTION="$2"
+            RESOLUTION_ARGS+=(--record-resolution "$2")
+            shift 2
+            ;;
+        *)
+            echo "unknown option: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+validate_resolution() {
+    local name="$1"
+    local value="$2"
+    if [[ -n "$value" ]] && { [[ ! "$value" =~ ^[0-9]+$ ]] || (( value < 64 || value > 2048 || value % 2 != 0 )); }; then
+        echo "$name must be an even integer between 64 and 2048" >&2
+        exit 2
+    fi
+}
+validate_resolution render-resolution "$RENDER_RESOLUTION"
+validate_resolution record-resolution "$RECORD_RESOLUTION"
 
 if [[ ! "$GPU_ID" =~ ^[0-9]+$ ]]; then
     echo "GPU_ID must be numeric" >&2
@@ -53,7 +85,8 @@ LOG_FILE="$(lf3r_log_path openvla_libero10_natural_rollouts)"
 echo "RUN_NOTE=$RUN_NOTE" | tee "$LOG_FILE"
 echo "GPU=$GPU_ID TASK_START=$TASK_START TASK_END=$TASK_END TRIALS=$TRIALS SEED=$SEED RUN_NOTE=$RUN_NOTE" | tee -a "$LOG_FILE"
 echo "GPU_GATE=memory_only utilization_ignored=$GPU_UTIL used_mib=$MEMORY_USED total_mib=$MEMORY_TOTAL free_mib=$MEMORY_FREE" | tee -a "$LOG_FILE"
-echo "SAFE_FEATURES=${SAFE_FEATURE_MODE:-disabled}" | tee -a "$LOG_FILE"
+echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
+echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
 
 set -o pipefail
 env \
@@ -72,6 +105,7 @@ env \
     --run-note "$RUN_NOTE" \
     --seed "$SEED" \
     "${SAFE_FEATURE_ARGS[@]}" \
+    "${RESOLUTION_ARGS[@]}" \
     2>&1 | tee -a "$LOG_FILE"
 
 python3 "$PROJECT_ROOT/tools/lf3r_annotator/build_manifest.py" | tee -a "$LOG_FILE"

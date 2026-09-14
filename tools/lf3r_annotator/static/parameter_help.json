@@ -12,6 +12,13 @@
       "applies_to": "batch baseline",
       "description": "Selects the rollout partition. The web scope maps to --partition plus an optional --dataset-role: all, natural_observation, controlled_analysis, primary_natural, or reference_natural."
     },
+    "instruction_condition": {
+      "cli": "--instruction-condition {full_instruction,subtask_a,subtask_b}",
+      "default": "full_instruction",
+      "applies_to": "single and batch baseline",
+      "description": "Selects the instruction condition. Full instruction uses the source rollout ID; A and B use the prepared single-subtask variant manifest and isolated output namespace. Full-instruction raw outputs are never reused for A/B.",
+      "forwarded_as": "--instruction-condition CONDITION"
+    },
     "partition": {
       "cli": "--partition NAME",
       "default": "natural_observation",
@@ -339,6 +346,20 @@
       "applies_to": "OpenVLA natural rollout generator",
       "description": "Selects the natural LIBERO suite. LIBERO-Spatial uses the existing Spatial checkpoint with native 256x256 simulator and replay frames while policy preprocessing remains 224x224; LIBERO-10 keeps the existing output root.",
       "forwarded_as": "--task_suite_name=SUITE to the official evaluator; wrapper selects the suite output root"
+    },
+    "render_resolution": {
+      "cli": "--render-resolution N",
+      "default": "256 (both supported suites)",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Square simulator render width and height. This controls the native observation rendered by LIBERO before the official policy preprocessing step. Use an even value from 64 through 2048.",
+      "forwarded_as": "wrapper -> --render_resolution=N to the official evaluator"
+    },
+    "record_resolution": {
+      "cli": "--record-resolution N",
+      "default": "224 for LIBERO-10; 256 for LIBERO-Spatial",
+      "applies_to": "OpenVLA natural rollout generator (selected task suite)",
+      "description": "Square replay-video width and height. This changes saved MP4 resolution only; it does not change the checkpoint policy input, which remains 224x224. Use an even value from 64 through 2048.",
+      "forwarded_as": "wrapper -> --record_resolution=N to the official evaluator"
     }
   },
   "settings": {

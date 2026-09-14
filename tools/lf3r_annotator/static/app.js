@@ -13,6 +13,7 @@ var state = {
   evaluationRequest: 0,
   evaluationSignalVisibility: {},
   baselineRuns: null,
+  baselineRunsCondition: null,
   baselineRunsLoading: null,
   baselineRunSelections: {},
   baselineRunAll: {},
@@ -93,7 +94,7 @@ function persistentWorkerSummary(job) {
 
 function persistentJobScope(job) {
   if (job.job_type === "rollout_generation") {
-    var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial native 256x256" : "LIBERO-10";
+    var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
     return suite + " - " + (job.run_note || "");
   }
   return job.scope || (job.rollout_id ? "single rollout: " + job.rollout_id : "unspecified scope");
@@ -1088,10 +1089,22 @@ function sampleOutputText(sample) {
   return parts.length ? parts.join("\n\n") : "Numeric signals only; this baseline has no text output.";
 }
 
+var EVALUATION_SIGNAL_LABELS = {
+  value: "absolute remaining time",
+  relative_value: "relative temporal displacement",
+  progress: "progress",
+  hop: "hop",
+  reward: "reward"
+};
+
+function evaluationSignalLabel(name) {
+  return EVALUATION_SIGNAL_LABELS[name] || name;
+}
+
 function evaluationSignalsText(sample) {
   if (!sample || !sample.signals) return "No numeric signals.";
   var entries = Object.keys(sample.signals).map(function (name) {
-    return '<span class="evaluation-signal"><b>' + escapeHtml(name) + '</b> ' + escapeHtml(formatEvaluationNumber(sample.signals[name])) + "</span>";
+    return '<span class="evaluation-signal" title="' + escapeHtml(name) + '"><b>' + escapeHtml(evaluationSignalLabel(name)) + '</b> ' + escapeHtml(formatEvaluationNumber(sample.signals[name])) + "</span>";
   });
   return entries.length ? entries.join("") : "No numeric signals.";
 }
@@ -1135,7 +1148,7 @@ function toggleEvaluationSignal(button) {
   state.evaluationSignalVisibility[key][name] = visible;
   button.setAttribute("aria-pressed", String(visible));
   button.classList.toggle("is-hidden", !visible);
-  button.title = (visible ? "Hide " : "Show ") + name;
+  button.title = (visible ? "Hide " : "Show ") + evaluationSignalLabel(name);
   card.querySelectorAll("[data-evaluation-signal-path]").forEach(function (path) {
     if (path.dataset.signalName !== name) return;
     path.style.display = visible ? "" : "none";
@@ -1188,9 +1201,9 @@ function renderSignalChart(method, result, record) {
     var visible = visibility[name] !== false;
     return '<button type="button" class="evaluation-signal-toggle' + (visible ? "" : " is-hidden")
       + '" data-evaluation-signal-toggle data-signal-name="' + escapeHtml(name)
-      + '" aria-pressed="' + String(visible) + '" title="' + escapeHtml((visible ? "Hide " : "Show ") + name) + '">'
+      + '" aria-pressed="' + String(visible) + '" title="' + escapeHtml((visible ? "Hide " : "Show ") + evaluationSignalLabel(name)) + '">'
       + '<i aria-hidden="true" style="background:' + colors[index % colors.length] + '"></i>'
-      + '<span>' + escapeHtml(name) + "</span></button>";
+      + '<span>' + escapeHtml(evaluationSignalLabel(name)) + "</span></button>";
   }).join("  ");
   var markerLegend = TIMELINE_MARKER_DEFINITIONS.map(function (definition) {
     return '<span class="evaluation-marker-key"><i class="marker ' + definition.cssClass + '"></i>'
@@ -1216,7 +1229,7 @@ function compactSampleOutput(sample) {
   var text = sampleOutputText(sample).replace(/\s+/g, " ").trim();
   var hasText = [sample.model_output, sample.reasoning, sample.analysis_text, sample.parsed_analysis, sample.pred].some(function (value) { return value != null && value !== ""; });
   if (!hasText && sample.signals) {
-    text = Object.keys(sample.signals).map(function (name) { return name + "=" + formatEvaluationNumber(sample.signals[name]); }).join(", ");
+    text = Object.keys(sample.signals).map(function (name) { return evaluationSignalLabel(name) + "=" + formatEvaluationNumber(sample.signals[name]); }).join(", ");
   }
   return text.length > 220 ? text.slice(0, 217) + "..." : text;
 }
@@ -1272,7 +1285,9 @@ function baselineRunOptions(method, record, condition) {
   if (!Array.isArray(state.baselineRuns) || !record) return [];
   return state.baselineRuns.filter(function (run) {
     if ((run.method || run.baseline) !== method) return false;
-    var ids = Array.isArray(run.run_rollout_ids) ? run.run_rollout_ids : [];
+    var ids = Array.isArray(run.run_source_rollout_ids)
+      ? run.run_source_rollout_ids
+      : (Array.isArray(run.run_rollout_ids) ? run.run_rollout_ids : []);
     if (ids.indexOf(record.id) === -1) return false;
     var runCondition = run.instruction_condition || "unknown";
     if (condition === "full_instruction") return runCondition === "full_instruction" || runCondition === "unknown";
@@ -1305,20 +1320,31 @@ function renderBaselineRunControls(method, result, record) {
     + '</div>';
 }
 
-async function loadBaselineRunCatalog() {
-  if (Array.isArray(state.baselineRuns)) return state.baselineRuns;
-  if (state.baselineRunsLoading) return state.baselineRunsLoading;
-  state.baselineRunsLoading = fetch("/api/baselines/runs?scope=all", { cache: "no-store" })
+async function loadBaselineRunCatalog(condition) {
+  condition = condition || state.instructionCondition || "full_instruction";
+  if (Array.isArray(state.baselineRuns) && state.baselineRunsCondition === condition) {
+    return state.baselineRuns;
+  }
+  if (state.baselineRunsLoading && state.baselineRunsCondition === condition) {
+    return state.baselineRunsLoading;
+  }
+  state.baselineRunsCondition = condition;
+  state.baselineRunsLoading = fetch(
+    "/api/baselines/runs?scope=all&condition=" + encodeURIComponent(condition),
+    { cache: "no-store" }
+  )
     .then(function (response) {
       if (!response.ok) throw new Error("Could not load baseline run catalog");
       return response.json();
     })
     .then(function (payload) {
       state.baselineRuns = payload.runs || [];
+      state.baselineRunsCondition = payload.condition || condition;
       return state.baselineRuns;
     })
     .catch(function (error) {
       state.baselineRuns = [];
+      state.baselineRunsCondition = condition;
       state.baselineRunNotice = error.message;
       return state.baselineRuns;
     });
@@ -1343,7 +1369,9 @@ function renderEvaluationCard(method, result, record) {
   var viewingCondition = state.instructionCondition || "full_instruction";
   var validation = result.validation || {};
   var status = validation.status || (available ? "ok" : "missing");
-  var action = viewingCondition === "full_instruction"
+  var variant = currentInstructionVariant(record);
+  var canRunCondition = viewingCondition === "full_instruction" || Boolean(variant.available);
+  var action = canRunCondition
     ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method) + '">'
       + (available ? "Re-run rollout" : "Run baseline") + "</button>"
     : '<span class="evaluation-meta">Condition view only</span>';
@@ -1425,7 +1453,7 @@ async function loadEvaluation(rolloutId) {
   byId("evaluationStatus").textContent = "Loading baseline outputs...";
   byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Reading completed baseline runs...</div>';
   try {
-    await loadBaselineRunCatalog();
+    await loadBaselineRunCatalog(condition);
     var query = ["condition=" + encodeURIComponent(condition)];
     ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].forEach(function (method) {
       var override = baselineRunOverride(method, record, condition);
@@ -1477,8 +1505,12 @@ function baselineBatchIsRynnValue() {
 function baselineBatchScopeRecords() {
   var scope = byId("baselineBatchScope");
   if (!scope) return [];
+  var conditionNode = byId("baselineBatchCondition");
+  var condition = conditionNode ? conditionNode.value : (state.instructionCondition || "full_instruction");
   return (state.rollouts || []).filter(function (record) {
-    return baselineBatchMatchesScope(record, scope.value);
+    if (!baselineBatchMatchesScope(record, scope.value)) return false;
+    if (condition === "full_instruction") return true;
+    return Boolean(record.instruction_variants && record.instruction_variants[condition]);
   });
 }
 
@@ -1640,12 +1672,15 @@ function updateBaselineBatchSelection() {
   var button = byId("baselineBatchRun");
   if (!scope || !note || !button) return;
   var matched = baselineBatchScopeRecords().length;
+  var conditionNode = byId("baselineBatchCondition");
+  var condition = conditionNode ? conditionNode.value : (state.instructionCondition || "full_instruction");
+  var conditionLabel = instructionConditionLabel(condition);
   var label = BASELINE_BATCH_SCOPE_LABELS[scope.value] || scope.value;
   if (baselineBatchUsesWorkers()) {
     var summary = baselineBatchWorkerSummary();
     var rangeText = summary.range.start == null || summary.range.end == null
       ? "invalid total range" : "total [" + summary.range.start + "," + summary.range.end + ")";
-    note.textContent = label + ": " + matched + " rollout(s) available; " + rangeText
+    note.textContent = conditionLabel + " · " + label + ": " + matched + " rollout(s) available; " + rangeText
       + "; unique execution " + summary.unique + ". "
       + (summary.overlap.length ? "Overlap " + summary.overlap.length + ". " : "No overlap. ")
       + (summary.gaps.length ? "Gap " + summary.gaps.length + ". " : "No gap. ")
@@ -1662,7 +1697,7 @@ function updateBaselineBatchSelection() {
     return;
   }
   var selected = baselineBatchSelectionRecords().length;
-  note.textContent = label + ": " + matched + " rollout(s) available; " + selected + " selected after index/limit.";
+  note.textContent = conditionLabel + " · " + label + ": " + matched + " rollout(s) available; " + selected + " selected after index/limit.";
   button.disabled = selected === 0 || state.baselineBatchSubmitting;
 }
 
@@ -1772,6 +1807,7 @@ async function startBaselineBatch(event) {
   if (state.baselineBatchSubmitting) return;
   var method = byId("baselineBatchMethod").value;
   var scope = byId("baselineBatchScope").value;
+  var condition = byId("baselineBatchCondition").value || "full_instruction";
   var memory = Number(byId("baselineBatchMemoryUtilization").value);
   readBaselineBatchWorkers();
   var range = baselineBatchTotalRange();
@@ -1802,7 +1838,7 @@ async function startBaselineBatch(event) {
     return;
   }
   var gpu = workers.length ? workers[0].gpu : "0";
-  var confirmation = "Run " + method + " over " + selected.length + " unique rollout(s)? This launches GPU inference."
+  var confirmation = "Run " + method + " for " + instructionConditionLabel(condition) + " over " + selected.length + " unique rollout(s)? This launches GPU inference."
     + " It will start " + workers.length + " rollout worker(s).";
   if (!window.confirm(confirmation)) return;
   state.baselineBatchSubmitting = true;
@@ -1814,6 +1850,7 @@ async function startBaselineBatch(event) {
     var body = {
       baseline: method,
       scope: scope,
+      instruction_condition: condition,
       gpu: gpu,
       memory_utilization: memory,
       start_index: range.start,
@@ -1873,6 +1910,8 @@ function updateRolloutGenerationSelection() {
   var start = Number(byId("rolloutGenerationTaskStart").value);
   var end = Number(byId("rolloutGenerationTaskEnd").value);
   var trials = Number(byId("rolloutGenerationTrials").value);
+  var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
+  var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var note = byId("rolloutGenerationSelection");
   var button = byId("rolloutGenerationRun");
@@ -1885,20 +1924,24 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     description.textContent = isSpatial
-      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. The simulator and replay videos are native 256x256; policy preprocessing remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory."
-      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.";
+      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory."
+      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.";
   }
   var valid = (suite === "libero_10" || suite === "libero_spatial")
     && Number.isInteger(start) && Number.isInteger(end) && Number.isInteger(trials)
+    && Number.isInteger(renderResolution) && Number.isInteger(recordResolution)
+    && renderResolution >= 64 && renderResolution <= 2048 && renderResolution % 2 === 0
+    && recordResolution >= 64 && recordResolution <= 2048 && recordResolution % 2 === 0
     && start >= 0 && end >= start && end <= 9 && trials >= 1 && trials <= 50;
   if (!valid) {
-    note.textContent = "Task range must be 0-9 with task end >= task start; trials must be 1-50.";
+    note.textContent = "Task range must be 0-9, trials 1-50, and both resolutions must be even values from 64 to 2048.";
     button.disabled = true;
     return;
   }
   var expected = (end - start + 1) * trials;
-  note.textContent = (isSpatial ? "LIBERO-Spatial native 256x256" : "LIBERO-10")
-    + " output: " + expected + " rollout(s); run note is generated automatically. "
+  note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
+    + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
+    + ", record " + recordResolution + "x" + recordResolution + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
 }
@@ -1917,11 +1960,13 @@ async function loadRolloutGenerationLog(jobId) {
 
 function rolloutGenerationJobMessage(job) {
   var progress = (job.completed_rollouts || 0) + "/" + (job.expected_rollouts || 0);
-  var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial native 256x256" : "LIBERO-10";
-  if (job.status === "queued") return suite + " generation queued - " + progress + " rollout(s) complete...";
-  if (job.status === "running") return "Generating " + suite + " rollouts - " + progress + " complete...";
+  var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
+  var resolution = "render " + (job.render_resolution || "?") + "x" + (job.render_resolution || "?")
+    + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?");
+  if (job.status === "queued") return suite + " generation queued (" + resolution + ") - " + progress + " rollout(s) complete...";
+  if (job.status === "running") return "Generating " + suite + " rollouts (" + resolution + ") - " + progress + " complete...";
   if (job.status === "complete") {
-    return suite + " generation complete: " + progress + " rollout(s); manifest "
+    return suite + " generation complete (" + resolution + "): " + progress + " rollout(s); manifest "
       + (job.manifest_rebuilt ? "rebuilt." : "was not rebuilt.");
   }
   if (job.status === "memory_blocked") {
@@ -1935,7 +1980,7 @@ async function startRolloutGeneration(event) {
   if (state.rolloutGenerationSubmitting) return;
   var suiteNode = byId("rolloutGenerationSuite");
   var taskSuite = suiteNode ? suiteNode.value : "libero_10";
-  var suiteLabel = taskSuite === "libero_spatial" ? "LIBERO-Spatial native 256x256" : "LIBERO-10";
+  var suiteLabel = taskSuite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
   if (taskSuite !== "libero_10" && taskSuite !== "libero_spatial") {
     setRolloutGenerationStatus("Choose a supported task suite.", "error");
     if (suiteNode) suiteNode.focus();
@@ -1946,6 +1991,8 @@ async function startRolloutGeneration(event) {
   var taskEnd = Number(byId("rolloutGenerationTaskEnd").value);
   var trials = Number(byId("rolloutGenerationTrials").value);
   var seed = Number(byId("rolloutGenerationSeed").value);
+  var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
+  var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var label = byId("rolloutGenerationLabel").value.trim();
   if (!/^\d+$/.test(gpu)) {
@@ -1966,6 +2013,16 @@ async function startRolloutGeneration(event) {
   if (!Number.isInteger(seed) || seed < 0) {
     setRolloutGenerationStatus("Seed must be a non-negative integer.", "error");
     byId("rolloutGenerationSeed").focus();
+    return;
+  }
+  if (!Number.isInteger(renderResolution) || renderResolution < 64 || renderResolution > 2048 || renderResolution % 2 !== 0) {
+    setRolloutGenerationStatus("Render resolution must be an even integer from 64 to 2048.", "error");
+    byId("rolloutGenerationRenderResolution").focus();
+    return;
+  }
+  if (!Number.isInteger(recordResolution) || recordResolution < 64 || recordResolution > 2048 || recordResolution % 2 !== 0) {
+    setRolloutGenerationStatus("Record resolution must be an even integer from 64 to 2048.", "error");
+    byId("rolloutGenerationRecordResolution").focus();
     return;
   }
   if (label && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(label)) {
@@ -1992,7 +2049,9 @@ async function startRolloutGeneration(event) {
         trials: trials,
         seed: seed,
         run_label: label,
-        log_safe_features: saveLatent
+        log_safe_features: saveLatent,
+        render_resolution: renderResolution,
+        record_resolution: recordResolution
       })
     });
     var payload = await response.json();
@@ -2017,16 +2076,23 @@ async function pollRolloutGenerationJob(jobId) {
 async function startBaselineRun(method) {
   var record = selectedRollout();
   if (!record) return;
+  var condition = state.instructionCondition || "full_instruction";
+  var conditionLabel = instructionConditionLabel(condition);
   // Single-rollout reruns use the same stable defaults as the former compact controls.
   var gpu = "0";
   var memory = 0.80;
-  if (!window.confirm("Run " + method + " for this one rollout? This launches GPU inference.")) return;
+  if (!window.confirm("Run " + method + " for this one " + conditionLabel + " rollout? This launches GPU inference.")) return;
   byId("evaluationStatus").textContent = "Starting " + method + " rollout validation...";
   try {
     var response = await fetch("/api/baselines/run/" + encodeURIComponent(record.id), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseline: method, gpu: gpu, memory_utilization: memory })
+      body: JSON.stringify({
+        baseline: method,
+        gpu: gpu,
+        memory_utilization: memory,
+        instruction_condition: condition
+      })
     });
     var payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Could not start baseline");
@@ -2127,6 +2193,14 @@ function installEvents() {
   });
   byId("instructionCondition").addEventListener("change", function () {
     state.instructionCondition = this.value || "full_instruction";
+    state.baselineRuns = null;
+    state.baselineRunsCondition = null;
+    state.baselineRunsLoading = null;
+    var batchCondition = byId("baselineBatchCondition");
+    if (batchCondition) {
+      batchCondition.value = state.instructionCondition;
+      baselineBatchScopeChanged();
+    }
     var record = selectedRollout();
     if (!record) return;
     renderInstructionVariantControl(record);
@@ -2170,6 +2244,7 @@ function installEvents() {
   });
   byId("baselineBatchMethod").addEventListener("change", updateBaselineBatchAdvancedFields);
   byId("baselineBatchScope").addEventListener("change", baselineBatchScopeChanged);
+  byId("baselineBatchCondition").addEventListener("change", baselineBatchScopeChanged);
   byId("baselineBatchStartIndex").addEventListener("input", baselineBatchRangeChanged);
   byId("baselineBatchLimit").addEventListener("input", updateBaselineBatchSelection);
   byId("baselineBatchEndIndex").addEventListener("input", baselineBatchRangeChanged);
@@ -2184,11 +2259,16 @@ function installEvents() {
     removeBaselineBatchWorker(Number(button.dataset.removeWorker));
   });
   byId("baselineBatchForm").addEventListener("submit", startBaselineBatch);
-  ["rolloutGenerationTaskStart", "rolloutGenerationTaskEnd", "rolloutGenerationTrials"].forEach(function (id) {
+  ["rolloutGenerationTaskStart", "rolloutGenerationTaskEnd", "rolloutGenerationTrials", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution"].forEach(function (id) {
     byId(id).addEventListener("input", updateRolloutGenerationSelection);
   });
   byId("rolloutGenerationLogSafeFeatures").addEventListener("change", updateRolloutGenerationSelection);
-  byId("rolloutGenerationSuite").addEventListener("change", updateRolloutGenerationSelection);
+  byId("rolloutGenerationSuite").addEventListener("change", function () {
+    var isSpatial = byId("rolloutGenerationSuite").value === "libero_spatial";
+    byId("rolloutGenerationRenderResolution").value = "256";
+    byId("rolloutGenerationRecordResolution").value = isSpatial ? "256" : "224";
+    updateRolloutGenerationSelection();
+  });
   byId("rolloutGenerationForm").addEventListener("submit", startRolloutGeneration);
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-persistent-job-log]");

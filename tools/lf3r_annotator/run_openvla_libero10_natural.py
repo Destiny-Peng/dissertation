@@ -27,6 +27,7 @@ SUITE_CONFIGS = {
         "output_root": OUTPUT_ROOT,
         "run_prefix": "lf3r-data-natural-libero10-",
         "max_task": 9,
+        "render_resolution": 256,
         "record_resolution": 224,
     },
     "libero_spatial": {
@@ -35,6 +36,7 @@ SUITE_CONFIGS = {
         "output_root": PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
         "run_prefix": "lf3r-data-natural-libero-spatial-256-",
         "max_task": 9,
+        "render_resolution": 256,
         "record_resolution": 256,
     },
 }
@@ -56,7 +58,7 @@ def parse_args() -> argparse.Namespace:
         "--task-suite",
         choices=tuple(SUITE_CONFIGS),
         default="libero_10",
-        help="LIBERO task suite; Spatial uses native 256x256 replay frames and 224x224 policy preprocessing",
+        help="LIBERO task suite; defaults use suite-specific render/replay resolutions and 224x224 policy preprocessing",
     )
     parser.add_argument("--task-start", type=int, required=True)
     parser.add_argument("--task-end", type=int, required=True)
@@ -68,6 +70,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--run-note", required=True)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--render-resolution",
+        type=int,
+        default=None,
+        help="Square simulator render resolution; defaults to the suite configuration",
+    )
+    parser.add_argument(
+        "--record-resolution",
+        type=int,
+        default=None,
+        help="Square replay-video resolution; defaults to the suite configuration",
+    )
     parser.add_argument(
         "--log-safe-features",
         action="store_true",
@@ -83,6 +97,22 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     suite = SUITE_CONFIGS[args.task_suite]
+    render_resolution = (
+        int(args.render_resolution)
+        if args.render_resolution is not None
+        else int(suite["render_resolution"])
+    )
+    record_resolution = (
+        int(args.record_resolution)
+        if args.record_resolution is not None
+        else int(suite["record_resolution"])
+    )
+    for name, value in (
+        ("render-resolution", render_resolution),
+        ("record-resolution", record_resolution),
+    ):
+        if value < 64 or value > 2048 or value % 2:
+            raise SystemExit(f"{name} must be an even integer between 64 and 2048")
     checkpoint = Path(suite["checkpoint"])
     output_root = Path(suite["output_root"])
     max_task = int(suite["max_task"])
@@ -119,7 +149,7 @@ def main() -> None:
     print(f"LF3R_TASK_SUITE suite={args.task_suite} label={suite['label']}")
     print(f"LF3R_TASK_RANGE start={args.task_start} end={args.task_end} trials={args.trials}")
     print(
-        f"LF3R_RESOLUTION render={256} policy=224 record={suite['record_resolution']}"
+        f"LF3R_RESOLUTION render={render_resolution} policy=224 record={record_resolution}"
     )
     print(f"LF3R_SAFE_FEATURES enabled={args.log_safe_features}")
     sys.argv = [
@@ -131,8 +161,8 @@ def main() -> None:
         f"--task_end_index={args.task_end}",
         f"--run_id_note={args.run_note}",
         f"--save_root={output_root}",
-        "--render_resolution=256",
-        f"--record_resolution={suite['record_resolution']}",
+        f"--render_resolution={render_resolution}",
+        f"--record_resolution={record_resolution}",
         "--use_wandb=False",
         "--save_logs=True",
         f"--output_hidden_states={args.log_safe_features}",
@@ -148,7 +178,7 @@ def main() -> None:
             checkpoint=checkpoint,
             project_root=PROJECT_ROOT,
             task_suite_name=args.task_suite,
-            record_resolution=int(suite["record_resolution"]),
+            record_resolution=record_resolution,
         )
         print(f"LF3R_SAFE_FEATURES_POSTPROCESSED episodes={len(sidecars)}")
         for npz_path, metadata_path in sidecars:

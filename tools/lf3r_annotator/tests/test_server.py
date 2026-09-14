@@ -141,6 +141,8 @@ class ServerTest(unittest.TestCase):
                 {
                     "values": [0.2, 0.3],
                     "sampled_indices": [1, 3],
+                    "relative_values": [0.04, -0.12],
+                    "relative_values_by_prefix": [[0.04], [0.08, -0.12]],
                     "analysis_text": "looks stable",
                     "parsed_analysis": {"score": 0.2},
                 }
@@ -210,6 +212,10 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(methods["procvlm"]["samples"][0]["model_output"], "start")
         self.assertEqual(methods["procvlm"]["validation"]["status"], "warning")
         self.assertEqual(methods["rynnvalue"]["samples"][0]["analysis_text"], "looks stable")
+        self.assertEqual(methods["rynnvalue"]["samples"][0]["signals"]["value"], 0.2)
+        self.assertEqual(methods["rynnvalue"]["samples"][0]["signals"]["relative_value"], 0.04)
+        self.assertTrue(methods["rynnvalue"]["relative_output"]["available"])
+        self.assertEqual(methods["rynnvalue"]["relative_output"]["official_head"], "<relative_value>")
         self.assertEqual(methods["robo_dopamine"]["samples"][0]["pred"], "<score>+3.3%</score>")
         self.assertEqual(methods["densereward"]["samples"][0]["signals"]["reward"], 0.521)
 
@@ -347,6 +353,106 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(evaluation["variant_id"], "sample-rollout--subtask_a")
         self.assertEqual(evaluation["available_methods"], [])
         self.assertTrue(all(result["run"] is None for result in evaluation["methods"].values()))
+
+    def test_instruction_variant_baseline_run_uses_variant_manifest(self) -> None:
+        variant_root = self.root / "tools" / "lf3r_annotator" / "instruction_variants" / "libero_10_v1"
+        variant_root.mkdir(parents=True)
+        variant = {
+            **self.rollout,
+            "id": self.rollout["id"] + "--subtask_a",
+            "source_rollout_id": self.rollout["id"],
+            "source_id": self.rollout["id"],
+            "instruction_variant": "subtask_a",
+            "condition": "subtask_a",
+            "subtask_label": "A",
+            "instruction_type": "counterfactual_single_subtask",
+            "task_description": "pick up the test object",
+            "instruction": "pick up the test object",
+        }
+        (variant_root / "manifest.jsonl").write_text(
+            json.dumps(variant) + "\n", encoding="utf-8"
+        )
+        self.seed_baseline_outputs()
+        runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# test runner\n", encoding="utf-8")
+
+        with self.request(
+            "/api/baselines/run/sample-rollout",
+            {
+                "baseline": "safe",
+                "gpu": "0",
+                "memory_utilization": 0.80,
+                "instruction_condition": "subtask_a",
+            },
+        ) as response:
+            job = json.load(response)["job"]
+        self.assertEqual(job["instruction_condition"], "subtask_a")
+        self.assertEqual(job["variant_rollout_id"], "sample-rollout--subtask_a")
+        self.assertIn("instruction_variants/libero_10/subtask_a", job["run_parent"])
+        self.assertEqual(
+            job["command"][job["command"].index("--instruction-condition") + 1],
+            "subtask_a",
+        )
+        manifest_index = job["command"].index("--manifest")
+        self.assertTrue(job["command"][manifest_index + 1].endswith("instruction_variants/libero_10_v1/manifest.jsonl"))
+        rollout_index = job["command"].index("--rollout-id")
+        self.assertEqual(job["command"][rollout_index + 1], "sample-rollout--subtask_a")
+
+        final = job
+        for _ in range(50):
+            with self.request("/api/baseline-jobs/" + job["job_id"]) as response:
+                final = json.load(response)["job"]
+            if final["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.02)
+        self.assertEqual(final["status"], "complete")
+
+        with self.request("/api/baselines/sample-rollout?condition=subtask_a") as response:
+            evaluation = json.load(response)["evaluation"]
+        self.assertEqual(evaluation["available_methods"], [])
+
+        with self.request(
+            "/api/baselines/run-batch",
+            {
+                "baseline": "safe",
+                "scope": "primary_natural",
+                "instruction_condition": "subtask_a",
+                "gpu": "0",
+                "start_index": 0,
+                "end_index": 1,
+                "parallel_workers": 1,
+                "workers": [{"gpu": "0", "start_index": 0, "end_index": 1}],
+            },
+        ) as response:
+            batch_job = json.load(response)["job"]
+        self.assertEqual(batch_job["instruction_condition"], "subtask_a")
+        self.assertEqual(batch_job["parallel_workers"], 1)
+        self.assertIn("instruction_variants/libero_10/subtask_a/web_runs", batch_job["run_parent"])
+        self.assertIn("--worker-spec", batch_job["command"])
+        self.assertIn("0:0:1", batch_job["command"])
+        self.assertIn("--rollout-id", batch_job["command"])
+        self.assertIn("sample-rollout--subtask_a", batch_job["command"])
+        final_batch = batch_job
+        for _ in range(50):
+            with self.request("/api/baseline-jobs/" + batch_job["job_id"]) as response:
+                final_batch = json.load(response)["job"]
+            if final_batch["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.02)
+        self.assertEqual(final_batch["status"], "complete")
+
+    def test_invalid_instruction_condition_is_rejected(self) -> None:
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(
+                "/api/baselines/run/sample-rollout",
+                {
+                    "baseline": "safe",
+                    "gpu": "0",
+                    "instruction_condition": "not-a-condition",
+                },
+            )
+        self.assertEqual(caught.exception.code, 400)
 
     def test_annotation_is_saved_and_reloaded(self) -> None:
         payload = {
@@ -1346,6 +1452,9 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             {"seed": -1},
             {"log_safe_features": "true"},
             {"run_label": "../bad"},
+            {"render_resolution": 63},
+            {"record_resolution": 225},
+            {"render_resolution": "not-a-number"},
             {"unexpected": True},
         ]
         for payload in invalid_payloads:
@@ -1362,6 +1471,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 "trials": 2,
                 "seed": 7,
                 "run_label": "web_test",
+                "render_resolution": 320,
+                "record_resolution": 192,
             },
         ) as response:
             self.assertEqual(response.status, 202)
@@ -1371,7 +1482,11 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(job["tmux_session"].startswith("lf3r-annotator-"))
         self.assertEqual(job["interpreter"], "bash")
         self.assertTrue(job["log_safe_features"])
+        self.assertEqual(job["render_resolution"], 320)
+        self.assertEqual(job["record_resolution"], 192)
         self.assertIn("--log-safe-features", job["command"])
+        self.assertIn("--render-resolution", job["command"])
+        self.assertIn("--record-resolution", job["command"])
         record_path = self.root / job["job_record_path"]
         self.assertTrue(record_path.is_file())
         record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -1406,7 +1521,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertNotIn("--log-safe-features", disabled_job["command"])
         disabled_final = self.wait_for_job("/api/rollout-jobs", disabled_job["job_id"])
         self.assertEqual(disabled_final["status"], "complete")
-        self.assertEqual((self.root / "fake_generator_args").read_text(encoding="utf-8").splitlines()[6], "")
+        self.assertNotIn("--log-safe-features", (self.root / "fake_generator_args").read_text(encoding="utf-8"))
 
     def test_rollout_generation_supports_spatial_native_suite(self) -> None:
         self.install_fake_spatial_rollout_generator()

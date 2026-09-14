@@ -191,6 +191,13 @@
                     <option value="controlled_analysis">Controlled analysis</option>
                   </select>
                 </label>
+                <label data-cli-help="baseline.instruction_condition"><span>Instruction condition</span>
+                  <select id="baselineBatchCondition">
+                    <option value="full_instruction" selected>Full instruction</option>
+                    <option value="subtask_a">A</option>
+                    <option value="subtask_b">B</option>
+                  </select>
+                </label>
                 <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text" inputmode="numeric" value="0" maxlength="31"></label>
                 <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input id="baselineBatchMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
                 <label data-cli-help="baseline.start_index"><span>Total start index (inclusive)</span><input id="baselineBatchStartIndex" type="number" min="0" step="1" value="0"></label>
@@ -250,10 +257,12 @@
               </div>
               <span id="rolloutGenerationBadge" class="analysis-badge">Idle</span>
             </div>
-            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. LIBERO-Spatial uses native 256x256 simulator/replay frames while keeping the OpenVLA policy input at 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
+            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. Render and record resolutions are independent square dimensions; the checkpoint policy input remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
             <form id="rolloutGenerationForm" class="rollout-generation-form">
               <div class="rollout-generation-grid">
                 <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite"><option value="libero_10">LIBERO-10 natural (existing output)</option><option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option></select></label>
+                <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
+                <label data-cli-help="rollout.record_resolution"><span>Record resolution (square)</span><input id="rolloutGenerationRecordResolution" type="number" min="64" max="2048" step="2" value="224"></label>
                 <label data-cli-help="rollout.gpu"><span>GPU</span><input id="rolloutGenerationGpu" type="text" inputmode="numeric" value="0" maxlength="8"></label>
                 <label data-cli-help="rollout.task_start"><span>Task start (inclusive)</span><input id="rolloutGenerationTaskStart" type="number" min="0" max="9" step="1" value="0"></label>
                 <label data-cli-help="rollout.task_end"><span>Task end (inclusive)</span><input id="rolloutGenerationTaskEnd" type="number" min="0" max="9" step="1" value="3"></label>
