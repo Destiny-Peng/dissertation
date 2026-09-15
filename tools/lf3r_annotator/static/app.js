@@ -2091,7 +2091,8 @@ async function startBaselineRun(method) {
         baseline: method,
         gpu: gpu,
         memory_utilization: memory,
-        instruction_condition: condition
+        instruction_condition: condition,
+        options: method === "procvlm" ? { procvlm_enable_value_head: byId("procvlmEnableValueHead").checked } : {}
       })
     });
     var payload = await response.json();

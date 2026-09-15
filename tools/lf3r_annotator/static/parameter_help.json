@@ -288,6 +288,13 @@
       "applies_to": "all baseline runs",
       "description": "Explicit scope-relative right-open worker shard. Repeat it for each worker. Each row uses one numeric GPU ID; repeated GPU IDs are allowed, overlapping ranges are deduplicated in first-worker order, and gaps mark the aggregate run partial.",
       "forwarded_as": "--worker-spec GPU:START:END"
+    },
+    "procvlm_enable_value_head": {
+      "cli": "--procvlm-enable-value-head",
+      "default": "off",
+      "applies_to": "ProcVLM; batch and single-rollout reruns",
+      "description": "Use the official PyTorch value head to replace generated progress with regression predictions. Requires trained pooler/value-head checkpoint weights. Disabling uses text-based vLLM inference. The vLLM memory fraction does not cap PyTorch memory.",
+      "forwarded_as": "--enable-value-head -> enable_value_head=True"
     }
   },
   "rollout": {

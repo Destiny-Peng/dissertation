@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run ProcVLM rollouts sequentially with one persistent vLLM engine."""
+"""Run ProcVLM rollouts with a persistent vLLM or official PyTorch value-head model."""
 
 from __future__ import annotations
 
@@ -176,6 +176,7 @@ def infer_rollout(
         tp=args.tp,
         engine_kwargs=engine_kwargs,
         show_progress=True,
+        enable_value_head=getattr(args, "enable_value_head", False),
     )
 
 
@@ -276,9 +277,13 @@ def run_persistent_jobs(
     )
     init_started = time.perf_counter()
     try:
-        engine_bundle = initialize_engine(
-            str(args.model_path), args.tp, engine_kwargs
-        )
+        if getattr(args, "enable_value_head", False):
+            from evqa.model import load_procvlm
+            engine_bundle = load_procvlm(str(args.model_path), "cuda:0", args.torch_dtype)
+        else:
+            engine_bundle = initialize_engine(
+                str(args.model_path), args.tp, engine_kwargs
+            )
     except BaseException as error:
         init_seconds = time.perf_counter() - init_started
         fatal = {
@@ -455,6 +460,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-sampled-frames", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--torch-dtype", default="bf16")
+    parser.add_argument("--enable-value-head", action="store_true")
     parser.add_argument("--tp", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()

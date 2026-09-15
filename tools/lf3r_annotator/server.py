@@ -85,7 +85,7 @@ BASELINE_METHOD_OPTION_FIELDS = {
     "safe": {"render_video", "validate_environment", "dry_run"},
     "procvlm": {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
-        "procvlm_max_sampled_frames", "procvlm_max_new_tokens",
+        "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -110,6 +110,7 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_window_size",
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
+    "procvlm_enable_value_head",
     "rynn_num_frames",
     "rynn_num_steps",
     "rynn_evaluation_interval",
@@ -2572,7 +2573,7 @@ class BaselineService:
                 if not resolved.is_file():
                     raise ValidationError(f"{name} does not exist inside the project: {options[name]}")
                 options[name] = str(resolved)
-        for name in ("render_video", "validate_environment", "dry_run"):
+        for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
         return options
@@ -2765,7 +2766,7 @@ class BaselineService:
                     f"{assignment['gpu']}:{assignment['start_index']}:{assignment['end_index']}",
                 ])
         if baseline == "robo_dopamine" and "robo_eval_mode" not in options:
-            # The web single-rollout endpoint has no advanced-options payload.
+            # Preserve the default when no explicit mode is supplied.
             # Make its default explicit and keep batch/API callers consistent.
             options = {**options, "robo_eval_mode": "fused"}
         flag_values = {
@@ -2793,6 +2794,8 @@ class BaselineService:
         for name, flag in flag_values.items():
             if name in options and options[name] not in (None, ""):
                 command.extend([flag, str(options[name])])
+        if options.get("procvlm_enable_value_head"):
+            command.append("--procvlm-enable-value-head")
         if options.get("render_video"):
             command.append("--render-video")
         if options.get("dry_run"):
@@ -2869,10 +2872,12 @@ class BaselineService:
         gpu: str,
         memory_utilization: Any = 0.80,
         instruction_condition: Any = "full_instruction",
+        options: Any = None,
     ) -> dict[str, Any]:
         if baseline not in BASELINE_METHODS:
             raise ValidationError("Invalid baseline method")
         instruction_condition = validate_instruction_condition(instruction_condition)
+        options = self._validate_options(baseline, options)
         run_rollout = rollout
         if instruction_condition != "full_instruction":
             run_rollout = self._variant_record_for_source(
@@ -2904,7 +2909,7 @@ class BaselineService:
                 gpu,
                 utilization,
                 output_parent,
-                {},
+                options,
                 start_index=0,
                 limit=None,
                 manifest_path=manifest_path,
@@ -4465,6 +4470,7 @@ class LF3RHandler(BaseHTTPRequestHandler):
                         "instruction_condition",
                         payload.get("condition", "full_instruction"),
                     ),
+                    options=payload.get("options"),
                 )
                 self.json_response(HTTPStatus.ACCEPTED, {"job": job})
                 return

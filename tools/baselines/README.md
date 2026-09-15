@@ -393,3 +393,9 @@ bash tools/baselines/run_baseline.sh \
   --dataset-role primary_natural \
   --continue-on-error
 ```
+
+### ProcVLM value-head option
+
+In Review, choose ProcVLM in Batch baseline and expand its parameters. `Enable value head` defaults to off and also applies to ProcVLM single-rollout Re-run. The option forwards `--procvlm-enable-value-head` to the runner and `enable_value_head=True` to official inference. Enabled runs use the cached official PyTorch model (trained pooler/value-head weights are required), which replaces generated progress tags with regression predictions. Disabled runs retain text-based vLLM inference. The vLLM free-memory fraction does not cap PyTorch allocations; upstream maps tensor-parallel count to data-parallel workers on this path. Resume retains the option. Restart the annotator server and refresh the page after updating.
+
+This change was reviewed statically only; no tests or inference were run, as requested.

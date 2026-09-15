@@ -314,6 +314,8 @@ def build_procvlm_worker_command(
         "--torch-dtype", args.dtype,
         "--tp", str(args.tensor_parallel_size),
     ]
+    if getattr(args, "procvlm_enable_value_head", False):
+        command.append("--enable-value-head")
     if vllm_total_memory_fraction is None:
         command.extend(["--dry-run", "--vllm-free-memory-fraction", str(args.vllm_free_memory_fraction)])
     else:
@@ -663,6 +665,7 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
         int(stored_max_frames) if stored_max_frames not in (None, "None") else None
     )
     args.procvlm_max_new_tokens = int(stored_arguments.get("procvlm_max_new_tokens", 4096))
+    args.procvlm_enable_value_head = bool(stored_arguments.get("procvlm_enable_value_head", False))
     args.dtype = str(stored_arguments.get("dtype", "bf16"))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     args.dry_run = False
@@ -960,6 +963,8 @@ def command_for(
             "--tp", str(args.tensor_parallel_size),
             "--gpu_memory_utilization", str(vllm_memory),
         ]
+        if getattr(args, "procvlm_enable_value_head", False):
+            command.append("--enable_value_head")
         if args.procvlm_max_sampled_frames is not None:
             command.extend(["--max_sampled_frames", str(args.procvlm_max_sampled_frames)])
         return command, config["repo"]
@@ -2167,6 +2172,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional ProcVLM frame cap; omitted to use its upstream default",
     )
     parser.add_argument("--procvlm-max-new-tokens", type=int, default=4096)
+    parser.add_argument("--procvlm-enable-value-head", action="store_true")
 
     parser.add_argument(
         "--rynn-num-frames",
