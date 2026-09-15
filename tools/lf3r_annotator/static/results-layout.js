@@ -221,6 +221,16 @@
     });
   }
 
+  var originalUpdateEvaluationCurrent = window.updateEvaluationCurrent;
+  if (typeof originalUpdateEvaluationCurrent === "function") {
+    window.updateEvaluationCurrent = function () {
+      var result = originalUpdateEvaluationCurrent.apply(this, arguments);
+      /* The displayed strings may have changed length after seeking, but the
+         reserved box height remains the maximum for the whole rollout. */
+      return result;
+    };
+  }
+
   var bodyObserver = new MutationObserver(function (mutations) {
     if (mutations.some(function (mutation) { return mutation.attributeName === "data-view"; })) {
       applyQueueState();
