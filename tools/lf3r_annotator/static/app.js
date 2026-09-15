@@ -1151,6 +1151,9 @@ function toggleEvaluationSignal(button) {
   button.setAttribute("aria-pressed", String(visible));
   button.classList.toggle("is-hidden", !visible);
   button.title = (visible ? "Hide " : "Show ") + evaluationSignalLabel(name);
+  card.querySelectorAll("[data-signal-row]").forEach(function (row) {
+    if (row.dataset.signalName === name) row.hidden = !visible;
+  });
   card.querySelectorAll("[data-evaluation-signal-path]").forEach(function (path) {
     if (path.dataset.signalName !== name) return;
     path.style.display = visible ? "" : "none";
@@ -1162,69 +1165,58 @@ function renderSignalChart(method, result, record) {
   var samples = (result.samples || []).filter(function (sample) {
     return sample && Number.isFinite(Number(sample.frame)) && sample.signals;
   });
-  if (!samples.length) return '<div class="evaluation-empty">No numeric signal samples to plot.</div>';
   var names = [];
   samples.forEach(function (sample) {
     Object.keys(sample.signals).forEach(function (name) {
       if (names.indexOf(name) === -1) names.push(name);
     });
   });
-  if (!names.length) return '<div class="evaluation-empty">No numeric signal samples to plot.</div>';
-  // Use normalized horizontal coordinates so the SVG fills the responsive plot.
-  var width = 100;
-  var height = 105;
-  var left = 0;
-  var right = width;
-  var top = 8;
-  var bottom = height - 18;
-  var frameMin = Math.min.apply(null, samples.map(function (sample) { return Number(sample.frame); }));
-  var frameMax = Math.max.apply(null, samples.map(function (sample) { return Number(sample.frame); }));
-  var frameDomainMax = timelineDomainMax(record, frameMax);
+  if (!samples.length || !names.length) return '<div class="evaluation-empty">No numeric signal samples to plot.</div>';
+  var domain = timelineDomainMax(record, Math.max.apply(null, samples.map(function (s) { return Number(s.frame); })));
   var colors = ["#67d9b5", "#77bdfb", "#e7c15c", "#ef8d53", "#d6a5f5", "#f07869"];
   var visibility = evaluationSignalVisibility(method, record, names);
-  var paths = names.map(function (name, index) {
-    var values = samples.map(function (sample) { return Number(sample.signals[name]); }).filter(Number.isFinite);
-    if (!values.length) return "";
-    var min = Math.min.apply(null, values);
-    var max = Math.max.apply(null, values);
-    var span = max - min || 1;
-    var points = samples.filter(function (sample) { return Number.isFinite(Number(sample.signals[name])); }).map(function (sample) {
-      var frame = Math.max(0, Math.min(frameDomainMax, Number(sample.frame)));
-      var x = Math.max(left, Math.min(right, left + frame / frameDomainMax * (right - left)));
-      var y = bottom - (Number(sample.signals[name]) - min) / span * (bottom - top);
-      return x.toFixed(2) + "," + y.toFixed(2);
-    });
+  var legend = names.map(function (name, i) {
     var visible = visibility[name] !== false;
-    return '<polyline class="evaluation-signal-path" data-evaluation-signal-path data-signal-name="' + escapeHtml(name)
-      + '" aria-hidden="' + String(!visible) + '"' + (visible ? "" : ' style="display:none"')
-      + ' fill="none" stroke="' + colors[index % colors.length] + '" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + points.join(" ") + '"></polyline>';
-  }).join("");
-  var legend = names.map(function (name, index) {
-    var visible = visibility[name] !== false;
-    return '<button type="button" class="evaluation-signal-toggle' + (visible ? "" : " is-hidden")
-      + '" data-evaluation-signal-toggle data-signal-name="' + escapeHtml(name)
-      + '" aria-pressed="' + String(visible) + '" title="' + escapeHtml((visible ? "Hide " : "Show ") + evaluationSignalLabel(name)) + '">'
-      + '<i aria-hidden="true" style="background:' + colors[index % colors.length] + '"></i>'
-      + '<span>' + escapeHtml(evaluationSignalLabel(name)) + "</span></button>";
-  }).join("  ");
-  var markerLegend = TIMELINE_MARKER_DEFINITIONS.map(function (definition) {
-    return '<span class="evaluation-marker-key"><i class="marker ' + definition.cssClass + '"></i>'
-      + escapeHtml(definition.label) + '</span>';
-  }).join("");
-  return '<div class="evaluation-chart" data-evaluation-chart title="Each signal is independently normalized for display">'
-    + '<div class="timeline-track evaluation-chart-plot">'
-    + '<svg viewBox="0 0 ' + width + " " + height + '" preserveAspectRatio="none" role="img" aria-label="Baseline signal chart">'
-    + '<title>Baseline signal chart aligned to video frames 0-' + escapeHtml(frameDomainMax) + '</title>'
-    + '<line x1="0" y1="' + bottom + '" x2="' + right + '" y2="' + bottom + '" stroke="#29313a" stroke-width="1" vector-effect="non-scaling-stroke"></line>'
-    + paths + "</svg>"
-    + '<div class="evaluation-chart-markers" data-evaluation-onset-markers data-frame-max="' + frameDomainMax + '" aria-label="Annotated onset markers">'
-    + renderEvaluationOnsetMarkers(record, frameDomainMax) + "</div></div></div>"
-    + '<div class="evaluation-chart-legend">'
-    + '<span class="evaluation-signal-legend" aria-label="Plot signals; click labels to show or hide">' + legend
-    + '<span class="evaluation-signal-hint">click labels to show/hide</span></span>'
-    + '<span class="evaluation-onset-legend">' + markerLegend + '</span>'
-    + '<span class="evaluation-frame-legend">video frames 0-' + frameDomainMax + ' · samples ' + frameMin + '-' + frameMax + '</span>'
-    + "</div>";
+    return '<button type="button" class="evaluation-signal-toggle' + (visible ? '' : ' is-hidden')
+      + '" data-evaluation-signal-toggle data-signal-name="' + escapeHtml(name) + '" aria-pressed="' + visible
+      + '" title="Show/hide ' + escapeHtml(evaluationSignalLabel(name)) + '"><i style="background:' + colors[i % colors.length]
+      + '"></i>' + escapeHtml(evaluationSignalLabel(name)) + '</button>';
+  }).join('');
+  var plots = names.map(function (name, i) {
+    var rows = samples.filter(function (s) { return s.signals[name] != null && Number.isFinite(Number(s.signals[name])); });
+    if (!rows.length) return '';
+    var values = rows.map(function (s) { return Number(s.signals[name]); });
+    var low = Math.min.apply(null, values), high = Math.max.apply(null, values);
+    if (low === high) { var pad = Math.max(Math.abs(low) * 0.05, 0.01); low -= pad; high += pad; }
+    var points = rows.map(function (s) {
+      return (Math.max(0, Math.min(domain, Number(s.frame))) / domain * 100).toFixed(4) + ','
+        + (87 - (Number(s.signals[name]) - low) / (high - low) * 79).toFixed(4);
+    }).join(' ');
+    return '<section class="signal-row" data-signal-row data-signal-name="' + escapeHtml(name) + '"'
+      + (visibility[name] === false ? ' hidden' : '') + '><div class="signal-row-title">'
+      + (names.length > 1 ? escapeHtml(evaluationSignalLabel(name)) : '') + '</div><div class="signal-axis-layout">'
+      + '<div class="signal-y-axis" aria-label="Vertical axis values"><span>' + formatEvaluationNumber(high)
+      + '</span><span>' + formatEvaluationNumber((high + low) / 2) + '</span><span>' + formatEvaluationNumber(low) + '</span></div>'
+      + '<div class="evaluation-chart"><div class="timeline-track evaluation-chart-plot" data-signal-seek data-frame-max="' + domain
+      + '" tabindex="0" role="slider" aria-label="' + escapeHtml(evaluationSignalLabel(name)) + ': click to seek video; arrow keys step frames" aria-valuemin="0" aria-valuemax="' + domain + '" aria-valuenow="' + currentFrame() + '">'
+      + '<svg viewBox="0 0 100 105" preserveAspectRatio="none" role="img" aria-label="' + escapeHtml(evaluationSignalLabel(name)) + ' versus video frame">'
+      + '<title>Original signal values; video frame 0–' + domain + '</title>'
+      + '<path d="M0 8H100 M0 47.5H100 M0 87H100" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+      + '<polyline fill="none" stroke="' + colors[i % colors.length] + '" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + points + '"/></svg>'
+      + '<div class="evaluation-chart-markers" data-evaluation-onset-markers data-frame-max="' + domain + '">'
+      + renderEvaluationOnsetMarkers(record, domain) + '</div><div class="signal-playhead" data-signal-playhead style="left:'
+      + (Math.max(0, Math.min(domain, currentFrame())) / domain * 100) + '%"></div></div></div></div>'
+      + '<div class="signal-frame-axis"><span>0</span><span>video frame</span><span>' + domain + '</span></div></section>';
+  }).join('');
+  return '<div class="evaluation-chart-legend">' + legend + '</div>' + plots;
+}
+
+function updateSignalPlayheads() {
+  document.querySelectorAll('[data-signal-seek]').forEach(function (plot) {
+    var frame = Math.max(0, Math.min(Number(plot.dataset.frameMax), currentFrame()));
+    plot.setAttribute('aria-valuenow', String(frame));
+    plot.querySelector('[data-signal-playhead]').style.left = (frame / Math.max(1, Number(plot.dataset.frameMax)) * 100) + '%';
+  });
 }
 
 function compactSampleOutput(sample) {
@@ -1318,7 +1310,7 @@ function renderBaselineRunControls(method, result, record) {
     + optionHtml + '</select></label>'
     + '<button type="button" class="ghost-button" data-apply-baseline-run data-evaluation-method="' + escapeHtml(method)
     + '"' + disabled + '>Apply to all</button>'
-    + '<small>' + escapeHtml(note) + (options.length ? " · " + options.length + " run(s) cover this rollout" : " · no completed run covers this rollout") + '</small>'
+    + (options.length ? "" : '<small>No completed run available</small>')
     + '</div>';
 }
 
@@ -1381,8 +1373,7 @@ function renderEvaluationCard(method, result, record) {
   if (available) {
     body += renderSignalChart(method, result, record)
       + '<div class="evaluation-current">'
-      + '<div class="evaluation-current-frame" data-current-frame>At video frame -</div>'
-      + '<div class="evaluation-current-body"><div class="evaluation-signals" data-current-signals>No numeric signals.</div>'
+      + '<div class="evaluation-current-body">'
       + '<pre class="evaluation-output" data-current-output>No output at this frame.</pre></div></div>'
       + renderEvaluationHistory(result);
   } else {
@@ -1400,6 +1391,9 @@ function renderEvaluationCard(method, result, record) {
 
 function renderEvaluationPanel(payload) {
   state.evaluation = payload;
+  byId("evaluationSharedLegend").innerHTML = TIMELINE_MARKER_DEFINITIONS.map(function (definition) {
+    return '<span class="evaluation-marker-key"><i class="marker ' + definition.cssClass + '"></i>' + escapeHtml(definition.label) + '</span>';
+  }).join('');
   var methods = payload && payload.methods ? payload.methods : {};
   var methodOrder = payload && Array.isArray(payload.method_order) && payload.method_order.length
     ? payload.method_order
@@ -1433,17 +1427,18 @@ function renderEvaluationPanel(payload) {
 }
 
 function updateEvaluationCurrent() {
+  updateSignalPlayheads();
   if (!state.evaluation || !state.evaluation.methods) return;
   document.querySelectorAll("[data-evaluation-method]").forEach(function (card) {
     var result = state.evaluation.methods[card.dataset.evaluationMethod];
     if (!result || !result.available) return;
     var sample = nearestEvaluationSample(result.samples || [], state.currentFrame);
-    var frame = card.querySelector("[data-current-frame]");
-    var signals = card.querySelector("[data-current-signals]");
     var output = card.querySelector("[data-current-output]");
-    if (frame) frame.textContent = sample ? "At video frame " + state.currentFrame + " / nearest sample " + sample.frame + " / raw " + sample.raw_frame : "No aligned sample";
-    if (signals) signals.innerHTML = evaluationSignalsText(sample);
-    if (output) output.textContent = sampleOutputText(sample);
+    if (output) {
+      var text = sampleOutputText(sample);
+      output.textContent = text;
+      output.hidden = !text.trim();
+    }
   });
 }
 
@@ -2332,12 +2327,14 @@ function installEvents() {
     }
   });
   document.addEventListener("keydown", function (event) {
+    if (["annotate", "results"].indexOf(document.body.dataset.view) === -1) return;
     if (event.key === "/" && !isTypingTarget(event.target)) {
       event.preventDefault();
       byId("searchInput").focus();
       return;
     }
     if (isTypingTarget(event.target)) return;
+    if (document.body.dataset.view === "results" && ["1", "2", "3", "s", "S"].indexOf(event.key) !== -1) return;
     if (event.code === "Space") {
       event.preventDefault();
       togglePlayback();
@@ -2369,3 +2366,38 @@ loadRollouts().catch(function (error) {
   byId("datasetStatus").textContent = "Dataset error";
   byId("rolloutList").innerHTML = '<div class="form-error">' + escapeHtml(error.message) + "</div>";
 });
+
+// Chart interaction is delegated because cards are replaced when changing runs.
+document.addEventListener('click', function (event) {
+  var plot = event.target.closest('[data-signal-seek]');
+  if (!plot) return;
+  var box = plot.getBoundingClientRect();
+  if (box.width > 0) seekFrame((event.clientX - box.left) / box.width * Number(plot.dataset.frameMax));
+});
+document.addEventListener('keydown', function (event) {
+  var plot = event.target.closest('[data-signal-seek]');
+  if (!plot || ['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(event.key) === -1) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  seekFrame(event.key === 'Home' ? 0 : event.key === 'End' ? Number(plot.dataset.frameMax) : currentFrame() + (event.key === 'ArrowLeft' ? -1 : 1));
+}, true);
+
+byId('rolloutVideo').addEventListener('seeked', function () {
+  var record = selectedRollout();
+  if (!record) return;
+  state.currentFrame = Math.max(0, Math.min(Number(record.total_frames) - 1, Math.floor(this.currentTime * Number(record.fps) + 0.0001)));
+  byId('frameSlider').value = state.currentFrame;
+  updateReadout();
+});
+
+(function installResultsVideoPin() {
+  var toggle = byId('resultsPinVideo');
+  var dock = byId('resultsVideoDock');
+  try { toggle.checked = localStorage.getItem('lf3r.results.pinVideo') === 'true'; } catch (_) {}
+  function applyPin() {
+    dock.classList.toggle('is-pinned', toggle.checked);
+    try { localStorage.setItem('lf3r.results.pinVideo', String(toggle.checked)); } catch (_) {}
+  }
+  toggle.addEventListener('change', applyPin);
+  applyPin();
+})();

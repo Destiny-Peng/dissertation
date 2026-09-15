@@ -19,7 +19,9 @@
       </div>
     </div>
     <nav class="page-navigation" aria-label="Primary navigation">
-      <a href="#/review" data-route="review">Review</a>
+      <a href="#/annotate" data-route="annotate">Annotate</a>
+      <a href="#/results" data-route="results">Results</a>
+      <a href="#/runs" data-route="runs">Runs</a>
       <a href="#/analysis" data-route="analysis">Analysis</a>
       <a href="#/settings" data-route="settings">Settings</a>
     </nav>
@@ -108,6 +110,8 @@
             </div>
           </div>
 
+          <div id="resultsVideoDock" class="results-video-dock">
+          <label class="results-pin-control"><input id="resultsPinVideo" type="checkbox"> Lock video while scrolling</label>
           <div class="video-shell">
             <video id="rolloutVideo" preload="metadata" playsinline></video>
             <button id="playOverlay" class="play-overlay" type="button" aria-label="Play video">▶</button>
@@ -146,6 +150,8 @@
             </div>
           </div>
 
+          </div>
+
           <div class="known-event" id="knownEvent">
             <span class="known-label">GROUND TRUTH EVENT</span>
             <span id="knownEventText">No injected event; annotate only what is visible.</span>
@@ -160,126 +166,8 @@
               <button id="reloadEvaluation" class="ghost-button" type="button">Refresh</button>
             </div>
             <div id="evaluationStatus" class="evaluation-status">Loading baseline outputs…</div>
+            <div id="evaluationSharedLegend" class="evaluation-onset-legend evaluation-shared-legend" aria-label="Annotation marker colors"></div>
             <div id="evaluationMethods" class="evaluation-methods" aria-live="polite"></div>
-          </section>
-
-          <section class="evaluation-panel batch-panel" aria-labelledby="baselineBatchTitle">
-            <div class="evaluation-heading">
-              <div>
-                <p class="eyebrow">BATCH BASELINE</p>
-                <h2 id="baselineBatchTitle">Run one method over a rollout scope</h2>
-              </div>
-            </div>
-            <div id="baselineBatchStatus" class="evaluation-status" role="status">Batch inference is idle.</div>
-            <form id="baselineBatchForm" class="batch-form">
-              <div class="batch-control-grid">
-                <label data-cli-help="baseline.baseline"><span>Baseline method</span>
-                  <select id="baselineBatchMethod">
-                    <option value="safe">SAFE</option>
-                    <option value="procvlm">ProcVLM</option>
-                    <option value="rynnvalue">RynnValue</option>
-                    <option value="robo_dopamine">Robo-Dopamine</option>
-                    <option value="densereward">DenseReward</option>
-                  </select>
-                </label>
-                <label data-cli-help="baseline.scope"><span>Rollout scope</span>
-                  <select id="baselineBatchScope">
-                    <option value="natural_observation" selected>All natural observations</option>
-                    <option value="all">All manifest rollouts</option>
-                    <option value="primary_natural">Primary natural</option>
-                    <option value="reference_natural">Reference natural</option>
-                    <option value="controlled_analysis">Controlled analysis</option>
-                  </select>
-                </label>
-                <label data-cli-help="baseline.instruction_condition"><span>Instruction condition</span>
-                  <select id="baselineBatchCondition">
-                    <option value="full_instruction" selected>Full instruction</option>
-                    <option value="subtask_a">A</option>
-                    <option value="subtask_b">B</option>
-                  </select>
-                </label>
-                <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text" inputmode="numeric" value="0" maxlength="31"></label>
-                <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input id="baselineBatchMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
-                <label data-cli-help="baseline.start_index"><span>Total start index (inclusive)</span><input id="baselineBatchStartIndex" type="number" min="0" step="1" value="0"></label>
-                <label id="baselineBatchLimitField" class="hidden" data-cli-help="baseline.limit"><span>Limit (legacy compatibility)</span><input id="baselineBatchLimit" type="number" min="1" step="1" placeholder="Use worker range"></label>
-                <label id="baselineBatchEndField" data-cli-help="baseline.end_index"><span>Total end index (exclusive)</span><input id="baselineBatchEndIndex" type="number" min="1" step="1" placeholder="Scope end"></label>
-              </div>
-              <div id="baselineBatchRynnParallel" class="rynn-parallel-panel baseline-worker-panel">
-                <div class="baseline-worker-heading rynn-parallel-heading">
-                  <div><strong>Baseline rollout workers</strong><small>Each method can split rollouts across independent workers. Every row uses the scope-relative right-open range <code>[start, end)</code>.</small></div>
-                  <button id="baselineBatchAddWorker" class="ghost-button" type="button" aria-label="Add baseline worker">+ Worker</button>
-                </div>
-                <div id="baselineBatchWorkers" class="baseline-worker-list rynn-worker-list" aria-live="polite"></div>
-                <p id="baselineBatchWorkerSummary" class="batch-selection-note">Worker assignment: loading…</p>
-              </div>
-              <p id="baselineBatchSelection" class="batch-selection-note">Scope selection: loading…</p>
-              <p class="batch-resource-warning">GPU resources are user-managed. Jobs may use overlapping GPU IDs; the server does not schedule or block GPU contention.</p>
-              <details id="baselineBatchAdvanced" class="batch-advanced">
-                <summary>Advanced runner parameters</summary>
-                <div class="batch-advanced-grid">
-                  <label data-cli-help="baseline.model_path" data-batch-methods="procvlm,rynnvalue,robo_dopamine,densereward"><span>Model path (optional)</span><input data-batch-option="model_path" type="text" placeholder="Use configured checkpoint"></label>
-                  <label data-cli-help="baseline.dtype" data-batch-methods="procvlm,robo_dopamine"><span>Dtype</span><input data-batch-option="dtype" type="text" value="bf16"></label>
-                  <label data-cli-help="baseline.tensor_parallel_size" data-batch-methods="procvlm,robo_dopamine"><span>Tensor parallel size</span><input data-batch-option="tensor_parallel_size" type="number" min="1" step="1" value="1"></label>
-                  <label data-cli-help="baseline.procvlm_window_size" data-batch-methods="procvlm"><span>Window size</span><input data-batch-option="procvlm_window_size" type="number" min="1" step="1" value="4"></label>
-                  <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1" placeholder="Runner default"></label>
-                  <label data-cli-help="baseline.procvlm_max_new_tokens" data-batch-methods="procvlm"><span>Max new tokens</span><input data-batch-option="procvlm_max_new_tokens" type="number" min="1" step="1" value="4096"></label>
-                  <label data-cli-help="baseline.procvlm_enable_value_head" data-batch-methods="procvlm"><span>Enable value head (also single-rollout reruns)</span><input id="procvlmEnableValueHead" data-batch-option="procvlm_enable_value_head" type="checkbox"></label>
-                  <label data-cli-help="baseline.densereward_frame_interval" data-batch-methods="densereward"><span>Frame interval</span><input data-batch-option="densereward_frame_interval" type="number" min="1" step="1" value="1"></label>
-                  <label data-cli-help="baseline.densereward_max_new_tokens" data-batch-methods="densereward"><span>Max new tokens</span><input data-batch-option="densereward_max_new_tokens" type="number" min="1" step="1" value="32"></label>
-                  <label data-cli-help="baseline.rynn_num_frames" data-batch-methods="rynnvalue"><span>Frames per prefix</span><input data-batch-option="rynn_num_frames" type="number" min="1" step="1" value="16"></label>
-                  <label data-cli-help="baseline.rynn_evaluation_interval" data-batch-methods="rynnvalue"><span>Target frame interval</span><input data-batch-option="rynn_evaluation_interval" type="number" min="1" step="1" value="8"></label>
-                  <label data-cli-help="baseline.rynn_batch_size" data-batch-methods="rynnvalue"><span>Batch size</span><input data-batch-option="rynn_batch_size" type="number" min="1" step="1" value="1"></label>
-                  <label data-cli-help="baseline.rynn_max_image_side" data-batch-methods="rynnvalue"><span>Max image side</span><input data-batch-option="rynn_max_image_side" type="number" min="1" step="1" value="448"></label>
-                  <label data-cli-help="baseline.rynn_max_new_tokens" data-batch-methods="rynnvalue"><span>Max new tokens</span><input data-batch-option="rynn_max_new_tokens" type="number" min="1" step="1" value="128"></label>
-                  <label data-cli-help="baseline.robot_description" data-batch-methods="rynnvalue"><span>Robot description</span><input data-batch-option="robot_description" type="text" value="A Franka Panda 7-DoF robot arm with a parallel-jaw gripper."></label>
-                  <label data-cli-help="baseline.camera_description" data-batch-methods="rynnvalue"><span>Camera description</span><input data-batch-option="camera_description" type="text" value="A fixed third-person agent-view RGB camera observing the robot workspace."></label>
-                  <label data-cli-help="baseline.robo_frame_interval" data-batch-methods="robo_dopamine"><span>Frame interval</span><input data-batch-option="robo_frame_interval" type="number" min="1" step="1" value="4"></label>
-                  <label data-cli-help="baseline.robo_batch_size" data-batch-methods="robo_dopamine"><span>Batch size</span><input data-batch-option="robo_batch_size" type="number" min="1" step="1" value="1"></label>
-                  <label data-cli-help="baseline.robo_eval_mode" data-batch-methods="robo_dopamine"><span>Eval mode</span><select data-batch-option="robo_eval_mode"><option value="fused" selected>Fused (all three perspectives)</option><option value="forward">Forward</option><option value="incremental">Incremental</option><option value="backward">Backward</option></select></label>
-                  <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image (optional)</span><input data-batch-option="goal_image" type="text" placeholder="Project-relative image path"></label>
-                </div>
-                <div class="batch-check-grid">
-                  <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render baseline video</label>
-                  <label data-cli-help="baseline.validate_environment"><input data-batch-option="validate_environment" type="checkbox"> Validate environment first</label>
-                  <label data-cli-help="baseline.dry_run"><input data-batch-option="dry_run" type="checkbox"> Plan only (dry run)</label>
-                </div>
-              </details>
-              <button id="baselineBatchRun" class="save-button" type="submit">Run batch baseline</button>
-            </form>
-            <div id="baselineBatchJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent baseline job"></div>
-            <pre id="baselineBatchLog" class="job-log" aria-label="Latest batch baseline log"></pre>
-          </section>
-
-          <section class="evaluation-panel rollout-generation-panel" aria-labelledby="rolloutGenerationTitle">
-            <div class="evaluation-heading">
-              <div>
-                <p class="eyebrow">ROLLOUT GENERATION</p>
-                <h2 id="rolloutGenerationTitle">Generate natural rollouts</h2>
-              </div>
-              <span id="rolloutGenerationBadge" class="analysis-badge">Idle</span>
-            </div>
-            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. Render and record resolutions are independent square dimensions; the checkpoint policy input remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
-            <form id="rolloutGenerationForm" class="rollout-generation-form">
-              <div class="rollout-generation-grid">
-                <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite"><option value="libero_10">LIBERO-10 natural (existing output)</option><option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option></select></label>
-                <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
-                <label data-cli-help="rollout.record_resolution"><span>Record resolution (square)</span><input id="rolloutGenerationRecordResolution" type="number" min="64" max="2048" step="2" value="224"></label>
-                <label data-cli-help="rollout.gpu"><span>GPU</span><input id="rolloutGenerationGpu" type="text" inputmode="numeric" value="0" maxlength="8"></label>
-                <label data-cli-help="rollout.task_start"><span>Task start (inclusive)</span><input id="rolloutGenerationTaskStart" type="number" min="0" max="9" step="1" value="0"></label>
-                <label data-cli-help="rollout.task_end"><span>Task end (inclusive)</span><input id="rolloutGenerationTaskEnd" type="number" min="0" max="9" step="1" value="3"></label>
-                <label data-cli-help="rollout.trials"><span>Trials per task</span><input id="rolloutGenerationTrials" type="number" min="1" max="50" step="1" value="1"></label>
-                <label data-cli-help="rollout.seed"><span>Seed</span><input id="rolloutGenerationSeed" type="number" min="0" step="1" value="7"></label>
-                <label data-cli-help="rollout.run_note"><span>Run-note label (optional)</span><input id="rolloutGenerationLabel" type="text" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="web"></label>
-              </div>
-              <div class="batch-check-grid rollout-generation-options">
-                <label data-cli-help="rollout.log_safe_features"><input id="rolloutGenerationLogSafeFeatures" type="checkbox" checked> Save latent / SAFE hidden states</label>
-              </div>
-              <p id="rolloutGenerationSelection" class="batch-selection-note">Requested output: 4 rollout(s); run note is generated automatically.</p>
-              <button id="rolloutGenerationRun" class="save-button" type="submit">Generate rollouts</button>
-            </form>
-            <div id="rolloutGenerationStatus" class="evaluation-status" role="status">Generation is idle.</div>
-            <div id="rolloutGenerationJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent rollout generation job"></div>
-            <pre id="rolloutGenerationLog" class="job-log" aria-label="Latest rollout generation log"></pre>
           </section>
 
           <details class="shortcuts">
@@ -383,6 +271,130 @@
         </aside>
       </div>
     </section>
+  </main>
+
+  <main id="runsView" class="page-view app-view hidden runs-view" data-view="runs">
+    <h2>Runs</h2>
+          <section class="evaluation-panel batch-panel" aria-labelledby="baselineBatchTitle">
+
+            <div class="evaluation-heading">
+              <div>
+                <p class="eyebrow">BATCH BASELINE</p>
+                <h2 id="baselineBatchTitle">Run one method over a rollout scope</h2>
+              </div>
+            </div>
+            <div id="baselineBatchStatus" class="evaluation-status" role="status">Batch inference is idle.</div>
+            <form id="baselineBatchForm" class="batch-form">
+              <div class="batch-control-grid">
+                <label data-cli-help="baseline.baseline"><span>Baseline method</span>
+                  <select id="baselineBatchMethod">
+                    <option value="safe">SAFE</option>
+                    <option value="procvlm">ProcVLM</option>
+                    <option value="rynnvalue">RynnValue</option>
+                    <option value="robo_dopamine">Robo-Dopamine</option>
+                    <option value="densereward">DenseReward</option>
+                  </select>
+                </label>
+                <label data-cli-help="baseline.scope"><span>Rollout scope</span>
+                  <select id="baselineBatchScope">
+                    <option value="natural_observation" selected>All natural observations</option>
+                    <option value="all">All manifest rollouts</option>
+                    <option value="primary_natural">Primary natural</option>
+                    <option value="reference_natural">Reference natural</option>
+                    <option value="controlled_analysis">Controlled analysis</option>
+                  </select>
+                </label>
+                <label data-cli-help="baseline.instruction_condition"><span>Instruction condition</span>
+                  <select id="baselineBatchCondition">
+                    <option value="full_instruction" selected>Full instruction</option>
+                    <option value="subtask_a">A</option>
+                    <option value="subtask_b">B</option>
+                  </select>
+                </label>
+                <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text" inputmode="numeric" value="0" maxlength="31"></label>
+                <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input id="baselineBatchMemoryUtilization" type="number" min="0.05" max="1" step="0.05" value="0.80"></label>
+                <label data-cli-help="baseline.start_index"><span>Total start index (inclusive)</span><input id="baselineBatchStartIndex" type="number" min="0" step="1" value="0"></label>
+                <label id="baselineBatchLimitField" class="hidden" data-cli-help="baseline.limit"><span>Limit (legacy compatibility)</span><input id="baselineBatchLimit" type="number" min="1" step="1" placeholder="Use worker range"></label>
+                <label id="baselineBatchEndField" data-cli-help="baseline.end_index"><span>Total end index (exclusive)</span><input id="baselineBatchEndIndex" type="number" min="1" step="1" placeholder="Scope end"></label>
+              </div>
+              <div id="baselineBatchRynnParallel" class="rynn-parallel-panel baseline-worker-panel">
+                <div class="baseline-worker-heading rynn-parallel-heading">
+                  <div><strong>Baseline rollout workers</strong><small>Each method can split rollouts across independent workers. Every row uses the scope-relative right-open range <code>[start, end)</code>.</small></div>
+                  <button id="baselineBatchAddWorker" class="ghost-button" type="button" aria-label="Add baseline worker">+ Worker</button>
+                </div>
+                <div id="baselineBatchWorkers" class="baseline-worker-list rynn-worker-list" aria-live="polite"></div>
+                <p id="baselineBatchWorkerSummary" class="batch-selection-note">Worker assignment: loading…</p>
+              </div>
+              <p id="baselineBatchSelection" class="batch-selection-note">Scope selection: loading…</p>
+              <p class="batch-resource-warning">GPU resources are user-managed. Jobs may use overlapping GPU IDs; the server does not schedule or block GPU contention.</p>
+              <section id="baselineBatchAdvanced" class="batch-advanced">
+                <h3>Advanced runner parameters</h3>
+                <div class="batch-advanced-grid">
+                  <label data-cli-help="baseline.model_path" data-batch-methods="procvlm,rynnvalue,robo_dopamine,densereward"><span>Model path (optional)</span><input data-batch-option="model_path" type="text" placeholder="Use configured checkpoint"></label>
+                  <label data-cli-help="baseline.dtype" data-batch-methods="procvlm,robo_dopamine"><span>Dtype</span><input data-batch-option="dtype" type="text" value="bf16"></label>
+                  <label data-cli-help="baseline.tensor_parallel_size" data-batch-methods="procvlm,robo_dopamine"><span>Tensor parallel size</span><input data-batch-option="tensor_parallel_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.procvlm_window_size" data-batch-methods="procvlm"><span>Window size</span><input data-batch-option="procvlm_window_size" type="number" min="1" step="1" value="4"></label>
+                  <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1" placeholder="Runner default"></label>
+                  <label data-cli-help="baseline.procvlm_max_new_tokens" data-batch-methods="procvlm"><span>Max new tokens</span><input data-batch-option="procvlm_max_new_tokens" type="number" min="1" step="1" value="4096"></label>
+                  <label data-cli-help="baseline.procvlm_enable_value_head" data-batch-methods="procvlm"><span>Enable value head (also single-rollout reruns)</span><input id="procvlmEnableValueHead" data-batch-option="procvlm_enable_value_head" type="checkbox"></label>
+                  <label data-cli-help="baseline.densereward_frame_interval" data-batch-methods="densereward"><span>Frame interval</span><input data-batch-option="densereward_frame_interval" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.densereward_max_new_tokens" data-batch-methods="densereward"><span>Max new tokens</span><input data-batch-option="densereward_max_new_tokens" type="number" min="1" step="1" value="32"></label>
+                  <label data-cli-help="baseline.rynn_num_frames" data-batch-methods="rynnvalue"><span>Frames per prefix</span><input data-batch-option="rynn_num_frames" type="number" min="1" step="1" value="16"></label>
+                  <label data-cli-help="baseline.rynn_evaluation_interval" data-batch-methods="rynnvalue"><span>Target frame interval</span><input data-batch-option="rynn_evaluation_interval" type="number" min="1" step="1" value="8"></label>
+                  <label data-cli-help="baseline.rynn_batch_size" data-batch-methods="rynnvalue"><span>Batch size</span><input data-batch-option="rynn_batch_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.rynn_max_image_side" data-batch-methods="rynnvalue"><span>Max image side</span><input data-batch-option="rynn_max_image_side" type="number" min="1" step="1" value="448"></label>
+                  <label data-cli-help="baseline.rynn_max_new_tokens" data-batch-methods="rynnvalue"><span>Max new tokens</span><input data-batch-option="rynn_max_new_tokens" type="number" min="1" step="1" value="128"></label>
+                  <label data-cli-help="baseline.robot_description" data-batch-methods="rynnvalue"><span>Robot description</span><input data-batch-option="robot_description" type="text" value="A Franka Panda 7-DoF robot arm with a parallel-jaw gripper."></label>
+                  <label data-cli-help="baseline.camera_description" data-batch-methods="rynnvalue"><span>Camera description</span><input data-batch-option="camera_description" type="text" value="A fixed third-person agent-view RGB camera observing the robot workspace."></label>
+                  <label data-cli-help="baseline.robo_frame_interval" data-batch-methods="robo_dopamine"><span>Frame interval</span><input data-batch-option="robo_frame_interval" type="number" min="1" step="1" value="4"></label>
+                  <label data-cli-help="baseline.robo_batch_size" data-batch-methods="robo_dopamine"><span>Batch size</span><input data-batch-option="robo_batch_size" type="number" min="1" step="1" value="1"></label>
+                  <label data-cli-help="baseline.robo_eval_mode" data-batch-methods="robo_dopamine"><span>Eval mode</span><select data-batch-option="robo_eval_mode"><option value="fused" selected>Fused (all three perspectives)</option><option value="forward">Forward</option><option value="incremental">Incremental</option><option value="backward">Backward</option></select></label>
+                  <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image (optional)</span><input data-batch-option="goal_image" type="text" placeholder="Project-relative image path"></label>
+                </div>
+                <div class="batch-check-grid">
+                  <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render baseline video</label>
+                  <label data-cli-help="baseline.validate_environment"><input data-batch-option="validate_environment" type="checkbox"> Validate environment first</label>
+                  <label data-cli-help="baseline.dry_run"><input data-batch-option="dry_run" type="checkbox"> Plan only (dry run)</label>
+                </div>
+              </section>
+              <button id="baselineBatchRun" class="save-button" type="submit">Run batch baseline</button>
+            </form>
+            <div id="baselineBatchJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent baseline job"></div>
+            <pre id="baselineBatchLog" class="job-log" aria-label="Latest batch baseline log"></pre>
+          </section>
+
+          <section class="evaluation-panel rollout-generation-panel" aria-labelledby="rolloutGenerationTitle">
+            <div class="evaluation-heading">
+              <div>
+                <p class="eyebrow">ROLLOUT GENERATION</p>
+                <h2 id="rolloutGenerationTitle">Generate natural rollouts</h2>
+              </div>
+              <span id="rolloutGenerationBadge" class="analysis-badge">Idle</span>
+            </div>
+            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. Render and record resolutions are independent square dimensions; the checkpoint policy input remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
+            <form id="rolloutGenerationForm" class="rollout-generation-form">
+              <div class="rollout-generation-grid">
+                <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite"><option value="libero_10">LIBERO-10 natural (existing output)</option><option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option></select></label>
+                <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
+                <label data-cli-help="rollout.record_resolution"><span>Record resolution (square)</span><input id="rolloutGenerationRecordResolution" type="number" min="64" max="2048" step="2" value="224"></label>
+                <label data-cli-help="rollout.gpu"><span>GPU</span><input id="rolloutGenerationGpu" type="text" inputmode="numeric" value="0" maxlength="8"></label>
+                <label data-cli-help="rollout.task_start"><span>Task start (inclusive)</span><input id="rolloutGenerationTaskStart" type="number" min="0" max="9" step="1" value="0"></label>
+                <label data-cli-help="rollout.task_end"><span>Task end (inclusive)</span><input id="rolloutGenerationTaskEnd" type="number" min="0" max="9" step="1" value="3"></label>
+                <label data-cli-help="rollout.trials"><span>Trials per task</span><input id="rolloutGenerationTrials" type="number" min="1" max="50" step="1" value="1"></label>
+                <label data-cli-help="rollout.seed"><span>Seed</span><input id="rolloutGenerationSeed" type="number" min="0" step="1" value="7"></label>
+                <label data-cli-help="rollout.run_note"><span>Run-note label (optional)</span><input id="rolloutGenerationLabel" type="text" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="web"></label>
+              </div>
+              <div class="batch-check-grid rollout-generation-options">
+                <label data-cli-help="rollout.log_safe_features"><input id="rolloutGenerationLogSafeFeatures" type="checkbox" checked> Save latent / SAFE hidden states</label>
+              </div>
+              <p id="rolloutGenerationSelection" class="batch-selection-note">Requested output: 4 rollout(s); run note is generated automatically.</p>
+              <button id="rolloutGenerationRun" class="save-button" type="submit">Generate rollouts</button>
+            </form>
+            <div id="rolloutGenerationStatus" class="evaluation-status" role="status">Generation is idle.</div>
+            <div id="rolloutGenerationJobs" class="persistent-job-list" aria-live="polite" aria-label="Latest persistent rollout generation job"></div>
+            <pre id="rolloutGenerationLog" class="job-log" aria-label="Latest rollout generation log"></pre>
+          </section>
+
   </main>
 
   <main id="analysisView" class="page-view app-view hidden" data-view="analysis">
@@ -711,8 +723,8 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=20260907-densereward" defer></script>
-  <script src="/static/workspace.js?v=20260907-densereward" defer></script>
+  <script src="/static/app.js?v=runs-20260915-20260907-densereward" defer></script>
+  <script src="/static/workspace.js?v=runs-20260915-20260907-densereward" defer></script>
 </body>
 
 </html>

@@ -454,3 +454,11 @@ The requirement-level verifier can be run after data generation:
 In Review, choose ProcVLM in Batch baseline and expand its parameters. `Enable value head` defaults to off and also applies to ProcVLM single-rollout Re-run. The option forwards `--procvlm-enable-value-head` to the runner and `enable_value_head=True` to official inference. Enabled runs use the cached official PyTorch model (trained pooler/value-head weights are required), which replaces generated progress tags with regression predictions. Disabled runs retain text-based vLLM inference. The vLLM free-memory fraction does not cap PyTorch allocations; upstream maps tensor-parallel count to data-parallel workers on this path. Resume retains the option. Restart the annotator server and refresh the page after updating.
 
 This change was reviewed statically only; no tests or inference were run, as requested.
+
+### Annotate and Results (2026-09-15)
+
+`#/annotate` contains annotation controls and the shared video/queue. `#/results` contains baseline outputs. `#/runs` contains Run baseline and Generate rollout, with all run parameters expanded. Both views retain the selected rollout, filters and player position. The old `#/review[/rollout-id]` route opens Annotate. Switching between these views with unsaved annotations prompts before retaining the draft; Results disables annotation keyboard shortcuts.
+
+Baseline signals have separate raw-value vertical axes, visibility toggles and a shared video-frame domain. The white cursor follows playback and seeking. Click a plot to seek, or focus it and use arrow/Home/End keys. Existing nearest-sample/value readouts distinguish the current video frame from sampled inference points. No interpolation or signal normalization is applied.
+
+Results offers `Lock video while scrolling`. It pins the shared player, playback controls and frame slider at the top of the Results scroll area, with a compact video height. The preference is stored in this browser and applies only to Results. Turn it off to restore normal scrolling.

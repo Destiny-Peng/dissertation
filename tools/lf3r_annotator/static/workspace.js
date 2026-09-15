@@ -2647,10 +2647,11 @@ function workspaceResetSettings() {
 }
 
 function workspaceParseRoute() {
-  var hash = window.location.hash || "#/review";
+  var hash = window.location.hash || "#/annotate";
   var raw = hash.replace(/^#\/?/, "");
   var parts = raw.split("/");
-  var view = ["review", "analysis", "settings"].indexOf(parts[0]) === -1 ? "review" : parts[0];
+  var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
+  if (view === "review") view = "annotate";
   var id = parts.length > 1 && parts[1] ? decodeURIComponent(parts.slice(1).join("/")) : null;
   return { view: view, id: id, hash: hash };
 }
@@ -2660,9 +2661,9 @@ function workspaceHasUnsavedChanges() {
 }
 
 function workspaceShowView(view) {
-  ["reviewWorkspace", "analysisView", "settingsView"].forEach(function (id) {
+  ["reviewWorkspace", "runsView", "analysisView", "settingsView"].forEach(function (id) {
     var node = byId(id);
-    if (node) node.classList.toggle("hidden", node.dataset.view !== view);
+    if (node) node.classList.toggle("hidden", (id === "reviewWorkspace" ? ["annotate", "results"].indexOf(view) === -1 : node.dataset.view !== view));
   });
   document.querySelectorAll("[data-route]").forEach(function (link) {
     var active = link.dataset.route === view;
@@ -2672,26 +2673,29 @@ function workspaceShowView(view) {
   });
   document.documentElement.dataset.activeView = view;
   document.body.dataset.view = view;
-  byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "settings" ? "Settings" : "Failure Review";
+  byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "settings" ? "Settings" : view === "results" ? "Results" : view === "runs" ? "Runs" : "Annotate";
   document.title = "LF3R " + (view === "review" ? "Failure Review" : labelFor(view));
 }
 
 function workspaceRenderRoute() {
   var route = workspaceParseRoute();
   if (workspaceState.lastHash && workspaceState.lastHash !== route.hash && workspaceHasUnsavedChanges()) {
-    if (!window.confirm("Discard unsaved changes and leave this page?")) {
+    var sharedReview = ["annotate", "results"].indexOf(workspaceState.view) !== -1 && ["annotate", "results"].indexOf(route.view) !== -1 && (!route.id || route.id === state.selectedId);
+    if (!window.confirm(sharedReview ? "Switch page and keep unsaved annotations?" : "Discard unsaved changes and leave this page?")) {
       window.history.replaceState(null, "", workspaceState.lastHash);
       return;
     }
-    state.dirty = false;
-    workspaceState.settingsDirty = false;
+    if (!sharedReview) {
+      state.dirty = false;
+      workspaceState.settingsDirty = false;
+    }
   }
   workspaceState.lastHash = route.hash;
   workspaceState.view = route.view;
   state.view = route.view;
   workspaceShowView(route.view);
-  if (route.view === "review") {
-    if (route.id && (state.rollouts || []).some(function (record) { return record.id === route.id; })) {
+  if (["annotate", "results"].indexOf(route.view) !== -1) {
+    if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; })) {
       selectRollout(route.id);
     } else if (!selectedRollout() && state.filtered && state.filtered.length) {
       selectRollout(state.filtered[0].id);
@@ -2708,9 +2712,9 @@ function workspaceRenderRoute() {
 }
 
 function workspaceDataChanged() {
-  if (workspaceState.view === "review") {
+  if (["annotate", "results"].indexOf(workspaceState.view) !== -1) {
     var route = workspaceParseRoute();
-    if (route.id && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
+    if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
       selectRollout(route.id);
     }
   }
@@ -3768,13 +3772,14 @@ function workspaceRenderTaskChart(records) {
 }
 
 function workspaceParseRoute() {
-  var hash = window.location.hash || "#/review";
+  var hash = window.location.hash || "#/annotate";
   var raw = hash.replace(/^#\/?/, "");
   var parts = raw.split("/");
-  var view = ["review", "analysis", "settings"].indexOf(parts[0]) === -1 ? "review" : parts[0];
+  var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
+  if (view === "review") view = "annotate";
   var analysisTabs = ["overview", "comparison", "failures", "events", "signals", "archive"];
   var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "overview";
-  var id = view === "review" && parts.length > 1 && parts[1]
+  var id = ["annotate", "results"].indexOf(view) !== -1 && parts.length > 1 && parts[1]
     ? decodeURIComponent(parts.slice(1).join("/")) : null;
   return { view: view, id: id, analysisTab: analysisTab, hash: hash };
 }
@@ -3797,19 +3802,22 @@ function workspaceRenderAnalysisTabs(tab) {
 function workspaceRenderRoute() {
   var route = workspaceParseRoute();
   if (workspaceState.lastHash && workspaceState.lastHash !== route.hash && workspaceHasUnsavedChanges()) {
-    if (!window.confirm("Discard unsaved changes and leave this page?")) {
+    var sharedReview = ["annotate", "results"].indexOf(workspaceState.view) !== -1 && ["annotate", "results"].indexOf(route.view) !== -1 && (!route.id || route.id === state.selectedId);
+    if (!window.confirm(sharedReview ? "Switch page and keep unsaved annotations?" : "Discard unsaved changes and leave this page?")) {
       window.history.replaceState(null, "", workspaceState.lastHash);
       return;
     }
-    state.dirty = false;
-    workspaceState.settingsDirty = false;
+    if (!sharedReview) {
+      state.dirty = false;
+      workspaceState.settingsDirty = false;
+    }
   }
   workspaceState.lastHash = route.hash;
   workspaceState.view = route.view;
   state.view = route.view;
   workspaceShowView(route.view);
-  if (route.view === "review") {
-    if (route.id && (state.rollouts || []).some(function (record) { return record.id === route.id; })) {
+  if (["annotate", "results"].indexOf(route.view) !== -1) {
+    if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; })) {
       selectRollout(route.id);
     } else if (!selectedRollout() && state.filtered && state.filtered.length) {
       selectRollout(state.filtered[0].id);
@@ -3827,9 +3835,9 @@ function workspaceRenderRoute() {
 }
 
 function workspaceDataChanged() {
-  if (workspaceState.view === "review") {
+  if (["annotate", "results"].indexOf(workspaceState.view) !== -1) {
     var route = workspaceParseRoute();
-    if (route.id && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
+    if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
       selectRollout(route.id);
     }
   } else if (workspaceState.view === "analysis") {
