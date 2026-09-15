@@ -59,11 +59,61 @@
   }
 }
 
-/* Results workspace: keep video and baseline curves visible side-by-side. */
-.results-queue-toggle {
+/* Shared rollout queue collapse for Annotate and Results. */
+.review-queue-toggle {
   display: none;
 }
 
+@media (min-width: 901px) {
+  body[data-view="annotate"] #reviewWorkspace .queue-panel,
+  body[data-view="results"] #reviewWorkspace .queue-panel {
+    position: relative;
+  }
+
+  body[data-view="annotate"] .review-queue-toggle,
+  body[data-view="results"] .review-queue-toggle {
+    position: absolute;
+    top: 1rem;
+    right: -.78rem;
+    z-index: 35;
+    display: grid;
+    width: 1.55rem;
+    height: 3rem;
+    padding: 0;
+    place-items: center;
+    color: #aeb9c4;
+    font-size: 1.1rem;
+    line-height: 1;
+    background: rgba(15, 22, 30, .98);
+    border: 1px solid #34414e;
+    border-radius: 0 9px 9px 0;
+    box-shadow: 6px 0 18px rgba(0, 0, 0, .22);
+  }
+
+  body[data-view="annotate"] .review-queue-toggle:hover,
+  body[data-view="results"] .review-queue-toggle:hover {
+    color: var(--text);
+    border-color: rgba(105, 226, 193, .45);
+    background: #151e28;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace.review-queue-collapsed,
+  body[data-view="results"] #reviewWorkspace.review-queue-collapsed {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+  }
+
+  body[data-view="annotate"] #reviewWorkspace.review-queue-collapsed .queue-panel,
+  body[data-view="results"] #reviewWorkspace.review-queue-collapsed .queue-panel {
+    padding-inline: .45rem;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace.review-queue-collapsed .queue-panel > :not(.review-queue-toggle),
+  body[data-view="results"] #reviewWorkspace.review-queue-collapsed .queue-panel > :not(.review-queue-toggle) {
+    display: none !important;
+  }
+}
+
+/* Results workspace: video on the left, baseline curves on the right. */
 body[data-view="results"] #reviewWorkspace .review-content,
 body[data-view="results"] #reviewWorkspace .media-column {
   min-width: 0;
@@ -95,65 +145,27 @@ body[data-view="results"] .evaluation-output.is-stable-height {
   pointer-events: none !important;
 }
 
-@media (min-width: 901px) {
-  body[data-view="results"] #reviewWorkspace .queue-panel {
-    position: relative;
-  }
-
-  body[data-view="results"] .results-queue-toggle {
-    position: absolute;
-    top: 1rem;
-    right: -.78rem;
-    z-index: 35;
-    display: grid;
-    width: 1.55rem;
-    height: 3rem;
-    padding: 0;
-    place-items: center;
-    color: #aeb9c4;
-    font-size: 1.1rem;
-    line-height: 1;
-    background: rgba(15, 22, 30, .98);
-    border: 1px solid #34414e;
-    border-radius: 0 9px 9px 0;
-    box-shadow: 6px 0 18px rgba(0, 0, 0, .22);
-  }
-
-  body[data-view="results"] .results-queue-toggle:hover {
-    color: var(--text);
-    border-color: rgba(105, 226, 193, .45);
-    background: #151e28;
-  }
-
-  body[data-view="results"] #reviewWorkspace.results-queue-collapsed {
-    grid-template-columns: 2.75rem minmax(0, 1fr);
-  }
-
-  body[data-view="results"] #reviewWorkspace.results-queue-collapsed .queue-panel {
-    padding-inline: .45rem;
-  }
-
-  body[data-view="results"] #reviewWorkspace.results-queue-collapsed .queue-panel > :not(.results-queue-toggle) {
-    display: none !important;
-  }
-}
-
 @media (min-width: 1100px) {
-  body[data-view="results"] #reviewWorkspace {
+  body[data-view="results"] #reviewWorkspace,
+  body[data-view="annotate"] #reviewWorkspace {
     min-height: 0;
   }
 
-  body[data-view="results"] #reviewWorkspace .review-stage {
+  body[data-view="results"] #reviewWorkspace .review-stage,
+  body[data-view="annotate"] #reviewWorkspace .review-stage {
     min-height: 0;
     overflow: hidden;
   }
 
-  body[data-view="results"] #reviewWorkspace .review-content {
+  body[data-view="results"] #reviewWorkspace .review-content,
+  body[data-view="annotate"] #reviewWorkspace .review-content {
     height: 100%;
     min-height: 0;
     min-width: 0;
   }
 
+  /* Results: the baseline pane starts at the very top instead of wasting the
+     upper-right area under a full-width task header. */
   body[data-view="results"] #reviewWorkspace .media-column {
     display: grid;
     grid-template-columns: minmax(26rem, .88fr) minmax(28rem, 1.12fr);
@@ -166,8 +178,9 @@ body[data-view="results"] .evaluation-output.is-stable-height {
   }
 
   body[data-view="results"] #reviewWorkspace .task-header {
-    grid-column: 1 / -1;
+    grid-column: 1;
     grid-row: 1;
+    min-width: 0;
     margin-bottom: 0;
   }
 
@@ -184,7 +197,7 @@ body[data-view="results"] .evaluation-output.is-stable-height {
 
   body[data-view="results"] #reviewWorkspace .evaluation-panel {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1 / span 2;
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -225,11 +238,40 @@ body[data-view="results"] .evaluation-output.is-stable-height {
   body[data-view="results"] .results-video-dock.is-pinned .timeline-wrap {
     margin-block: 0;
   }
+
+  /* Annotate now uses the same workspace model: media on the left and a full-
+     height, independently scrollable annotation pane on the right. */
+  body[data-view="annotate"] #reviewWorkspace .review-content {
+    grid-template-columns: minmax(30rem, 1.08fr) minmax(24rem, .92fr);
+  }
+
+  body[data-view="annotate"] #reviewWorkspace .media-column {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace .annotation-panel {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 1099px) {
-  /* Narrow screens keep the existing stacked Results behavior and pin control. */
-  body[data-view="results"] #reviewWorkspace .review-stage {
+  /* Narrow screens keep the existing stacked/flow behavior. */
+  body[data-view="results"] #reviewWorkspace .review-stage,
+  body[data-view="annotate"] #reviewWorkspace .review-stage {
     overflow: auto;
   }
 }
