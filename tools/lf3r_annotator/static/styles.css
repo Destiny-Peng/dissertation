@@ -208,7 +208,6 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     scrollbar-gutter: stable;
   }
 
-  /* The split view already keeps video visible while result cards scroll. */
   body[data-view="results"] .results-pin-control {
     display: none;
   }
@@ -239,8 +238,9 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     margin-block: 0;
   }
 
-  /* Annotate now uses the same workspace model: media on the left and a full-
-     height, independently scrollable annotation pane on the right. */
+  /* Annotate uses the same split-workspace model. The video/ground-truth side
+     and the form side scroll independently, so annotation controls stay usable
+     without pushing the video off screen. */
   body[data-view="annotate"] #reviewWorkspace .review-content {
     grid-template-columns: minmax(30rem, 1.08fr) minmax(24rem, .92fr);
   }
