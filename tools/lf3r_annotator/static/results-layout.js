@@ -1,6 +1,6 @@
 "use strict";
 
-(function installResultsLayoutEnhancements() {
+(function installReviewLayoutEnhancements() {
   var workspace = document.getElementById("reviewWorkspace");
   var queue = workspace && workspace.querySelector(".queue-panel");
   var methods = document.getElementById("evaluationMethods");
@@ -8,18 +8,24 @@
 
   var queueCollapsed = false;
   try {
-    queueCollapsed = localStorage.getItem("lf3r.results.queueCollapsed") === "true";
+    var stored = localStorage.getItem("lf3r.review.queueCollapsed");
+    if (stored == null) stored = localStorage.getItem("lf3r.results.queueCollapsed");
+    queueCollapsed = stored === "true";
   } catch (_) {}
 
   var queueToggle = document.createElement("button");
-  queueToggle.id = "resultsQueueToggle";
+  queueToggle.id = "reviewQueueToggle";
   queueToggle.type = "button";
-  queueToggle.className = "results-queue-toggle";
+  queueToggle.className = "review-queue-toggle";
   queueToggle.hidden = true;
   queue.appendChild(queueToggle);
 
   var sizingScheduled = false;
   var lastMethodsWidth = 0;
+
+  function isSharedReviewView() {
+    return document.body.dataset.view === "results" || document.body.dataset.view === "annotate";
+  }
 
   function isResultsView() {
     return document.body.dataset.view === "results";
@@ -34,9 +40,9 @@
   }
 
   function applyQueueState() {
-    var active = isResultsView() && queueCollapsed;
-    workspace.classList.toggle("results-queue-collapsed", active);
-    queueToggle.hidden = !isResultsView();
+    var active = isSharedReviewView() && queueCollapsed;
+    workspace.classList.toggle("review-queue-collapsed", active);
+    queueToggle.hidden = !isSharedReviewView();
     queueToggle.textContent = active ? "›" : "‹";
     queueToggle.setAttribute("aria-expanded", String(!active));
     queueToggle.setAttribute("aria-label", active ? "Expand rollout queue" : "Collapse rollout queue");
@@ -47,6 +53,7 @@
   queueToggle.addEventListener("click", function () {
     queueCollapsed = !queueCollapsed;
     try {
+      localStorage.setItem("lf3r.review.queueCollapsed", String(queueCollapsed));
       localStorage.setItem("lf3r.results.queueCollapsed", String(queueCollapsed));
     } catch (_) {}
     applyQueueState();
