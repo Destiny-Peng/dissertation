@@ -1,0 +1,350 @@
+/* Final visual polish layered after the shared LF3R UI styles. */
+
+:root {
+  --bg: #0d1117;
+  --surface: #121820;
+  --surface-raised: #18202a;
+  --control: #0f151c;
+  --line: #2b3540;
+  --line-soft: #212a34;
+  --text: #e7edf3;
+  --muted: #929eaa;
+  --natural: #72baa9;
+  --controlled: #c39a5b;
+  --success: #72baa9;
+  --failure: #d27b72;
+  --causal: #cdb05f;
+  --observable: #cd8962;
+  --recovery: #78a2c8;
+  --terminal: #c96570;
+  --focus: #81a8ca;
+  --accent: #79aa9e;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .012), transparent 18rem),
+    var(--bg);
+}
+
+.topbar {
+  background: rgba(13, 17, 23, .96);
+  border-bottom-color: #242d37;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .16);
+}
+
+.brand-mark {
+  color: #0b1514;
+  background: linear-gradient(145deg, #9bcfc3, #79aa9e 58%, #648f86);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+.page-navigation,
+.dataset-summary {
+  background: #111820;
+  border-color: #242e38;
+}
+
+.page-navigation a.active {
+  color: #dcebe7;
+  background: #1a2928;
+  border-color: #31504b;
+}
+
+.queue-panel {
+  background: linear-gradient(180deg, #121820, #10161d);
+  border-right-color: #27313b;
+  box-shadow: 8px 0 24px rgba(0, 0, 0, .08);
+}
+
+.rollout-card {
+  background: #111820;
+  border-color: #232d37;
+}
+
+.rollout-card:hover {
+  background: #151d26;
+  border-color: #35424f;
+}
+
+.rollout-card.active {
+  background: linear-gradient(90deg, rgba(121, 170, 158, .10), #18212a 34%);
+  border-color: #41515d;
+}
+
+.annotation-panel,
+.evaluation-panel,
+.analysis-card {
+  background: #121820;
+  border-color: #29343f;
+}
+
+.instruction-variant-control,
+.transport,
+.timeline-wrap,
+.known-event,
+.failure-events-section,
+.batch-advanced,
+.baseline-worker-panel {
+  background: #111820;
+  border-color: #26313c;
+}
+
+button,
+select,
+input,
+textarea {
+  background: #0f151c;
+  border-color: #2b3540;
+}
+
+button:hover:not(:disabled),
+select:hover,
+input:hover,
+textarea:hover {
+  border-color: #465360;
+}
+
+.transport-main,
+.save-button {
+  color: #0b1514;
+  background: #83b9ad;
+  border-color: #8fc5b9;
+  box-shadow: none;
+}
+
+.transport-main:hover:not(:disabled),
+.save-button:hover:not(:disabled) {
+  background: #91c4b8;
+  border-color: #9bcfc3;
+}
+
+/* Keep the queue handle inside the rail instead of hanging into the content. */
+@media (min-width: 901px) {
+  body[data-view="annotate"] .review-queue-toggle,
+  body[data-view="results"] .review-queue-toggle {
+    right: .2rem;
+    top: 1.15rem;
+    width: 1.7rem;
+    height: 2.8rem;
+    border-radius: 8px;
+    background: #151d26;
+    border-color: #34414d;
+    box-shadow: 0 5px 14px rgba(0, 0, 0, .18);
+  }
+}
+
+/* Annotate: give task information and instruction condition comparable weight. */
+body[data-view="annotate"] #reviewWorkspace .task-header {
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+body[data-view="annotate"] #reviewWorkspace .task-header > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 54rem;
+}
+
+body[data-view="annotate"] #reviewWorkspace .task-header h2 {
+  max-width: 48rem;
+  margin: .55rem 0 .35rem;
+  font-size: clamp(1.2rem, 1.35vw, 1.45rem);
+  line-height: 1.25;
+}
+
+body[data-view="annotate"] #reviewWorkspace .record-meta {
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+body[data-view="annotate"] #reviewWorkspace .instruction-variant-control {
+  width: 100%;
+  max-width: 54rem;
+  margin-top: .75rem;
+  padding: .7rem .8rem;
+  grid-template-columns: minmax(9rem, 12rem) minmax(15rem, 1fr);
+  gap: .4rem .8rem;
+}
+
+body[data-view="annotate"] #reviewWorkspace .instruction-variant-control select {
+  width: 100%;
+}
+
+/* Runs: readable, structured controls instead of a dense wall of tiny fields. */
+body[data-view="runs"] .runs-view {
+  width: min(100%, 98rem);
+  margin: 0 auto;
+  padding: 1.5rem clamp(1.25rem, 3vw, 2.75rem) 4rem;
+  font-size: 1rem;
+}
+
+body[data-view="runs"] .runs-view > h2 {
+  margin: 0 0 1rem;
+  font-size: 1.6rem;
+  letter-spacing: -.02em;
+}
+
+body[data-view="runs"] .runs-view > .evaluation-panel {
+  max-width: none;
+  margin: 0 0 1.35rem;
+  padding: 1.25rem;
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .10);
+}
+
+body[data-view="runs"] .evaluation-heading {
+  align-items: center;
+  margin-bottom: .8rem;
+}
+
+body[data-view="runs"] .evaluation-heading h2 {
+  margin-top: .3rem;
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+body[data-view="runs"] .eyebrow {
+  font-size: .67rem;
+  letter-spacing: .14em;
+}
+
+body[data-view="runs"] .evaluation-status,
+body[data-view="runs"] .batch-selection-note,
+body[data-view="runs"] .batch-resource-warning {
+  font-size: .9rem;
+  line-height: 1.55;
+}
+
+body[data-view="runs"] .batch-form,
+body[data-view="runs"] .rollout-generation-form {
+  display: grid;
+  gap: 1rem;
+}
+
+body[data-view="runs"] .batch-control-grid,
+body[data-view="runs"] .rollout-generation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .9rem 1rem;
+}
+
+body[data-view="runs"] .batch-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .85rem .9rem;
+}
+
+body[data-view="runs"] .batch-control-grid > label,
+body[data-view="runs"] .batch-advanced-grid > label,
+body[data-view="runs"] .rollout-generation-grid > label {
+  min-width: 0;
+}
+
+body[data-view="runs"] .batch-control-grid label > span,
+body[data-view="runs"] .batch-advanced-grid label > span,
+body[data-view="runs"] .rollout-generation-grid label > span {
+  display: block;
+  margin-bottom: .38rem;
+  color: #aeb8c2;
+  font-size: .82rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+body[data-view="runs"] .batch-control-grid input,
+body[data-view="runs"] .batch-control-grid select,
+body[data-view="runs"] .batch-advanced-grid input,
+body[data-view="runs"] .batch-advanced-grid select,
+body[data-view="runs"] .rollout-generation-grid input,
+body[data-view="runs"] .rollout-generation-grid select {
+  width: 100%;
+  min-height: 42px;
+  padding: .55rem .7rem;
+  font-size: .92rem;
+  border-radius: 8px;
+}
+
+body[data-view="runs"] .baseline-worker-panel,
+body[data-view="runs"] .batch-advanced {
+  margin-top: .2rem;
+  padding: 1rem;
+  border: 1px solid #29343f;
+  border-radius: 11px;
+}
+
+body[data-view="runs"] .baseline-worker-heading,
+body[data-view="runs"] .rynn-parallel-heading {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+body[data-view="runs"] .baseline-worker-heading strong,
+body[data-view="runs"] .batch-advanced h3 {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+body[data-view="runs"] .baseline-worker-heading small {
+  display: block;
+  max-width: 70rem;
+  margin-top: .25rem;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+body[data-view="runs"] .batch-advanced h3 {
+  margin: 0 0 .85rem;
+}
+
+body[data-view="runs"] .batch-check-grid {
+  gap: .6rem 1.2rem;
+  font-size: .9rem;
+}
+
+body[data-view="runs"] .batch-check-grid label {
+  min-height: 2.4rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+body[data-view="runs"] .ghost-button,
+body[data-view="runs"] .save-button {
+  min-height: 40px;
+  padding: .55rem .9rem;
+  font-size: .9rem;
+}
+
+body[data-view="runs"] .persistent-job-card {
+  padding: .9rem 1rem;
+  font-size: .88rem;
+  line-height: 1.5;
+}
+
+body[data-view="runs"] .job-log,
+body[data-view="runs"] .job-card-log {
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 1180px) {
+  body[data-view="runs"] .batch-control-grid,
+  body[data-view="runs"] .rollout-generation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-view="runs"] .batch-advanced-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  body[data-view="runs"] .batch-control-grid,
+  body[data-view="runs"] .rollout-generation-grid,
+  body[data-view="runs"] .batch-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+}
