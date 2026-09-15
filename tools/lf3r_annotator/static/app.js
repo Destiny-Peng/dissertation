@@ -993,6 +993,7 @@ async function saveAnnotation(event) {
   var record = selectedRollout();
   if (!record) return;
   var payload = formPayload();
+  payload.review_status = "complete";
   if (!payload.annotator) {
     byId("formError").textContent = "Annotator is required.";
     byId("annotatorInput").focus();
@@ -1014,6 +1015,7 @@ async function saveAnnotation(event) {
     sessionStorage.setItem("lf3r_annotator", payload.annotator);
     record.annotation = result.annotation;
     record.annotation_status = result.annotation.review_status;
+    byId("reviewStatus").value = result.annotation.review_status;
     state.dirty = false;
     byId("saveState").textContent = "Saved " + formatDate(result.annotation.updated_at);
     byId("saveState").classList.add("saved");
