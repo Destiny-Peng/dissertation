@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -97,22 +100,78 @@ def _frames_to_bgr(frames: np.ndarray) -> list[np.ndarray]:
     return [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in frames]
 
 
-def _write_video(frames: np.ndarray, output: Path, fps: float) -> tuple[int, int, int]:
+def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tuple[int, int, int]:
     bgr = _frames_to_bgr(frames)
     height, width = bgr[0].shape[:2]
     output.parent.mkdir(parents=True, exist_ok=True)
-    writer = cv2.VideoWriter(
-        str(output), cv2.VideoWriter_fourcc(*"mp4v"), float(fps), (width, height)
-    )
-    if not writer.isOpened():
-        raise RuntimeError(f"could not open video writer for {output}")
-    try:
-        for frame in bgr:
-            if frame.shape[:2] != (height, width):
-                raise ValueError("frame sequence contains inconsistent dimensions")
-            writer.write(frame)
-    finally:
-        writer.release()
+    for frame in bgr:
+        if frame.shape[:2] != (height, width):
+            raise ValueError("frame sequence contains inconsistent dimensions")
+
+    if codec == "h264":
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None:
+            raise RuntimeError("H.264 output requires ffmpeg with the libx264 encoder")
+        temporary = output.with_name(f".{output.stem}.tmp-{os.getpid()}{output.suffix}")
+        command = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s:v",
+            f"{width}x{height}",
+            "-r",
+            str(fps),
+            "-i",
+            "-",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(temporary),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                input=b"".join(frame.tobytes() for frame in bgr),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = result.stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ffmpeg H.264 encoding failed: {detail}")
+            os.replace(temporary, output)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+    elif codec == "mp4v":
+        writer = cv2.VideoWriter(
+            str(output), cv2.VideoWriter_fourcc(*"mp4v"), float(fps), (width, height)
+        )
+        if not writer.isOpened():
+            raise RuntimeError(f"could not open video writer for {output}")
+        try:
+            for frame in bgr:
+                writer.write(frame)
+        finally:
+            writer.release()
+    else:
+        raise ValueError(f"unsupported video codec: {codec}")
     return len(bgr), width, height
 
 
@@ -121,7 +180,7 @@ def _safe_id(stem: str, index: int) -> str:
     return f"realrobot-{index:05d}-{clean}"
 
 
-def convert_one(source: Path, project_root: Path, output_root: Path, index: int, preferred: str, history_index: int, fps: float, task: str, append_final_next: bool, write_video: bool = True) -> dict[str, Any]:
+def convert_one(source: Path, project_root: Path, output_root: Path, index: int, preferred: str, history_index: int, fps: float, task: str, append_final_next: bool, codec: str, write_video: bool = True) -> dict[str, Any]:
     transitions = _load_source(source)
     frames = [_pick_frame(item.get("observations"), preferred, history_index) for item in transitions]
     if append_final_next and transitions[-1].get("next_observations") is not None:
@@ -132,7 +191,7 @@ def convert_one(source: Path, project_root: Path, output_root: Path, index: int,
     rollout_id = _safe_id(source.stem, index)
     video_path = output_root / "videos" / f"{rollout_id}.mp4"
     if write_video:
-        count, width, height = _write_video(frames, video_path, fps)
+        count, width, height = _write_video(frames, video_path, fps, codec)
     else:
         count, height, width = len(frames), int(frames.shape[1]), int(frames.shape[2])
     metadata = transitions[0]
@@ -156,6 +215,8 @@ def convert_one(source: Path, project_root: Path, output_root: Path, index: int,
         "append_final_next": append_final_next,
         "video_width": width,
         "video_height": height,
+        "video_codec": codec,
+        "video_encoder": "libx264" if codec == "h264" else "mp4v",
     }
 
 
@@ -168,6 +229,7 @@ def main() -> int:
     parser.add_argument("--history-index", type=int, default=-1, help="Frame index from each stacked observation; default -1 uses the latest history frame")
     parser.add_argument("--task", default="real-robot demonstration", help="Task text passed to the baseline model when the PKL has no instruction field")
     parser.add_argument("--fps", type=float, default=30.0)
+    parser.add_argument("--video-codec", choices=("h264", "mp4v"), default="h264", help="Output codec; H.264/libx264 is the default")
     parser.add_argument("--append-final-next", action=argparse.BooleanOptionalAction, default=True, help="Append the final transition's next_observations frame (default: enabled)")
     parser.add_argument("--overwrite", action="store_true", help="Regenerate existing converted videos and replace the manifest")
     parser.add_argument("--resume", action="store_true", help="Keep existing converted videos and rebuild the complete manifest")
@@ -191,6 +253,7 @@ def main() -> int:
         row = convert_one(
             source, project_root, output_root, index, args.observation_key,
             args.history_index, args.fps, args.task, args.append_final_next,
+            args.video_codec,
             write_video=not exists or args.overwrite,
         )
         rows.append(row)

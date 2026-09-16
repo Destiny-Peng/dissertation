@@ -8,7 +8,7 @@ Run from the project root:
 
 ```bash
 source project_env.sh
-python3 tools/convert_realrobot_pkl.py \
+"$LF3R_SAFE_PYTHON" tools/convert_realrobot_pkl.py \
   --input outputs/realrobot/demo_buffer \
   --output outputs/realrobot/baseline_rollouts \
   --task "<task instruction>"
@@ -21,10 +21,24 @@ outputs/realrobot/baseline_rollouts/manifest.jsonl
 outputs/realrobot/baseline_rollouts/videos/*.mp4
 ```
 
+Videos are encoded as H.264 with FFmpeg's `libx264` by default (`yuv420p`, CRF 18). This is suitable for browser playback and the baseline readers. FFmpeg with `libx264` must be available on `PATH`. To explicitly retain the old OpenCV MPEG-4 Part 2 output, use `--video-codec mp4v`.
+
+To re-encode an existing conversion as H.264 and rebuild its manifest, use `--overwrite` (not `--resume`, which intentionally keeps existing video files):
+
+```bash
+source project_env.sh
+"$LF3R_SAFE_PYTHON" tools/convert_realrobot_pkl.py \
+  --input outputs/realrobot/demo_buffer \
+  --output outputs/realrobot/baseline_rollouts \
+  --task "<task instruction>" \
+  --video-codec h264 \
+  --overwrite
+```
+
 Use the generated manifest with a video baseline, for example:
 
 ```bash
-python3 tools/baselines/run_lf3r_baseline.py \
+"$LF3R_SAFE_PYTHON" tools/baselines/run_lf3r_baseline.py \
   --baseline procvlm \
   --manifest outputs/realrobot/baseline_rollouts/manifest.jsonl \
   --data-root . \
