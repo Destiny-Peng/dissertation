@@ -25,6 +25,18 @@
     ].join("");
   }
 
+  function setText(node, value) {
+    if (node && node.textContent !== value) node.textContent = value;
+  }
+
+  function setPlaceholder(node, value) {
+    if (node && node.placeholder !== value) node.placeholder = value;
+  }
+
+  function setHidden(node, value) {
+    if (node && node.hidden !== value) node.hidden = value;
+  }
+
   function updateBatchUi() {
     var select = document.getElementById("procvlmInferenceMode");
     if (!select) return;
@@ -36,26 +48,28 @@
     var methodSelect = document.getElementById("baselineBatchMethod");
     var isProcvlm = !methodSelect || methodSelect.value === "procvlm";
     var wrapper = select.closest("label");
-    if (wrapper) wrapper.hidden = !isProcvlm;
+    setHidden(wrapper, !isProcvlm);
 
     var modelInput = form.querySelector('[data-batch-option="model_path"]');
     if (modelInput) {
       var label = modelInput.closest("label");
       var caption = label && label.querySelector("span");
-      if (caption) {
-        caption.textContent = isProcvlm && mode === "lora"
-          ? "LoRA checkpoint directory"
-          : "Model path (optional)";
-      }
-      modelInput.placeholder = isProcvlm && mode === "lora"
-        ? "Path to saved LoRA adapter directory"
-        : "Use configured checkpoint";
+      setText(
+        caption,
+        isProcvlm && mode === "lora" ? "LoRA checkpoint directory" : "Model path (optional)"
+      );
+      setPlaceholder(
+        modelInput,
+        isProcvlm && mode === "lora"
+          ? "Path to saved LoRA adapter directory"
+          : "Use configured checkpoint"
+      );
     }
 
     var valueHead = document.getElementById("procvlmEnableValueHead");
     if (valueHead) {
       var valueHeadLabel = valueHead.closest("label");
-      if (valueHeadLabel) valueHeadLabel.hidden = !isProcvlm || mode === "lora";
+      setHidden(valueHeadLabel, !isProcvlm || mode === "lora");
     }
   }
 
@@ -89,20 +103,17 @@
     if (modelInput) {
       var label = modelInput.closest("label");
       var caption = label && label.querySelector("span");
-      if (caption) {
-        caption.textContent = mode === "lora"
-          ? "LoRA checkpoint directory"
-          : "Model path";
-      }
-      modelInput.placeholder = mode === "lora"
-        ? "Path to saved LoRA adapter directory"
-        : "Use configured checkpoint";
+      setText(caption, mode === "lora" ? "LoRA checkpoint directory" : "Model path");
+      setPlaceholder(
+        modelInput,
+        mode === "lora" ? "Path to saved LoRA adapter directory" : "Use configured checkpoint"
+      );
     }
 
     var valueHead = drawer.querySelector('[data-option="procvlm_enable_value_head"]');
     if (valueHead) {
       var valueHeadLabel = valueHead.closest("label");
-      if (valueHeadLabel) valueHeadLabel.hidden = mode === "lora";
+      setHidden(valueHeadLabel, mode === "lora");
     }
   }
 
@@ -128,10 +139,27 @@
 
   installBatchMode();
 
-  var drawerObserver = new MutationObserver(function () {
-    installSingleMode();
-  });
-  drawerObserver.observe(document.body, { childList: true, subtree: true });
+  // The old implementation observed the entire document body. Opening the
+  // ProcVLM drawer then inserted the mode control, and updateSingleUi() rewrote
+  // caption text inside the observed subtree. textContent itself is a childList
+  // mutation, so the observer repeatedly called installSingleMode() and trapped
+  // the browser main thread in a self-triggering MutationObserver loop.
+  // Observe only direct changes to the drawer's method-field container. A method
+  // render changes this container once; our nested caption updates are outside
+  // this observation scope and all writes above are idempotent.
+  var drawer = document.getElementById("singleBaselineDrawer");
+  var singleCore = drawer && drawer.querySelector("[data-core]");
+  if (singleCore) {
+    var drawerObserver = new MutationObserver(function (mutations) {
+      if (!mutations.some(function (mutation) {
+        return mutation.type === "childList" &&
+          ((mutation.addedNodes && mutation.addedNodes.length) ||
+           (mutation.removedNodes && mutation.removedNodes.length));
+      })) return;
+      installSingleMode();
+    });
+    drawerObserver.observe(singleCore, { childList: true });
+  }
   installSingleMode();
 
   var originalFetch = window.fetch.bind(window);
