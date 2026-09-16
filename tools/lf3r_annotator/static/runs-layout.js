@@ -59,20 +59,25 @@
     "Choose the dataset scope, rendering settings, and generation range."
   );
 
-  function makeActivity(panel, jobsId, logId, title) {
+  function makeActivity(panel, jobsId, logId, title, statusId) {
     var jobs = document.getElementById(jobsId);
     var log = document.getElementById(logId);
+    var status = statusId ? document.getElementById(statusId) : null;
     if (!jobs || !log || jobs.parentElement.classList.contains("runs-activity")) return;
     var activity = document.createElement("aside");
     activity.className = "runs-activity";
     activity.innerHTML = '<div class="runs-activity-heading"><p class="eyebrow">ACTIVITY</p><h3>' + title + '</h3></div>';
     jobs.parentNode.insertBefore(activity, jobs);
+    if (status) {
+      status.classList.add("runs-activity-status");
+      activity.appendChild(status);
+    }
     activity.appendChild(jobs);
     activity.appendChild(log);
   }
 
   makeActivity(batchPanel, "baselineBatchJobs", "baselineBatchLog", "Baseline job");
-  makeActivity(rolloutPanel, "rolloutGenerationJobs", "rolloutGenerationLog", "Generation job");
+  makeActivity(rolloutPanel, "rolloutGenerationJobs", "rolloutGenerationLog", "Generation job", "rolloutGenerationStatus");
 
   var advanced = document.getElementById("baselineBatchAdvanced");
   if (advanced && !advanced.dataset.runsDisclosure) {
