@@ -24,7 +24,7 @@
   loadScript("/static/workspace-legacy.js?v=results-split-20260915", function () {
     loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
       loadScript("/static/results-axis-scale.js?v=fixed-progress-axis-v1-20260916");
-      loadScript("/static/results-current-values.js?v=current-numeric-values-v1-20260916");
+      loadScript("/static/results-current-values.js?v=current-numeric-values-v2-20260916");
       loadStyle("lf3rRunsStyles", "/static/styles-runs.css?v=runs-console-v4-20260916");
       loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
       loadStyle("lf3rRunsLogStyles", "/static/styles-runs-log.css?v=runs-log-v2-20260916");
