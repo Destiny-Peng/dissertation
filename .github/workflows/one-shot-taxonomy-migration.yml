@@ -1,0 +1,210 @@
+name: One-shot LIBERO taxonomy migration
+
+on:
+  push:
+    branches:
+      - ui/webui-visual-refresh
+    paths:
+      - .github/workflows/one-shot-taxonomy-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/webui-visual-refresh
+          fetch-depth: 0
+
+      - name: Replace legacy dataset taxonomy
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+          import subprocess
+
+          root = Path.cwd()
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          replacements = [
+              ("primary_natural", "libero_10"),
+              ("reference_natural", "libero_spatial"),
+              ("primary-natural", "LIBERO-10"),
+              ("reference-natural", "LIBERO-Spatial"),
+              ("Primary natural", "LIBERO-10"),
+              ("primary natural", "LIBERO-10"),
+              ("Reference natural", "LIBERO-Spatial"),
+              ("reference natural", "LIBERO-Spatial"),
+              ("primary/reference", "LIBERO-suite"),
+          ]
+
+          for name in tracked:
+              if not name or name == ".github/workflows/one-shot-taxonomy-migration.yml":
+                  continue
+              path = root / name
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              if b"\0" in data:
+                  continue
+              try:
+                  text = data.decode("utf-8")
+              except UnicodeDecodeError:
+                  continue
+              original = text
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text, encoding="utf-8")
+
+          # Server/API scope contract: LIBERO suites are real scope IDs, not labels
+          # over the old primary/reference dataset_role values.
+          path = root / "tools/lf3r_annotator/server.py"
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(
+              r'RUN_SCOPES = \(\n.*?\n\)\nRUN_SCOPE_LABELS = \{\n.*?\n\}',
+              'RUN_SCOPES = (\n    "all",\n    "libero_10",\n    "libero_spatial",\n    "controlled_analysis",\n)\nRUN_SCOPE_LABELS = {\n    "all": "All loaded rollouts",\n    "libero_10": "LIBERO-10",\n    "libero_spatial": "LIBERO-Spatial",\n    "controlled_analysis": "Controlled",\n}',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace('value = str(scope or "natural_observation")', 'value = str(scope or "libero_10")')
+          text = text.replace(
+              'if scope in {"libero_10", "libero_spatial"}:\n        return record.get("dataset_role") == scope',
+              'if scope in {"libero_10", "libero_spatial"}:\n        return record.get("task_suite") == scope',
+          )
+          text = text.replace('scope: Any = "natural_observation"', 'scope: Any = "libero_10"')
+          text = text.replace(
+              'elif scope in {"libero_10", "libero_spatial"}:\n            command.extend(["--partition", "natural_observation", "--dataset-role", scope])',
+              'elif scope in {"libero_10", "libero_spatial"}:\n            command.extend(["--partition", "natural_observation", "--task-suite", scope])',
+          )
+          text = text.replace('query.get("scope", ["natural_observation"])[0]', 'query.get("scope", ["libero_10"])[0]')
+          text = text.replace('"default_scope"] = "natural_observation"', '"default_scope"] = "libero_10"')
+          path.write_text(text, encoding="utf-8")
+
+          # Baseline runner gets an explicit suite filter. dataset_role remains a
+          # generic low-level filter, but no longer encodes LIBERO-10/Spatial naming.
+          path = root / "tools/baselines/run_lf3r_baseline.py"
+          text = path.read_text(encoding="utf-8")
+          needle = '    if args.dataset_role:\n        selected = [record for record in selected if record.get("dataset_role") == args.dataset_role]\n'
+          if 'if args.task_suite:' not in text:
+              text = text.replace(
+                  needle,
+                  '    if args.task_suite:\n        selected = [record for record in selected if record.get("task_suite") == args.task_suite]\n' + needle,
+              )
+          parser_needle = '    parser.add_argument("--dataset-role", default=None)\n'
+          if 'parser.add_argument("--task-suite"' not in text:
+              text = text.replace(
+                  parser_needle,
+                  '    parser.add_argument("--task-suite", choices=("libero_10", "libero_spatial"), default=None)\n' + parser_needle,
+              )
+          path.write_text(text, encoding="utf-8")
+
+          # Main Results/Runs scope logic.
+          path = root / "tools/lf3r_annotator/static/app.js"
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(
+              r'var BASELINE_BATCH_SCOPE_LABELS = \{.*?\n\};',
+              'var BASELINE_BATCH_SCOPE_LABELS = {\n  all: "All loaded rollouts",\n  libero_10: "LIBERO-10",\n  libero_spatial: "LIBERO-Spatial",\n  controlled_analysis: "Controlled"\n};',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace(
+              'if (scope === "libero_10" || scope === "libero_spatial") return record.dataset_role === scope;',
+              'if (scope === "libero_10" || scope === "libero_spatial") return record.task_suite === scope;',
+          )
+          path.write_text(text, encoding="utf-8")
+
+          # Legacy workspace still owns Analysis. Keep the same taxonomy there.
+          path = root / "tools/lf3r_annotator/static/workspace-legacy.js"
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(
+              r'var ANALYSIS_RUN_SCOPE_LABELS = \{.*?\n\};',
+              'var ANALYSIS_RUN_SCOPE_LABELS = {\n  all: "All loaded rollouts",\n  libero_10: "LIBERO-10",\n  libero_spatial: "LIBERO-Spatial",\n  controlled_analysis: "Controlled"\n};',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace(
+              'if (partition === "libero_10" || partition === "libero_spatial") {\n    return record.dataset_role === partition;\n  }',
+              'if (partition === "libero_10" || partition === "libero_spatial") {\n    return record.task_suite === partition;\n  }',
+          )
+          path.write_text(text, encoding="utf-8")
+
+          # Base HTML no longer exposes the all-natural/legacy role choices.
+          path = root / "tools/lf3r_annotator/static/index.html"
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(r'\s*<option value="natural_observation"[^>]*>.*?</option>', '', text)
+          text = text.replace('<option value="libero_10">LIBERO-10</option>', '<option value="libero_10" selected>LIBERO-10</option>')
+          text = text.replace('All manifest rollouts', 'All loaded rollouts')
+          text = text.replace('Controlled analysis', 'Controlled')
+          path.write_text(text, encoding="utf-8")
+
+          # Runtime semantics shim now uses the canonical IDs too.
+          path = root / "tools/lf3r_annotator/static/runs-semantics.js"
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              'Groups the current dataset into LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. Internally the legacy LIBERO-suite dataset-role values are retained for runner compatibility.',
+              'Groups the current dataset into LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. LIBERO groups are selected by task_suite.',
+          )
+          path.write_text(text, encoding="utf-8")
+
+          # Parameter help should describe the public taxonomy rather than the old partition aliases.
+          path = root / "tools/lf3r_annotator/static/parameter_help.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          scope_help = payload.get("baseline", {}).get("scope", {})
+          scope_help["default"] = "libero_10"
+          scope_help["description"] = "Selects LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. LIBERO scopes match task_suite; Controlled matches the controlled-analysis partition."
+          role_help = payload.get("baseline", {}).get("dataset_role", {})
+          role_help["description"] = "Optional exact dataset_role filter for low-level CLI use. Natural manifests now use libero_10 or libero_spatial; controlled rows use controlled_analysis."
+          path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+          # Instruction variants are specifically a LIBERO-10 construct; match the suite,
+          # not a legacy role alias, so old manifests can still be prepared before rebuild.
+          path = root / "tools/prepare_libero10_instruction_variants.py"
+          text = path.read_text(encoding="utf-8")
+          text = text.replace('row.get("dataset_role") == "libero_10"', 'row.get("task_suite") == "libero_10"')
+          text = text.replace('No LIBERO-10 LIBERO-10 rows found', 'No LIBERO-10 rows found')
+          path.write_text(text, encoding="utf-8")
+
+          # Historical report prose is migrated, but historical artifact/directory names
+          # containing the standalone word "primary" are intentionally left untouched.
+
+          # The one-shot workflow deletes itself in the migration commit.
+          (root / ".github/workflows/one-shot-taxonomy-migration.yml").unlink()
+          PY
+
+      - name: Assert legacy taxonomy is gone
+        shell: bash
+        run: |
+          if git grep -n -I -E 'primary_natural|reference_natural|primary-natural|reference-natural|[Pp]rimary natural|[Rr]eference natural' -- . ':!*.orig.mp4'; then
+            echo 'Legacy taxonomy remains in tracked text files.' >&2
+            exit 1
+          fi
+
+      - name: Static validation
+        shell: bash
+        run: |
+          python3 -m py_compile \
+            tools/lf3r_annotator/server.py \
+            tools/lf3r_annotator/build_manifest.py \
+            tools/baselines/run_lf3r_baseline.py \
+            tools/safe_training/prepare_dataset.py \
+            tools/prepare_libero10_instruction_variants.py
+          node --check tools/lf3r_annotator/static/app.js
+          node --check tools/lf3r_annotator/static/workspace-legacy.js
+          node --check tools/lf3r_annotator/static/runs-semantics.js
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Repo: use LIBERO dataset taxonomy everywhere'
+          git push origin HEAD:ui/webui-visual-refresh
