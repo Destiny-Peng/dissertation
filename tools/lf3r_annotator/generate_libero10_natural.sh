@@ -68,23 +68,11 @@ if [[ ! "$RUN_NOTE" =~ ^lf3r-data-natural-libero10-[A-Za-z0-9._-]+$ ]]; then
     exit 2
 fi
 
-IFS=',' read -r GPU_UTIL MEMORY_USED MEMORY_TOTAL MEMORY_FREE < <(
-    nvidia-smi \
-        --id="$GPU_ID" \
-        --query-gpu=utilization.gpu,memory.used,memory.total,memory.free \
-        --format=csv,noheader,nounits | tr -d ' '
-)
-
-if (( MEMORY_USED * 2 >= MEMORY_TOTAL || MEMORY_FREE < 30720 )); then
-    echo "WAITING_FOR_GPU_MEMORY gpu=$GPU_ID utilization_ignored=$GPU_UTIL used_mib=$MEMORY_USED total_mib=$MEMORY_TOTAL free_mib=$MEMORY_FREE"
-    exit 75
-fi
-
 LOG_FILE="$(lf3r_log_path openvla_libero10_natural_rollouts)"
 
 echo "RUN_NOTE=$RUN_NOTE" | tee "$LOG_FILE"
 echo "GPU=$GPU_ID TASK_START=$TASK_START TASK_END=$TASK_END TRIALS=$TRIALS SEED=$SEED RUN_NOTE=$RUN_NOTE" | tee -a "$LOG_FILE"
-echo "GPU_GATE=memory_only utilization_ignored=$GPU_UTIL used_mib=$MEMORY_USED total_mib=$MEMORY_TOTAL free_mib=$MEMORY_FREE" | tee -a "$LOG_FILE"
+echo "GPU_SELECTION=user_managed gpu=$GPU_ID" | tee -a "$LOG_FILE"
 echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
 echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
 
