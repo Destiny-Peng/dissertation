@@ -3,9 +3,9 @@
 
 The core server historically validated every ``model_path`` with ``Path.is_file()``.
 That rejects normal Hugging Face checkpoint directories and ProcVLM one-shot LoRA
-adapter directories.  This entrypoint keeps the server API stable while exposing
-an explicit ``procvlm_use_lora`` option and translating it to the existing
-persistent ProcVLM worker's PEFT/value-head loading path.
+adapter directories. This entrypoint keeps the server API stable while exposing
+an explicit ``procvlm_use_lora`` option and validating the checkpoint semantics
+expected by ProcVLM's official LoRA inference path.
 """
 
 from __future__ import annotations
@@ -127,11 +127,6 @@ def _validate_baseline_options(
                 raise server.ValidationError(
                     "ProcVLM One-shot LoRA mode requires a checkpoint directory containing adapter_config.json"
                 )
-            # The current persistent worker reaches ProcVLM's official PEFT
-            # loader through the same PyTorch/value-head branch used by
-            # upstream ``--use_lora``. Keep that implementation detail hidden
-            # from the UI while preserving the explicit LoRA request semantic.
-            options["procvlm_enable_value_head"] = True
         elif is_procvlm_adapter:
             raise server.ValidationError(
                 "model_path is a ProcVLM LoRA adapter checkpoint; select Inference mode = One-shot LoRA"
@@ -162,10 +157,9 @@ def _baseline_command_with_procvlm_lora(
     *args: Any,
     **kwargs: Any,
 ) -> list[str]:
-    # ``run_lf3r_baseline.py`` currently exposes the PyTorch/value-head switch,
-    # not a separate LoRA flag. Validation above already verified the adapter
-    # directory and enabled that loader. Strip only the WebUI semantic flag
-    # before forwarding the remaining runner options.
+    # ``run_lf3r_baseline.py`` predates the semantic WebUI flag. The ProcVLM
+    # worker now recognizes adapter checkpoints and invokes official inference
+    # with ``use_lora=True``, so the runner does not need an extra CLI option.
     forwarded = dict(options)
     forwarded.pop("procvlm_use_lora", None)
     return _original_baseline_command(
