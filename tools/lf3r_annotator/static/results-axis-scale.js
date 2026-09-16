@@ -5,9 +5,9 @@
   if (window.renderSignalChart.__lf3rFixedValueAxes) return;
 
   function signalDomain(method, name, values) {
-    // ProcVLM progress is a normalized value/progress score.
+    // ProcVLM progress is emitted as a percentage on the 0–100 scale.
     if (method === "procvlm" && name === "progress") {
-      return { low: 0, high: 1, fixed: true };
+      return { low: 0, high: 100, fixed: true };
     }
 
     // Robo-Dopamine progress and its perspective components share the same
@@ -79,7 +79,7 @@
       }).join(' ');
 
       var scaleTitle = axis.fixed
-        ? 'Fixed normalized value scale 0–1; video frame 0–' + domain
+        ? 'Fixed semantic value scale ' + low + '–' + high + '; video frame 0–' + domain
         : 'Original signal values; video frame 0–' + domain;
 
       return '<section class="signal-row" data-signal-row data-signal-name="' + escapeHtml(name) + '"'
