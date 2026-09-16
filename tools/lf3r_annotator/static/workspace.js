@@ -21,13 +21,13 @@
     document.head.appendChild(link);
   }
 
-  /* app.js has already defined the review globals. Switch selected videos to a
-     stable raw-source URL before the manifest wrapper is installed, so ranges
-     cached from the old hot-swapped H.264 endpoint cannot be reused. */
-  loadScript("/static/raw-video-source.js?v=raw-video-v1-20260916", function () {
+  /* app.js has already defined the review globals. Use a fresh raw-source URL
+     whenever a rollout is selected so bytes cached before a manual conversion
+     are never reused afterwards. */
+  loadScript("/static/raw-video-source.js?v=raw-video-v2-20260916", function () {
     /* Install the queue cap before the large legacy workspace script. */
-    loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v2-20260916");
-    loadScript("/static/manifest-support-v2.js?v=multi-manifest-raw-video-v1-20260916", function () {
+    loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v3-20260916");
+    loadScript("/static/manifest-support-v2.js?v=manual-transcode-v1-20260916", function () {
       loadScript("/static/workspace-legacy.js?v=results-split-20260915", function () {
         loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
           loadScript("/static/results-axis-scale.js?v=fixed-progress-axis-v1-20260916");
