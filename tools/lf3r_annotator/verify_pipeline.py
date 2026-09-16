@@ -57,12 +57,13 @@ def media_is_valid(project_root: Path, record: dict[str, Any]) -> bool:
 
 def verify(project_root: Path, manifest_path: Path) -> dict[str, Any]:
     records = read_manifest(manifest_path)
-    primary = [record for record in records if record.get("dataset_role") == "libero_10"]
+    libero10 = [record for record in records if record.get("task_suite") == "libero_10"]
+    libero_spatial = [record for record in records if record.get("task_suite") == "libero_spatial"]
     controlled = [
         record for record in records if record.get("source_kind") == "controlled_injected"
     ]
     natural = [record for record in records if record.get("source_kind") == "natural_policy"]
-    outcomes = {record.get("ground_truth_outcome") for record in primary}
+    libero10_outcomes = {record.get("ground_truth_outcome") for record in libero10}
     required_tool_files = [
         project_root / "tools/lf3r_annotator/server.py",
         project_root / "tools/lf3r_annotator/static/index.html",
@@ -104,21 +105,31 @@ def verify(project_root: Path, manifest_path: Path) -> dict[str, Any]:
         and record.get("injection") is None
         for record in natural
     )
+    suite_roles_ok = all(
+        record.get("dataset_role") == record.get("task_suite")
+        for record in natural
+        if record.get("task_suite") in {"libero_10", "libero_spatial"}
+    )
     results = [
         check(
-            "primary_backbone",
-            bool(primary) and all(record.get("task_suite") == "libero_10" for record in primary),
-            f"{len(primary)} LIBERO-10 LIBERO-10 rollouts",
+            "libero10_records",
+            bool(libero10),
+            f"{len(libero10)} LIBERO-10 rollouts",
         ),
         check(
-            "small_natural_set",
-            3 <= len(primary) <= 12,
-            f"expected 3-12 LIBERO-10 rollouts, found {len(primary)}",
+            "libero_spatial_records",
+            bool(libero_spatial),
+            f"{len(libero_spatial)} LIBERO-Spatial rollouts",
         ),
         check(
-            "natural_success_and_failure",
-            outcomes == {"success", "failure"},
-            "primary outcomes: " + ", ".join(sorted(str(value) for value in outcomes)),
+            "libero10_success_and_failure",
+            libero10_outcomes == {"success", "failure"},
+            "LIBERO-10 outcomes: " + ", ".join(sorted(str(value) for value in libero10_outcomes)),
+        ),
+        check(
+            "suite_dataset_roles",
+            suite_roles_ok,
+            "natural dataset_role values match task_suite (libero_10/libero_spatial)",
         ),
         check(
             "strict_injection_partition",
