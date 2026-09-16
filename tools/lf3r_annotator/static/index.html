@@ -54,6 +54,13 @@
             <option value="all">All origins</option>
             <option value="natural_policy">Natural only</option>
             <option value="controlled_injected">Controlled only</option>
+            <option value="real_robot">Real-robot only</option>
+          </select>
+        </label>
+        <label>
+          <span>Manifest</span>
+          <select id="manifestFilter">
+            <option value="all">All manifests</option>
           </select>
         </label>
         <label>
@@ -79,6 +86,7 @@
       <div class="partition-key">
         <span><i class="key-dot natural"></i> Natural observation</span>
         <span><i class="key-dot controlled"></i> Controlled analysis</span>
+        <span><i class="key-dot external"></i> Other manifest</span>
       </div>
 
       <div id="rolloutList" class="rollout-list" aria-live="polite"></div>
@@ -723,8 +731,8 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=runs-20260915-20260907-densereward" defer></script>
-  <script src="/static/workspace.js?v=runs-20260915-20260907-densereward" defer></script>
+  <script src="/static/app.js?v=video-cache-20260916-1" defer></script>
+  <script src="/static/workspace.js?v=layout-throttle-20260916" defer></script>
 </body>
 
 </html>

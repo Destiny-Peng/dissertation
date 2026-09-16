@@ -66,6 +66,7 @@ INSTRUCTION_VARIANT_LABELS = {
     "subtask_a": "A",
     "subtask_b": "B",
 }
+VIDEO_CACHE_VARIANT = "h264-baseline-v1"
 RUN_SCOPES = (
     "all",
     "natural_observation",
@@ -519,6 +520,23 @@ def atomic_json_write(path: Path, payload: Any) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
+    """Atomically write a project-local JSONL manifest cache."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+                handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
@@ -3263,6 +3281,9 @@ class AnalysisJobService:
         self.analysis_python = Path(os.path.abspath(configured_python))
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
+        self._environment_status_lock = threading.Lock()
+        self._environment_status_cache: dict[str, Any] | None = None
+        self._environment_status_checked_at = 0.0
         self.tmux.register_handler(
             "analysis",
             self._on_job_loaded,
@@ -3286,6 +3307,18 @@ class AnalysisJobService:
             return str(path)
 
     def environment_status(self) -> dict[str, Any]:
+        now = time.monotonic()
+        with self._environment_status_lock:
+            cached = self._environment_status_cache
+            if cached is not None and now - self._environment_status_checked_at < 15.0:
+                return dict(cached)
+
+        def finish(value: dict[str, Any]) -> dict[str, Any]:
+            with self._environment_status_lock:
+                self._environment_status_cache = dict(value)
+                self._environment_status_checked_at = time.monotonic()
+            return dict(value)
+
         path = self.analysis_python
         status: dict[str, Any] = {
             "path": self._relative(path),
@@ -3298,7 +3331,7 @@ class AnalysisJobService:
         }
         if not status["executable"]:
             status["error"] = "Analysis environment Python executable is missing"
-            return status
+            return finish(status)
         try:
             result = subprocess.run(
                 [str(path), "-c", "import matplotlib, numpy, pandas"],
@@ -3311,14 +3344,14 @@ class AnalysisJobService:
             )
         except (OSError, subprocess.SubprocessError) as error:
             status["error"] = str(error)
-            return status
+            return finish(status)
         if result.returncode != 0:
             status["error"] = (
                 result.stderr or result.stdout or "Analysis dependency import failed"
             ).strip()[-2000:]
-            return status
+            return finish(status)
         status["ready"] = True
-        return status
+        return finish(status)
 
     def require_environment(self) -> None:
         status = self.environment_status()
@@ -3953,13 +3986,39 @@ class LF3RApplication:
     def __init__(
         self,
         project_root: Path,
-        manifest_path: Path,
+        manifest_path: Path | str | list[Path | str] | tuple[Path | str, ...],
         annotation_root: Path,
         analysis_python: Path | None = None,
         tmux_binary: str | None = None,
     ) -> None:
         self.project_root = project_root.resolve()
-        self.manifest_path = manifest_path.resolve()
+        raw_manifest_paths = (
+            [manifest_path]
+            if isinstance(manifest_path, (str, Path))
+            else list(manifest_path)
+        )
+        if not raw_manifest_paths:
+            raise ValueError("At least one manifest path is required")
+        self.manifest_paths: list[Path] = []
+        for raw_path in raw_manifest_paths:
+            path = Path(raw_path).expanduser().resolve()
+            if path not in self.manifest_paths:
+                self.manifest_paths.append(path)
+        self.primary_manifest_path = self.manifest_paths[0]
+        self.aggregate_manifest_path = (
+            self._aggregate_manifest_target() if len(self.manifest_paths) > 1 else None
+        )
+        # Keep the historical single-path attribute. Services that consume the
+        # complete catalog use the aggregate path; generation and snapshot
+        # freshness continue to use the primary source manifest.
+        self.manifest_path = self.aggregate_manifest_path or self.primary_manifest_path
+        self._manifest_source_by_id: dict[str, Path] = {}
+        self._manifest_info_cache: list[dict[str, Any]] = []
+        self._manifest_catalog_lock = threading.RLock()
+        self._manifest_catalog_signature: tuple[tuple[str, bool, int, int], ...] | None = None
+        self._manifest_records_cache: list[dict[str, Any]] = []
+        self._video_cache_lock = threading.Lock()
+        self._video_compatibility_cache: dict[str, Path] = {}
         self.static_dir = (Path(__file__).resolve().parent / "static").resolve()
         self.instruction_variant_manifest_path = (
             self.project_root
@@ -3972,7 +4031,8 @@ class LF3RApplication:
         self._instruction_variant_index: dict[str, dict[str, dict[str, Any]]] | None = None
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
-        self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
+        self.refresh_manifest_catalog()
+        self.analysis = AnalysisService(self.project_root, self.primary_manifest_path, annotation_root)
         self.job_coordinator = JobCoordinator()
         self.tmux = TmuxJobSupervisor(self.project_root, tmux_binary=tmux_binary)
         self.baselines = BaselineService(
@@ -3993,9 +4053,101 @@ class LF3RApplication:
             analysis_python=configured_analysis_python,
         )
         self.rollout_jobs = RolloutGenerationService(
-            self.project_root, self.manifest_path, self.job_coordinator, self.tmux
+            self.project_root, self.primary_manifest_path, self.job_coordinator, self.tmux
         )
         self.tmux.recover()
+
+    def _relative_manifest_path(self, path: Path) -> str:
+        try:
+            return str(path.relative_to(self.project_root))
+        except ValueError:
+            return str(path)
+
+    def _aggregate_manifest_target(self) -> Path:
+        source_key = "\0".join(str(path) for path in self.manifest_paths)
+        digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:16]
+        return (
+            self.project_root
+            / "cache"
+            / "lf3r_annotator"
+            / "manifests"
+            / f"manifest-{digest}.jsonl"
+        )
+
+    def _manifest_source_signature(self) -> tuple[tuple[str, bool, int, int], ...]:
+        """Return a cheap signature used to invalidate the in-memory catalog."""
+        signature: list[tuple[str, bool, int, int]] = []
+        for source_path in self.manifest_paths:
+            try:
+                stat = source_path.stat()
+            except OSError:
+                signature.append((str(source_path), False, 0, 0))
+                continue
+            if not source_path.is_file():
+                signature.append((str(source_path), False, 0, 0))
+                continue
+            signature.append((str(source_path), True, stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
+    def refresh_manifest_catalog(self, force: bool = False) -> list[dict[str, Any]]:
+        """Load configured manifests only when a source file has changed.
+
+        The old implementation rewrote the aggregate JSONL (including an
+        ``fsync``) for every API request. With a multi-manifest queue this made
+        ordinary video/baseline requests contend on the same disk write.
+        """
+        with self._manifest_catalog_lock:
+            signature = self._manifest_source_signature()
+            if not force and self._manifest_catalog_signature == signature:
+                return [dict(record) for record in self._manifest_records_cache]
+
+            records: list[dict[str, Any]] = []
+            aggregate_rows: list[dict[str, Any]] = []
+            source_by_id: dict[str, Path] = {}
+            source_info: list[dict[str, Any]] = []
+            for source_path in self.manifest_paths:
+                source_exists = source_path.is_file()
+                source_rows = load_manifest_records(source_path) if source_exists else []
+                source_info.append({
+                    "path": self._relative_manifest_path(source_path),
+                    "label": source_path.stem,
+                    "primary": source_path == self.primary_manifest_path,
+                    "exists": source_exists,
+                    "rollouts": len(source_rows),
+                })
+                for row in source_rows:
+                    rollout_id = row["id"]
+                    previous_source = source_by_id.get(rollout_id)
+                    if previous_source is not None:
+                        raise ValidationError(
+                            "Duplicate rollout id across manifests: "
+                            + rollout_id
+                            + " ("
+                            + self._relative_manifest_path(previous_source)
+                            + " and "
+                            + self._relative_manifest_path(source_path)
+                            + ")"
+                        )
+                    source_by_id[rollout_id] = source_path
+                    aggregate_rows.append(row)
+                    enriched = dict(row)
+                    enriched["manifest_source"] = self._relative_manifest_path(source_path)
+                    enriched["manifest_label"] = source_path.stem
+                    enriched["manifest_primary"] = source_path == self.primary_manifest_path
+                    records.append(enriched)
+            if self.aggregate_manifest_path is not None:
+                atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
+            self._manifest_source_by_id = source_by_id
+            self._manifest_info_cache = source_info
+            self._manifest_records_cache = records
+            # Capture the post-read state. If a generator is still writing a
+            # source manifest, the next request will observe the new signature.
+            self._manifest_catalog_signature = self._manifest_source_signature()
+            return [dict(record) for record in records]
+
+    def manifest_info(self) -> list[dict[str, Any]]:
+        self.refresh_manifest_catalog()
+        return [dict(item) for item in self._manifest_info_cache]
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
         if self._instruction_variant_index is not None:
@@ -4082,23 +4234,12 @@ class LF3RApplication:
         return dict(row)
 
     def load_rollouts(self) -> list[dict[str, Any]]:
-        if not self.manifest_path.exists():
-            return []
-        records: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        with self.manifest_path.open("r", encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, 1):
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                rollout_id = record.get("id")
-                if not isinstance(rollout_id, str) or not ROLLOUT_ID_RE.fullmatch(rollout_id):
-                    raise ValidationError(f"Invalid rollout id at manifest line {line_number}")
-                if rollout_id in seen:
-                    raise ValidationError(f"Duplicate rollout id: {rollout_id}")
-                seen.add(rollout_id)
-                self.resolve_project_file(record["video_path"], ".mp4")
-                records.append(record)
+        records = self.refresh_manifest_catalog()
+        for record in records:
+            video_path = record.get("video_path")
+            if not isinstance(video_path, str) or not video_path:
+                raise ValidationError("Manifest record has an invalid video_path: " + str(record.get("id")))
+            self.resolve_project_file(video_path, ".mp4")
         return records
 
     def rollout_map(self) -> dict[str, dict[str, Any]]:
@@ -4114,13 +4255,81 @@ class LF3RApplication:
             raise ValidationError(f"Expected a {suffix} file")
         return path
 
+    def browser_video_path(self, path: Path) -> Path:
+        """Return a browser-compatible cached copy for codecs browsers often reject."""
+        if not path.is_file():
+            return path
+        try:
+            stat = path.stat()
+        except OSError:
+            return path
+        cache_key = hashlib.sha256(
+            f"{VIDEO_CACHE_VARIANT}:{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode("utf-8")
+        ).hexdigest()[:24]
+        cache_root = self.project_root / "cache" / "lf3r_annotator" / "video_cache"
+        cached = cache_root / f"{cache_key}.mp4"
+        with self._video_cache_lock:
+            remembered = self._video_compatibility_cache.get(cache_key)
+            if remembered is not None:
+                if remembered == path or (remembered.is_file() and remembered.stat().st_size > 0):
+                    return remembered
+                self._video_compatibility_cache.pop(cache_key, None)
+            if cached.is_file() and cached.stat().st_size > 0:
+                self._video_compatibility_cache[cache_key] = cached
+                return cached
+            try:
+                probe = subprocess.run(
+                    [
+                        "ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=codec_name", "-of", "json", str(path),
+                    ],
+                    capture_output=True, text=True, timeout=15, check=False,
+                )
+                payload = json.loads(probe.stdout) if probe.returncode == 0 else {}
+                codec = str(payload.get("streams", [{}])[0].get("codec_name", ""))
+            except (OSError, subprocess.SubprocessError, json.JSONDecodeError, IndexError, AttributeError):
+                self._video_compatibility_cache[cache_key] = path
+                return path
+            if codec in {"", "h264"}:
+                self._video_compatibility_cache[cache_key] = path
+                return path
+            cache_root.mkdir(parents=True, exist_ok=True)
+            temporary = cache_root / f".{cache_key}.{uuid.uuid4().hex}.tmp.mp4"
+            try:
+                result = subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-v", "error", "-i", str(path),
+                        "-an", "-c:v", "libx264", "-profile:v", "baseline",
+                        "-level", "3.1", "-preset", "veryfast", "-crf", "20",
+                        "-pix_fmt", "yuv420p",
+                        "-movflags", "+faststart", str(temporary),
+                    ],
+                    capture_output=True, text=True, timeout=300, check=False,
+                )
+                if result.returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
+                    os.replace(temporary, cached)
+                    self._video_compatibility_cache[cache_key] = cached
+                    return cached
+            except (OSError, subprocess.SubprocessError):
+                pass
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+            self._video_compatibility_cache[cache_key] = path
+        return path
+
 
 class LF3RHandler(BaseHTTPRequestHandler):
     app: LF3RApplication
     server_version = "LF3RAnnotator/1.0"
 
+    def setup(self) -> None:
+        super().setup()
+        self._request_started = time.monotonic()
+
     def log_message(self, fmt: str, *args: Any) -> None:
-        super().log_message(fmt, *args)
+        elapsed = time.monotonic() - getattr(self, "_request_started", time.monotonic())
+        super().log_message(fmt + " elapsed=%.3fs", *args, elapsed)
 
     def json_response(self, status: int, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -4155,7 +4364,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {
                         "status": "ok",
-                        "manifest": str(self.app.manifest_path.relative_to(self.app.project_root)),
+                        "manifest": self.app._relative_manifest_path(self.app.manifest_path),
+                        "primary_manifest": self.app._relative_manifest_path(self.app.primary_manifest_path),
+                        "manifests": self.app.manifest_info(),
                         "rollouts": len(self.app.load_rollouts()),
                         "tmux": {
                             "available": self.app.tmux.available,
@@ -4166,6 +4377,11 @@ class LF3RHandler(BaseHTTPRequestHandler):
                         "analysis_environment": self.app.analysis_jobs.environment_status(),
                     },
                 )
+                return
+            if path == "/favicon.ico":
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
                 return
             if path == "/api/settings":
                 self.json_response(HTTPStatus.OK, self.app.settings.response())
@@ -4216,7 +4432,10 @@ class LF3RHandler(BaseHTTPRequestHandler):
                             self.app.instruction_variant_manifest_path.relative_to(self.app.project_root)
                         )
                     records.append(enriched)
-                self.json_response(HTTPStatus.OK, {"rollouts": records})
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"rollouts": records, "manifests": self.app.manifest_info()},
+                )
                 return
             if path == "/api/baselines/runs":
                 scope = query.get("scope", ["natural_observation"])[0]
@@ -4372,7 +4591,7 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
                 video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
-                self.serve_video(video)
+                self.serve_video(self.app.browser_video_path(video))
                 return
             if path == "/":
                 self.serve_static(self.app.static_dir / "index.html")
@@ -4438,6 +4657,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     self.json_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Invalid request size")
                     return
                 payload = json.loads(self.rfile.read(length))
+                # Keep the ignored aggregate manifest current before any job
+                # snapshots its selection or passes --manifest downstream.
+                self.app.refresh_manifest_catalog()
                 if path == "/api/baselines/run-batch":
                     job = self.app.baselines.start_batch(payload)
                 elif path == "/api/analysis/run":
@@ -4546,19 +4768,29 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "video/mp4")
         self.send_header("Accept-Ranges", "bytes")
+        # Video responses can be a converted copy whose bytes differ from an
+        # earlier response at the same rollout URL. Never reuse a stale 206.
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Pragma", "no-cache")
         self.send_header("Content-Length", str(length))
         if status == HTTPStatus.PARTIAL_CONTENT:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
-        with path.open("rb") as handle:
-            handle.seek(start)
-            remaining = length
-            while remaining:
-                chunk = handle.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                remaining -= len(chunk)
+        try:
+            with path.open("rb") as handle:
+                handle.seek(start)
+                remaining = length
+                while remaining:
+                    chunk = handle.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except ConnectionError:
+            # Browsers routinely cancel a speculative range request after they
+            # have enough metadata. That is not a server error and must not
+            # trigger a second JSON response on a closed socket.
+            return
 
 
 def make_handler(app: LF3RApplication) -> type[LF3RHandler]:
@@ -4574,7 +4806,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="Bind address; keep loopback for SSH forwarding")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--project-root", type=Path, default=DEFAULT_PROJECT_ROOT)
-    parser.add_argument("--manifest", type=Path)
+    parser.add_argument(
+        "--manifest",
+        dest="manifest_paths",
+        type=Path,
+        action="append",
+        help="Manifest to load; repeat this option to show multiple manifests",
+    )
     parser.add_argument("--annotations", type=Path)
     return parser.parse_args()
 
@@ -4582,12 +4820,20 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     project_root = args.project_root.resolve()
-    manifest = args.manifest or project_root / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"
+    default_manifest = project_root / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"
+    manifest_paths = list(args.manifest_paths or [default_manifest])
+    if args.manifest_paths is None:
+        optional_realrobot = project_root / "datasets/lf3r_failure_rollouts/v1/realrobot_manifest.jsonl"
+        if optional_realrobot.is_file():
+            manifest_paths.append(optional_realrobot)
     annotations = args.annotations or project_root / "annotations/failure_annotations/v1"
-    app = LF3RApplication(project_root, manifest, annotations)
+    app = LF3RApplication(project_root, manifest_paths, annotations)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(app))
     print(f"LF3R annotator: http://{args.host}:{server.server_port}")
-    print(f"Manifest: {manifest}")
+    for source_path in app.manifest_paths:
+        print(f"Manifest source: {source_path}")
+    if app.aggregate_manifest_path is not None:
+        print(f"Aggregate manifest: {app.aggregate_manifest_path}")
     print(f"Annotations: {annotations}")
 
     def stop_server(_signum: int, _frame: Any) -> None:

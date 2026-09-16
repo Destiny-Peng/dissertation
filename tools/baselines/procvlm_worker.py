@@ -245,6 +245,9 @@ def run_persistent_jobs(
         "dtype": VLLM_DTYPE_ALIASES.get(str(args.torch_dtype).lower(), args.torch_dtype),
         "gpu_memory_utilization": args.vllm_total_memory_fraction,
     }
+    max_model_len = getattr(args, "max_model_len", None)
+    if max_model_len is not None:
+        engine_kwargs["max_model_len"] = max_model_len
     if not pending:
         refresh_state(
             state_path,
@@ -459,6 +462,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-size", type=int, default=4)
     parser.add_argument("--max-sampled-frames", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
+    parser.add_argument("--max-model-len", type=int, default=None)
     parser.add_argument("--torch-dtype", default="bf16")
     parser.add_argument("--enable-value-head", action="store_true")
     parser.add_argument("--tp", type=int, default=1)
@@ -469,6 +473,8 @@ def parse_args() -> argparse.Namespace:
             parser.error(f"--{name.replace('_', '-')} must be positive")
     if args.max_sampled_frames is not None and args.max_sampled_frames < 1:
         parser.error("--max-sampled-frames must be positive when provided")
+    if args.max_model_len is not None and args.max_model_len < 1:
+        parser.error("--max-model-len must be positive when provided")
     if args.dry_run:
         if args.vllm_free_memory_fraction is not None and not 0.0 < args.vllm_free_memory_fraction <= 1.0:
             parser.error("--vllm-free-memory-fraction must be in (0, 1]")

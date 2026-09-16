@@ -1,0 +1,4 @@
+{"timestamp": "2026-09-15T07:49:38.118465+00:00", "rollout_id": "libero_10-task00-ep002-natural-c1772b432e", "review_status": "in_progress", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-15T07:51:42.853912+00:00", "rollout_id": "libero_10-task00-ep005-natural-cc215a9023", "review_status": "in_progress", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
+{"timestamp": "2026-09-15T07:51:50.221866+00:00", "rollout_id": "libero_10-task00-ep005-natural-cc215a9023", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
+{"timestamp": "2026-09-15T07:51:59.170404+00:00", "rollout_id": "libero_10-task00-ep002-natural-c1772b432e", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}

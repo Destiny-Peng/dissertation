@@ -322,6 +322,9 @@ def build_procvlm_worker_command(
         command.extend(["--vllm-total-memory-fraction", str(vllm_total_memory_fraction)])
     if args.procvlm_max_sampled_frames is not None:
         command.extend(["--max-sampled-frames", str(args.procvlm_max_sampled_frames)])
+    procvlm_max_model_len = getattr(args, "procvlm_max_model_len", None)
+    if procvlm_max_model_len is not None:
+        command.extend(["--max-model-len", str(procvlm_max_model_len)])
     if resume:
         command.append("--resume")
     return command
@@ -665,6 +668,12 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
         int(stored_max_frames) if stored_max_frames not in (None, "None") else None
     )
     args.procvlm_max_new_tokens = int(stored_arguments.get("procvlm_max_new_tokens", 4096))
+    stored_max_model_len = stored_arguments.get("procvlm_max_model_len")
+    args.procvlm_max_model_len = (
+        int(stored_max_model_len)
+        if stored_max_model_len not in (None, "None")
+        else None
+    )
     args.procvlm_enable_value_head = bool(stored_arguments.get("procvlm_enable_value_head", False))
     args.dtype = str(stored_arguments.get("dtype", "bf16"))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
@@ -2172,6 +2181,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional ProcVLM frame cap; omitted to use its upstream default",
     )
     parser.add_argument("--procvlm-max-new-tokens", type=int, default=4096)
+    parser.add_argument(
+        "--procvlm-max-model-len",
+        type=int,
+        default=None,
+        help="Optional vLLM context limit; forwarded as max_model_len",
+    )
     parser.add_argument("--procvlm-enable-value-head", action="store_true")
 
     parser.add_argument(
@@ -2264,6 +2279,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--parallel-workers must be positive")
     if args.procvlm_max_sampled_frames is not None and args.procvlm_max_sampled_frames < 1:
         parser.error("--procvlm-max-sampled-frames must be positive when provided")
+    if args.procvlm_max_model_len is not None and args.procvlm_max_model_len < 1:
+        parser.error("--procvlm-max-model-len must be positive when provided")
     for name in (
         "procvlm_window_size", "procvlm_max_new_tokens",
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",

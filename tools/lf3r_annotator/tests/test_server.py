@@ -312,6 +312,37 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/16")
             self.assertEqual(response.read(), b"2345")
 
+    def test_multiple_manifests_are_combined_with_provenance(self) -> None:
+        second_video = self.root / "outputs" / "second.mp4"
+        second_video.write_bytes(b"secondary")
+        second = dict(self.rollout)
+        second.update({
+            "id": "secondary-rollout",
+            "video_path": "outputs/second.mp4",
+            "task_id": 1,
+        })
+        second_manifest = self.root / "secondary-manifest.jsonl"
+        second_manifest.write_text(json.dumps(second) + "\n", encoding="utf-8")
+
+        app = LF3RApplication(
+            self.root,
+            [self.root / "manifest.jsonl", second_manifest],
+            self.root / "annotations-multi",
+        )
+        records = app.load_rollouts()
+        self.assertEqual([record["id"] for record in records], ["sample-rollout", "secondary-rollout"])
+        self.assertEqual(records[0]["manifest_source"], "manifest.jsonl")
+        self.assertEqual(records[1]["manifest_source"], "secondary-manifest.jsonl")
+        self.assertEqual([item["rollouts"] for item in app.manifest_info()], [1, 1])
+        self.assertIsNotNone(app.aggregate_manifest_path)
+        self.assertTrue(app.aggregate_manifest_path.is_file())
+        aggregate_rows = [
+            json.loads(line)
+            for line in app.aggregate_manifest_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual([row["id"] for row in aggregate_rows], ["sample-rollout", "secondary-rollout"])
+
     def test_instruction_variant_selector_is_explicit_and_does_not_reuse_full_outputs(self) -> None:
         variant_root = self.root / "tools" / "lf3r_annotator" / "instruction_variants" / "libero_10_v1"
         variant_root.mkdir(parents=True)

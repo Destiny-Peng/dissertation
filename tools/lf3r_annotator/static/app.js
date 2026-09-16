@@ -2,6 +2,8 @@
 
 var state = {
   rollouts: [],
+  manifests: [],
+  manifestFilter: "all",
   filtered: [],
   selectedId: null,
   currentFrame: 0,
@@ -441,6 +443,50 @@ function isControlled(record) {
   return record.source_kind === "controlled_injected";
 }
 
+function isRealRobotManifest(record) {
+  return record.source_kind === "real_robot"
+    || record.analysis_partition === "real_robot_analysis";
+}
+
+function isExternalManifest(record) {
+  return record.manifest_primary === false || isRealRobotManifest(record);
+}
+
+function provenanceClass(record) {
+  if (isControlled(record)) return "controlled";
+  if (isExternalManifest(record)) return "external";
+  return "natural";
+}
+
+function provenanceLabel(record) {
+  if (isControlled(record)) return "controlled";
+  if (isRealRobotManifest(record)) return "real robot";
+  if (isExternalManifest(record)) return "secondary";
+  return "natural";
+}
+
+function populateManifestFilter(manifests) {
+  var select = byId("manifestFilter");
+  if (!select) return;
+  var current = state.manifestFilter || select.value || "all";
+  var options = ['<option value="all">All manifests</option>'];
+  (manifests || []).forEach(function (manifest) {
+    var path = String(manifest.path || "");
+    if (!path) return;
+    var label = manifest.label && manifest.label !== path
+      ? String(manifest.label) + " · " + path
+      : path;
+    if (manifest.rollouts != null) label += " (" + manifest.rollouts + ")";
+    options.push('<option value="' + escapeHtml(path) + '">' + escapeHtml(label) + "</option>");
+  });
+  select.innerHTML = options.join("");
+  var valid = current === "all" || (manifests || []).some(function (manifest) {
+    return manifest.path === current;
+  });
+  select.value = valid ? current : "all";
+  state.manifestFilter = select.value;
+}
+
 function labelFor(value) {
   return String(value || "").replace(/_/g, " ");
 }
@@ -456,7 +502,11 @@ async function loadRollouts(preferredId) {
   }
   var payload = await response.json();
   state.rollouts = payload.rollouts || [];
-  byId("datasetStatus").textContent = "Dataset online · " + state.rollouts.length + " rollouts";
+  state.manifests = payload.manifests || [];
+  populateManifestFilter(state.manifests);
+  byId("datasetStatus").textContent = "Dataset online · " + state.rollouts.length
+    + " rollouts · " + (state.manifests.length || 1) + " manifest"
+    + ((state.manifests.length || 1) === 1 ? "" : "s");
   updateProgress();
   applyFilters();
   if (typeof updateBaselineBatchAdvancedFields === "function") updateBaselineBatchAdvancedFields();
@@ -479,12 +529,15 @@ function updateProgress() {
 function applyFilters() {
   var query = byId("searchInput").value.trim().toLowerCase();
   var origin = byId("originFilter").value;
+  var manifest = byId("manifestFilter").value;
+  state.manifestFilter = manifest;
   var outcome = byId("outcomeFilter").value;
   var review = byId("reviewFilter").value;
   state.filtered = state.rollouts.filter(function (record) {
-    var haystack = [record.id, record.task_description, record.task_suite, record.task_id].join(" ").toLowerCase();
+    var haystack = [record.id, record.task_description, record.task_suite, record.task_id, record.manifest_source, record.manifest_label].join(" ").toLowerCase();
     return (!query || haystack.indexOf(query) !== -1)
       && (origin === "all" || record.source_kind === origin)
+      && (manifest === "all" || record.manifest_source === manifest)
       && (outcome === "all" || effectiveOutcome(record) === outcome)
       && (review === "all" || record.annotation_status === review);
   });
@@ -499,17 +552,18 @@ function renderRolloutList() {
     return;
   }
   container.innerHTML = state.filtered.map(function (record) {
-    var originClass = isControlled(record) ? "controlled" : "natural";
+    var originClass = provenanceClass(record);
     var selectedClass = record.id === state.selectedId ? " active" : "";
     var title = record.task_description || (record.task_suite + " task " + record.task_id);
+    var sourceLabel = record.manifest_label || record.manifest_source || "manifest";
     return '<button class="rollout-card ' + originClass + selectedClass + '" data-rollout-id="' + escapeHtml(record.id) + '" type="button">'
       + '<div class="badge-row">'
-      + badge(isControlled(record) ? "controlled" : "natural", originClass)
+      + badge(provenanceLabel(record), originClass)
       + badge(effectiveOutcome(record), effectiveOutcome(record))
       + badge(record.annotation_status, record.annotation_status)
       + "</div>"
       + '<div class="card-title">' + escapeHtml(title) + "</div>"
-      + '<div class="card-footer"><span>' + escapeHtml(record.task_suite) + " · task " + escapeHtml(record.task_id) + '</span><span>' + escapeHtml(record.total_frames) + "f</span></div>"
+      + '<div class="card-footer"><span>' + escapeHtml(record.task_suite) + " · task " + escapeHtml(record.task_id) + " · " + escapeHtml(sourceLabel) + '</span><span>' + escapeHtml(record.total_frames) + "f</span></div>"
       + "</button>";
   }).join("");
   container.querySelectorAll("[data-rollout-id]").forEach(function (button) {
@@ -604,8 +658,11 @@ function selectRollout(id) {
   byId("reviewContent").classList.remove("hidden");
   renderRolloutList();
 
-  var originClass = isControlled(record) ? "controlled" : "natural";
-  byId("recordBadges").innerHTML = badge(isControlled(record) ? "controlled injection" : "natural policy", originClass)
+  var originClass = provenanceClass(record);
+  byId("recordBadges").innerHTML = badge(
+    isControlled(record) ? "controlled injection" : (isRealRobotManifest(record) ? "real robot" : (isExternalManifest(record) ? "secondary manifest" : "natural policy")),
+    originClass
+  )
     + badge(record.analysis_partition, originClass)
     + badge(effectiveOutcome(record), effectiveOutcome(record));
   renderInstructionVariantControl(record);
@@ -613,7 +670,10 @@ function selectRollout(id) {
 
   var video = byId("rolloutVideo");
   video.pause();
-  video.src = "/api/videos/" + encodeURIComponent(record.id);
+  // Bust browser caches that may contain the pre-transcode MPEG-4 Part 2
+  // response from before the server started serving its H.264 copy.
+  video.src = "/api/videos/" + encodeURIComponent(record.id) + "?v=video-h264-20260916";
+  video.load();
   video.playbackRate = Number(byId("speedSelect").value);
   byId("playButton").textContent = "Play";
   byId("playOverlay").classList.remove("hidden");
@@ -2109,7 +2169,7 @@ async function pollBaselineJob(jobId, rolloutId) {
 
 
 function installEvents() {
-  ["searchInput", "originFilter", "outcomeFilter", "reviewFilter"].forEach(function (id) {
+  ["searchInput", "originFilter", "manifestFilter", "outcomeFilter", "reviewFilter"].forEach(function (id) {
     byId(id).addEventListener(id === "searchInput" ? "input" : "change", applyFilters);
   });
   byId("frameSlider").addEventListener("input", function (event) {

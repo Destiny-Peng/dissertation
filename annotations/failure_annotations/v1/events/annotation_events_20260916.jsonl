@@ -1,0 +1,2 @@
+{"timestamp": "2026-09-16T05:52:04.548523+00:00", "rollout_id": "libero_10-task01-ep000-natural-3515373994", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-16T05:54:41.638956+00:00", "rollout_id": "libero_10-task00-ep000-natural-cb182a0e5e", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
