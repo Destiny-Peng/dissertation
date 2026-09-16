@@ -285,26 +285,46 @@ def _parse_args() -> argparse.Namespace:
         dest="manifest_paths",
         type=Path,
         action="append",
-        help="Manifest to load; repeat this option to show multiple manifests",
+        help=(
+            "Explicit manifest to load; repeat to select several. When omitted, "
+            "all top-level *manifest*.jsonl files in datasets/lf3r_failure_rollouts/v1 are loaded."
+        ),
     )
     parser.add_argument("--annotations", type=Path)
     return parser.parse_args()
 
 
+def _discover_default_manifests(project_root: Path) -> list[Path]:
+    """Return the standard manifest first, then every other active manifest beside it."""
+    manifest_dir = project_root / "datasets/lf3r_failure_rollouts/v1"
+    primary = manifest_dir / "manifest.jsonl"
+    others = sorted(
+        (
+            path
+            for path in manifest_dir.glob("*manifest*.jsonl")
+            if path.is_file() and path.resolve() != primary.resolve()
+        ),
+        key=lambda path: path.name,
+    )
+    return [primary, *others]
+
+
 def main() -> None:
     args = _parse_args()
     project_root = args.project_root.resolve()
-    default_manifest = project_root / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"
-    manifest_paths = list(args.manifest_paths or [default_manifest])
-    if args.manifest_paths is None:
-        optional_realrobot = project_root / "datasets/lf3r_failure_rollouts/v1/realrobot_manifest.jsonl"
-        if optional_realrobot.is_file():
-            manifest_paths.append(optional_realrobot)
+    manifest_paths = (
+        list(args.manifest_paths)
+        if args.manifest_paths is not None
+        else _discover_default_manifests(project_root)
+    )
     annotations = args.annotations or project_root / "annotations/failure_annotations/v1"
 
     app = MultiManifestApplication(project_root, manifest_paths, annotations)
     http_server = ThreadingHTTPServer((args.host, args.port), server.make_handler(app))
     print(f"LF3R annotator: http://{args.host}:{http_server.server_port}")
+    print(f"Project root: {project_root}")
+    if args.manifest_paths is None:
+        print("Manifest discovery: datasets/lf3r_failure_rollouts/v1/*manifest*.jsonl")
     for source_path in app.manifest_paths:
         print(f"Manifest source: {source_path}")
     if app.aggregate_manifest_path != app.primary_manifest_path:
