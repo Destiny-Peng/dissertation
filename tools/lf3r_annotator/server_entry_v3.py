@@ -1,39 +1,32 @@
 #!/usr/bin/env python3
-"""LF3R annotator entrypoint with multi-manifest support and non-blocking video compatibility.
+"""LF3R annotator entrypoint with multi-manifest support and raw video serving.
 
-Builds on server_entry_v2 so the ProcVLM LoRA, project tools, live baseline
+Builds on ``server_entry_v2`` so the ProcVLM LoRA, project tools, live baseline
 progress, and cancellation patches remain intact.
 
-Key differences from the experimental main-branch implementation:
-- multiple manifests are merged into a cached aggregate without replacing the
-  primary manifest used by rollout generation;
-- browser-compatibility transcoding never runs on the HTTP request thread;
-- large multi-manifest queues are exposed with provenance metadata.
+Runtime video probing/transcoding is deliberately absent. ``/api/videos``
+always serves the exact manifest file. Browser-incompatible videos can be
+converted explicitly through the manual WebUI project-tool action instead.
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import hashlib
 import json
 import os
 import signal
-import subprocess
 import tempfile
 import threading
-import uuid
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 import server_entry_v2  # noqa: F401  # Apply all previous WebUI compatibility patches first.
+import non_analysis_tools
 import server
-
-
-VIDEO_CACHE_VARIANT = "h264-baseline-v2-async"
 
 
 def _atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
@@ -52,162 +45,29 @@ def _atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
             os.unlink(temp_name)
 
 
-class AsyncVideoCompatibilityCache:
-    """Prepare H.264 browser copies in a background thread.
+def _manual_transcode_command(payload: dict[str, Any]) -> list[str]:
+    value = str(payload.get("video_path") or "").strip()
+    if not value:
+        raise ValueError("video_path is required")
+    video = non_analysis_tools.project_path(value)
+    if video.suffix.lower() != ".mp4":
+        raise ValueError("video_path must point to an .mp4 file")
+    if not video.is_file():
+        raise ValueError(f"video does not exist: {value}")
+    backup = video.with_name(video.name[:-4] + ".orig.mp4")
+    if backup.exists():
+        raise ValueError(
+            "original backup already exists; refusing to overwrite: "
+            + str(backup.relative_to(non_analysis_tools.PROJECT_ROOT))
+        )
+    script = non_analysis_tools.PROJECT_ROOT / "tools/lf3r_annotator/transcode_video_h264.sh"
+    return ["/usr/bin/bash", str(script), str(video)]
 
-    The request path always returns immediately with either the already-cached
-    H.264 file or the original source. Browser-side retry logic reloads the
-    video after conversion finishes if the original codec cannot be decoded.
-    """
 
-    def __init__(self, project_root: Path) -> None:
-        self.project_root = project_root.resolve()
-        self.cache_root = self.project_root / "cache" / "lf3r_annotator" / "video_cache"
-        self.lock = threading.Lock()
-        self.encode_slot = threading.Semaphore(1)
-        self.states: dict[str, dict[str, Any]] = {}
-
-    @staticmethod
-    def _now() -> str:
-        return dt.datetime.now(dt.timezone.utc).isoformat()
-
-    def _key(self, path: Path) -> tuple[str, Path]:
-        stat = path.stat()
-        key = hashlib.sha256(
-            f"{VIDEO_CACHE_VARIANT}:{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode("utf-8")
-        ).hexdigest()[:24]
-        return key, self.cache_root / f"{key}.mp4"
-
-    def request_path(self, path: Path) -> Path:
-        if not path.is_file():
-            return path
-        try:
-            key, cached = self._key(path)
-        except OSError:
-            return path
-        if cached.is_file():
-            try:
-                if cached.stat().st_size > 0:
-                    with self.lock:
-                        self.states[key] = {
-                            "status": "ready",
-                            "codec": "h264",
-                            "cached": str(cached),
-                            "updated_at": self._now(),
-                        }
-                    return cached
-            except OSError:
-                pass
-
-        with self.lock:
-            state = self.states.get(key)
-            if state and state.get("status") == "ready":
-                ready_path = Path(str(state.get("cached") or cached))
-                if ready_path.is_file():
-                    return ready_path
-            if not state or state.get("status") in {"failed", "stale"}:
-                self.states[key] = {
-                    "status": "queued",
-                    "source": str(path),
-                    "cached": str(cached),
-                    "updated_at": self._now(),
-                }
-                threading.Thread(
-                    target=self._prepare,
-                    args=(key, path, cached),
-                    name=f"lf3r-video-cache-{key}",
-                    daemon=True,
-                ).start()
-        return path
-
-    def status(self, path: Path) -> dict[str, Any]:
-        if not path.is_file():
-            return {"status": "missing"}
-        try:
-            key, cached = self._key(path)
-        except OSError:
-            return {"status": "missing"}
-        if cached.is_file():
-            try:
-                if cached.stat().st_size > 0:
-                    return {
-                        "status": "ready",
-                        "codec": "h264",
-                        "cached": str(cached),
-                    }
-            except OSError:
-                pass
-        with self.lock:
-            state = dict(self.states.get(key) or {})
-        if not state:
-            return {"status": "idle"}
-        state.pop("source", None)
-        state.pop("cached", None)
-        return state
-
-    def _set_state(self, key: str, **updates: Any) -> None:
-        with self.lock:
-            state = dict(self.states.get(key) or {})
-            state.update(updates)
-            state["updated_at"] = self._now()
-            self.states[key] = state
-
-    def _prepare(self, key: str, source: Path, cached: Path) -> None:
-        with self.encode_slot:
-            self._set_state(key, status="probing")
-            try:
-                probe = subprocess.run(
-                    [
-                        "ffprobe", "-v", "error", "-select_streams", "v:0",
-                        "-show_entries", "stream=codec_name", "-of", "json", str(source),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                    check=False,
-                )
-                payload = json.loads(probe.stdout) if probe.returncode == 0 else {}
-                streams = payload.get("streams") if isinstance(payload, dict) else None
-                codec = str((streams or [{}])[0].get("codec_name", ""))
-            except (OSError, subprocess.SubprocessError, json.JSONDecodeError, IndexError, AttributeError) as exc:
-                self._set_state(key, status="failed", error=f"ffprobe failed: {exc}")
-                return
-
-            if codec in {"", "h264"}:
-                self._set_state(key, status="passthrough", codec=codec or "unknown")
-                return
-
-            self.cache_root.mkdir(parents=True, exist_ok=True)
-            temporary = self.cache_root / f".{key}.{uuid.uuid4().hex}.tmp.mp4"
-            self._set_state(key, status="transcoding", codec=codec)
-            try:
-                result = subprocess.run(
-                    [
-                        "ffmpeg", "-y", "-v", "error", "-i", str(source),
-                        "-an", "-c:v", "libx264", "-profile:v", "baseline",
-                        "-level", "3.1", "-preset", "veryfast", "-crf", "20",
-                        "-pix_fmt", "yuv420p", "-threads", "2",
-                        "-movflags", "+faststart", str(temporary),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    check=False,
-                )
-                if result.returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
-                    os.replace(temporary, cached)
-                    self._set_state(key, status="ready", codec="h264")
-                    return
-                error = (result.stderr or result.stdout or f"ffmpeg exited {result.returncode}").strip()
-                self._set_state(key, status="failed", error=error[-2000:])
-            except (OSError, subprocess.SubprocessError) as exc:
-                self._set_state(key, status="failed", error=str(exc))
-            finally:
-                try:
-                    if temporary.exists():
-                        temporary.unlink()
-                except OSError:
-                    pass
+# Extend the existing persistent project-tool service. The tool runs in its own
+# tmux job, not in an HTTP request thread, so ffmpeg cannot block server shutdown.
+non_analysis_tools.TOOL_BUILDERS["transcode_video"] = _manual_transcode_command
+non_analysis_tools.TOOL_LABELS["transcode_video"] = "Transcode selected video to H.264"
 
 
 class MultiManifestApplication(server.LF3RApplication):
@@ -227,6 +87,7 @@ class MultiManifestApplication(server.LF3RApplication):
                 resolved.append(path)
         if not resolved:
             raise ValueError("At least one manifest path is required")
+
         self.manifest_paths = resolved
         self.primary_manifest_path = resolved[0]
         source_key = "\0".join(str(path) for path in resolved)
@@ -234,7 +95,11 @@ class MultiManifestApplication(server.LF3RApplication):
         self.aggregate_manifest_path = (
             self.primary_manifest_path
             if len(resolved) == 1
-            else self.project_root / "cache" / "lf3r_annotator" / "manifests" / f"manifest-{digest}.jsonl"
+            else self.project_root
+            / "cache"
+            / "lf3r_annotator"
+            / "manifests"
+            / f"manifest-{digest}.jsonl"
         )
         self._manifest_catalog_lock = threading.RLock()
         self._manifest_catalog_signature: tuple[tuple[str, bool, int, int], ...] | None = None
@@ -245,15 +110,13 @@ class MultiManifestApplication(server.LF3RApplication):
 
         super().__init__(self.project_root, self.aggregate_manifest_path, annotation_root)
 
-        # Rollout generation still owns and updates the primary natural manifest.
+        # Rollout generation owns and updates the primary natural manifest.
         self.rollout_jobs.manifest_path = self.primary_manifest_path
-        # Analysis remains scoped to the established primary dataset.
+        # Existing Analysis workflows remain scoped to the established primary dataset.
         if hasattr(self.analysis, "manifest_path"):
             self.analysis.manifest_path = self.primary_manifest_path
         if hasattr(self.analysis_jobs, "manifest_path"):
             self.analysis_jobs.manifest_path = self.primary_manifest_path
-
-        self.video_compat = AsyncVideoCompatibilityCache(self.project_root)
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
@@ -349,9 +212,7 @@ _previous_do_get = server.LF3RHandler.do_GET
 
 
 def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
-    parsed = urlparse(self.path)
-    path = unquote(parsed.path)
-    query = parse_qs(parsed.query, keep_blank_values=True)
+    path = unquote(urlparse(self.path).path)
 
     if path == "/api/manifests":
         self.json_response(
@@ -386,19 +247,6 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
         )
         return
 
-    if path.startswith("/api/video-compatibility/"):
-        rollout_id = path.rsplit("/", 1)[-1]
-        rollout = self.app.rollout_map().get(rollout_id)
-        if not rollout:
-            self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
-            return
-        video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
-        self.json_response(
-            HTTPStatus.OK,
-            {"rollout_id": rollout_id, **self.app.video_compat.status(video)},
-        )
-        return
-
     if path.startswith("/api/videos/"):
         rollout_id = path.rsplit("/", 1)[-1]
         rollout = self.app.rollout_map().get(rollout_id)
@@ -406,8 +254,7 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
             self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
             return
         video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
-        serve_path = self.app.video_compat.request_path(video)
-        self.serve_video(serve_path)
+        self.serve_video(video)
         return
 
     return _previous_do_get(self)
@@ -463,7 +310,7 @@ def main() -> None:
     if app.aggregate_manifest_path != app.primary_manifest_path:
         print(f"Aggregate manifest: {app.aggregate_manifest_path}")
     print(f"Annotations: {annotations}")
-    print("Video compatibility: asynchronous H.264 cache (non-blocking request path)")
+    print("Video serving: raw manifest files; runtime transcoding disabled")
 
     def stop_server(_signum: int, _frame: Any) -> None:
         print("Shutdown requested; stopping LF3R annotator...")
