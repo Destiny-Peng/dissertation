@@ -48,6 +48,21 @@
     return header + "\n" + lines.join("\n");
   }
 
+  function releaseStableHeight(output) {
+    // results-layout.js normally fixes the output height to the largest native
+    // sampleOutputText() string so text-heavy methods do not jump while the
+    // video plays. Numeric-only methods used to measure only the short fallback
+    // sentence, though, and the current-value readout added here is taller.
+    // Let these compact numeric cards size to their actual content instead.
+    output.classList.remove("is-stable-height");
+    output.classList.add("has-current-numeric-values");
+    output.style.removeProperty("--lf3r-output-height");
+    output.style.setProperty("height", "auto", "important");
+    output.style.setProperty("min-height", "0", "important");
+    output.style.setProperty("max-height", "none", "important");
+    output.style.setProperty("overflow", "visible", "important");
+  }
+
   function updateEvaluationCurrentWithValues() {
     originalUpdateEvaluationCurrent();
     if (!state.evaluation || !state.evaluation.methods) return;
@@ -72,6 +87,7 @@
         ? numericText + "\n\n" + NUMERIC_ONLY_MESSAGE
         : NUMERIC_ONLY_MESSAGE;
       output.hidden = false;
+      if (numericText) releaseStableHeight(output);
     });
   }
 
