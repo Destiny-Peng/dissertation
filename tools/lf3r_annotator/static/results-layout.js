@@ -38,12 +38,74 @@
     });
   }
 
-  function migrateLegacyPalette() {
-    if (typeof workspaceState === "undefined" || typeof workspaceApplySettings !== "function") return;
-    var settings = workspaceState.settings;
-    if (!usesLegacyDefaultPalette(settings)) return;
-    Object.keys(POLISHED_PALETTE).forEach(function (key) { settings[key] = POLISHED_PALETTE[key]; });
-    workspaceApplySettings(settings);
+  function migratedPalette(settings) {
+    if (!usesLegacyDefaultPalette(settings)) return settings;
+    return Object.assign({}, settings, POLISHED_PALETTE);
+  }
+
+  if (window.SETTINGS_DEFAULTS) Object.assign(window.SETTINGS_DEFAULTS, POLISHED_PALETTE);
+  if (window.SETTINGS_PRESETS && window.SETTINGS_PRESETS.midnight) {
+    Object.assign(window.SETTINGS_PRESETS.midnight, POLISHED_PALETTE);
+  }
+
+  var originalApplySettings = window.workspaceApplySettings;
+  if (typeof originalApplySettings === "function") {
+    window.workspaceApplySettings = function (settings) {
+      return originalApplySettings(migratedPalette(settings));
+    };
+  }
+
+  var originalSettingsToForm = window.workspaceSettingsToForm;
+  if (typeof originalSettingsToForm === "function") {
+    window.workspaceSettingsToForm = function (settings) {
+      return originalSettingsToForm(migratedPalette(settings));
+    };
+  }
+
+  function refreshLoadedDefaultPalette() {
+    if (!window.workspaceState || !workspaceState.settings || !usesLegacyDefaultPalette(workspaceState.settings)) return;
+    workspaceState.settings = migratedPalette(workspaceState.settings);
+    if (typeof window.workspaceApplySettings === "function") window.workspaceApplySettings(workspaceState.settings);
+    if (typeof window.workspaceSettingsToForm === "function") window.workspaceSettingsToForm(workspaceState.settings);
+  }
+  window.setTimeout(refreshLoadedDefaultPalette, 0);
+  window.setTimeout(refreshLoadedDefaultPalette, 250);
+
+  /* RynnValue's human-readable Analysis and Parsed analysis encode the same
+     description/match/success information. Keep only the readable version. */
+  function rynnAnalysisIsDuplicate(sample) {
+    if (!sample || !sample.analysis_text || sample.parsed_analysis == null) return false;
+    var analysis = String(sample.analysis_text);
+    var parsed = typeof sample.parsed_analysis === "string"
+      ? sample.parsed_analysis
+      : JSON.stringify(sample.parsed_analysis);
+    return analysis.indexOf("Video Description:") !== -1
+      && analysis.indexOf("Match:") !== -1
+      && analysis.indexOf("Success:") !== -1
+      && parsed.indexOf("description") !== -1
+      && parsed.indexOf("match") !== -1
+      && parsed.indexOf("success") !== -1;
+  }
+
+  var originalSampleOutputText = window.sampleOutputText;
+  if (typeof originalSampleOutputText === "function") {
+    window.sampleOutputText = function (sample) {
+      if (!rynnAnalysisIsDuplicate(sample)) return originalSampleOutputText(sample);
+      var parts = [];
+      if (sample.model_output != null && sample.model_output !== "") {
+        parts.push("Model output:\n" + String(sample.model_output));
+      } else if (sample.reasoning != null && sample.reasoning !== "") {
+        parts.push("Reasoning:\n" + String(sample.reasoning));
+      }
+      if (sample.analysis_text != null && sample.analysis_text !== "") {
+        parts.push("Analysis:\n" + String(sample.analysis_text));
+      }
+      if (sample.pred != null && sample.pred !== "") {
+        var prediction = typeof sample.pred === "string" ? sample.pred : JSON.stringify(sample.pred, null, 2);
+        parts.push("Prediction:\n" + prediction);
+      }
+      return parts.length ? parts.join("\n\n") : "Numeric signals only; this baseline has no text output.";
+    };
   }
 
   var workspace = document.getElementById("reviewWorkspace");
@@ -159,6 +221,14 @@
     });
   }
 
+  var originalUpdateEvaluationCurrent = window.updateEvaluationCurrent;
+  if (typeof originalUpdateEvaluationCurrent === "function") {
+    window.updateEvaluationCurrent = function () {
+      var result = originalUpdateEvaluationCurrent.apply(this, arguments);
+      return result;
+    };
+  }
+
   var bodyObserver = new MutationObserver(function (mutations) {
     if (mutations.some(function (mutation) { return mutation.attributeName === "data-view"; })) {
       applyQueueState();
@@ -183,12 +253,10 @@
 
   window.addEventListener("resize", scheduleOutputSizing);
   window.lf3rResultsLayoutRefresh = function () {
-    migrateLegacyPalette();
     applyQueueState();
     scheduleOutputSizing();
   };
 
-  migrateLegacyPalette();
   applyQueueState();
   scheduleOutputSizing();
 })();
