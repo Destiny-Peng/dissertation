@@ -4,6 +4,9 @@
   if (!window.state || typeof window.byId !== "function") return;
 
   var CARD_LIMIT = 250;
+  var transcodePollTimer = null;
+  var transcodeJobId = null;
+  var transcodeRolloutId = null;
 
   state.manifests = state.manifests || [];
   state.manifestFilter = state.manifestFilter || "all";
@@ -228,7 +231,141 @@
     }
   }
 
+  function selectedRecord() {
+    if (typeof window.selectedRollout === "function") return window.selectedRollout();
+    return (state.rollouts || []).find(function (record) { return record.id === state.selectedId; }) || null;
+  }
+
+  function transcodeBackupName(videoPath) {
+    return String(videoPath || "").replace(/\.mp4$/i, ".orig.mp4");
+  }
+
+  function setTranscodeUi(message, busy) {
+    var button = byId("manualVideoTranscode");
+    var status = byId("manualVideoTranscodeStatus");
+    if (button) {
+      button.disabled = Boolean(busy);
+      button.textContent = busy ? "Transcoding…" : "Transcode H.264";
+    }
+    if (status) {
+      status.hidden = !message;
+      status.textContent = message || "";
+    }
+  }
+
+  function reloadSelectedRawVideo(rolloutId) {
+    if (!rolloutId || state.selectedId !== rolloutId) return;
+    var video = byId("rolloutVideo");
+    if (!video) return;
+    video.src = "/api/videos/" + encodeURIComponent(rolloutId)
+      + "?v=raw-source-" + Date.now();
+    video.load();
+    var speed = byId("speedSelect");
+    if (speed) video.playbackRate = Number(speed.value);
+  }
+
+  function clearTranscodePoll() {
+    if (transcodePollTimer) window.clearTimeout(transcodePollTimer);
+    transcodePollTimer = null;
+  }
+
+  async function pollTranscodeJob() {
+    if (!transcodeJobId) return;
+    try {
+      var response = await fetch("/api/tool-jobs/" + encodeURIComponent(transcodeJobId), { cache: "no-store" });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not read transcode job");
+      var job = payload.job || {};
+      if (job.status === "complete") {
+        var finishedRollout = transcodeRolloutId;
+        clearTranscodePoll();
+        transcodeJobId = null;
+        transcodeRolloutId = null;
+        setTranscodeUi("H.264 complete · original kept as .orig.mp4", false);
+        reloadSelectedRawVideo(finishedRollout);
+        return;
+      }
+      if (["failed", "cancelled", "memory_blocked"].indexOf(job.status) !== -1) {
+        var failedRollout = transcodeRolloutId;
+        clearTranscodePoll();
+        transcodeJobId = null;
+        transcodeRolloutId = null;
+        setTranscodeUi("Transcode failed · original file was restored; see Tool activity log", false);
+        reloadSelectedRawVideo(failedRollout);
+        return;
+      }
+    } catch (error) {
+      setTranscodeUi("Waiting for transcode job status…", true);
+    }
+    transcodePollTimer = window.setTimeout(pollTranscodeJob, 1000);
+  }
+
+  async function startManualTranscode() {
+    if (transcodeJobId) return;
+    var record = selectedRecord();
+    if (!record || !record.video_path) return;
+    var backup = transcodeBackupName(record.video_path);
+    var confirmed = window.confirm(
+      "Convert this selected video to browser-compatible H.264?\n\n"
+      + "The current file will be renamed to:\n" + backup + "\n\n"
+      + "The H.264 output will use the original .mp4 path."
+    );
+    if (!confirmed) return;
+
+    var rolloutId = record.id;
+    var video = byId("rolloutVideo");
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    setTranscodeUi("Submitting persistent ffmpeg job…", true);
+
+    try {
+      var response = await fetch("/api/tools/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "transcode_video",
+          options: { video_path: record.video_path }
+        })
+      });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not start transcode");
+      transcodeJobId = payload.job && payload.job.job_id;
+      transcodeRolloutId = rolloutId;
+      if (!transcodeJobId) throw new Error("Transcode job id is missing");
+      setTranscodeUi("Transcoding in background · original will remain as .orig.mp4", true);
+      pollTranscodeJob();
+    } catch (error) {
+      transcodeJobId = null;
+      transcodeRolloutId = null;
+      setTranscodeUi("Transcode could not start: " + error.message, false);
+      reloadSelectedRawVideo(rolloutId);
+    }
+  }
+
+  function installManualTranscodeControl() {
+    var transport = document.querySelector(".transport");
+    if (!transport || byId("manualVideoTranscode")) return;
+    var button = document.createElement("button");
+    button.id = "manualVideoTranscode";
+    button.type = "button";
+    button.className = "manual-video-transcode";
+    button.textContent = "Transcode H.264";
+    button.title = "Rename the selected .mp4 to .orig.mp4 and encode an H.264 replacement at the original path";
+    button.addEventListener("click", startManualTranscode);
+    transport.appendChild(button);
+
+    var status = document.createElement("span");
+    status.id = "manualVideoTranscodeStatus";
+    status.className = "manual-video-transcode-status";
+    status.hidden = true;
+    transport.appendChild(status);
+  }
+
   ensureManifestControls();
   installFilterHooks();
+  installManualTranscodeControl();
   loadManifestMetadata();
 })();
