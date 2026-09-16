@@ -35,6 +35,8 @@
 
   batchPanel.dataset.runsPanel = "baseline";
   rolloutPanel.dataset.runsPanel = "rollout";
+  batchPanel.id = batchPanel.id || "runsBaselinePanel";
+  rolloutPanel.id = rolloutPanel.id || "runsRolloutPanel";
 
   function wrapSetupBlock(node, title, subtitle) {
     if (!node || node.parentElement.classList.contains("runs-config-block")) return;
@@ -121,6 +123,11 @@
     if (storedMode === "baseline" || storedMode === "rollout") currentMode = storedMode;
   } catch (_) {}
 
+  buttons.forEach(function (button) {
+    var panel = button.dataset.runsMode === "baseline" ? batchPanel : rolloutPanel;
+    button.setAttribute("aria-controls", panel.id);
+  });
+
   function setMode(mode) {
     currentMode = mode === "rollout" ? "rollout" : "baseline";
     buttons.forEach(function (button) {
@@ -135,8 +142,15 @@
     try { localStorage.setItem("lf3r.runs.mode", currentMode); } catch (_) {}
   }
 
-  buttons.forEach(function (button) {
+  buttons.forEach(function (button, index) {
     button.addEventListener("click", function () { setMode(button.dataset.runsMode); });
+    button.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      var next = event.key === "ArrowRight" ? (index + 1) % buttons.length : (index - 1 + buttons.length) % buttons.length;
+      buttons[next].focus();
+      setMode(buttons[next].dataset.runsMode);
+    });
   });
 
   setMode(currentMode);
