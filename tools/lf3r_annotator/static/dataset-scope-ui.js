@@ -240,6 +240,20 @@
     try { persistentJobScope = dynamicPersistentJobScope; } catch (_) {}
   }
 
+  var previousCliHelpEntry = window.cliHelpEntry;
+  if (typeof previousCliHelpEntry === "function") {
+    var dynamicCliHelpEntry = function (key) {
+      var entry = previousCliHelpEntry(key);
+      if (!entry || key !== "baseline.scope") return entry;
+      return Object.assign({}, entry, {
+        default: "first loaded task suite",
+        description: "Task-suite scopes are discovered from the task_suite values in the manifests loaded for the current server run. Controlled rollouts remain a separate scope, and All loaded rollouts selects the full catalog."
+      });
+    };
+    window.cliHelpEntry = dynamicCliHelpEntry;
+    try { cliHelpEntry = dynamicCliHelpEntry; } catch (_) {}
+  }
+
   var previousDataChanged = window.lf3rWorkspaceDataChanged;
   window.lf3rWorkspaceDataChanged = function () {
     if (typeof previousDataChanged === "function") previousDataChanged();
