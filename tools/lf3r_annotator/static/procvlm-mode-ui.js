@@ -33,6 +33,10 @@
 
     var form = document.getElementById("baselineBatchForm");
     if (!form) return;
+    var methodSelect = document.getElementById("baselineBatchMethod");
+    var wrapper = select.closest("label");
+    if (wrapper) wrapper.hidden = Boolean(methodSelect && methodSelect.value !== "procvlm");
+
     var modelInput = form.querySelector('[data-batch-option="model_path"]');
     if (modelInput) {
       var label = modelInput.closest("label");
@@ -50,7 +54,10 @@
     var valueHead = document.getElementById("procvlmEnableValueHead");
     if (valueHead) {
       var valueHeadLabel = valueHead.closest("label");
-      if (valueHeadLabel) valueHeadLabel.hidden = mode === "lora";
+      if (valueHeadLabel) {
+        valueHeadLabel.hidden = mode === "lora"
+          || Boolean(methodSelect && methodSelect.value !== "procvlm");
+      }
     }
   }
 
@@ -68,6 +75,8 @@
       + modeOptionsHtml(readMode()) + '</select>';
     modelLabel.parentNode.insertBefore(wrapper, modelLabel);
     wrapper.querySelector("select").addEventListener("change", updateBatchUi);
+    var methodSelect = document.getElementById("baselineBatchMethod");
+    if (methodSelect) methodSelect.addEventListener("change", updateBatchUi);
     updateBatchUi();
   }
 
