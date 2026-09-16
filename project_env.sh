@@ -4,7 +4,14 @@
 # LF3R project root
 # ------------------------------------------------------------
 
-export PROJECT_ROOT="/mnt/hdd/qiuxia/pyr/LF3R"
+# Default to the repository directory that contains this file. This makes one
+# checkout portable across servers with different absolute paths. Set
+# LF3R_PROJECT_ROOT only when the project data intentionally lives elsewhere.
+_LF3R_ENV_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+export PROJECT_ROOT="${LF3R_PROJECT_ROOT:-${_LF3R_ENV_DIR}}"
+PROJECT_ROOT="$(cd -- "${PROJECT_ROOT}" && pwd -P)"
+export PROJECT_ROOT
+unset _LF3R_ENV_DIR
 
 # ------------------------------------------------------------
 # LF3R directories
