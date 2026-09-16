@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
-"""Small LF3R-owned helpers for WebUI non-analysis tools.
+"""Bounded non-Analysis tools exposed by the LF3R WebUI.
 
-This module intentionally avoids the Analysis pipeline. It exposes bounded,
-project-local command builders and lightweight GPU inspection that the
-annotator server can use without duplicating tool semantics in JavaScript.
+The helpers in this module deliberately reuse existing project scripts instead
+of reimplementing their behavior in the browser. Long-running actions are
+submitted through the annotator's persistent tmux supervisor; GPU inspection
+is one-shot and read-only.
 """
 
 from __future__ import annotations
 
 import csv
-import json
+import datetime as dt
 import os
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+TOOL_JOB_TYPE = "project_tool"
 
 
 def project_path(value: str | Path) -> Path:
     path = Path(value).expanduser()
     resolved = path.resolve() if path.is_absolute() else (PROJECT_ROOT / path).resolve()
-    resolved.relative_to(PROJECT_ROOT)
+    try:
+        resolved.relative_to(PROJECT_ROOT)
+    except ValueError as exc:
+        raise ValueError(f"path must stay inside the project: {value}") from exc
     return resolved
 
 
@@ -46,41 +52,46 @@ def gpu_status() -> dict[str, Any]:
     except (OSError, subprocess.SubprocessError) as exc:
         return {"available": False, "error": str(exc), "gpus": []}
     rows = []
-    reader = csv.reader(completed.stdout.splitlines())
-    for raw in reader:
+    for raw in csv.reader(completed.stdout.splitlines()):
         if len(raw) != 11:
             continue
         values = [item.strip() for item in raw]
+
         def number(text: str) -> float | None:
             try:
                 return float(text)
             except (TypeError, ValueError):
                 return None
+
         total = number(values[3])
-        used = number(values[4])
         free = number(values[5])
-        rows.append({
-            "index": int(values[0]),
-            "name": values[1],
-            "uuid": values[2],
-            "memory_total_mib": total,
-            "memory_used_mib": used,
-            "memory_free_mib": free,
-            "memory_free_fraction": (free / total) if total and free is not None else None,
-            "gpu_utilization_percent": number(values[6]),
-            "memory_utilization_percent": number(values[7]),
-            "temperature_c": number(values[8]),
-            "power_draw_w": number(values[9]),
-            "power_limit_w": number(values[10]),
-        })
-    return {"available": True, "error": None, "gpus": rows}
+        rows.append(
+            {
+                "index": int(values[0]),
+                "name": values[1],
+                "uuid": values[2],
+                "memory_total_mib": total,
+                "memory_used_mib": number(values[4]),
+                "memory_free_mib": free,
+                "memory_free_fraction": (free / total) if total and free is not None else None,
+                "gpu_utilization_percent": number(values[6]),
+                "memory_utilization_percent": number(values[7]),
+                "temperature_c": number(values[8]),
+                "power_draw_w": number(values[9]),
+                "power_limit_w": number(values[10]),
+            }
+        )
+    return {
+        "available": True,
+        "error": None,
+        "queried_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "gpus": rows,
+    }
 
 
 def export_command(payload: dict[str, Any]) -> list[str]:
-    script = PROJECT_ROOT / "tools/export_failure_cases.py"
-    command = ["/usr/bin/python3", str(script)]
-    outcomes = payload.get("outcomes") or ["failure"]
-    for outcome in outcomes:
+    command = ["/usr/bin/python3", str(PROJECT_ROOT / "tools/export_failure_cases.py")]
+    for outcome in payload.get("outcomes") or ["failure"]:
         if outcome not in {"success", "failure", "recovered_success", "uncertain"}:
             raise ValueError(f"invalid outcome: {outcome}")
         command.extend(["--outcome", outcome])
@@ -100,13 +111,29 @@ def export_command(payload: dict[str, Any]) -> list[str]:
 
 
 def safe_prepare_command(payload: dict[str, Any]) -> list[str]:
-    python = Path(os.environ.get("LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"))
-    script = PROJECT_ROOT / "tools/safe_training/prepare_dataset.py"
-    output = project_path(str(payload.get("output") or "outputs/safe_training/datasets/web_prepare"))
+    python = Path(
+        os.environ.get(
+            "LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"
+        )
+    )
+    output = project_path(
+        str(payload.get("output") or "outputs/safe_training/datasets/web_prepare")
+    )
+    role = str(payload.get("dataset_role") or "primary_natural")
+    partition = str(payload.get("partition") or "natural_observation")
+    if role not in {"all", "primary_natural", "reference_natural", "controlled_analysis"}:
+        raise ValueError("invalid SAFE dataset_role")
+    if partition not in {"all", "natural_observation", "controlled_analysis"}:
+        raise ValueError("invalid SAFE partition")
     command = [
-        str(python), str(script), "--output", str(output),
-        "--dataset-role", str(payload.get("dataset_role") or "primary_natural"),
-        "--partition", str(payload.get("partition") or "natural_observation"),
+        str(python),
+        str(PROJECT_ROOT / "tools/safe_training/prepare_dataset.py"),
+        "--output",
+        str(output),
+        "--dataset-role",
+        role,
+        "--partition",
+        partition,
     ]
     run_name = str(payload.get("run_name") or "").strip()
     if run_name:
@@ -117,67 +144,117 @@ def safe_prepare_command(payload: dict[str, Any]) -> list[str]:
 
 
 def safe_train_command(payload: dict[str, Any]) -> list[str]:
-    python = Path(os.environ.get("LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"))
-    script = PROJECT_ROOT / "tools/safe_training/run_safe_training.py"
+    python = Path(
+        os.environ.get(
+            "LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"
+        )
+    )
     model = str(payload.get("model") or "mlp")
     if model not in {"mlp", "lstm"}:
         raise ValueError("SAFE model must be mlp or lstm")
-    dataset = project_path(str(payload.get("dataset_dir") or "outputs/safe_training/datasets/web_prepare"))
-    logs = project_path(str(payload.get("logs_root") or "outputs/safe_training/logs/web"))
+    dataset = project_path(
+        str(payload.get("dataset_dir") or "outputs/safe_training/datasets/web_prepare")
+    )
+    logs = project_path(
+        str(payload.get("logs_root") or "outputs/safe_training/logs/web")
+    )
     command = [
-        str(python), str(script),
-        "--dataset-dir", str(dataset),
-        "--model", model,
-        "--gpu", str(payload.get("gpu") or "0"),
-        "--logs-root", str(logs),
-        "--epochs", str(int(payload.get("epochs") or 1000)),
-        "--batch-size", str(int(payload.get("batch_size") or 512)),
-        "--hidden-dim", str(int(payload.get("hidden_dim") or 256)),
-        "--seed", str(payload.get("seed") or "0"),
-        "--token-idx-rel", str(payload.get("token_idx_rel") or "1.0"),
+        str(python),
+        str(PROJECT_ROOT / "tools/safe_training/run_safe_training.py"),
+        "--dataset-dir",
+        str(dataset),
+        "--model",
+        model,
+        "--gpu",
+        str(payload.get("gpu") or "0"),
+        "--logs-root",
+        str(logs),
+        "--epochs",
+        str(int(payload.get("epochs") or 1000)),
+        "--batch-size",
+        str(int(payload.get("batch_size") or 512)),
+        "--hidden-dim",
+        str(int(payload.get("hidden_dim") or 256)),
+        "--seed",
+        str(payload.get("seed") or "0"),
+        "--token-idx-rel",
+        str(payload.get("token_idx_rel") or "1.0"),
     ]
     if bool(payload.get("normalize", False)):
         command.append("--normalize")
     return command
 
 
-def safe_conformal_command(payload: dict[str, Any]) -> list[str]:
-    python = Path(os.environ.get("LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"))
-    script = PROJECT_ROOT / "tools/safe_training/run_safe_functional_conformal_eval.py"
-    command = [str(python), str(script)]
-    mapping = {
-        "dataset_dir": "--dataset",
-        "mlp_checkpoint": "--mlp",
-        "lstm_checkpoint": "--lstm",
-        "output_dir": "--output",
-    }
-    for key, flag in mapping.items():
-        value = payload.get(key)
-        if value:
-            command.extend([flag, str(project_path(str(value)))])
-    if payload.get("gpu") not in (None, ""):
-        command.extend(["--gpu", str(payload["gpu"])])
-    return command
+def safe_validate_checkpoint_command(payload: dict[str, Any]) -> list[str]:
+    python = Path(
+        os.environ.get(
+            "LF3R_SAFE_PYTHON", PROJECT_ROOT / "conda_envs/LF3R-safe/bin/python"
+        )
+    )
+    model = str(payload.get("model") or "mlp")
+    if model not in {"mlp", "lstm"}:
+        raise ValueError("SAFE model must be mlp or lstm")
+    if not payload.get("dataset_dir") or not payload.get("checkpoint"):
+        raise ValueError("SAFE validation requires dataset_dir and checkpoint")
+    dataset = project_path(str(payload["dataset_dir"]))
+    checkpoint = project_path(str(payload["checkpoint"]))
+    output = project_path(
+        str(payload.get("output") or "outputs/safe_training/validation/web_scores.json")
+    )
+    return [
+        str(python),
+        str(PROJECT_ROOT / "tools/safe_training/validate_safe_checkpoint.py"),
+        "--dataset-dir",
+        str(dataset),
+        "--checkpoint",
+        str(checkpoint),
+        "--model",
+        model,
+        "--gpu",
+        str(payload.get("gpu") or "0"),
+        "--output",
+        str(output),
+        "--batch-size",
+        str(int(payload.get("batch_size") or 16)),
+        "--hidden-dim",
+        str(int(payload.get("hidden_dim") or 256)),
+    ]
 
 
 def robo_interval_sweep_command(payload: dict[str, Any]) -> list[str]:
-    script = PROJECT_ROOT / "tools/baselines/run_robo_dopamine_interval_sanity.py"
+    output_dir = project_path(
+        str(payload.get("output_dir") or "outputs/baselines/robo_interval_sweeps")
+    )
+    memory = float(payload.get("memory_utilization") or 0.6)
+    if not 0.0 < memory <= 1.0:
+        raise ValueError("memory_utilization must be in (0, 1]")
     command = [
-        "/usr/bin/python3", str(script),
-        "--manifest", str(PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"),
-        "--data-root", str(PROJECT_ROOT),
-        "--output-dir", str(project_path(str(payload.get("output_dir") or "outputs/baselines/robo_interval_sweeps"))),
-        "--gpu", str(payload.get("gpu") or "0"),
-        "--vllm-free-memory-fraction", str(float(payload.get("memory_utilization") or 0.6)),
-        "--batch-size", str(int(payload.get("batch_size") or 1)),
+        "/usr/bin/python3",
+        str(PROJECT_ROOT / "tools/baselines/run_robo_dopamine_interval_sanity.py"),
+        "--manifest",
+        str(PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"),
+        "--data-root",
+        str(PROJECT_ROOT),
+        "--output-dir",
+        str(output_dir),
+        "--gpu",
+        str(payload.get("gpu") or "0"),
+        "--vllm-free-memory-fraction",
+        str(memory),
+        "--batch-size",
+        str(int(payload.get("batch_size") or 1)),
     ]
     rollout_ids = payload.get("rollout_ids") or []
     if not rollout_ids:
         raise ValueError("at least one rollout_id is required")
     for rollout_id in rollout_ids:
         command.extend(["--rollout-id", str(rollout_id)])
-    for interval in payload.get("intervals") or [2, 5, 10]:
-        command.extend(["--frame-interval", str(int(interval))])
+    intervals = payload.get("intervals") or [2, 5, 10]
+    for interval in intervals:
+        interval = int(interval)
+        if interval < 1:
+            raise ValueError("frame intervals must be positive")
+        command.extend(["--frame-interval", str(interval)])
     if payload.get("model_path"):
         command.extend(["--model-path", str(project_path(str(payload["model_path"])))])
     if payload.get("goal_image"):
@@ -185,16 +262,121 @@ def robo_interval_sweep_command(payload: dict[str, Any]) -> list[str]:
     return command
 
 
-def validate_instruction_variants_command() -> list[str]:
-    return ["/usr/bin/python3", str(PROJECT_ROOT / "tools/prepare_libero10_instruction_variants.py"), "--check-only"]
+def validate_instruction_variants_command(_: dict[str, Any]) -> list[str]:
+    return [
+        "/usr/bin/python3",
+        str(PROJECT_ROOT / "tools/prepare_libero10_instruction_variants.py"),
+        "--check-only",
+    ]
 
 
-def rebuild_manifest_command() -> list[str]:
-    return ["/usr/bin/python3", str(PROJECT_ROOT / "tools/lf3r_annotator/build_manifest.py")]
+def rebuild_manifest_command(_: dict[str, Any]) -> list[str]:
+    return [
+        "/usr/bin/python3",
+        str(PROJECT_ROOT / "tools/lf3r_annotator/build_manifest.py"),
+    ]
 
 
-def baseline_pipeline_validation_command(check_environments: bool = True) -> list[str]:
-    command = ["/usr/bin/python3", str(PROJECT_ROOT / "tools/baselines/validate_pipeline.py")]
-    if check_environments:
+def baseline_pipeline_validation_command(payload: dict[str, Any]) -> list[str]:
+    command = [
+        "/usr/bin/python3",
+        str(PROJECT_ROOT / "tools/baselines/validate_pipeline.py"),
+    ]
+    if bool(payload.get("check_environments", True)):
         command.append("--check-environments")
     return command
+
+
+TOOL_BUILDERS = {
+    "export_cases": export_command,
+    "safe_prepare": safe_prepare_command,
+    "safe_train": safe_train_command,
+    "safe_validate": safe_validate_checkpoint_command,
+    "robo_interval_sweep": robo_interval_sweep_command,
+    "validate_variants": validate_instruction_variants_command,
+    "rebuild_manifest": rebuild_manifest_command,
+    "validate_baselines": baseline_pipeline_validation_command,
+}
+
+TOOL_LABELS = {
+    "export_cases": "Export rollout package",
+    "safe_prepare": "Prepare SAFE dataset",
+    "safe_train": "Train SAFE detector",
+    "safe_validate": "Validate SAFE checkpoint",
+    "robo_interval_sweep": "Robo-Dopamine interval sweep",
+    "validate_variants": "Validate instruction variants",
+    "rebuild_manifest": "Rescan rollout manifest",
+    "validate_baselines": "Validate baseline pipelines",
+}
+
+
+class NonAnalysisToolService:
+    """Persistent wrappers around existing non-Analysis project scripts."""
+
+    def __init__(self, project_root: Path, tmux: Any) -> None:
+        self.project_root = project_root.resolve()
+        self.tmux = tmux
+        self.tmux.register_handler(
+            TOOL_JOB_TYPE,
+            self._on_loaded,
+            on_finished=self._on_finished,
+        )
+
+    @staticmethod
+    def _on_loaded(job: dict[str, Any]) -> None:
+        job.setdefault("tool_label", TOOL_LABELS.get(str(job.get("action")), "Project tool"))
+
+    @staticmethod
+    def _on_finished(job: dict[str, Any], return_code: int | None, reason: str | None) -> None:
+        if reason:
+            job["status"] = "failed"
+            job["error"] = reason
+        elif return_code == 0:
+            job["status"] = "complete"
+        else:
+            job["status"] = "failed"
+            job["error"] = f"command exited with status {return_code}"
+
+    def submit(self, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        if action not in TOOL_BUILDERS:
+            raise ValueError(f"unknown project tool action: {action}")
+        payload = dict(payload or {})
+        command = TOOL_BUILDERS[action](payload)
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        job_id = f"tool-{action}-{stamp}-{uuid.uuid4().hex[:8]}"
+        log_path = self.project_root / "logs/annotator_tools" / f"{job_id}.log"
+        job = {
+            "job_id": job_id,
+            "job_type": TOOL_JOB_TYPE,
+            "action": action,
+            "tool_label": TOOL_LABELS[action],
+            "status": "queued",
+            "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "log_path": str(log_path.relative_to(self.project_root)),
+            "request": payload,
+        }
+        return self.tmux.submit(
+            job,
+            command,
+            log_path,
+            interpreter=command[0],
+            on_finished=self._on_finished,
+        )
+
+    def get(self, job_id: str) -> dict[str, Any]:
+        job = self.tmux.get(job_id)
+        if job.get("job_type") != TOOL_JOB_TYPE:
+            raise KeyError(job_id)
+        return job
+
+    def list(self, status: str | None = None) -> list[dict[str, Any]]:
+        return self.tmux.list(job_type=TOOL_JOB_TYPE, status=status)
+
+    def log(self, job_id: str, tail: int = 240) -> dict[str, Any]:
+        job = self.get(job_id)
+        count = max(1, min(int(tail), 2000))
+        path = self.project_root / str(job["log_path"])
+        if not path.is_file():
+            return {"job_id": job_id, "lines": [], "text": ""}
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-count:]
+        return {"job_id": job_id, "lines": lines, "text": "\n".join(lines)}
