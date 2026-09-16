@@ -17,22 +17,18 @@
   line-height: 1.4;
 }
 
-.video-compat-status {
-  position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
-  bottom: 3.4rem;
-  z-index: 4;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
-  color: var(--text);
-  font-size: 0.84rem;
-  line-height: 1.35;
-  pointer-events: none;
+.manual-video-transcode {
+  flex: 0 0 auto;
 }
 
-.video-compat-status[hidden] {
+.manual-video-transcode-status {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.manual-video-transcode-status[hidden] {
   display: none !important;
 }
