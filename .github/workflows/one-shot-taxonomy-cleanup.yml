@@ -1,0 +1,86 @@
+name: One-shot LIBERO taxonomy cleanup
+
+on:
+  push:
+    branches:
+      - ui/webui-visual-refresh
+    paths:
+      - .github/workflows/one-shot-taxonomy-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/webui-visual-refresh
+          fetch-depth: 0
+      - name: Clean replacement artifacts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          root = Path.cwd()
+          names = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          replacements = {
+              "LIBERO-10 LIBERO-10": "LIBERO-10",
+              "LIBERO-Spatial LIBERO-Spatial": "LIBERO-Spatial",
+              "LIBERO-10 LIBERO-10 rollout": "LIBERO-10 rollout",
+              "LIBERO-Spatial LIBERO-Spatial rollout": "LIBERO-Spatial rollout",
+          }
+          for name in names:
+              if not name or name == ".github/workflows/one-shot-taxonomy-cleanup.yml":
+                  continue
+              path = root / name
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              if b"\0" in data:
+                  continue
+              try:
+                  text = data.decode("utf-8")
+              except UnicodeDecodeError:
+                  continue
+              original = text
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text, encoding="utf-8")
+          (root / ".github/workflows/one-shot-taxonomy-cleanup.yml").unlink()
+          PY
+      - name: Assert taxonomy
+        shell: bash
+        run: |
+          if git grep -n -I -E 'primary_natural|reference_natural|primary-natural|reference-natural|[Pp]rimary natural|[Rr]eference natural|LIBERO-10 LIBERO-10|LIBERO-Spatial LIBERO-Spatial' -- .; then
+            echo 'Legacy or duplicated taxonomy text remains.' >&2
+            exit 1
+          fi
+      - name: Static validation
+        shell: bash
+        run: |
+          python3 -m py_compile \
+            tools/lf3r_annotator/server.py \
+            tools/lf3r_annotator/build_manifest.py \
+            tools/lf3r_annotator/verify_pipeline.py \
+            tools/baselines/run_lf3r_baseline.py \
+            tools/safe_training/prepare_dataset.py \
+            tools/prepare_libero10_instruction_variants.py
+          node --check tools/lf3r_annotator/static/app.js
+          node --check tools/lf3r_annotator/static/workspace-legacy.js
+          node --check tools/lf3r_annotator/static/runs-layout.js
+          node --check tools/lf3r_annotator/static/runs-semantics.js
+      - name: Unit tests
+        shell: bash
+        run: python3 -m unittest discover -s tools/lf3r_annotator/tests -p 'test_*.py'
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Repo: clean LIBERO taxonomy wording'
+          git push origin HEAD:ui/webui-visual-refresh
