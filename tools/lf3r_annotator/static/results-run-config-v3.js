@@ -1,6 +1,9 @@
 "use strict";
 
 (function installSingleBaselineConfiguratorV3() {
+  if (window.__lf3rSingleBaselineConfiguratorV3Installed) return;
+  window.__lf3rSingleBaselineConfiguratorV3Installed = true;
+
   var methodsHost = document.getElementById("evaluationMethods");
   if (!methodsHost) return;
 
@@ -407,8 +410,6 @@
     });
   }
 
-  // Delegate from document capture instead of the mutable Results card host.
-  // This survives card re-renders and any intermediate layout wrappers.
   document.addEventListener("click", function (event) {
     var target = event.target;
     var button = target && target.closest ? target.closest("[data-run-baseline]") : null;
@@ -419,13 +420,16 @@
     open(String(button.dataset.runBaseline || ""));
   }, true);
 
+  // app.js replaces the direct children of evaluationMethods when Results are
+  // rendered. Descendant observation is unnecessary and can feed our own
+  // button-label writes back into the observer.
   var observer = new MutationObserver(function (mutations) {
     var needsEnhance = mutations.some(function (mutation) {
       return mutation.addedNodes && mutation.addedNodes.length;
     });
     if (needsEnhance) enhanceButtons();
   });
-  observer.observe(methodsHost, { childList: true, subtree: true });
+  observer.observe(methodsHost, { childList: true });
   enhanceButtons();
 
   drawer.querySelector(".single-baseline-close").addEventListener("click", close);
