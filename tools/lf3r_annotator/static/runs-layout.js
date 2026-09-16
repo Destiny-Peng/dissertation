@@ -21,8 +21,8 @@
       '<p>Launch inference and rollout jobs without mixing configuration, status, and logs into one long form.</p>',
     '</div>',
     '<div class="runs-mode-switch" role="tablist" aria-label="Run type">',
-      '<button type="button" role="tab" data-runs-mode="baseline">Baseline inference</button>',
-      '<button type="button" role="tab" data-runs-mode="rollout">Rollout generation</button>',
+      '<button id="runsBaselineTab" type="button" role="tab" data-runs-mode="baseline">Baseline inference</button>',
+      '<button id="runsRolloutTab" type="button" role="tab" data-runs-mode="rollout">Rollout generation</button>',
     '</div>'
   ].join("");
 
@@ -37,6 +37,10 @@
   rolloutPanel.dataset.runsPanel = "rollout";
   batchPanel.id = batchPanel.id || "runsBaselinePanel";
   rolloutPanel.id = rolloutPanel.id || "runsRolloutPanel";
+  batchPanel.setAttribute("role", "tabpanel");
+  rolloutPanel.setAttribute("role", "tabpanel");
+  batchPanel.setAttribute("aria-labelledby", "runsBaselineTab");
+  rolloutPanel.setAttribute("aria-labelledby", "runsRolloutTab");
 
   function wrapSetupBlock(node, title, subtitle) {
     if (!node || node.parentElement.classList.contains("runs-config-block")) return;
