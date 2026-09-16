@@ -1,0 +1,45 @@
+/* Runs log behavior: one shared, bounded viewer per activity panel. */
+
+body[data-view="runs"] .runs-activity {
+  align-self: start;
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+}
+
+body[data-view="runs"] .runs-activity .job-log,
+body[data-view="runs"] .runs-tool-activity .job-log {
+  min-height: 0;
+  height: clamp(13rem, 34vh, 24rem);
+  max-height: min(24rem, 50vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+body[data-view="runs"] .runs-activity .job-log[hidden] {
+  display: none !important;
+}
+
+/* The legacy job card owns an inline log viewer. Runs uses the shared activity
+   viewer instead, so keeping both visible only duplicates the same content. */
+body[data-view="runs"] .persistent-job-card > .job-card-log {
+  display: none !important;
+}
+
+body[data-view="runs"] .runs-activity:not(.runs-log-open) {
+  min-height: 0;
+}
+
+body[data-view="runs"] .runs-activity.runs-log-open .job-log {
+  display: block;
+}
+
+@media (max-width: 760px) {
+  body[data-view="runs"] .runs-activity .job-log,
+  body[data-view="runs"] .runs-tool-activity .job-log {
+    height: clamp(11rem, 38vh, 20rem);
+    max-height: 45vh;
+  }
+}
