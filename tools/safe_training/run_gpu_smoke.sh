@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
-test "$PROJECT_ROOT" = "/mnt/hdd/qiuxia/pyr/LF3R"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/../../project_env.sh"
 
 GPU_ID="${1:-1}"
 SMOKE_ROOT="${PROJECT_ROOT}/outputs/safe_training/gpu_smoke_$(date +%Y%m%d_%H%M%S)"
