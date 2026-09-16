@@ -33,9 +33,8 @@ restore_on_failure() {
         fi
         echo "Transcode failed; original video restored: $VIDEO" >&2
     fi
-    exit "$status"
 }
-trap restore_on_failure EXIT INT TERM
+trap restore_on_failure EXIT
 
 ffmpeg -nostdin -hide_banner -y \
     -i "$BACKUP" \
@@ -54,7 +53,7 @@ if [[ "$CODEC" != "h264" ]]; then
     exit 4
 fi
 
-trap - EXIT INT TERM
+trap - EXIT
 echo "Transcode complete"
 echo "Output: $VIDEO"
 echo "Original backup: $BACKUP"
