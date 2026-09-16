@@ -26,7 +26,7 @@
      still asynchronous; this prevents a large secondary manifest from being
      eagerly rendered into thousands of cards during first load. */
   loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v2-20260916");
-  loadScript("/static/manifest-support.js?v=multi-manifest-v2-20260916", function () {
+  loadScript("/static/manifest-support-v2.js?v=multi-manifest-raw-video-v1-20260916", function () {
     loadScript("/static/workspace-legacy.js?v=results-split-20260915", function () {
       loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
         loadScript("/static/results-axis-scale.js?v=fixed-progress-axis-v1-20260916");
