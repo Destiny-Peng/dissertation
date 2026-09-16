@@ -36,15 +36,17 @@
           loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
           loadStyle("lf3rRunsLogStyles", "/static/styles-runs-log.css?v=runs-log-v2-20260916");
           loadStyle("lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css?v=baseline-job-filter-v1-20260916");
-          loadScript("/static/results-run-config-v3.js?v=single-baseline-config-v3-20260916", function () {
-            loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
-              loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
-                loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v2-20260916", function () {
-                  loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
-                    loadScript("/static/runs-log-ui.js?v=runs-log-v1-20260916", function () {
-                      loadScript("/static/runs-job-control.js?v=baseline-cancel-v2-20260916", function () {
-                        loadScript("/static/runs-submit-fix.js?v=batch-submit-v1-20260916", function () {
-                          loadScript("/static/procvlm-mode-ui.js?v=procvlm-lora-mode-v1-20260916");
+          loadScript("/static/results-run-config-v3.js?v=single-baseline-config-v3b-20260916", function () {
+            loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
+              loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
+                loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
+                  loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v2-20260916", function () {
+                    loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
+                      loadScript("/static/runs-log-ui.js?v=runs-log-v1-20260916", function () {
+                        loadScript("/static/runs-job-control.js?v=baseline-cancel-v2-20260916", function () {
+                          loadScript("/static/runs-submit-fix.js?v=batch-submit-v1-20260916", function () {
+                            loadScript("/static/procvlm-mode-ui.js?v=procvlm-lora-mode-v1-20260916");
+                          });
                         });
                       });
                     });
