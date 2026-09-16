@@ -1,6 +1,9 @@
 "use strict";
 
 (function installProcvlmInferenceMode() {
+  if (window.__lf3rProcvlmInferenceModeInstalled) return;
+  window.__lf3rProcvlmInferenceModeInstalled = true;
+
   var STORAGE_KEY = "lf3r.procvlm.inferenceMode";
   var VALID_MODES = { base: true, lora: true };
 
@@ -139,14 +142,9 @@
 
   installBatchMode();
 
-  // The old implementation observed the entire document body. Opening the
-  // ProcVLM drawer then inserted the mode control, and updateSingleUi() rewrote
-  // caption text inside the observed subtree. textContent itself is a childList
-  // mutation, so the observer repeatedly called installSingleMode() and trapped
-  // the browser main thread in a self-triggering MutationObserver loop.
   // Observe only direct changes to the drawer's method-field container. A method
-  // render changes this container once; our nested caption updates are outside
-  // this observation scope and all writes above are idempotent.
+  // render changes this container once; nested caption updates are outside this
+  // observation scope and all writes above are idempotent.
   var drawer = document.getElementById("singleBaselineDrawer");
   var singleCore = drawer && drawer.querySelector("[data-core]");
   if (singleCore) {
@@ -181,8 +179,6 @@
           payload.options = payload.options || {};
           payload.options.procvlm_use_lora = mode === "lora";
           if (mode === "lora") {
-            // The server maps explicit LoRA mode to the current persistent
-            // worker's official PEFT/value-head loading path.
             delete payload.options.procvlm_enable_value_head;
           }
           init = Object.assign({}, init, { body: JSON.stringify(payload) });
