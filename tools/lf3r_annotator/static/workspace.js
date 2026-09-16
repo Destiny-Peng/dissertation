@@ -25,7 +25,7 @@
     loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
       loadStyle("lf3rRunsStyles", "/static/styles-runs.css?v=runs-console-v4-20260916");
       loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
-      loadScript("/static/results-run-config.js?v=single-baseline-config-v1-20260916", function () {
+      loadScript("/static/results-run-config-v2.js?v=single-baseline-config-v2-20260916", function () {
         loadScript("/static/runs-layout.js?v=runs-console-v8-20260916");
       });
     });
