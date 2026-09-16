@@ -34,19 +34,20 @@
     var form = document.getElementById("baselineBatchForm");
     if (!form) return;
     var methodSelect = document.getElementById("baselineBatchMethod");
+    var isProcvlm = !methodSelect || methodSelect.value === "procvlm";
     var wrapper = select.closest("label");
-    if (wrapper) wrapper.hidden = Boolean(methodSelect && methodSelect.value !== "procvlm");
+    if (wrapper) wrapper.hidden = !isProcvlm;
 
     var modelInput = form.querySelector('[data-batch-option="model_path"]');
     if (modelInput) {
       var label = modelInput.closest("label");
       var caption = label && label.querySelector("span");
       if (caption) {
-        caption.textContent = mode === "lora"
+        caption.textContent = isProcvlm && mode === "lora"
           ? "LoRA checkpoint directory"
           : "Model path (optional)";
       }
-      modelInput.placeholder = mode === "lora"
+      modelInput.placeholder = isProcvlm && mode === "lora"
         ? "Path to saved LoRA adapter directory"
         : "Use configured checkpoint";
     }
@@ -54,10 +55,7 @@
     var valueHead = document.getElementById("procvlmEnableValueHead");
     if (valueHead) {
       var valueHeadLabel = valueHead.closest("label");
-      if (valueHeadLabel) {
-        valueHeadLabel.hidden = mode === "lora"
-          || Boolean(methodSelect && methodSelect.value !== "procvlm");
-      }
+      if (valueHeadLabel) valueHeadLabel.hidden = !isProcvlm || mode === "lora";
     }
   }
 
