@@ -24,7 +24,7 @@
   loadScript("/static/workspace-legacy.js?v=results-split-20260915", function () {
     loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
       loadStyle("lf3rRunsStyles", "/static/styles-runs.css?v=runs-console-v4-20260916");
-      loadScript("/static/runs-layout.js?v=runs-console-v5-20260916");
+      loadScript("/static/runs-layout.js?v=runs-console-v6-20260916");
     });
   });
 })();
