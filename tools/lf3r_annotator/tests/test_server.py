@@ -35,7 +35,7 @@ class ServerTest(unittest.TestCase):
             "ground_truth_outcome": "failure",
             "source_kind": "natural_policy",
             "analysis_partition": "natural_observation",
-            "dataset_role": "primary_natural",
+            "dataset_role": "libero_10",
             "video_path": "outputs/sample.mp4",
             "total_frames": 10,
             "fps": 5.0,
@@ -416,7 +416,7 @@ class ServerTest(unittest.TestCase):
             "/api/baselines/run-batch",
             {
                 "baseline": "safe",
-                "scope": "primary_natural",
+                "scope": "libero_10",
                 "instruction_condition": "subtask_a",
                 "gpu": "0",
                 "start_index": 0,
@@ -739,9 +739,9 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
 
     def test_baseline_run_discovery_and_batch_endpoint(self) -> None:
         self.seed_baseline_outputs()
-        with self.request("/api/baselines/runs?scope=primary_natural") as response:
+        with self.request("/api/baselines/runs?scope=libero_10") as response:
             payload = json.load(response)
-        self.assertEqual(payload["scope"], "primary_natural")
+        self.assertEqual(payload["scope"], "libero_10")
         self.assertEqual(len(payload["runs"]), 5)
         self.assertTrue(all(run["compatible"] for run in payload["runs"]))
         with self.request("/api/baselines/runs?scope=controlled_analysis") as response:
@@ -755,7 +755,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             "/api/baselines/run-batch",
             {
                 "baseline": "safe",
-                "scope": "primary_natural",
+                "scope": "libero_10",
                 "gpu": "0,1",
                 "memory_utilization": 0.65,
                 "start_index": 0,
@@ -765,13 +765,14 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         ) as response:
             self.assertEqual(response.status, 202)
             job = json.load(response)["job"]
-        self.assertEqual(job["scope"], "primary_natural")
+        self.assertEqual(job["scope"], "libero_10")
         self.assertEqual(job["selected_rollouts"], 1)
         self.assertEqual(job["memory_scope"], "free_gpu_memory")
         self.assertIn("--partition", job["command"])
         partition_index = job["command"].index("--partition")
         self.assertEqual(job["command"][partition_index + 1], "natural_observation")
-        self.assertIn("--dataset-role", job["command"])
+        self.assertIn("--task-suite", job["command"])
+        self.assertIn("libero_10", job["command"])
         self.assertIn("--dry-run", job["command"])
         final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
@@ -781,11 +782,11 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
 
     def test_batch_validation_and_baseline_concurrency(self) -> None:
         invalid_payloads = [
-            {"baseline": "safe", "scope": "primary_natural", "gpu": "0,x"},
-            {"baseline": "safe", "scope": "primary_natural", "gpu": "0", "memory_utilization": True},
-            {"baseline": "safe", "scope": "primary_natural", "gpu": "0", "options": {"model_path": "bad"}},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0,x"},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0", "memory_utilization": True},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0", "options": {"model_path": "bad"}},
             {"baseline": "safe", "scope": "not-a-scope", "gpu": "0"},
-            {"baseline": "safe", "scope": "primary_natural", "gpu": "0", "unexpected": 1},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0", "unexpected": 1},
         ]
         for payload in invalid_payloads:
             with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -801,7 +802,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 "/api/baselines/run-batch",
                 {
                     "baseline": method,
-                    "scope": "primary_natural",
+                    "scope": "libero_10",
                     "gpu": "0",
                     "memory_utilization": 0.80,
                     "options": {"dry_run": True},
@@ -821,7 +822,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 self.request(
                     "/api/baselines/run-batch",
-                    {"baseline": "safe", "scope": "primary_natural", "gpu": "0"},
+                    {"baseline": "safe", "scope": "libero_10", "gpu": "0"},
                 )
             self.assertEqual(caught.exception.code, 409)
         finally:
@@ -836,7 +837,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 "/api/baselines/run-batch",
                 {
                     "baseline": method,
-                    "scope": "primary_natural",
+                    "scope": "libero_10",
                     "gpu": "0",
                     "start_index": 0,
                     "end_index": 1,
@@ -879,7 +880,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             "/api/baselines/run-batch",
             {
                 "baseline": "rynnvalue",
-                "scope": "primary_natural",
+                "scope": "libero_10",
                 "gpu": "0",
                 "start_index": 0,
                 "end_index": 1,
@@ -904,7 +905,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         with self.request(
             "/api/analysis/run",
             {
-                "scope": "primary_natural",
+                "scope": "libero_10",
                 "runs": roots,
                 "pre_window_frames": 60,
                 "post_window_frames": 60,
@@ -914,7 +915,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         ) as response:
             self.assertEqual(response.status, 202)
             job = json.load(response)["job"]
-        self.assertEqual(job["scope"], "primary_natural")
+        self.assertEqual(job["scope"], "libero_10")
         self.assertEqual(job["selected_rollouts"], 1)
         selection_path = self.root / job["selection_path"]
         self.assertTrue(selection_path.is_file())
@@ -935,12 +936,12 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.install_fake_temporal_analyzer()
         roots = self.seed_analysis_runs(missing_method="safe")
         with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/analysis/run", {"scope": "primary_natural", "runs": roots})
+            self.request("/api/analysis/run", {"scope": "libero_10", "runs": roots})
         self.assertEqual(caught.exception.code, 400)
         roots = self.seed_analysis_runs()
         roots["safe"] = "../outside-run"
         with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/analysis/run", {"scope": "primary_natural", "runs": roots})
+            self.request("/api/analysis/run", {"scope": "libero_10", "runs": roots})
         self.assertEqual(caught.exception.code, 400)
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.request("/api/analysis/run", {"scope": "controlled_analysis", "runs": roots})
@@ -1260,7 +1261,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         runs["rynnvalue"] = [roots["rynnvalue"], str(partial.relative_to(self.root))]
         with self.request(
             "/api/analysis/run",
-            {"scope": "primary_natural", "runs": runs, "output_label": "multi_rynn"},
+            {"scope": "libero_10", "runs": runs, "output_label": "multi_rynn"},
         ) as response:
             self.assertEqual(response.status, 202)
             job = json.load(response)["job"]
@@ -1420,7 +1421,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         with self.request("/api/analysis") as response:
             dashboard = json.load(response)["analysis"]
         self.assertTrue(dashboard["dashboard"])
-        self.assertEqual(dashboard["default_scope"], "primary_natural")
+        self.assertEqual(dashboard["default_scope"], "libero_10")
         self.assertEqual(dashboard["detail_counts"]["changepoint_events"], 3)
         with self.request(
             "/api/analysis/details?kind=changepoint_events&page=1&page_size=2&sort=rollout"
@@ -1596,7 +1597,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         runner.write_text("# persistent fake runner\n", encoding="utf-8")
         with self.request(
             "/api/baselines/run-batch",
-            {"baseline": "safe", "scope": "primary_natural", "gpu": "0"},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0"},
         ) as response:
             job = json.load(response)["job"]
         record_path = self.root / job["job_record_path"]

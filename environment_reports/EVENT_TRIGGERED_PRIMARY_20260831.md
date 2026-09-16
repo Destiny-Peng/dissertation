@@ -5,7 +5,7 @@
 A complementary event-triggered analysis was generated from existing high-resolution baseline raw outputs and the current observable-onset annotations. No SAFE, ProcVLM, RynnValue, or Robo-Dopamine inference was started, and no raw baseline, rollout, media, or annotation file was modified.
 
 - Snapshot: outputs/baseline_signal_analysis/event_triggered_primary_20260831/
-- Selection: 125 primary_natural labeled rollouts
+- Selection: 125 libero_10 labeled rollouts
 - Observable events: 58 total - 48 terminal failures, 9 recovered successes, 1 uncertain
 - Clean-success control rollouts: 59
 - SAFE: 125/125 signal rollouts

@@ -8,9 +8,9 @@
     },
     "scope": {
       "cli": "--partition NAME",
-      "default": "natural_observation",
+      "default": "libero_10",
       "applies_to": "batch baseline",
-      "description": "Selects the rollout partition. The web scope maps to --partition plus an optional --dataset-role: all, natural_observation, controlled_analysis, primary_natural, or reference_natural."
+      "description": "Selects LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. LIBERO scopes match task_suite; Controlled matches the controlled-analysis partition."
     },
     "instruction_condition": {
       "cli": "--instruction-condition {full_instruction,subtask_a,subtask_b}",
@@ -29,7 +29,7 @@
       "cli": "--dataset-role ROLE",
       "default": "unset",
       "applies_to": "all baseline runs",
-      "description": "Further restricts selection to an exact manifest dataset_role such as primary_natural or reference_natural."
+      "description": "Optional exact dataset_role filter for low-level CLI use. Natural manifests now use libero_10 or libero_spatial; controlled rows use controlled_analysis."
     },
     "rollout_id": {
       "cli": "--rollout-id ID",

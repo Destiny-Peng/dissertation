@@ -7,7 +7,7 @@ The annotator now fixes baseline chart/timeline alignment and can launch one-met
 ## Implementation
 
 - Baseline SVG curves and onset markers use a normalized `0 ... 100` x-domain, clamp to the video frame domain, and share `.timeline-track` geometry with the playback slider. The negative horizontal chart margin was removed.
-- Review exposes batch scope selection for `all`, `natural_observation`, `primary_natural`, `reference_natural`, and `controlled_analysis`. Primary/reference scopes map to `--partition natural_observation --dataset-role ...`; the other scopes map directly to the runner partition.
+- Review exposes batch scope selection for `all`, `natural_observation`, `libero_10`, `libero_spatial`, and `controlled_analysis`. Primary/reference scopes map to `--partition natural_observation --dataset-role ...`; the other scopes map directly to the runner partition.
 - Batch requests accept `0` or comma-separated GPU IDs, a free-memory fraction, zero-based start index, optional limit, and method-specific runner options. The memory value is interpreted relative to currently free GPU memory; GPU utilization is not used as a readiness requirement.
 - `GET /api/baselines/runs` discovers complete project-local runs and reports rollout-ID compatibility. `POST /api/baselines/run-batch` writes under `outputs/baselines/web_runs/` and exposes progress/log endpoints.
 - Analysis exposes four compatible run selectors. `POST /api/analysis/run` creates a hidden selection file, verifies that each selected run covers every requested rollout ID (superset runs are valid), runs the existing analyzer without model inference, and atomically moves a complete snapshot into `outputs/baseline_signal_analysis/`.
@@ -21,7 +21,7 @@ The annotator now fixes baseline chart/timeline alignment and can launch one-met
 - GJS `new Function` parsing: `app.js` and `workspace.js` both reported **syntax ok**.
 - HTML parser smoke: `index.html` parsed with 121 unique IDs and no duplicate IDs.
 - CSS guard: no legacy negative horizontal timeline margin or fixed pixel font-size regression remains.
-- Read-only real-output discovery: 19 completed run roots were found; `primary_natural` had compatible SAFE/ProcVLM/RynnValue/Robo-Dopamine candidates, while the empty `controlled_analysis` scope correctly reported zero compatible runs.
+- Read-only real-output discovery: 19 completed run roots were found; `libero_10` had compatible SAFE/ProcVLM/RynnValue/Robo-Dopamine candidates, while the empty `controlled_analysis` scope correctly reported zero compatible runs.
 - The unit tests exercised baseline batch command mapping, free-memory validation, path/scope checks, shared-job `409` conflicts, job progress/log endpoints, superset run-ID validation, atomic temporal-analysis output, and unavailable cases.
 - No baseline GPU inference or temporal-analysis job was started during this implementation verification.
 

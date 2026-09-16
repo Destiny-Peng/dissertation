@@ -132,12 +132,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     frames, fps, duration = probe_video(video)
     csv_path = video.with_suffix(".csv")
     first_timestep, last_timestep = csv_timesteps(csv_path)
-    if source_kind == "controlled_injected":
-        dataset_role = "controlled_analysis"
-    elif suite == "libero_10":
-        dataset_role = "primary_natural"
-    else:
-        dataset_role = "reference_natural"
+    dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
     record = {
         "schema_version": 1,

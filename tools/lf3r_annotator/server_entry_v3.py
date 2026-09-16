@@ -110,7 +110,7 @@ class MultiManifestApplication(server.LF3RApplication):
 
         super().__init__(self.project_root, self.aggregate_manifest_path, annotation_root)
 
-        # Rollout generation owns and updates the primary natural manifest.
+        # Rollout generation owns and updates the LIBERO-10 manifest.
         self.rollout_jobs.manifest_path = self.primary_manifest_path
         # Existing Analysis workflows remain scoped to the established primary dataset.
         if hasattr(self.analysis, "manifest_path"):

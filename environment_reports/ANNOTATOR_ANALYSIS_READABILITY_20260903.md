@@ -2,7 +2,7 @@
 
 ## Result
 
-The live annotator Analysis page was reorganized around a conclusion-first dashboard. The default view is the 125-rollout primary_natural selection with Q95 threshold, local level feature, 16-frame scale, and all events. reference_natural, natural_observation, and controlled_analysis remain explicit choices.
+The live annotator Analysis page was reorganized around a conclusion-first dashboard. The default view is the 125-rollout libero_10 selection with Q95 threshold, local level feature, 16-frame scale, and all events. libero_spatial, natural_observation, and controlled_analysis remain explicit choices.
 
 Analysis now has six hash-routed sub-tabs:
 

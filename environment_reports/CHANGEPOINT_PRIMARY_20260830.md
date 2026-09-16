@@ -6,7 +6,7 @@ A new local change-point snapshot was generated from existing baseline raw outpu
 
 Snapshot: outputs/baseline_signal_analysis/changepoint_primary_20260830/
 
-- selected rollouts: 125 primary_natural labeled rollouts;
+- selected rollouts: 125 libero_10 labeled rollouts;
 - observable-onset events: 58;
 - clean-success reference trajectories: 59;
 - local half-window scales: 8, 16, 32, and 64 video frames;
@@ -17,7 +17,7 @@ Snapshot: outputs/baseline_signal_analysis/changepoint_primary_20260830/
 - RynnValue coverage: 124/125, missing libero_10-task02-ep005-natural-e8fc18cf25;
 - other method coverage: SAFE 125/125, ProcVLM 125/125, Robo-Dopamine 125/125.
 
-The missing RynnValue rollout is uncertain and has no observable failure event. It remains unavailable and is not filled with the older low-sampling output. The 11 reference_natural rows are excluded.
+The missing RynnValue rollout is uncertain and has no observable failure event. It remains unavailable and is not filled with the older low-sampling output. The 11 libero_spatial rows are excluded.
 
 ## Inputs and environment
 

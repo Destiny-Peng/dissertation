@@ -8,7 +8,7 @@ Snapshot:
 
 outputs/baseline_signal_analysis/highres_primary_20260830/
 
-The snapshot contains 125 primary_natural labeled rollouts, 58 annotated events with an observable_onset_frame, 464 temporal event-signal rows, 4,472 clean-success pseudo-event signal rows, and 1,392 localization event rows across Q90/Q95/Q99.
+The snapshot contains 125 libero_10 labeled rollouts, 58 annotated events with an observable_onset_frame, 464 temporal event-signal rows, 4,472 clean-success pseudo-event signal rows, and 1,392 localization event rows across Q90/Q95/Q99.
 
 ## Inputs
 
@@ -19,7 +19,7 @@ The snapshot contains 125 primary_natural labeled rollouts, 58 annotated events 
 | RynnValue | two web aggregate runs under outputs/baselines/web_runs | 124/125 | merged by rollout ID, no old-run fallback |
 | Robo-Dopamine | outputs/baselines/full_136_01/robo_dopamine_20260827_200551_687444 | 125/125 | official frame interval 2 output |
 
-The one missing RynnValue rollout is libero_10-task02-ep005-natural-e8fc18cf25. Its annotation is uncertain and has no failure event, so it contributes no event metric and remains an explicit unavailable rollout in method coverage. The 11 reference_natural rollouts are excluded from this primary comparison.
+The one missing RynnValue rollout is libero_10-task02-ep005-natural-e8fc18cf25. Its annotation is uncertain and has no failure event, so it contributes no event metric and remains an explicit unavailable rollout in method coverage. The 11 libero_spatial rollouts are excluded from this primary comparison.
 
 ## Analysis environment and command
 
