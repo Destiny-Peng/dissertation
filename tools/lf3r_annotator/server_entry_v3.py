@@ -7,6 +7,10 @@ progress, and cancellation patches remain intact.
 Runtime video probing/transcoding is deliberately absent. ``/api/videos``
 always serves the exact manifest file. Browser-incompatible videos can be
 converted explicitly through the manual WebUI project-tool action instead.
+
+Dataset scopes are discovered from the currently loaded manifests. Any
+non-controlled ``task_suite`` value becomes a valid suite scope automatically;
+``controlled_analysis`` and ``all`` remain the two reserved aggregate scopes.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import tempfile
 import threading
@@ -27,6 +32,115 @@ from urllib.parse import unquote, urlparse
 import server_entry_v2  # noqa: F401  # Apply all previous WebUI compatibility patches first.
 import non_analysis_tools
 import server
+
+
+_DYNAMIC_SCOPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+_RESERVED_SCOPES = {"all", "controlled_analysis"}
+
+
+def _is_controlled_record(record: dict[str, Any]) -> bool:
+    return (
+        record.get("analysis_partition") == "controlled_analysis"
+        or record.get("source_kind") == "controlled_injected"
+    )
+
+
+def _validate_dynamic_run_scope(scope: Any) -> str:
+    value = str(scope or "all").strip()
+    if value in _RESERVED_SCOPES:
+        return value
+    if not _DYNAMIC_SCOPE_RE.fullmatch(value):
+        raise server.ValidationError(
+            "scope must be 'all', 'controlled_analysis', or a task_suite name "
+            "present in the loaded manifests"
+        )
+    return value
+
+
+def _record_matches_dynamic_scope(record: dict[str, Any], scope: str) -> bool:
+    scope = _validate_dynamic_run_scope(scope)
+    if scope == "all":
+        return True
+    if scope == "controlled_analysis":
+        return _is_controlled_record(record)
+    return str(record.get("task_suite") or "") == scope and not _is_controlled_record(record)
+
+
+def _select_dynamic_scope_records(
+    records: list[dict[str, Any]], scope: str
+) -> list[dict[str, Any]]:
+    scope = _validate_dynamic_run_scope(scope)
+    return [record for record in records if _record_matches_dynamic_scope(record, scope)]
+
+
+# Replace the legacy fixed LIBERO scope list. Existing server services resolve
+# these globals at call time, so Baseline and Analysis immediately gain support
+# for any task_suite loaded from a manifest.
+server.validate_run_scope = _validate_dynamic_run_scope
+server.record_matches_scope = _record_matches_dynamic_scope
+server.select_scope_records = _select_dynamic_scope_records
+
+
+_original_scoped_baseline_command = server.BaselineService._baseline_command
+
+
+def _remove_cli_pairs(command: list[str], flags: set[str]) -> list[str]:
+    cleaned: list[str] = []
+    index = 0
+    while index < len(command):
+        token = command[index]
+        if token in flags:
+            index += 2
+            continue
+        cleaned.append(token)
+        index += 1
+    return cleaned
+
+
+def _baseline_command_with_dynamic_suite(
+    self: server.BaselineService,
+    baseline: str,
+    scope: str,
+    gpu: str,
+    utilization: float,
+    run_parent: Path,
+    options: dict[str, Any],
+    *args: Any,
+    **kwargs: Any,
+) -> list[str]:
+    command = _original_scoped_baseline_command(
+        self,
+        baseline,
+        scope,
+        gpu,
+        utilization,
+        run_parent,
+        options,
+        *args,
+        **kwargs,
+    )
+
+    instruction_condition = kwargs.get("instruction_condition")
+    if instruction_condition is None and len(args) > 6:
+        instruction_condition = args[6]
+    instruction_condition = str(instruction_condition or "full_instruction")
+    if instruction_condition != "full_instruction" or scope in _RESERVED_SCOPES:
+        return command
+
+    # A suite scope is defined by the actual selected manifest records, not by a
+    # fixed partition assumption. This is important for real-robot manifests,
+    # whose analysis_partition need not be natural_observation. Repeated
+    # --rollout-id filters preserve the exact scope and keep controlled injected
+    # records separate even when they share the same task_suite.
+    selected = self._condition_records("full_instruction", scope)
+    command = _remove_cli_pairs(command, {"--partition", "--task-suite", "--rollout-id"})
+    command.extend(["--partition", "all"])
+    for record in selected:
+        command.extend(["--rollout-id", str(record["id"])])
+    return command
+
+
+server.BaselineService._baseline_command = _baseline_command_with_dynamic_suite
 
 
 def _atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
@@ -110,13 +224,10 @@ class MultiManifestApplication(server.LF3RApplication):
 
         super().__init__(self.project_root, self.aggregate_manifest_path, annotation_root)
 
-        # Rollout generation owns and updates the LIBERO-10 manifest.
+        # Rollout generation owns and updates only the primary manifest. Baseline
+        # and Analysis services keep the aggregate manifest supplied above so
+        # newly loaded task suites, including real-robot data, are discoverable.
         self.rollout_jobs.manifest_path = self.primary_manifest_path
-        # Existing Analysis workflows remain scoped to the established primary dataset.
-        if hasattr(self.analysis, "manifest_path"):
-            self.analysis.manifest_path = self.primary_manifest_path
-        if hasattr(self.analysis_jobs, "manifest_path"):
-            self.analysis_jobs.manifest_path = self.primary_manifest_path
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
@@ -196,6 +307,26 @@ class MultiManifestApplication(server.LF3RApplication):
         self._refresh_manifest_catalog()
         return [dict(item) for item in self._manifest_info_cache]
 
+    def dataset_groups(self) -> dict[str, Any]:
+        records = self._refresh_manifest_catalog()
+        suite_counts: dict[str, int] = {}
+        controlled = 0
+        for record in records:
+            if _is_controlled_record(record):
+                controlled += 1
+                continue
+            suite = str(record.get("task_suite") or "").strip()
+            if suite:
+                suite_counts[suite] = suite_counts.get(suite, 0) + 1
+        return {
+            "task_suites": [
+                {"value": suite, "count": count}
+                for suite, count in suite_counts.items()
+            ],
+            "controlled_count": controlled,
+            "total_count": len(records),
+        }
+
     def load_rollouts(self) -> list[dict[str, Any]]:
         records = self._refresh_manifest_catalog()
         for record in records:
@@ -220,6 +351,7 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
             {
                 "manifests": self.app.manifest_info(),
                 "primary_manifest": self.app._relative_manifest_path(self.app.primary_manifest_path),
+                "dataset_groups": self.app.dataset_groups(),
             },
         )
         return
@@ -243,7 +375,11 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
             records.append(enriched)
         self.json_response(
             HTTPStatus.OK,
-            {"rollouts": records, "manifests": self.app.manifest_info()},
+            {
+                "rollouts": records,
+                "manifests": self.app.manifest_info(),
+                "dataset_groups": self.app.dataset_groups(),
+            },
         )
         return
 
@@ -329,6 +465,12 @@ def main() -> None:
         print(f"Manifest source: {source_path}")
     if app.aggregate_manifest_path != app.primary_manifest_path:
         print(f"Aggregate manifest: {app.aggregate_manifest_path}")
+    groups = app.dataset_groups()
+    suites = ", ".join(
+        f"{item['value']} ({item['count']})" for item in groups["task_suites"]
+    ) or "none"
+    print(f"Dataset task suites: {suites}")
+    print(f"Controlled rollouts: {groups['controlled_count']}")
     print(f"Annotations: {annotations}")
     print("Video serving: raw manifest files; runtime transcoding disabled")
 
