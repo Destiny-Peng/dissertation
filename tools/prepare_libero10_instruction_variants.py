@@ -625,12 +625,12 @@ def select_source_rows(
     selected = [
         row
         for row in suite_rows
-        if row.get("dataset_role") == "primary_natural"
+        if row.get("task_suite") == "libero_10"
         and row.get("analysis_partition") == "natural_observation"
     ]
     excluded = [row for row in suite_rows if row not in selected]
     if not selected:
-        raise VariantError("No primary natural LIBERO-10 rows found")
+        raise VariantError("No LIBERO-10 rows found")
 
     seen_ids: set[str] = set()
     for row in selected:
@@ -877,7 +877,7 @@ def validate_generated_rows(
             int(row["task_id"]) in compatible_tasks for row in source_rows
         ),
         "validation_checks": [
-            "Every source primary_natural LIBERO-10 rollout has one full_instruction row.",
+            "Every source libero_10 LIBERO-10 rollout has one full_instruction row.",
             "Every compatible source rollout has exactly one subtask_a and one subtask_b row.",
             "Task 5 is retained as full_instruction only because its official BDDL has one unique goal atom.",
             "Every generated subtask goal atom is present in the corresponding official LIBERO-10 BDDL.",
@@ -1059,7 +1059,7 @@ def main() -> int:
         "conditions": list(VARIANTS),
         "source_selection": {
             "task_suite": "libero_10",
-            "dataset_role": "primary_natural",
+            "dataset_role": "libero_10",
             "analysis_partition": "natural_observation",
         },
         "generated_at": validation["generated_at"],
@@ -1084,7 +1084,7 @@ This directory is a separate diagnostic dataset description generated from
 {SOURCE_MANIFEST_RELATIVE}. It does not replace or modify the source manifest,
 videos, frame sidecars, annotations, or existing baseline outputs.
 
-The source selection is task_suite=libero_10, dataset_role=primary_natural,
+The source selection is task_suite=libero_10, dataset_role=libero_10,
 and analysis_partition=natural_observation. The source manifest hash is:
 
     {source_manifest_hash}

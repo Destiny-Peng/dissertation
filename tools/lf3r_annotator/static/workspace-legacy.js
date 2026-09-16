@@ -80,7 +80,7 @@ var ANALYSIS_METHOD_LABELS = {
   robo_dopamine: "Robo-Dopamine"
 };
 var ANALYSIS_DEFAULT_LIVE_FILTERS = {
-  partition: "primary_natural",
+  partition: "libero_10",
   suite: "all",
   task: "all",
   outcome: "all"
@@ -104,7 +104,7 @@ var workspaceState = {
   baselineRuns: [],
   baselineRunsLoading: false,
   baselineRunsRequest: 0,
-  analysisRunScope: "primary_natural",
+  analysisRunScope: "libero_10",
   analysisRunJob: null,
   analysisRunJobs: {},
   analysisEnvironment: null,
@@ -239,8 +239,8 @@ function workspaceLiveEvents(record) {
 
 function workspacePartitionMatches(record, partition) {
   if (partition === "all") return true;
-  if (partition === "primary_natural" || partition === "reference_natural") {
-    return record.dataset_role === partition;
+  if (partition === "libero_10" || partition === "libero_spatial") {
+    return record.task_suite === partition;
   }
   return record.analysis_partition === partition;
 }
@@ -2030,11 +2030,10 @@ var ANALYSIS_RUN_SELECT_IDS = {
   robo_dopamine: "analysisRunRoboDopamine"
 };
 var ANALYSIS_RUN_SCOPE_LABELS = {
-  all: "All manifest rollouts",
-  natural_observation: "All natural observations",
-  primary_natural: "Primary natural",
-  reference_natural: "Reference natural",
-  controlled_analysis: "Controlled analysis"
+  all: "All loaded rollouts",
+  libero_10: "LIBERO-10",
+  libero_spatial: "LIBERO-Spatial",
+  controlled_analysis: "Controlled"
 };
 
 function workspaceAnalysisRunScopeCount(scope) {
@@ -3308,7 +3307,7 @@ function workspaceDashboardRenderConclusions(snapshot) {
   }).join(", ");
   var source = cp.source || snapshot.source || {};
   host.innerHTML = '<div class="analysis-conclusion-grid">'
-    + '<div><strong>Scope</strong><span>Primary natural by default; ' + escapeHtml(String(live.rollouts == null ? source.selection_count || "n/a" : live.rollouts)) + ' live rollout(s).</span></div>'
+    + '<div><strong>Scope</strong><span>LIBERO-10 by default; ' + escapeHtml(String(live.rollouts == null ? source.selection_count || "n/a" : live.rollouts)) + ' live rollout(s).</span></div>'
     + '<div><strong>Resolved success</strong><span>' + escapeHtml(workspacePercent(live.resolved_success_rate)) + ' across ' + escapeHtml(String(live.resolved == null ? "n/a" : live.resolved)) + ' resolved rollout(s).</span></div>'
     + '<div><strong>Baseline coverage</strong><span>' + escapeHtml(available || "No coverage rows") + '.</span></div>'
     + '<div><strong>Interpretation</strong><span>Q95 / local level / 16f is the readable starting point. Signals remain independent; these are descriptive diagnostics, not held-out detector scores.</span></div>'
@@ -3724,7 +3723,7 @@ function workspaceDashboardRenderSnapshot() {
   }
   if (status) {
     status.className = "analysis-status";
-    status.textContent = "Dashboard loaded for primary natural by default. Live annotations update independently; snapshot data are read-only.";
+    status.textContent = "Dashboard loaded for LIBERO-10 by default. Live annotations update independently; snapshot data are read-only.";
   }
   workspaceDashboardRenderConclusions(snapshot);
   var cp = snapshot.change_point || {};
@@ -3828,7 +3827,7 @@ function workspaceRenderRoute() {
     workspaceRenderAnalysisRunPanel();
     workspaceLoadAnalysisEnvironment();
     workspaceLoadAnalysis(false);
-    workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "primary_natural");
+    workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
   } else if (route.view === "settings") {
     workspaceLoadSettings();
   }

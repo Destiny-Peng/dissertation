@@ -4,8 +4,8 @@
   if (!window.state) return;
 
   var SCOPE_LABELS = {
-    primary_natural: "LIBERO-10",
-    reference_natural: "LIBERO-Spatial",
+    libero_10: "LIBERO-10",
+    libero_spatial: "LIBERO-Spatial",
     controlled_analysis: "Controlled",
     all: "All loaded rollouts"
   };
@@ -14,14 +14,14 @@
   if (scope) {
     var previous = scope.value;
     scope.innerHTML = [
-      '<option value="primary_natural">LIBERO-10</option>',
-      '<option value="reference_natural">LIBERO-Spatial</option>',
+      '<option value="libero_10">LIBERO-10</option>',
+      '<option value="libero_spatial">LIBERO-Spatial</option>',
       '<option value="controlled_analysis">Controlled</option>',
       '<option value="all">All loaded rollouts</option>'
     ].join("");
     scope.value = Object.prototype.hasOwnProperty.call(SCOPE_LABELS, previous)
       ? previous
-      : "primary_natural";
+      : "libero_10";
   }
 
   if (window.BASELINE_BATCH_SCOPE_LABELS) {
@@ -119,7 +119,7 @@
       if (key === "baseline.scope") {
         return Object.assign({}, entry, {
           default: "LIBERO-10",
-          description: "Groups the current dataset into LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. Internally the legacy primary/reference dataset-role values are retained for runner compatibility."
+          description: "Groups the current dataset into LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. LIBERO groups are selected by task_suite."
         });
       }
       return entry;

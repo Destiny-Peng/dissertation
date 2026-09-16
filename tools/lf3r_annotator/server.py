@@ -68,17 +68,15 @@ INSTRUCTION_VARIANT_LABELS = {
 }
 RUN_SCOPES = (
     "all",
-    "natural_observation",
-    "primary_natural",
-    "reference_natural",
+    "libero_10",
+    "libero_spatial",
     "controlled_analysis",
 )
 RUN_SCOPE_LABELS = {
-    "all": "All manifest rollouts",
-    "natural_observation": "All natural observations",
-    "primary_natural": "Primary natural",
-    "reference_natural": "Reference natural",
-    "controlled_analysis": "Controlled analysis",
+    "all": "All loaded rollouts",
+    "libero_10": "LIBERO-10",
+    "libero_spatial": "LIBERO-Spatial",
+    "controlled_analysis": "Controlled",
 }
 VLLM_BASELINE_METHODS = {"procvlm", "robo_dopamine"}
 BASELINE_METHOD_OPTION_FIELDS = {
@@ -444,7 +442,7 @@ class JobCoordinator:
 
 
 def validate_run_scope(scope: Any) -> str:
-    value = str(scope or "natural_observation")
+    value = str(scope or "libero_10")
     if value not in RUN_SCOPES:
         raise ValidationError("scope must be one of: " + ", ".join(RUN_SCOPES))
     return value
@@ -463,8 +461,8 @@ def validate_instruction_condition(condition: Any) -> str:
 def record_matches_scope(record: dict[str, Any], scope: str) -> bool:
     if scope == "all":
         return True
-    if scope in {"primary_natural", "reference_natural"}:
-        return record.get("dataset_role") == scope
+    if scope in {"libero_10", "libero_spatial"}:
+        return record.get("task_suite") == scope
     return record.get("analysis_partition") == scope
 
 
@@ -1301,7 +1299,7 @@ class AnalysisService:
     def _compact_response(self, payload: dict[str, Any]) -> dict[str, Any]:
         compact = copy.deepcopy(payload)
         compact["dashboard"] = True
-        compact["default_scope"] = "primary_natural"
+        compact["default_scope"] = "libero_10"
         compact["available_tabs"] = [
             "overview", "comparison", "failures", "events", "signals", "archive"
         ]
@@ -2423,7 +2421,7 @@ class BaselineService:
 
     def list_runs(
         self,
-        scope: Any = "natural_observation",
+        scope: Any = "libero_10",
         condition: Any = "full_instruction",
     ) -> list[dict[str, Any]]:
         scope = validate_run_scope(scope)
@@ -2739,15 +2737,15 @@ class BaselineService:
         ]
         if instruction_condition != "full_instruction":
             # Variant rows use the diagnostic partition. Restrict the runner
-            # to the source-scope IDs selected above so a primary/reference
+            # to the source-scope IDs selected above so a LIBERO-suite
             # request cannot expand to every row in the combined variant
             # manifest. Positional ranges remain scope-relative after this
             # explicit ID filter.
             command.extend(["--partition", "all"])
             for rollout_id in rollout_ids or []:
                 command.extend(["--rollout-id", str(rollout_id)])
-        elif scope in {"primary_natural", "reference_natural"}:
-            command.extend(["--partition", "natural_observation", "--dataset-role", scope])
+        elif scope in {"libero_10", "libero_spatial"}:
+            command.extend(["--partition", "natural_observation", "--task-suite", scope])
         else:
             command.extend(["--partition", scope])
         if end_index is not None:
@@ -4219,7 +4217,7 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 self.json_response(HTTPStatus.OK, {"rollouts": records})
                 return
             if path == "/api/baselines/runs":
-                scope = query.get("scope", ["natural_observation"])[0]
+                scope = query.get("scope", ["libero_10"])[0]
                 condition = query.get("condition", ["full_instruction"])[0]
                 self.json_response(
                     HTTPStatus.OK,

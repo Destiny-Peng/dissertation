@@ -21,4 +21,4 @@ The baseline signal curve now resizes with the video timeline instead of remaini
 - Python compilation of annotator modules passed.
 - Static contract checks confirm normalized SVG coordinates, `preserveAspectRatio="none"`, the shared plot container, and the shared responsive inset.
 - Firefox headless was attempted at a local loopback server but could not produce a screenshot in this environment because its software compositor failed to map the framebuffer; the temporary server was stopped cleanly. No browser screenshot is claimed as evidence.
-- `verify_pipeline.py` was also run; its failure is pre-existing for the current 136-record manifest because that verifier still expects 3–12 primary natural records and at least one controlled record. Its annotator-file requirement passed.
+- `verify_pipeline.py` was also run; its failure is pre-existing for the current 136-record manifest because that verifier still expects 3–12 LIBERO-10 records and at least one controlled record. Its annotator-file requirement passed.

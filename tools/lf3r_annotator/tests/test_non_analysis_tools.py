@@ -61,7 +61,7 @@ class NonAnalysisToolTests(unittest.TestCase):
         command = tools.export_command(
             {
                 "outcomes": ["failure", "recovered_success"],
-                "dataset_role": "primary_natural",
+                "dataset_role": "libero_10",
                 "review_status": "complete",
                 "dry_run": True,
             }

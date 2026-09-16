@@ -78,7 +78,7 @@
 
       <div class="partition-key">
         <span><i class="key-dot natural"></i> Natural observation</span>
-        <span><i class="key-dot controlled"></i> Controlled analysis</span>
+        <span><i class="key-dot controlled"></i> Controlled</span>
       </div>
 
       <div id="rolloutList" class="rollout-list" aria-live="polite"></div>
@@ -297,11 +297,10 @@
                 </label>
                 <label data-cli-help="baseline.scope"><span>Rollout scope</span>
                   <select id="baselineBatchScope">
-                    <option value="natural_observation" selected>All natural observations</option>
-                    <option value="all">All manifest rollouts</option>
-                    <option value="primary_natural">Primary natural</option>
-                    <option value="reference_natural">Reference natural</option>
-                    <option value="controlled_analysis">Controlled analysis</option>
+                    <option value="all">All loaded rollouts</option>
+                    <option value="libero_10" selected>LIBERO-10</option>
+                    <option value="libero_spatial">LIBERO-Spatial</option>
+                    <option value="controlled_analysis">Controlled</option>
                   </select>
                 </label>
                 <label data-cli-help="baseline.instruction_condition"><span>Instruction condition</span>
@@ -403,7 +402,7 @@
         <div>
           <p class="eyebrow">DATASET ANALYSIS</p>
           <h2>Failure localization dashboard</h2>
-          <p class="page-subtitle">Conclusion-first view of the annotated primary natural set. Detailed rows, legacy comparisons, and downloadable artifacts are available on demand.</p>
+          <p class="page-subtitle">Conclusion-first view of the annotated LIBERO-10 set. Detailed rows, legacy comparisons, and downloadable artifacts are available on demand.</p>
         </div>
         <button id="analysisRefresh" class="ghost-button" type="button">Refresh analysis</button>
       </div>
@@ -430,10 +429,9 @@
         <div class="analysis-filter-grid">
           <label><span>Partition</span>
             <select id="analysisPartitionFilter" data-analysis-live-filter="partition">
-              <option value="primary_natural" selected>Primary natural (default)</option>
-              <option value="natural_observation">All natural observations</option>
-              <option value="reference_natural">Reference natural</option>
-              <option value="controlled_analysis">Controlled analysis</option>
+              <option value="libero_10" selected>LIBERO-10 (default)</option>
+              <option value="libero_spatial">LIBERO-Spatial</option>
+              <option value="controlled_analysis">Controlled</option>
               <option value="all">All partitions</option>
             </select>
           </label>
@@ -461,17 +459,16 @@
             <div><p class="eyebrow">TEMPORAL ANALYSIS RUNNER</p><h3 id="analysisRunTitle">Run temporal analysis</h3></div>
             <span id="analysisRunBadge" class="analysis-badge">Idle</span>
           </div>
-          <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a run for each method and keep the default primary natural scope for a fair comparison.</p>
+          <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a run for each method and keep the default LIBERO-10 scope for a fair comparison.</p>
           <p id="analysisEnvironmentStatus" class="analysis-run-selection" role="status">Checking the dedicated Analysis environment...</p>
           <form id="analysisRunForm" class="analysis-run-form">
             <div class="analysis-run-grid">
               <label><span>Rollout scope</span>
                 <select id="analysisRunScope">
-                  <option value="primary_natural" selected>Primary natural (default)</option>
-                  <option value="natural_observation">All natural observations</option>
-                  <option value="all">All manifest rollouts</option>
-                  <option value="reference_natural">Reference natural</option>
-                  <option value="controlled_analysis">Controlled analysis</option>
+                  <option value="libero_10" selected>LIBERO-10 (default)</option>
+                  <option value="all">All loaded rollouts</option>
+                  <option value="libero_spatial">LIBERO-Spatial</option>
+                  <option value="controlled_analysis">Controlled</option>
                 </select>
               </label>
               <label data-analysis-run-label="safe"><span>SAFE run</span><select id="analysisRunSafe" data-analysis-run-method="safe"><option value="">Loading compatible runs...</option></select></label>

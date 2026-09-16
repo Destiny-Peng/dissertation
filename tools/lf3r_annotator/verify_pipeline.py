@@ -57,7 +57,7 @@ def media_is_valid(project_root: Path, record: dict[str, Any]) -> bool:
 
 def verify(project_root: Path, manifest_path: Path) -> dict[str, Any]:
     records = read_manifest(manifest_path)
-    primary = [record for record in records if record.get("dataset_role") == "primary_natural"]
+    primary = [record for record in records if record.get("dataset_role") == "libero_10"]
     controlled = [
         record for record in records if record.get("source_kind") == "controlled_injected"
     ]
@@ -108,12 +108,12 @@ def verify(project_root: Path, manifest_path: Path) -> dict[str, Any]:
         check(
             "primary_backbone",
             bool(primary) and all(record.get("task_suite") == "libero_10" for record in primary),
-            f"{len(primary)} primary natural LIBERO-10 rollouts",
+            f"{len(primary)} LIBERO-10 LIBERO-10 rollouts",
         ),
         check(
             "small_natural_set",
             3 <= len(primary) <= 12,
-            f"expected 3-12 primary natural rollouts, found {len(primary)}",
+            f"expected 3-12 LIBERO-10 rollouts, found {len(primary)}",
         ),
         check(
             "natural_success_and_failure",

@@ -1476,16 +1476,15 @@ async function loadEvaluation(rolloutId) {
 }
 
 var BASELINE_BATCH_SCOPE_LABELS = {
-  all: "All manifest rollouts",
-  natural_observation: "All natural observations",
-  primary_natural: "Primary natural",
-  reference_natural: "Reference natural",
-  controlled_analysis: "Controlled analysis"
+  all: "All loaded rollouts",
+  libero_10: "LIBERO-10",
+  libero_spatial: "LIBERO-Spatial",
+  controlled_analysis: "Controlled"
 };
 
 function baselineBatchMatchesScope(record, scope) {
   if (scope === "all") return true;
-  if (scope === "primary_natural" || scope === "reference_natural") return record.dataset_role === scope;
+  if (scope === "libero_10" || scope === "libero_spatial") return record.task_suite === scope;
   return record.analysis_partition === scope;
 }
 

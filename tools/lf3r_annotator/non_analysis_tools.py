@@ -95,8 +95,8 @@ def export_command(payload: dict[str, Any]) -> list[str]:
         if outcome not in {"success", "failure", "recovered_success", "uncertain"}:
             raise ValueError(f"invalid outcome: {outcome}")
         command.extend(["--outcome", outcome])
-    role = str(payload.get("dataset_role") or "primary_natural")
-    if role not in {"primary_natural", "reference_natural", "controlled_analysis", "all"}:
+    role = str(payload.get("dataset_role") or "libero_10")
+    if role not in {"libero_10", "libero_spatial", "controlled_analysis", "all"}:
         raise ValueError("invalid dataset_role")
     command.extend(["--dataset-role", role])
     review = str(payload.get("review_status") or "complete")
@@ -119,9 +119,9 @@ def safe_prepare_command(payload: dict[str, Any]) -> list[str]:
     output = project_path(
         str(payload.get("output") or "outputs/safe_training/datasets/web_prepare")
     )
-    role = str(payload.get("dataset_role") or "primary_natural")
+    role = str(payload.get("dataset_role") or "libero_10")
     partition = str(payload.get("partition") or "natural_observation")
-    if role not in {"all", "primary_natural", "reference_natural", "controlled_analysis"}:
+    if role not in {"all", "libero_10", "libero_spatial", "controlled_analysis"}:
         raise ValueError("invalid SAFE dataset_role")
     if partition not in {"all", "natural_observation", "controlled_analysis"}:
         raise ValueError("invalid SAFE partition")

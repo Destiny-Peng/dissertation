@@ -47,7 +47,7 @@
   "valid": true,
   "validated_task_spec_count": 10,
   "validation_checks": [
-    "Every source primary_natural LIBERO-10 rollout has one full_instruction row.",
+    "Every source libero_10 LIBERO-10 rollout has one full_instruction row.",
     "Every compatible source rollout has exactly one subtask_a and one subtask_b row.",
     "Task 5 is retained as full_instruction only because its official BDDL has one unique goal atom.",
     "Every generated subtask goal atom is present in the corresponding official LIBERO-10 BDDL.",

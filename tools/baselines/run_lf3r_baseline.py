@@ -754,6 +754,8 @@ def filter_records(args: argparse.Namespace, records: list[dict[str, Any]]) -> l
         ]
     if args.partition != "all":
         selected = [record for record in selected if record.get("analysis_partition") == args.partition]
+    if args.task_suite:
+        selected = [record for record in selected if record.get("task_suite") == args.task_suite]
     if args.dataset_role:
         selected = [record for record in selected if record.get("dataset_role") == args.dataset_role]
     if args.rollout_id:
@@ -2134,6 +2136,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--logs-dir", type=Path, default=None)
     parser.add_argument("--model-path", type=Path, default=None, help="Override the baseline checkpoint")
     parser.add_argument("--partition", choices=("natural_observation", "controlled_analysis", "all"), default="natural_observation")
+    parser.add_argument("--task-suite", choices=("libero_10", "libero_spatial"), default=None)
     parser.add_argument("--dataset-role", default=None)
     parser.add_argument("--rollout-id", action="append", default=[])
     parser.add_argument("--start-index", type=int, default=0, help="Scope-relative start of the right-open rollout range")

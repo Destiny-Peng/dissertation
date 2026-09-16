@@ -42,7 +42,7 @@ New output is isolated under:
 
 The required run-note prefix is lf3r-data-natural-libero-spatial-256-. Existing output directories are never overwritten. On successful completion, the wrapper invokes build_manifest.py.
 
-build_manifest.py now scans both OpenVLA output roots by default. Spatial natural records are classified as reference_natural; existing LIBERO-10 natural records remain primary_natural.
+build_manifest.py now scans both OpenVLA output roots by default. Spatial natural records are classified as libero_spatial; existing LIBERO-10 natural records remain libero_10.
 
 ## Web path
 

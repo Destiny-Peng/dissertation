@@ -376,7 +376,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         for marker in [
             "data-analysis-panel",
             "data-analysis-tab",
-            "primary_natural",
+            "libero_10",
             "Q95 (primary)",
             "16 frames (default)",
             "/api/analysis/details",

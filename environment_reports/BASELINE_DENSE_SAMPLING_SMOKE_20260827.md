@@ -1,7 +1,7 @@
 # Dense-Sampling Baseline Smoke Test
 
 日期：2026-08-27  
-范围：2 条 primary-natural rollout；ProcVLM 与 Robo-Dopamine 各执行 2 条，GPU0 顺序执行。
+范围：2 条 LIBERO-10 rollout；ProcVLM 与 Robo-Dopamine 各执行 2 条，GPU0 顺序执行。
 
 ## 配置
 
