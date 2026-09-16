@@ -137,6 +137,23 @@
       select = label.querySelector("select");
       select.addEventListener("change", function () { updateSingleUi(select); });
     }
+
+    // Model/checkpoint selection is a primary ProcVLM choice, not an obscure
+    // advanced override. The base configurator creates model_path in the
+    // Advanced section; promote that existing field into Method settings so it
+    // is always visible in Configure & run. Moving the node preserves the same
+    // data-option key, stored value, and submit payload.
+    var modelInput = drawer.querySelector('[data-option="model_path"]');
+    var modelLabel = modelInput && modelInput.closest("label");
+    var modeLabel = select.closest("label");
+    if (modelLabel && modelLabel.parentNode !== core) {
+      if (modeLabel && modeLabel.nextSibling) {
+        core.insertBefore(modelLabel, modeLabel.nextSibling);
+      } else {
+        core.appendChild(modelLabel);
+      }
+    }
+
     updateSingleUi(select);
   }
 
