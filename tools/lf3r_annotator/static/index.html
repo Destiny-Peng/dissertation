@@ -370,7 +370,7 @@
               </div>
               <span id="rolloutGenerationBadge" class="analysis-badge">Idle</span>
             </div>
-            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA natural generator. Render and record resolutions are independent square dimensions; the checkpoint policy input remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.</p>
+            <p id="rolloutGenerationDescription" class="evaluation-status">Runs the existing OpenVLA generator. Render and record resolutions are independent square dimensions; policy preprocessing remains 224x224. GPU selection is user-managed; the WebUI does not block launches based on utilization or free memory.</p>
             <form id="rolloutGenerationForm" class="rollout-generation-form">
               <div class="rollout-generation-grid">
                 <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite"><option value="libero_10">LIBERO-10 natural (existing output)</option><option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option></select></label>

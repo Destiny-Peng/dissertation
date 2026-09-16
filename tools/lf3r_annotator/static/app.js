@@ -1920,8 +1920,8 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     description.textContent = isSpatial
-      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory."
-      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU utilization is informational; the memory-only gate requires at least 30 GiB free and less than 50% used memory.";
+      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory."
+      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory.";
   }
   var valid = (suite === "libero_10" || suite === "libero_spatial")
     && Number.isInteger(start) && Number.isInteger(end) && Number.isInteger(trials)
