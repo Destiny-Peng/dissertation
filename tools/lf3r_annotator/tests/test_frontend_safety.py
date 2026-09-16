@@ -63,6 +63,12 @@ class FrontendSafetyContractTest(unittest.TestCase):
             runs_control,
         )
 
+    def test_procvlm_model_path_is_visible_in_single_run_config(self) -> None:
+        procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
+        self.assertIn("var modelInput = drawer.querySelector('[data-option=\"model_path\"]')", procvlm)
+        self.assertIn("modelLabel.parentNode !== core", procvlm)
+        self.assertIn("core.insertBefore(modelLabel, modeLabel.nextSibling)", procvlm)
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
