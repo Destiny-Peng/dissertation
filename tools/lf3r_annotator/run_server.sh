@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
-test "$PROJECT_ROOT" = "/mnt/hdd/qiuxia/pyr/LF3R"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/../../project_env.sh"
 
 ANNOTATOR_HOST="${LF3R_ANNOTATOR_HOST:-127.0.0.1}"
 ANNOTATOR_PORT="${1:-8765}"
@@ -39,6 +39,7 @@ request_stop() {
 trap request_stop INT TERM
 trap cleanup EXIT
 
+echo "Project root: $PROJECT_ROOT"
 echo "PID: $SERVER_PID"
 echo "Stop: bash tools/lf3r_annotator/stop_server.sh"
 set +e
