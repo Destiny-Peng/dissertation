@@ -17,7 +17,7 @@
   function setStatusMessage(message, kind) {
     var target = document.getElementById("baselineBatchStatus");
     if (!target) return;
-    target.textContent = message;
+    if (target.textContent !== message) target.textContent = message;
     target.classList.toggle("error", kind === "error");
   }
 
@@ -46,9 +46,13 @@
         actions.insertBefore(button, idNode || null);
       }
       var pending = Boolean(cancelPending[jobId]);
-      button.disabled = pending;
-      button.textContent = pending ? "Cancelling…" : "Cancel job";
-      button.setAttribute("aria-label", pending ? "Cancellation requested" : "Cancel baseline job " + jobId);
+      var label = pending ? "Cancelling…" : "Cancel job";
+      var ariaLabel = pending ? "Cancellation requested" : "Cancel baseline job " + jobId;
+      if (button.disabled !== pending) button.disabled = pending;
+      if (button.textContent !== label) button.textContent = label;
+      if (button.getAttribute("aria-label") !== ariaLabel) {
+        button.setAttribute("aria-label", ariaLabel);
+      }
     });
   }
 
@@ -86,6 +90,9 @@
     cancelJob(button);
   });
 
-  new MutationObserver(decorateCards).observe(jobs, { childList: true, subtree: true });
+  // Persistent job rendering replaces the children of baselineBatchJobs as a
+  // unit. Watching descendants is unnecessary and lets our own button/text
+  // mutations retrigger the observer. Observe only direct list replacement.
+  new MutationObserver(decorateCards).observe(jobs, { childList: true });
   decorateCards();
 })();
