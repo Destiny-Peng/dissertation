@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
-test "$PROJECT_ROOT" = "/mnt/hdd/qiuxia/pyr/LF3R"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/../../project_env.sh"
 
 PID_FILE="$CACHE/tmp/lf3r_annotator.pid"
 if [[ ! -f "$PID_FILE" ]]; then
@@ -23,8 +23,10 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
 fi
 
 CMDLINE="$(tr '\0' ' ' < "/proc/$SERVER_PID/cmdline")"
-if [[ "$CMDLINE" != *"$PROJECT_ROOT/tools/lf3r_annotator/server.py"* ]]; then
+EXPECTED_ENTRY="$PROJECT_ROOT/tools/lf3r_annotator/server_entry_v3.py"
+if [[ "$CMDLINE" != *"$EXPECTED_ENTRY"* ]]; then
     echo "Refusing to stop PID $SERVER_PID because it is not the LF3R annotator." >&2
+    echo "Expected command to contain: $EXPECTED_ENTRY" >&2
     exit 1
 fi
 
