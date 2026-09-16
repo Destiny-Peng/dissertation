@@ -39,7 +39,13 @@ class FrontendSafetyContractTest(unittest.TestCase):
         procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
         self.assertIn("drawerObserver.observe(singleCore, { childList: true })", procvlm)
         self.assertNotIn("drawerObserver.observe(document.body", procvlm)
-        self.assertNotIn("subtree: true });\n  }\n  installSingleMode", procvlm)
+
+        results_config = (STATIC_ROOT / "results-run-config-v3.js").read_text(encoding="utf-8")
+        self.assertIn("observer.observe(methodsHost, { childList: true })", results_config)
+        self.assertNotIn(
+            "observer.observe(methodsHost, { childList: true, subtree: true })",
+            results_config,
+        )
 
         runs_log = (STATIC_ROOT / "runs-log-ui.js").read_text(encoding="utf-8")
         self.assertNotIn(
