@@ -2,18 +2,24 @@
 """LF3R annotator entrypoint with ProcVLM checkpoint compatibility fixes.
 
 The core server historically validated every ``model_path`` with ``Path.is_file()``.
-That rejects normal Hugging Face checkpoint directories and, in particular,
-ProcVLM one-shot LoRA adapter directories.  Keep the server API unchanged while
-using the path semantics expected by the baseline runners.
+That rejects normal Hugging Face checkpoint directories and ProcVLM one-shot LoRA
+adapter directories.  This entrypoint keeps the server API stable while exposing
+an explicit ``procvlm_use_lora`` option and translating it to the existing
+persistent ProcVLM worker's PEFT/value-head loading path.
 """
 
 from __future__ import annotations
 
-import math
-from pathlib import Path
 from typing import Any
 
 import server
+
+
+# ``server.py`` predates the explicit LoRA mode. Extend its allowlists before
+# request validation so batch and single-rollout calls can use the semantic
+# option without changing the legacy server module in-place.
+server.BASELINE_METHOD_OPTION_FIELDS["procvlm"].add("procvlm_use_lora")
+server.BASELINE_ADVANCED_FIELDS.add("procvlm_use_lora")
 
 
 def _validate_baseline_options(
@@ -85,27 +91,51 @@ def _validate_baseline_options(
                 raise server.ValidationError(f"{name} is too long")
             options[name] = value
 
-    # Model checkpoints are normally directories. ProcVLM one-shot LoRA
-    # checkpoints are adapter directories containing adapter_config.json.
+    for name in (
+        "render_video",
+        "validate_environment",
+        "dry_run",
+        "procvlm_enable_value_head",
+        "procvlm_use_lora",
+    ):
+        if name in options and not isinstance(options[name], bool):
+            raise server.ValidationError(f"{name} must be boolean")
+
+    model_path = None
+    is_procvlm_adapter = False
     if "model_path" in options and options["model_path"] not in (None, ""):
-        resolved = self._project_path(str(options["model_path"]))
-        if not resolved.exists():
+        model_path = self._project_path(str(options["model_path"]))
+        if not model_path.exists():
             raise server.ValidationError(
                 f"model_path does not exist inside the project: {options['model_path']}"
             )
-        options["model_path"] = str(resolved)
-
-        # ProcVLM's official inference.py routes both --use_lora and
-        # --enable_value_head through batch_chat_with_value_head().  Its
-        # loader recognizes adapter_config.json and applies the PEFT adapter.
-        # Auto-select that same loader for an adapter directory so WebUI LoRA
-        # runs cannot accidentally be sent to the vLLM full-checkpoint path.
-        if (
+        options["model_path"] = str(model_path)
+        is_procvlm_adapter = bool(
             baseline == "procvlm"
-            and resolved.is_dir()
-            and (resolved / "adapter_config.json").is_file()
-        ):
+            and model_path.is_dir()
+            and (model_path / "adapter_config.json").is_file()
+        )
+
+    if baseline == "procvlm":
+        use_lora = bool(options.get("procvlm_use_lora", False))
+        if use_lora:
+            if model_path is None:
+                raise server.ValidationError(
+                    "ProcVLM One-shot LoRA mode requires model_path to point to the saved LoRA checkpoint directory"
+                )
+            if not is_procvlm_adapter:
+                raise server.ValidationError(
+                    "ProcVLM One-shot LoRA mode requires a checkpoint directory containing adapter_config.json"
+                )
+            # The current persistent worker reaches ProcVLM's official PEFT
+            # loader through the same PyTorch/value-head branch used by
+            # upstream ``--use_lora``. Keep that implementation detail hidden
+            # from the UI while preserving the explicit LoRA request semantic.
             options["procvlm_enable_value_head"] = True
+        elif is_procvlm_adapter:
+            raise server.ValidationError(
+                "model_path is a ProcVLM LoRA adapter checkpoint; select Inference mode = One-shot LoRA"
+            )
 
     if "goal_image" in options and options["goal_image"] not in (None, ""):
         resolved = self._project_path(str(options["goal_image"]))
@@ -115,21 +145,44 @@ def _validate_baseline_options(
             )
         options["goal_image"] = str(resolved)
 
-    for name in (
-        "render_video",
-        "validate_environment",
-        "dry_run",
-        "procvlm_enable_value_head",
-    ):
-        if name in options and not isinstance(options[name], bool):
-            raise server.ValidationError(f"{name} must be boolean")
-
     return options
 
 
-# Patch only the validation seam; request routing and job supervision remain the
-# existing server implementation.
+_original_baseline_command = server.BaselineService._baseline_command
+
+
+def _baseline_command_with_procvlm_lora(
+    self: server.BaselineService,
+    baseline: str,
+    scope: str,
+    gpu: str,
+    utilization: float,
+    run_parent,
+    options: dict[str, Any],
+    *args: Any,
+    **kwargs: Any,
+) -> list[str]:
+    # ``run_lf3r_baseline.py`` currently exposes the PyTorch/value-head switch,
+    # not a separate LoRA flag. Validation above already verified the adapter
+    # directory and enabled that loader. Strip only the WebUI semantic flag
+    # before forwarding the remaining runner options.
+    forwarded = dict(options)
+    forwarded.pop("procvlm_use_lora", None)
+    return _original_baseline_command(
+        self,
+        baseline,
+        scope,
+        gpu,
+        utilization,
+        run_parent,
+        forwarded,
+        *args,
+        **kwargs,
+    )
+
+
 server.BaselineService._validate_options = _validate_baseline_options
+server.BaselineService._baseline_command = _baseline_command_with_procvlm_lora
 
 
 if __name__ == "__main__":
