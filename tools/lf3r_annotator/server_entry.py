@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""LF3R annotator entrypoint with ProcVLM checkpoint compatibility fixes.
+"""LF3R annotator compatibility and WebUI extension entrypoint.
 
-The core server historically validated every ``model_path`` with ``Path.is_file()``.
-That rejects normal Hugging Face checkpoint directories and ProcVLM one-shot LoRA
-adapter directories. This entrypoint keeps the server API stable while exposing
-an explicit ``procvlm_use_lora`` option and validating the checkpoint semantics
-expected by ProcVLM's official LoRA inference path.
+The core server remains the stable implementation. This entrypoint keeps the
+ProcVLM LoRA compatibility layer and adds bounded non-Analysis project-tool
+endpoints used by the Runs console.
 """
 
 from __future__ import annotations
 
+import json
+from http import HTTPStatus
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import server
+from non_analysis_tools import NonAnalysisToolService, gpu_status
 
 
 # ``server.py`` predates the explicit LoRA mode. Extend its allowlists before
@@ -157,9 +159,6 @@ def _baseline_command_with_procvlm_lora(
     *args: Any,
     **kwargs: Any,
 ) -> list[str]:
-    # ``run_lf3r_baseline.py`` predates the semantic WebUI flag. The ProcVLM
-    # worker now recognizes adapter checkpoints and invokes official inference
-    # with ``use_lora=True``, so the runner does not need an extra CLI option.
     forwarded = dict(options)
     forwarded.pop("procvlm_use_lora", None)
     return _original_baseline_command(
@@ -177,6 +176,108 @@ def _baseline_command_with_procvlm_lora(
 
 server.BaselineService._validate_options = _validate_baseline_options
 server.BaselineService._baseline_command = _baseline_command_with_procvlm_lora
+
+
+# Attach the non-Analysis project-tool service after the legacy application has
+# registered its own job handlers. A second recover pass is intentional: the
+# first pass cannot see project_tool records before this handler exists.
+_original_application_init = server.LF3RApplication.__init__
+
+
+def _application_init_with_tools(self, *args: Any, **kwargs: Any) -> None:
+    _original_application_init(self, *args, **kwargs)
+    self.project_tools = NonAnalysisToolService(self.project_root, self.tmux)
+    self.tmux.recover()
+
+
+server.LF3RApplication.__init__ = _application_init_with_tools
+
+
+def _read_json_body(handler: server.LF3RHandler, *, maximum: int = 100_000) -> dict[str, Any]:
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length") from exc
+    if length <= 0 or length > maximum:
+        raise ValueError("Invalid request size")
+    payload = json.loads(handler.rfile.read(length))
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be a JSON object")
+    return payload
+
+
+_original_do_get = server.LF3RHandler.do_GET
+
+
+def _do_get_with_tools(self: server.LF3RHandler) -> None:
+    parsed = urlparse(self.path)
+    path = unquote(parsed.path)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    try:
+        if path == "/api/gpu-status":
+            self.json_response(HTTPStatus.OK, {"gpu_status": gpu_status()})
+            return
+        if path == "/api/tool-jobs":
+            status = query.get("status", [None])[0] or None
+            self.json_response(
+                HTTPStatus.OK,
+                {"jobs": self.app.project_tools.list(status=status)},
+            )
+            return
+        if path.startswith("/api/tool-jobs/"):
+            parts = path.strip("/").split("/")
+            if len(parts) == 4 and parts[3] == "log":
+                job_id = parts[2]
+                tail = query.get("tail", ["240"])[0]
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"log": self.app.project_tools.log(job_id, int(tail))},
+                )
+                return
+            if len(parts) == 3:
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"job": self.app.project_tools.get(parts[2])},
+                )
+                return
+            self.json_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+    except KeyError:
+        self.json_error(HTTPStatus.NOT_FOUND, "Unknown project-tool job")
+        return
+    except (TypeError, ValueError) as exc:
+        self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+        return
+    return _original_do_get(self)
+
+
+server.LF3RHandler.do_GET = _do_get_with_tools
+
+
+_original_do_post = server.LF3RHandler.do_POST
+
+
+def _do_post_with_tools(self: server.LF3RHandler) -> None:
+    path = unquote(urlparse(self.path).path)
+    if path != "/api/tools/run":
+        return _original_do_post(self)
+    try:
+        payload = _read_json_body(self)
+        action = str(payload.get("action") or "").strip()
+        options = payload.get("options") or {}
+        if not isinstance(options, dict):
+            raise ValueError("options must be a JSON object")
+        job = self.app.project_tools.submit(action, options)
+        self.json_response(HTTPStatus.ACCEPTED, {"job": job})
+    except server.TmuxSupervisorError as exc:
+        self.json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+    except OSError as exc:
+        self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+
+
+server.LF3RHandler.do_POST = _do_post_with_tools
 
 
 if __name__ == "__main__":
