@@ -36,6 +36,40 @@ body[data-view="runs"] .runs-activity.runs-log-open .job-log {
   display: block;
 }
 
+body[data-view="runs"] .persistent-job-actions {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+}
+
+body[data-view="runs"] .persistent-job-actions .persistent-job-id {
+  margin-left: auto;
+}
+
+body[data-view="runs"] .job-cancel-button {
+  color: #d9a29b;
+  border-color: #5d3735;
+  background: #191213;
+}
+
+body[data-view="runs"] .job-cancel-button:hover:not(:disabled) {
+  color: #f0b9b1;
+  border-color: #7a4743;
+  background: #241617;
+}
+
+body[data-view="runs"] .job-cancel-button:disabled {
+  opacity: .62;
+  cursor: wait;
+}
+
+body[data-view="runs"] .job-status-cancelled {
+  color: #c5adb0;
+  background: #2a2023;
+  border-color: #514045;
+}
+
 @media (max-width: 760px) {
   body[data-view="runs"] .runs-activity .job-log,
   body[data-view="runs"] .runs-tool-activity .job-log {
