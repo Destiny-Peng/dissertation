@@ -39,11 +39,13 @@
           loadScript("/static/results-run-config-v2.js?v=single-baseline-config-v2-20260916", function () {
             loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
               loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
-                loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
-                  loadScript("/static/runs-log-ui.js?v=runs-log-v1-20260916", function () {
-                    loadScript("/static/runs-job-control.js?v=baseline-cancel-v2-20260916", function () {
-                      loadScript("/static/runs-submit-fix.js?v=batch-submit-v1-20260916", function () {
-                        loadScript("/static/procvlm-mode-ui.js?v=procvlm-lora-mode-v1-20260916");
+                loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v1-20260916", function () {
+                  loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
+                    loadScript("/static/runs-log-ui.js?v=runs-log-v1-20260916", function () {
+                      loadScript("/static/runs-job-control.js?v=baseline-cancel-v2-20260916", function () {
+                        loadScript("/static/runs-submit-fix.js?v=batch-submit-v1-20260916", function () {
+                          loadScript("/static/procvlm-mode-ui.js?v=procvlm-lora-mode-v1-20260916");
+                        });
                       });
                     });
                   });
