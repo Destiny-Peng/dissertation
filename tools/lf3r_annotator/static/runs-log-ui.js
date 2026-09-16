@@ -123,22 +123,28 @@
 
   Object.keys(channels).forEach(function (key) {
     var channel = channels[key];
-    if (!channel.log) return;
-
-    channel.log.addEventListener("scroll", function () {
-      var distance = channel.log.scrollHeight - channel.log.scrollTop - channel.log.clientHeight;
-      channel.log.dataset.followTail = distance < 48 ? "true" : "false";
-    });
-
-    new MutationObserver(function () {
-      if (channel.log.hidden || channel.log.dataset.followTail !== "true") return;
-      window.requestAnimationFrame(function () {
-        channel.log.scrollTop = channel.log.scrollHeight;
+    if (channel.log) {
+      channel.log.addEventListener("scroll", function () {
+        var distance = channel.log.scrollHeight - channel.log.scrollTop - channel.log.clientHeight;
+        channel.log.dataset.followTail = distance < 48 ? "true" : "false";
       });
-    }).observe(channel.log, { childList: true, characterData: true, subtree: true });
-  });
 
-  new MutationObserver(syncButtons).observe(view, { childList: true, subtree: true });
+      // Log text can change inside the <pre>; this observer only updates
+      // scrollTop, so it cannot create another DOM mutation.
+      new MutationObserver(function () {
+        if (channel.log.hidden || channel.log.dataset.followTail !== "true") return;
+        window.requestAnimationFrame(function () {
+          channel.log.scrollTop = channel.log.scrollHeight;
+        });
+      }).observe(channel.log, { childList: true, characterData: true, subtree: true });
+    }
+
+    // Job rendering replaces direct cards in each job-list container. Do not
+    // observe the whole Runs subtree: syncButtons() itself edits button labels.
+    if (channel.jobs) {
+      new MutationObserver(syncButtons).observe(channel.jobs, { childList: true });
+    }
+  });
 
   closeAllInitialLogs();
   syncButtons();
