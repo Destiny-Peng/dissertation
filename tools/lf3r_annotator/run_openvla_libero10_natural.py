@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.machinery
+import logging
+import os
 import sys
 import types
 from pathlib import Path
@@ -50,6 +52,36 @@ def install_wandb_stub() -> None:
     module.finish = lambda *args, **kwargs: None
     module.Image = type("Image", (), {"__init__": lambda self, *args, **kwargs: None})
     sys.modules["wandb"] = module
+
+
+def import_openvla_evaluator():
+    """Import OpenVLA while redirecting robosuite's hard-coded debug log."""
+    target = os.environ.get("ROBOSUITE_LOG_PATH")
+    if not target:
+        import experiments.robot.libero.run_libero_eval as evaluator
+
+        return evaluator
+
+    target_path = Path(target).expanduser()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    original_file_handler = logging.FileHandler
+
+    class RobosuiteRedirectFileHandler(original_file_handler):
+        def __init__(self, filename, *args, **kwargs):
+            try:
+                candidate = os.fspath(filename)
+            except TypeError:
+                candidate = filename
+            if candidate == "/tmp/robosuite.log":
+                filename = target_path
+            super().__init__(filename, *args, **kwargs)
+
+    logging.FileHandler = RobosuiteRedirectFileHandler
+    try:
+        import experiments.robot.libero.run_libero_eval as evaluator
+    finally:
+        logging.FileHandler = original_file_handler
+    return evaluator
 
 
 def parse_args() -> argparse.Namespace:
@@ -143,7 +175,7 @@ def main() -> None:
             np.dtypes.Float64DType,
         ]
     )
-    import experiments.robot.libero.run_libero_eval as evaluator
+    evaluator = import_openvla_evaluator()
 
     print("LF3R_PROVENANCE source_kind=natural_policy intervention=none")
     print(f"LF3R_TASK_SUITE suite={args.task_suite} label={suite['label']}")
@@ -152,6 +184,7 @@ def main() -> None:
         f"LF3R_RESOLUTION render={render_resolution} policy=224 record={record_resolution}"
     )
     print(f"LF3R_SAFE_FEATURES enabled={args.log_safe_features}")
+    print(f"LF3R_ROBOSUITE_LOG path={os.environ.get('ROBOSUITE_LOG_PATH', '/tmp/robosuite.log')}")
     sys.argv = [
         "run_libero_eval.py",
         f"--pretrained_checkpoint={checkpoint}",
