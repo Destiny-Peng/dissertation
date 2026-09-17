@@ -102,6 +102,13 @@
       "description": "Number of sampled images supplied in each temporal inference window. Larger windows add context and memory use.",
       "forwarded_as": "--window_size N"
     },
+    "procvlm_frame_stride": {
+      "cli": "--procvlm-frame-stride N",
+      "default": "1",
+      "applies_to": "ProcVLM",
+      "description": "Spacing in source-video frames between images inside each temporal window. It does not change target-frame sampling or window size. With window_size=8 and stride=3, target t receives [t-21,t-18,t-15,t-12,t-9,t-6,t-3,t]; stride 1 preserves consecutive-frame behavior.",
+      "forwarded_as": "--frame-stride N -> --frame_stride N"
+    },
     "procvlm_max_sampled_frames": {
       "cli": "--procvlm-max-sampled-frames N",
       "default": "unset; upstream default 512",

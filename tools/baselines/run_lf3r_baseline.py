@@ -310,6 +310,7 @@ def build_procvlm_worker_command(
         "--state-file", str(state_path),
         "--memory-budget-json", json.dumps(memory_budget, ensure_ascii=False, separators=(",", ":")),
         "--window-size", str(args.procvlm_window_size),
+        "--frame-stride", str(getattr(args, "procvlm_frame_stride", 1)),
         "--max-new-tokens", str(args.procvlm_max_new_tokens),
         "--torch-dtype", args.dtype,
         "--tp", str(args.tensor_parallel_size),
@@ -660,6 +661,7 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
         or 0.80
     )
     args.procvlm_window_size = int(stored_arguments.get("procvlm_window_size", 4))
+    args.procvlm_frame_stride = int(stored_arguments.get("procvlm_frame_stride", 1))
     stored_max_frames = stored_arguments.get("procvlm_max_sampled_frames")
     args.procvlm_max_sampled_frames = (
         int(stored_max_frames) if stored_max_frames not in (None, "None") else None
@@ -960,6 +962,7 @@ def command_for(
             "--model_path", str(model_path),
             "--output_path", str(job_dir / "procvlm_raw.jsonl"),
             "--window_size", str(args.procvlm_window_size),
+            "--frame_stride", str(getattr(args, "procvlm_frame_stride", 1)),
             "--max_new_tokens", str(args.procvlm_max_new_tokens),
             "--torch_dtype", args.dtype,
             "--tp", str(args.tensor_parallel_size),
@@ -2168,6 +2171,7 @@ def parse_args() -> argparse.Namespace:
         help="Target fraction of currently free GPU memory; converted to vLLM total-memory fraction",
     )
     parser.add_argument("--procvlm-window-size", type=int, default=4)
+    parser.add_argument("--procvlm-frame-stride", type=int, default=1)
     parser.add_argument(
         "--procvlm-max-sampled-frames",
         type=int,
@@ -2267,6 +2271,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--parallel-workers must be positive")
     if args.procvlm_max_sampled_frames is not None and args.procvlm_max_sampled_frames < 1:
         parser.error("--procvlm-max-sampled-frames must be positive when provided")
+    if args.procvlm_frame_stride < 1:
+        parser.error("--procvlm-frame-stride must be positive")
     for name in (
         "procvlm_window_size", "procvlm_max_new_tokens",
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",

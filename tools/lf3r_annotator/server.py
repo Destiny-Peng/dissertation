@@ -83,7 +83,7 @@ BASELINE_METHOD_OPTION_FIELDS = {
     "safe": {"render_video", "validate_environment", "dry_run"},
     "procvlm": {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
-        "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
+        "procvlm_frame_stride", "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -106,6 +106,7 @@ BASELINE_ADVANCED_FIELDS = {
     "dtype",
     "tensor_parallel_size",
     "procvlm_window_size",
+    "procvlm_frame_stride",
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
@@ -2534,6 +2535,7 @@ class BaselineService:
         integer_fields = {
             "tensor_parallel_size": (1, 32),
             "procvlm_window_size": (1, 4096),
+            "procvlm_frame_stride": (1, 1000000),
             "procvlm_max_sampled_frames": (1, 1000000),
             "procvlm_max_new_tokens": (1, 1000000),
             "rynn_num_frames": (1, 1000000),
@@ -2772,6 +2774,7 @@ class BaselineService:
             "dtype": "--dtype",
             "tensor_parallel_size": "--tensor-parallel-size",
             "procvlm_window_size": "--procvlm-window-size",
+            "procvlm_frame_stride": "--procvlm-frame-stride",
             "procvlm_max_sampled_frames": "--procvlm-max-sampled-frames",
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
             "rynn_num_frames": "--rynn-num-frames",

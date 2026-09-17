@@ -263,6 +263,21 @@ class ServerTest(unittest.TestCase):
         )
         self.assertEqual(legacy[legacy.index("--robo-eval-mode") + 1], "forward")
 
+    def test_procvlm_frame_stride_is_validated_and_forwarded(self) -> None:
+        runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# test runner\n", encoding="utf-8")
+        options = self.app.baselines._validate_options(
+            "procvlm",
+            {"procvlm_window_size": 8, "procvlm_frame_stride": 3},
+        )
+        self.assertEqual(options["procvlm_frame_stride"], 3)
+        command = self.app.baselines._baseline_command(
+            "procvlm", "all", "0", 0.80,
+            self.root / "outputs" / "baselines" / "web_runs", options,
+        )
+        self.assertEqual(command[command.index("--procvlm-frame-stride") + 1], "3")
+
     def test_baseline_run_is_bounded_to_one_rollout(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True)

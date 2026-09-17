@@ -37,6 +37,7 @@
     procvlm: {
       core: [
         { key: "procvlm_window_size", label: "Window size", type: "number", defaultValue: 4, min: 1 },
+        { key: "procvlm_frame_stride", label: "Frame stride", type: "number", defaultValue: 1, min: 1 },
         { key: "procvlm_max_sampled_frames", label: "Max sampled frames", type: "number", placeholder: "Runner default", min: 1 },
         { key: "procvlm_max_new_tokens", label: "Max new tokens", type: "number", defaultValue: 4096, min: 1 },
         { key: "procvlm_enable_value_head", label: "Enable value head", type: "checkbox", defaultValue: false, sourceId: "procvlmEnableValueHead" }

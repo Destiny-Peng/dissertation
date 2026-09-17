@@ -174,6 +174,7 @@ def infer_rollout(
         model_path=str(args.model_path),
         output_path=job["output_path"],
         window_size=args.window_size,
+        frame_stride=getattr(args, "frame_stride", 1),
         torch_dtype=args.torch_dtype,
         max_new_tokens=args.max_new_tokens,
         max_sampled_frames=max_sampled_frames,
@@ -467,6 +468,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--memory-budget-json", required=True)
     parser.add_argument("--window-size", type=int, default=4)
+    parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--max-sampled-frames", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--torch-dtype", default="bf16")
@@ -475,7 +477,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tp", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    for name in ("window_size", "max_new_tokens", "tp"):
+    for name in ("window_size", "frame_stride", "max_new_tokens", "tp"):
         if getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be positive")
     if args.max_sampled_frames is not None and args.max_sampled_frames < 1:
