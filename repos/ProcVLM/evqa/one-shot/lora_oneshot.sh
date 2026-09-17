@@ -1,9 +1,9 @@
-export CUDA_VISIBLE_DEVICES=0                                  # Set visible GPUs
-MODEL_PATH=$VLM_PATH_QWEN_TRAIN                                # [ModelArguments] Pretrained model path
-DATASETS="train_single_task_oneshot%100"                       # [DataArguments] Dataset with sampling rate
+export CUDA_VISIBLE_DEVICES=2                                 # Set visible GPUs
+MODEL_PATH="/mnt/hdd/qiuxia/pyr/LF3R/checkpoints/ProcVLM-2B"                                # [ModelArguments] Pretrained model path
+DATASETS="libero10_white_yellow_mugs_oneshot%100"                       # [DataArguments] Dataset with sampling rate
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="path/to/checkpoints/oneshot_lora_${TIMESTAMP}"     # Directory for saving checkpoints
+OUTPUT_DIR="oneshot_lora_${TIMESTAMP}"     # Directory for saving checkpoints
 LOG_DIR="./logs/qwen3vl/oneshot_lora_${TIMESTAMP}"             # Directory for TensorBoard logs
 CACHE_DIR="./tmp"
 
@@ -16,7 +16,7 @@ python evqa/train/train_qwen.py \
     --output_dir $OUTPUT_DIR \
     --cache_dir $CACHE_DIR \
     --bf16 \
-    --per_device_train_batch_size 4 \
+    --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 2 \
     --learning_rate 1e-5 \
     --optim adamw_torch \

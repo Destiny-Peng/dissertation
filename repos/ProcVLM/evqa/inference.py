@@ -47,7 +47,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_new_tokens", type=int, default=4096, help="Max generation tokens per frame")
     parser.add_argument("--temperature", type=float, default=0.0, help="Generation temperature")
     parser.add_argument("--window_size", type=int, default=8, help="Number of images per inference window")
+    parser.add_argument(
+        "--frame_stride",
+        type=int,
+        default=1,
+        help="Source-video frame spacing inside each temporal window (1 preserves consecutive-frame behavior)",
+    )
     parser.add_argument("--tp", type=int, default=1, help="Parallel degree for model inference")
+    parser.add_argument(
+        "--gpu_memory_utilization",
+        type=float,
+        default=None,
+        help="Maximum fraction of visible GPU memory reserved by vLLM",
+    )
 
     parser.add_argument("--frame_dir", type=str, default=None, help="Directory to store extracted frames")
     parser.add_argument("--keep_frames", action="store_true", help="Keep extracted frames after completion")
@@ -116,11 +128,15 @@ def extract_reasoning_text(answer: str) -> str:
     return "\n".join(kept_lines).strip()
 
 
-def build_window_values(values: list[Any], frame_idx: int, window_size: int) -> list[Any]:
-    start = frame_idx - window_size + 1
+def build_window_values(
+    values: list[Any], frame_idx: int, window_size: int, frame_stride: int = 1
+) -> list[Any]:
+    if frame_stride < 1:
+        raise ValueError("frame_stride must be >= 1")
+    start = frame_idx - (window_size - 1) * frame_stride
     window: list[Any] = []
     for i in range(window_size):
-        idx = start + i
+        idx = start + i * frame_stride
         idx = max(0, min(frame_idx, idx))
         window.append(values[idx])
     return window
@@ -184,6 +200,7 @@ def make_output_record(
     sample_index: int,
     frame_index: int,
     window_frame_indices: list[int],
+    frame_stride: int,
     answer: str,
     parsed_progress: float | None,
     progress: float,
@@ -195,6 +212,7 @@ def make_output_record(
         "frame_index": frame_index,
         "timestamp_sec": frame_index / max(float(fps), 1e-6),
         "window_frame_indices": window_frame_indices,
+        "frame_stride": frame_stride,
         "progress": progress,
         "parsed_progress": parsed_progress,
         "progress_source": "model" if parsed_progress is not None else "previous",
@@ -267,6 +285,7 @@ def infer_progress_from_video(
     model_path: str,
     output_path: str | Path | None = None,
     window_size: int = 8,
+    frame_stride: int = 1,
     torch_dtype: str = "bf16",
     max_new_tokens: int = 4096,
     temperature: float = 0.0,
@@ -286,6 +305,9 @@ def infer_progress_from_video(
     Returns one record for each selected ``frame_index``. If ``output_path`` is
     provided, the same records are also written as JSONL.
     """
+    if frame_stride < 1:
+        raise ValueError("frame_stride must be >= 1")
+
     video_path = Path(video_path).expanduser().resolve()
     if not video_path.exists() or not video_path.is_file():
         raise FileNotFoundError(f"video not found: {video_path}")
@@ -314,10 +336,13 @@ def infer_progress_from_video(
 
     print(
         f"Frame policy: source={source_frames}, sampled={sampled_count}, "
-        f"max_sampled={max_sampled}, fps={fps:.3f}"
+        f"max_sampled={max_sampled}, fps={fps:.3f}, "
+        f"window_size={max(1, window_size)}, frame_stride={frame_stride}"
     )
 
     selected_frame_paths = [all_frame_paths[i] for i in selected_indices]
+    source_frame_paths = all_frame_paths[:source_frames]
+    source_frame_indices = list(range(source_frames))
 
     frame_paths: list[str] = []
     frame_indices: list[int] = []
@@ -336,8 +361,13 @@ def infer_progress_from_video(
             frame_paths.append(frame_path)
             frame_indices.append(selected_indices[sample_index])
 
-            window_paths = build_window_values(frame_paths, len(frame_paths) - 1, max(1, window_size))
-            window_frame_indices = build_window_values(frame_indices, len(frame_indices) - 1, max(1, window_size))
+            target_frame_index = selected_indices[sample_index]
+            window_paths = build_window_values(
+                source_frame_paths, target_frame_index, max(1, window_size), frame_stride
+            )
+            window_frame_indices = build_window_values(
+                source_frame_indices, target_frame_index, max(1, window_size), frame_stride
+            )
             window_frame_indices_list.append(window_frame_indices)
             all_items.append(
                 {
@@ -388,6 +418,7 @@ def infer_progress_from_video(
                     sample_index=sample_index,
                     frame_index=frame_indices[sample_index],
                     window_frame_indices=window_frame_indices_list[sample_index],
+                    frame_stride=frame_stride,
                     answer=answer,
                     parsed_progress=parsed_progress,
                     progress=progress,
@@ -408,6 +439,8 @@ def infer_progress_from_video(
 
 def main() -> None:
     args = parse_args()
+    if args.gpu_memory_utilization is not None and not 0.0 < args.gpu_memory_utilization <= 1.0:
+        raise ValueError("--gpu_memory_utilization must be in (0, 1]")
     video_path = Path(args.video_path).expanduser().resolve()
     output_path = Path(args.output_path).expanduser().resolve() if args.output_path else (
         video_path.with_name(f"{video_path.stem}_progress.jsonl")
@@ -419,6 +452,7 @@ def main() -> None:
         model_path=args.model_path,
         output_path=output_path,
         window_size=args.window_size,
+        frame_stride=args.frame_stride,
         torch_dtype=args.torch_dtype,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
@@ -429,6 +463,11 @@ def main() -> None:
         enable_value_head=args.enable_value_head,
         tp=args.tp,
         use_lora=args.use_lora,
+        engine_kwargs=(
+            {"gpu_memory_utilization": args.gpu_memory_utilization}
+            if args.gpu_memory_utilization is not None
+            else None
+        ),
     )
 
     print(f"Done. Wrote {len(records)} records to: {output_path}")

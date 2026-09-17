@@ -41,7 +41,11 @@ data_dict = {
     "train_close_oven_oneshot": { # use relative path
         "annotation_path": "assets/demo/lora_data/qa_pairs.jsonl",
         "data_path": "assets/demo/lora_data/"
-    }
+    },
+    "libero10_white_yellow_mugs_oneshot": {
+        "annotation_path": "procvlm_oneshot_dataset/qa_pairs.jsonl",
+        "data_path": "procvlm_oneshot_dataset/",
+    },
 }
 
 def parse_sampling_rate(dataset_name):
