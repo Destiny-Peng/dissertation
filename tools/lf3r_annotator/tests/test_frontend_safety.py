@@ -63,6 +63,22 @@ class FrontendSafetyContractTest(unittest.TestCase):
             runs_control,
         )
 
+    def test_runs_log_refresh_stays_bound_to_selected_job(self) -> None:
+        runs_log = (STATIC_ROOT / "runs-log-ui.js").read_text(encoding="utf-8")
+        self.assertIn(
+            'if (!channel || !channel.log || visibleJobId(channel) !== jobId) return;',
+            runs_log,
+        )
+        self.assertIn(
+            'if (requestSerial !== channel.requestSerial || visibleJobId(channel) !== jobId) return;',
+            runs_log,
+        )
+        self.assertIn("window.loadBaselineBatchLog = baselineRefresh", runs_log)
+        self.assertIn("window.loadRolloutGenerationLog = rolloutRefresh", runs_log)
+
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        self.assertIn("runs-log-ui.js?v=runs-log-v3-20260917", workspace)
+
     def test_procvlm_model_path_is_visible_in_single_run_config(self) -> None:
         procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
         self.assertIn("var modelInput = drawer.querySelector('[data-option=\"model_path\"]')", procvlm)
