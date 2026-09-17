@@ -46,7 +46,7 @@
                   loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
                     loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v2-20260916", function () {
                       loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
-                        loadScript("/static/runs-log-ui.js?v=runs-log-v2-20260916", function () {
+                        loadScript("/static/runs-log-ui.js?v=runs-log-v3-20260917", function () {
                           loadScript("/static/runs-job-control.js?v=baseline-cancel-v2-20260916", function () {
                             loadScript("/static/runs-submit-fix.js?v=batch-submit-v1-20260916", function () {
                               loadScript("/static/procvlm-mode-ui.js?v=procvlm-lora-mode-v4-20260916");
