@@ -175,7 +175,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default="datasets/lf3r_failure_rollouts/v1/manifest.jsonl")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--dataset-role", choices=("all", "primary_natural", "reference_natural", "controlled_analysis"), default="all")
+    parser.add_argument("--dataset-role", choices=("all", "libero_10", "libero_spatial", "controlled_analysis"), default="all")
     parser.add_argument("--partition", choices=("all", "natural_observation", "controlled_analysis"), default="all")
     parser.add_argument("--run-name")
     parser.add_argument("--rollout-id", action="append", default=[])

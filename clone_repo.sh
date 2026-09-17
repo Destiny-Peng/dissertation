@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="/mnt/hdd/qiuxia/pyr/LF3R"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/project_env.sh"
+
 CHECKPOINT_DIR="${PROJECT_ROOT}/checkpoints"
 HF_HOME_DIR="${PROJECT_ROOT}/cache/huggingface"
 

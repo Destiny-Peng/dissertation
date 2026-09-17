@@ -53,9 +53,9 @@ RynnValue 的两个 web run 逻辑合并后覆盖 124/125 条，之前已确认�
 - `outputs/baselines/robo_dopamine_multi_sanity_20260905/robo_dopamine_20260905_201426_242626` — 2/2，多视角 sanity 成功。
 - `outputs/baselines/robo_dopamine_interval_sanity_20260905/interval_sweep_20260905_204010_369904` — interval sweep 完成。
 - `outputs/baselines/densereward_smoke_20260906/densereward_20260906_213813_833577` — 1/1 DenseReward smoke。
-- `outputs/baselines/web_runs/densereward-batch-5fde64e07be2/densereward_20260906_222656_492155` — 125/125 primary natural。
-- `outputs/baselines/web_runs/densereward-batch-639c778ccee3/densereward_20260906_215556_418318` — 41/41 reference natural。
-- `outputs/baselines/web_runs/safe-batch-eeff930ca0f9/safe_20260904_220414_841929` — 41/41 reference natural。
+- `outputs/baselines/web_runs/densereward-batch-5fde64e07be2/densereward_20260906_222656_492155` — 125/125 LIBERO-10。
+- `outputs/baselines/web_runs/densereward-batch-639c778ccee3/densereward_20260906_215556_418318` — 41/41 LIBERO-Spatial。
+- `outputs/baselines/web_runs/safe-batch-eeff930ca0f9/safe_20260904_220414_841929` — 41/41 LIBERO-Spatial。
 
 ## 建议清理组 A：明确无效的结果目录和对应日志
 

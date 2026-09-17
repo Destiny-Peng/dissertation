@@ -6,7 +6,7 @@
     var polish = document.createElement("link");
     polish.id = "lf3rPolishStyles";
     polish.rel = "stylesheet";
-    polish.href = "/static/styles-polish.css?v=20260915-polish";
+    polish.href = "/static/styles-polish.css?v=20260916-polish";
     document.head.appendChild(polish);
   }
 
@@ -166,7 +166,7 @@
     applyQueueState();
   });
 
-  function uniqueOutputTexts(result, limit) {
+  function uniqueOutputTexts(result) {
     var seen = Object.create(null);
     var texts = [];
     (result && result.samples || []).forEach(function (sample) {
@@ -178,32 +178,7 @@
       seen[text] = true;
       texts.push(text);
     });
-    if (!texts.length) return ["No output at this frame."];
-
-    /*
-     * Measuring every frame's text forces a synchronous style/layout pass for
-     * each sample. Long ProcVLM/RynnValue runs can contain hundreds of
-     * samples, which blocks the browser main thread even though the API call
-     * itself is fast. The output box only needs a representative maximum;
-     * retain the longest text plus a bounded spread of the sequence.
-     */
-    var maxItems = Math.max(8, Number(limit) || 24);
-    if (texts.length <= maxItems) return texts;
-    var selected = [];
-    var add = function (text) {
-      if (selected.indexOf(text) === -1) selected.push(text);
-    };
-    var longest = texts.reduce(function (best, text) {
-      return text.length > best.length ? text : best;
-    }, texts[0]);
-    add(longest);
-    add(texts[0]);
-    add(texts[texts.length - 1]);
-    var remaining = maxItems - selected.length;
-    for (var i = 0; i < remaining; i += 1) {
-      add(texts[Math.floor(i * (texts.length - 1) / Math.max(1, remaining - 1))]);
-    }
-    return selected;
+    return texts.length ? texts : ["No output at this frame."];
   }
 
   function sizeEvaluationOutput(card, result) {
@@ -224,7 +199,7 @@
     output.parentNode.appendChild(measurer);
 
     var maxHeight = 0;
-    uniqueOutputTexts(result, 24).forEach(function (text) {
+    uniqueOutputTexts(result).forEach(function (text) {
       measurer.textContent = text;
       maxHeight = Math.max(maxHeight, measurer.scrollHeight);
     });
@@ -250,8 +225,6 @@
   if (typeof originalUpdateEvaluationCurrent === "function") {
     window.updateEvaluationCurrent = function () {
       var result = originalUpdateEvaluationCurrent.apply(this, arguments);
-      /* The displayed strings may have changed length after seeking, but the
-         reserved box height remains the maximum for the whole rollout. */
       return result;
     };
   }

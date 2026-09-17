@@ -39,13 +39,13 @@ bash tools/baselines/run_baseline.sh [OPTIONS]
 | `--resume-run PATH`   | unset                 | ProcVLM, Robo-Dopamine                     | Reopens an existing persistent run directory, reads its saved baseline-specific job plan, and runs only rollouts whose status is not terminal. The manifest hash and local model paths are rechecked. |
 | `--model-path PATH`   | configured checkpoint   | ProcVLM, RynnValue, Robo-Dopamine, DenseReward | Overrides the local checkpoint configured for the selected baseline. SAFE has no configured model checkpoint; do not pass this option for SAFE.                                           |
 | `--partition NAME`    | `natural_observation` | all                               | Selects`natural_observation`, `controlled_analysis`, or `all`. The default excludes injected and controlled-analysis rollouts.                                                      |
-| `--dataset-role ROLE` | unset                   | all                               | Exact match against the manifest field`dataset_role`, for example `primary_natural`.                                                                                                  |
+| `--dataset-role ROLE` | unset                   | all                               | Exact match against the manifest field`dataset_role`, for example `libero_10`.                                                                                                  |
 | `--rollout-id ID`     | unset                   | all                               | Selects a rollout by ID. Repeat the option for several IDs; manifest order is preserved. IDs are checked against the full manifest before other filters.                                  |
 | `--start-index N`     | `0`                   | all                               | Drops the first`N` records after partition, dataset-role, and ID filtering. Must be non-negative.                                                                                       |
 | `--end-index N`      | scope end              | all                               | Exclusive end of the scope-relative range. The selected interval is `[start-index,end-index)`. It is mutually exclusive with`--limit`.                                                                                              |
 | `--limit N`           | unset                   | all                               | Keeps at most`N` records after the preceding filters. Must be positive. Use with `--start-index` to schedule reproducible chunks.                                                     |
 
-Selection is applied in this order: `instruction condition → partition → dataset role → rollout IDs → start index → limit`. For A/B variant manifests, the web layer passes the exact source-scope variant IDs so diagnostic partition metadata cannot widen a primary/reference request. An empty result is an error rather than a successful no-op.
+Selection is applied in this order: `instruction condition → partition → dataset role → rollout IDs → start index → limit`. For A/B variant manifests, the web layer passes the exact source-scope variant IDs so diagnostic partition metadata cannot widen a LIBERO-suite request. An empty result is an error rather than a successful no-op.
 
 For model baselines, omitting `--model-path` selects the configured local checkpoint: `checkpoints/ProcVLM-2B`, `checkpoints/RynnValue-4B`, `checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview`, or `checkpoints/densereward-3frame-thinking`. SAFE uses the manifest `csv_path` and its official handcrafted feature code instead of a trained checkpoint. Each selected model record must provide `id`, `video_path`, and `task_description`; SAFE records must provide `id` and `csv_path`.
 
@@ -83,12 +83,14 @@ The resolved value is recorded in `commands.jsonl` under `vllm_memory_budget`, t
 | Option                             | Default  | Forwarded upstream as      | Meaning and effect                                                                                                                                                                                                |
 | ---------------------------------- | -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--procvlm-window-size N`        | `4`    | `--window_size N`        | Number of sampled images supplied in each temporal inference window. Larger windows provide more temporal context but increase prompt size, work, and memory use.                                                 |
+| `--procvlm-frame-stride N` | `1` | `--frame-stride N` → `--frame_stride N` | Source-video frame spacing inside each temporal window. It does not change target-frame sampling or the window size; `1` preserves the current consecutive-frame behavior. With `window_size=8` and `frame_stride=3`, target `t` receives `[t-21,t-18,t-15,t-12,t-9,t-6,t-3,t]` (early indices use the existing clamp-to-zero padding). |
 | `--procvlm-max-sampled-frames N` | unset    | `--max_sampled_frames N` | Optional cap on frames sent to ProcVLM. If omitted, the upstream default of`512` remains active; a longer video is uniformly sampled to that cap. This is a frame-count cap, not a window size or fixed stride. |
 | `--procvlm-max-new-tokens N`     | `4096` | `--max_new_tokens N`     | Maximum generated tokens for each frame/window response. Higher values increase worst-case generation time and KV-cache demand.                                                                                   |
 | `--dtype TYPE`                   | `bf16` | `--torch_dtype TYPE`     | ProcVLM model and inference dtype string. The dense-sampling configuration uses`bf16`.                                                                                                                          |
 | `--tensor-parallel-size N`       | `1`    | `--tp N`                 | vLLM/model tensor-parallel degree. For example, pair`--gpu 0,1` with `--tensor-parallel-size 2`; this is independent of temporal frame sampling.                                                              |
 
 With the defaults, a 414-frame video produces 414 ProcVLM records, while a 520-frame video is limited by the upstream default to 512 records. The `window_size=4` context is retained in each ProcVLM raw sample as `window_frame_indices`.
+For the 30 FPS versus 10 FPS temporal-scale check, explicitly use `--procvlm-window-size 8 --procvlm-frame-stride 3`; this changes only the source-frame spacing within each target window, while target records remain selected by the existing uniform sampler. Each raw record stores the resulting `window_frame_indices` and `frame_stride` for auditability.
 
 ### ProcVLM persistent execution and resume
 
@@ -130,7 +132,7 @@ bash tools/baselines/run_baseline.sh \
   --data-root /mnt/hdd/qiuxia/pyr/LF3R \
   --output-dir outputs/baselines \
   --logs-dir logs/baselines \
-  --dataset-role primary_natural \
+  --dataset-role libero_10 \
   --start-index 0 --end-index 20 \
   --parallel-workers 2 --gpu 0,1 \
   --continue-on-error
@@ -199,7 +201,7 @@ bash tools/baselines/run_baseline.sh \
   --data-root . \
   --output-dir outputs/baselines/robo_dopamine_multi \
   --logs-dir logs/baselines/robo_dopamine_multi \
-  --dataset-role primary_natural \
+  --dataset-role libero_10 \
   --gpu 1 \
   --vllm-free-memory-fraction 0.8 \
   --robo-frame-interval 10 \
@@ -246,7 +248,7 @@ The report emits JSON/CSV plus a plot of progress-difference standard deviation.
 
 tools/analyze_baseline_temporal_signals.py reads existing raw outputs and annotations; it does not run a baseline model. The analyzer preserves each method's native sample points and aligns them to video-frame coordinates. It supports repeated --rynnvalue-run arguments and merges RynnValue outputs by rollout ID. Duplicate IDs across selected RynnValue roots are rejected; missing selected IDs remain explicit in method_coverage.csv and are excluded from metric denominators.
 
-The high-resolution primary-natural comparison currently uses 125 labeled rollouts:
+The high-resolution LIBERO-10 comparison currently uses 125 labeled rollouts:
 
 ~~~bash
 conda_envs/LF3R-ananlyse/bin/python tools/analyze_baseline_temporal_signals.py \
@@ -261,7 +263,7 @@ conda_envs/LF3R-ananlyse/bin/python tools/analyze_baseline_temporal_signals.py \
   --robo-dopamine-run outputs/baselines/full_136_01/robo_dopamine_20260827_200551_687444
 ~~~
 
-The current generated snapshot is outputs/baseline_signal_analysis/highres_primary_20260830/. SAFE, ProcVLM, and Robo-Dopamine cover 125/125 selected rollouts; RynnValue covers 124/125. The missing RynnValue ID is retained in the coverage metadata and is not filled from the older low-sampling run. The 11 reference_natural rows are excluded.
+The current generated snapshot is outputs/baseline_signal_analysis/highres_primary_20260830/. SAFE, ProcVLM, and Robo-Dopamine cover 125/125 selected rollouts; RynnValue covers 124/125. The missing RynnValue ID is retained in the coverage metadata and is not filled from the older low-sampling run. The 11 libero_spatial rows are excluded.
 
 In addition to response magnitude, persistence, recovery-to-baseline, clean-success Q95 response, and native sampling alignment, the analyzer writes:
 
@@ -278,7 +280,7 @@ The default interpretation is Q95, but all thresholds are reported. A detected e
 
 tools/analyze_baseline_change_points.py provides the primary local-change analysis over the same raw baseline outputs. The legacy global temporal tables are retained only for historical comparison: each native signal is evaluated independently with local level, variance, and slope changes at several half-window scales. The reference distribution combines clean-success trajectories with non-onset regions of event-bearing trajectories, excluding the current scale around annotated observable onsets. Q90/Q95/Q99 detector thresholds are calibrated from clean-success trajectory pseudo-event maxima; non-onset maxima remain a separate within-rollout reference.
 
-The generated primary snapshot is outputs/baseline_signal_analysis/changepoint_primary_20260830/. It uses the 125 primary_natural labeled rollouts, 58 observable-onset events, and scales 8/16/32/64 video frames. SAFE, ProcVLM, and Robo-Dopamine cover 125/125 rollouts; RynnValue covers 124/125, with libero_10-task02-ep005-natural-e8fc18cf25 retained as an explicit unavailable output. RynnValue is logically merged from the two selected aggregate runs by rollout ID, and no older low-sampling output is used as a fallback.
+The generated primary snapshot is outputs/baseline_signal_analysis/changepoint_primary_20260830/. It uses the 125 libero_10 labeled rollouts, 58 observable-onset events, and scales 8/16/32/64 video frames. SAFE, ProcVLM, and Robo-Dopamine cover 125/125 rollouts; RynnValue covers 124/125, with libero_10-task02-ep005-natural-e8fc18cf25 retained as an explicit unavailable output. RynnValue is logically merged from the two selected aggregate runs by rollout ID, and no older low-sampling output is used as a fallback.
 
 To reproduce it without inference:
 
@@ -302,7 +304,7 @@ The snapshot writes changepoint_event_metrics.jsonl plus the localization_event_
 
 tools/analyze_baseline_event_triggered.py is a complementary, event-aligned view. It aligns every annotated observable_onset_frame to relative frame 0, reports raw and per-instance normalized median/IQR curves, native local level-change scores at 8/16/32/64-frame half-windows, case-versus-matched-clean separation, strongest before/at/after-onset phase, and event-level peak lag. Terminal failures, recovered successes, and uncertain events remain separate; clean-success controls are matched by task suite/task ID when possible and their provenance is recorded.
 
-The checked-in snapshot is outputs/baseline_signal_analysis/event_triggered_primary_20260831/. It contains 125 selected primary-natural rollouts, 58 observable events (48 terminal failures, 9 recovered successes, 1 uncertain), and 59 clean-success controls. SAFE, ProcVLM, and Robo-Dopamine have signal output for 125/125 rollouts; RynnValue has 124/125 and retains libero_10-task02-ep005-natural-e8fc18cf25 as unavailable. Median native intervals are SAFE/ProcVLM 1 frame, Robo-Dopamine 2 frames, and RynnValue 4 frames. This density difference is part of the interpretation and is not hidden by interpolation.
+The checked-in snapshot is outputs/baseline_signal_analysis/event_triggered_primary_20260831/. It contains 125 selected LIBERO-10 rollouts, 58 observable events (48 terminal failures, 9 recovered successes, 1 uncertain), and 59 clean-success controls. SAFE, ProcVLM, and Robo-Dopamine have signal output for 125/125 rollouts; RynnValue has 124/125 and retains libero_10-task02-ep005-natural-e8fc18cf25 as unavailable. Median native intervals are SAFE/ProcVLM 1 frame, Robo-Dopamine 2 frames, and RynnValue 4 frames. This density difference is part of the interpretation and is not hidden by interpolation.
 
 Reproduce the snapshot without GPU inference:
 
@@ -352,7 +354,7 @@ bash tools/baselines/run_baseline.sh \
   --gpu 0
 ```
 
-The same interface selects `safe`, `procvlm`, `robo_dopamine`, `rynnvalue`, or `densereward`. Natural rollouts are the default. Use `--dataset-role primary_natural`, repeated `--rollout-id`, or `--start-index` plus `--limit` to create reproducible chunks. Pass `--model-path` to override a local checkpoint. Optional visualization is disabled by default; `--render-video` enables it without changing raw-output capture.
+The same interface selects `safe`, `procvlm`, `robo_dopamine`, `rynnvalue`, or `densereward`. Natural rollouts are the default. Use `--dataset-role libero_10`, repeated `--rollout-id`, or `--start-index` plus `--limit` to create reproducible chunks. Pass `--model-path` to override a local checkpoint. Optional visualization is disabled by default; `--render-video` enables it without changing raw-output capture.
 
 The current dense-sampling smoke defaults are deliberate: ProcVLM uses `--procvlm-window-size 4` and omits `--procvlm-max-sampled-frames`, leaving its upstream cap of 512 so short rollouts are sampled densely; `--procvlm-max-sampled-frames` is available only as an explicit optional cap. Robo-Dopamine uses `--robo-frame-interval 4`. DenseReward uses the official three-consecutive-frame prompt with `--densereward-frame-interval 1` by default and `--densereward-max-new-tokens 32`; it is not vLLM-backed and does not use the free-memory conversion. Both vLLM-backed workers default to `--vllm-free-memory-fraction 0.80` (the older `--vllm-gpu-memory-utilization` spelling remains an alias). For actual inference, the runner reads current `nvidia-smi` free/total memory immediately before the persistent worker and converts the target to the vLLM total-memory parameter; the measured budget is recorded in `commands.jsonl`. Each selected ProcVLM or Robo-Dopamine run creates one vLLM process and reuses its engine across all selected rollouts. Dry-run plans defer this conversion.
 
@@ -390,7 +392,7 @@ bash tools/baselines/run_baseline.sh \
   --data-root "$PROJECT_ROOT" \
   --output-dir outputs/baselines/full_136 \
   --logs-dir logs/baselines \
-  --dataset-role primary_natural \
+  --dataset-role libero_10 \
   --continue-on-error
 ```
 

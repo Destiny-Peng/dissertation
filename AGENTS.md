@@ -2,16 +2,18 @@
 
 ## Project Structure & Module Organization
 
-LF3R keeps all project data under `/mnt/hdd/qiuxia/pyr/LF3R`. Place upstream code in `repos/`, with one subdirectory per project (for example, `repos/SAFE` and `repos/LIBERO`). Store datasets and model weights in `datasets/` and `checkpoints/`; never commit these large artifacts. Generated results belong in `outputs/`, command logs in `logs/`, and machine or dependency reports in `environment_reports/`. Conda environments and package caches are project-local under `conda_envs/` and `cache/`. Treat `project_env.sh`, `SYSTEM_INFO.txt`, and `SETUP_STATUS.md` as the top-level operational record.
+LF3R treats the repository checkout itself as `PROJECT_ROOT`; its absolute path may differ across servers. Place upstream code in `repos/`, with one subdirectory per project (for example, `repos/SAFE` and `repos/LIBERO`). Store datasets and model weights in `datasets/` and `checkpoints/`; never commit these large artifacts. Generated results belong in `outputs/`, command logs in `logs/`, and machine or dependency reports in `environment_reports/`. Conda environments and package caches are project-local under `conda_envs/` and `cache/`. Treat `project_env.sh`, `SYSTEM_INFO.txt`, and `SETUP_STATUS.md` as the top-level operational record.
 
 ## Environment, Build, and Development Commands
 
-Begin every shell session with:
+From the repository root, begin a shell session with:
 
 ```bash
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
-test "$PROJECT_ROOT" = /mnt/hdd/qiuxia/pyr/LF3R
+source ./project_env.sh
+test "$PROJECT_ROOT" = "$(pwd -P)"
 ```
+
+`project_env.sh` derives the root from its own location, so do not hard-code a server-specific LF3R absolute path. If an exceptional deployment needs a different root, set `LF3R_PROJECT_ROOT` before sourcing the environment. Scripts under `tools/` should locate `project_env.sh` relative to `${BASH_SOURCE[0]}` rather than assuming a fixed mount point.
 
 There is no repository-wide build command yet. Run setup, lint, and test commands from the relevant directory under `repos/`, following that upstream project's documentation. Use the project-local environment explicitly, such as `conda run -p "$LF3R_ENV_SAFE" <command>`. Capture reproducible diagnostics in `logs/` and environment summaries in `environment_reports/`.
 

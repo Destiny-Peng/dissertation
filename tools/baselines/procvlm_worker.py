@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run ProcVLM rollouts with a persistent vLLM or official PyTorch value-head model."""
+"""Run ProcVLM rollouts with persistent vLLM or official PyTorch/LoRA inference."""
 
 from __future__ import annotations
 
@@ -90,6 +90,10 @@ def job_counts(records: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def is_lora_adapter_path(model_path: Path) -> bool:
+    return model_path.is_dir() and (model_path / "adapter_config.json").is_file()
+
+
 def is_fatal_engine_failure(error: BaseException) -> bool:
     """Classify failures that make the persistent engine unsafe to reuse."""
     if isinstance(error, (KeyboardInterrupt, SystemExit)):
@@ -170,6 +174,7 @@ def infer_rollout(
         model_path=str(args.model_path),
         output_path=job["output_path"],
         window_size=args.window_size,
+        frame_stride=getattr(args, "frame_stride", 1),
         torch_dtype=args.torch_dtype,
         max_new_tokens=args.max_new_tokens,
         max_sampled_frames=max_sampled_frames,
@@ -177,6 +182,7 @@ def infer_rollout(
         engine_kwargs=engine_kwargs,
         show_progress=True,
         enable_value_head=getattr(args, "enable_value_head", False),
+        use_lora=getattr(args, "use_lora", False),
     )
 
 
@@ -276,12 +282,14 @@ def run_persistent_jobs(
             "pending_jobs": len(pending),
             "total_jobs": len(jobs),
             "memory_budget": engine_memory_budget,
+            "use_lora": bool(getattr(args, "use_lora", False)),
         },
     )
     init_started = time.perf_counter()
     try:
-        if getattr(args, "enable_value_head", False):
+        if getattr(args, "enable_value_head", False) or getattr(args, "use_lora", False):
             from evqa.model import load_procvlm
+
             engine_bundle = load_procvlm(str(args.model_path), "cuda:0", args.torch_dtype)
         else:
             engine_bundle = initialize_engine(
@@ -325,6 +333,7 @@ def run_persistent_jobs(
             "initialization_seconds": init_seconds,
             "memory_budget": engine_memory_budget,
             "engine_reused_for_jobs": len(pending),
+            "use_lora": bool(getattr(args, "use_lora", False)),
         },
     )
     refresh_state(
@@ -381,6 +390,7 @@ def run_persistent_jobs(
             "inference_seconds": elapsed,
             "raw_output_dir": str(output_dir),
             "raw_output_files": raw_files,
+            "use_lora": bool(getattr(args, "use_lora", False)),
         }
         result.update(error_details)
         if status == "interrupted":
@@ -442,6 +452,7 @@ def run_persistent_jobs(
             "status": "complete",
             "at": iso_now(),
             "engine_initialization_seconds": init_seconds,
+            "use_lora": bool(getattr(args, "use_lora", False)),
             **counts,
         },
     )
@@ -460,15 +471,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--memory-budget-json", required=True)
     parser.add_argument("--window-size", type=int, default=4)
+    parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--max-sampled-frames", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--max-model-len", type=int, default=None)
     parser.add_argument("--torch-dtype", default="bf16")
     parser.add_argument("--enable-value-head", action="store_true")
+    parser.add_argument("--use-lora", action="store_true")
     parser.add_argument("--tp", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    for name in ("window_size", "max_new_tokens", "tp"):
+    for name in ("window_size", "frame_stride", "max_new_tokens", "tp"):
         if getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be positive")
     if args.max_sampled_frames is not None and args.max_sampled_frames < 1:
@@ -499,6 +512,16 @@ def main() -> int:
     args.progress_file = args.progress_file.expanduser().resolve()
     args.state_file = args.state_file.expanduser().resolve()
     args.model_path = args.model_path.expanduser().resolve()
+    adapter_checkpoint = is_lora_adapter_path(args.model_path)
+    if args.use_lora and not adapter_checkpoint:
+        raise ValueError(
+            "--use-lora requires --model-path to be a LoRA adapter directory containing adapter_config.json"
+        )
+    # The top-level runner predates the explicit LoRA flag. An adapter path is
+    # unambiguous, so preserve direct runner compatibility by enabling the same
+    # official inference mode automatically when such a checkpoint is supplied.
+    args.use_lora = bool(args.use_lora or adapter_checkpoint)
+
     jobs = load_jsonl(args.jobs_file)
     if args.dry_run:
         print(json.dumps({
@@ -506,6 +529,7 @@ def main() -> int:
             "jobs_file": str(args.jobs_file),
             "jobs": len(jobs),
             "requested_free_memory_fraction": args.vllm_free_memory_fraction,
+            "use_lora": args.use_lora,
         }, ensure_ascii=False))
         return 0
     if not jobs:

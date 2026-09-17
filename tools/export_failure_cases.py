@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export selected LF3R annotations and their rollout media into a share package.
 
-The default selection is complete primary_natural annotations whose human
+The default selection is complete libero_10 annotations whose human
 outcome_label is "failure". Selection is joined to the versioned manifest by
 rollout_id; evaluator filename suffixes such as succ0/succ1 are not used as
 human labels.
@@ -36,8 +36,8 @@ DEFAULT_SHARE_ROOT = PROJECT_ROOT / "outputs/shares"
 
 OUTCOME_LABELS = ("success", "failure", "recovered_success", "uncertain")
 DATASET_ROLES = (
-    "primary_natural",
-    "reference_natural",
+    "libero_10",
+    "libero_spatial",
     "controlled_analysis",
     "all",
 )
@@ -339,7 +339,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Export selected complete LF3R annotations and their rollout media. "
-            "Default: primary_natural + outcome_label=failure."
+            "Default: libero_10 + outcome_label=failure."
         )
     )
     parser.add_argument(
@@ -360,7 +360,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Share package directory. Defaults to "
-            "outputs/shares/failure_primary_natural_<timestamp>."
+            "outputs/shares/failure_libero_10_<timestamp>."
         ),
     )
     parser.add_argument(
@@ -376,8 +376,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dataset-role",
         choices=DATASET_ROLES,
-        default="primary_natural",
-        help="Dataset role to include (default: primary_natural).",
+        default="libero_10",
+        help="Dataset role to include (default: libero_10).",
     )
     parser.add_argument(
         "--review-status",

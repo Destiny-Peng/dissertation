@@ -8,12 +8,12 @@
 /outputs/
 /migration_reports
 /WeeklySummary
-
+/tmp
 # Upstream repositories are managed as pinned clones/submodules, not copied
 # into the LF3R root history. Local patches should live under patches/ or in
 # a fork/branch of the corresponding upstream repository.
-/repos/
-
+/repos/*
+!/repos/ProcVLM/
 # Local bootstrap distribution kept under tools; rebuild it separately.
 /tools/miniforge3/
 /tools/**/.venv/

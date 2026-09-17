@@ -40,12 +40,12 @@ Use the LF3R wrapper when the dataset and logs are inside this project. It alway
 
 ```bash
 "$LF3R_SAFE_PYTHON" tools/safe_training/run_safe_training.py \
-  --dataset-dir outputs/safe_training/datasets/primary_natural \
+  --dataset-dir outputs/safe_training/datasets/libero_10 \
   --model mlp --gpu 1 --epochs 1000 --batch-size 512 \
   --logs-root outputs/safe_training/logs/primary_mlp
 
 "$LF3R_SAFE_PYTHON" tools/safe_training/run_safe_training.py \
-  --dataset-dir outputs/safe_training/datasets/primary_natural \
+  --dataset-dir outputs/safe_training/datasets/libero_10 \
   --model lstm --gpu 1 --epochs 1000 --batch-size 512 \
   --logs-root outputs/safe_training/logs/primary_lstm
 ```
@@ -84,9 +84,9 @@ Example:
 ```bash
 "$LF3R_SAFE_PYTHON" tools/safe_training/prepare_dataset.py \
   --manifest datasets/lf3r_failure_rollouts/v1/manifest.jsonl \
-  --dataset-role primary_natural \
+  --dataset-role libero_10 \
   --run-name lf3r-data-natural-libero10-20260824_210557 \
-  --output outputs/safe_training/datasets/primary_natural
+  --output outputs/safe_training/datasets/libero_10
 ```
 
 Repeated task/episode basenames are rejected unless `--run-name` or explicit `--rollout-id` selection makes the source unique. This prevents silently mixing generated runs.

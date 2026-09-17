@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /mnt/hdd/qiuxia/pyr/LF3R/project_env.sh
-test "$PROJECT_ROOT" = "/mnt/hdd/qiuxia/pyr/LF3R"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/../project_env.sh"
 
 SAFE_ENV="${LF3R_ENV_SAFE}"
 SAFE_PYTHON="${LF3R_SAFE_PYTHON:-${SAFE_ENV}/bin/python}"
@@ -13,9 +13,13 @@ if [[ ! -x "$SAFE_PYTHON" ]]; then
     uv venv --python 3.10.21 "$SAFE_ENV"
 fi
 
-uv pip install --python "$SAFE_PYTHON"     --index-url "$PYTORCH_INDEX"     torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128
-uv pip install --python "$SAFE_PYTHON"     -r "$PROJECT_ROOT/tools/requirements-safe-training.txt"
-uv pip install --python "$SAFE_PYTHON"     -e "$PROJECT_ROOT/repos/SAFE"
+uv pip install --python "$SAFE_PYTHON" \
+    --index-url "$PYTORCH_INDEX" \
+    torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128
+uv pip install --python "$SAFE_PYTHON" \
+    -r "$PROJECT_ROOT/tools/requirements-safe-training.txt"
+uv pip install --python "$SAFE_PYTHON" \
+    -e "$PROJECT_ROOT/repos/SAFE"
 uv pip check --python "$SAFE_PYTHON"
 
 "$SAFE_PYTHON" - <<'PY'

@@ -8,9 +8,9 @@
     },
     "scope": {
       "cli": "--partition NAME",
-      "default": "natural_observation",
+      "default": "libero_10",
       "applies_to": "batch baseline",
-      "description": "Selects the rollout partition. The web scope maps to --partition plus an optional --dataset-role: all, natural_observation, controlled_analysis, primary_natural, or reference_natural."
+      "description": "Selects LIBERO-10, LIBERO-Spatial, Controlled, or all loaded rollouts. LIBERO scopes match task_suite; Controlled matches the controlled-analysis partition."
     },
     "instruction_condition": {
       "cli": "--instruction-condition {full_instruction,subtask_a,subtask_b}",
@@ -29,7 +29,7 @@
       "cli": "--dataset-role ROLE",
       "default": "unset",
       "applies_to": "all baseline runs",
-      "description": "Further restricts selection to an exact manifest dataset_role such as primary_natural or reference_natural."
+      "description": "Optional exact dataset_role filter for low-level CLI use. Natural manifests now use libero_10 or libero_spatial; controlled rows use controlled_analysis."
     },
     "rollout_id": {
       "cli": "--rollout-id ID",
@@ -101,6 +101,13 @@
       "applies_to": "ProcVLM",
       "description": "Number of sampled images supplied in each temporal inference window. Larger windows add context and memory use.",
       "forwarded_as": "--window_size N"
+    },
+    "procvlm_frame_stride": {
+      "cli": "--procvlm-frame-stride N",
+      "default": "1",
+      "applies_to": "ProcVLM",
+      "description": "Spacing in source-video frames between images inside each temporal window. It does not change target-frame sampling or window size. With window_size=8 and stride=3, target t receives [t-21,t-18,t-15,t-12,t-9,t-6,t-3,t]; stride 1 preserves consecutive-frame behavior.",
+      "forwarded_as": "--frame-stride N -> --frame_stride N"
     },
     "procvlm_max_sampled_frames": {
       "cli": "--procvlm-max-sampled-frames N",

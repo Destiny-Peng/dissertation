@@ -1,0 +1,393 @@
+/* Non-Analysis Runs tools: GPU strip, SAFE workflow, and project utilities. */
+
+body[data-view="runs"] .runs-gpu-strip {
+  margin: 0 0 1rem;
+  padding: .85rem .95rem;
+  background: #0f151b;
+  border: 1px solid #26313c;
+  border-radius: 14px;
+}
+
+body[data-view="runs"] .runs-gpu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .7rem;
+}
+
+body[data-view="runs"] .runs-gpu-heading > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: .18rem .65rem;
+}
+
+body[data-view="runs"] .runs-gpu-heading .eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: .61rem;
+}
+
+body[data-view="runs"] .runs-gpu-heading strong {
+  color: #e0e6eb;
+  font-size: .92rem;
+}
+
+body[data-view="runs"] .runs-gpu-heading span {
+  color: #7e8b96;
+  font-size: .74rem;
+}
+
+body[data-view="runs"] .runs-gpu-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: .65rem;
+}
+
+body[data-view="runs"] .runs-gpu-card {
+  min-width: 0;
+  padding: .72rem .78rem;
+  background: #121920;
+  border: 1px solid #27323d;
+  border-radius: 10px;
+}
+
+body[data-view="runs"] .runs-gpu-card-top,
+body[data-view="runs"] .runs-gpu-memory,
+body[data-view="runs"] .runs-gpu-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .8rem;
+}
+
+body[data-view="runs"] .runs-gpu-card-top strong {
+  color: #e0e7ec;
+  font-size: .86rem;
+}
+
+body[data-view="runs"] .runs-gpu-card-top span,
+body[data-view="runs"] .runs-gpu-meta,
+body[data-view="runs"] .runs-gpu-memory {
+  color: #8b98a4;
+  font-size: .72rem;
+}
+
+body[data-view="runs"] .runs-gpu-name {
+  margin: .22rem 0 .58rem;
+  overflow: hidden;
+  color: #aeb8c1;
+  font-size: .72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="runs"] .runs-gpu-memory b { color: #dfe8e4; }
+
+body[data-view="runs"] .runs-gpu-meter {
+  height: 5px;
+  margin: .38rem 0 .5rem;
+  overflow: hidden;
+  background: #1d252d;
+  border-radius: 999px;
+}
+
+body[data-view="runs"] .runs-gpu-meter i {
+  display: block;
+  height: 100%;
+  background: #6f9f94;
+  border-radius: inherit;
+}
+
+body[data-view="runs"] .runs-gpu-empty {
+  padding: .6rem .7rem;
+  color: #7f8b96;
+  font-size: .78rem;
+  background: #111820;
+  border: 1px dashed #2b3640;
+  border-radius: 9px;
+}
+
+body[data-view="runs"] .runs-gpu-empty.error { color: #d29a91; }
+
+body[data-view="runs"] .runs-custom-panel {
+  display: block !important;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  background: #11171e;
+  border: 1px solid #29343f;
+  border-radius: 16px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.12);
+}
+
+body[data-view="runs"] .runs-custom-heading {
+  margin: 0 0 .9rem;
+  padding: .2rem .25rem .75rem;
+  border-bottom: 1px solid #222c36;
+}
+
+body[data-view="runs"] .runs-custom-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.24rem;
+}
+
+body[data-view="runs"] .runs-custom-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(22rem, .75fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+body[data-view="runs"] .runs-tool-stack {
+  min-width: 0;
+  display: grid;
+  gap: .85rem;
+}
+
+body[data-view="runs"] .runs-tool-card {
+  min-width: 0;
+  padding: .9rem;
+  background: #0f151c;
+  border: 1px solid #26313c;
+  border-radius: 12px;
+}
+
+body[data-view="runs"] .runs-tool-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  margin-bottom: .78rem;
+}
+
+body[data-view="runs"] .runs-tool-card-heading h3 {
+  margin: 0;
+  color: #dfe6eb;
+  font-size: .96rem;
+}
+
+body[data-view="runs"] .runs-tool-card-heading p {
+  margin: .2rem 0 0;
+  color: #7f8b96;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
+body[data-view="runs"] .runs-step {
+  flex: 0 0 auto;
+  width: 1.65rem;
+  height: 1.65rem;
+  display: grid;
+  place-items: center;
+  color: #dce9e5;
+  font-size: .75rem;
+  font-weight: 700;
+  background: #22312f;
+  border: 1px solid #35504b;
+  border-radius: 50%;
+}
+
+body[data-view="runs"] .runs-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem .75rem;
+}
+
+body[data-view="runs"] .runs-tool-grid > label {
+  min-width: 0;
+  padding: .64rem .68rem;
+  background: #121920;
+  border: 1px solid #242f39;
+  border-radius: 9px;
+}
+
+body[data-view="runs"] .runs-tool-grid > label > span {
+  display: block;
+  margin-bottom: .35rem;
+  color: #aab5be;
+  font-size: .73rem;
+  font-weight: 650;
+}
+
+body[data-view="runs"] .runs-tool-grid input,
+body[data-view="runs"] .runs-tool-grid select {
+  width: 100%;
+  min-height: 37px;
+  padding: .45rem .55rem;
+  font-size: .84rem;
+  border-radius: 7px;
+}
+
+body[data-view="runs"] .runs-tool-grid .runs-tool-wide { grid-column: 1 / -1; }
+body[data-view="runs"] .runs-tool-grid .runs-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  color: #a9b4bd;
+  font-size: .76rem;
+}
+body[data-view="runs"] .runs-tool-grid .runs-check input {
+  width: auto;
+  min-height: 0;
+}
+
+body[data-view="runs"] .runs-tool-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .75rem;
+  margin-top: .75rem;
+  padding-top: .7rem;
+  border-top: 1px solid #222d37;
+}
+
+body[data-view="runs"] .runs-tool-action > span {
+  margin-right: auto;
+  color: #788691;
+  font-size: .73rem;
+  line-height: 1.4;
+}
+
+body[data-view="runs"] .runs-tool-action .save-button,
+body[data-view="runs"] .runs-tool-action .ghost-button {
+  width: auto;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: .5rem .85rem;
+  font-size: .8rem;
+}
+
+body[data-view="runs"] .runs-tool-activity {
+  position: sticky;
+  top: 1rem;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(17rem, 1fr);
+  gap: .65rem;
+  padding: .85rem;
+  background: #0d1319;
+  border: 1px solid #26313c;
+  border-radius: 12px;
+}
+
+body[data-view="runs"] .runs-tool-job-list {
+  display: grid;
+  gap: .4rem;
+}
+
+body[data-view="runs"] .runs-tool-job {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .55rem .62rem;
+  text-align: left;
+  background: #111820;
+  border: 1px solid #26313c;
+  border-radius: 8px;
+}
+
+body[data-view="runs"] .runs-tool-job strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #cbd4da;
+  font-size: .75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-view="runs"] .runs-tool-job span {
+  flex: 0 0 auto;
+  color: #86939e;
+  font-size: .68rem;
+}
+
+body[data-view="runs"] .runs-tool-job.active {
+  background: #182321;
+  border-color: #3b564f;
+}
+
+body[data-view="runs"] .runs-tool-job-empty {
+  padding: .65rem;
+  color: #75828d;
+  font-size: .74rem;
+  border: 1px dashed #29343e;
+  border-radius: 8px;
+}
+
+body[data-view="runs"] .runs-tool-log {
+  min-height: 17rem;
+  max-height: 34rem;
+}
+
+body[data-view="runs"] .runs-outcome-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-bottom: .68rem;
+}
+
+body[data-view="runs"] .runs-outcome-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .42rem .58rem;
+  color: #aab5be;
+  font-size: .73rem;
+  background: #121920;
+  border: 1px solid #25303a;
+  border-radius: 8px;
+}
+
+body[data-view="runs"] .runs-maintenance-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .6rem;
+}
+
+body[data-view="runs"] .runs-maintenance-actions button {
+  min-height: 42px;
+  white-space: normal;
+}
+
+@media (max-width: 1180px) {
+  body[data-view="runs"] .runs-custom-layout { grid-template-columns: 1fr; }
+  body[data-view="runs"] .runs-tool-activity { position: static; }
+}
+
+@media (max-width: 860px) {
+  body[data-view="runs"] .runs-shell-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body[data-view="runs"] .runs-mode-switch {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-view="runs"] .runs-gpu-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body[data-view="runs"] .runs-tool-grid,
+  body[data-view="runs"] .runs-maintenance-actions { grid-template-columns: 1fr; }
+
+  body[data-view="runs"] .runs-tool-grid .runs-tool-wide,
+  body[data-view="runs"] .runs-tool-grid .runs-check { grid-column: 1; }
+
+  body[data-view="runs"] .runs-tool-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body[data-view="runs"] .runs-tool-action > span { margin-right: 0; }
+}

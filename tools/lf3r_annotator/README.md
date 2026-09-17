@@ -8,11 +8,11 @@ The current versioned manifest contains 136 natural observations:
 
 | Dataset role | Suite | Rollouts | Evaluator outcomes |
 | --- | --- | ---: | --- |
-| `primary_natural` | `libero_10` | 125 | 73 success, 52 failure |
-| `reference_natural` | `libero_spatial` | 11 | 11 success |
+| `libero_10` | `libero_10` | 125 | 73 success, 52 failure |
+| `libero_spatial` | `libero_spatial` | 11 | 11 success |
 | `controlled_analysis` | — | 0 | no controlled rows currently installed |
 
-The primary LIBERO-10 set includes tasks 0–9. Task counts are 16 each for tasks 0–3, 11 for task 4, and 10 each for tasks 5–9. The reference LIBERO-Spatial rows remain available for comparison but are not part of the primary natural-failure summary. The manifest can later include controlled injections, but those rows must stay in the explicit `controlled_analysis` partition.
+The primary LIBERO-10 set includes tasks 0–9. Task counts are 16 each for tasks 0–3, 11 for task 4, and 10 each for tasks 5–9. The reference LIBERO-Spatial rows remain available for comparison but are not part of the LIBERO-10-failure summary. The manifest can later include controlled injections, but those rows must stay in the explicit `controlled_analysis` partition.
 
 `task` and `trial` are separate dimensions. A task identifies one LIBERO instruction/environment; a trial is an independent episode for that task. The filename suffix `succ0`/`succ1` is the evaluator outcome, not a human annotation. The Review page lets an annotator replace that provisional outcome with `clean_success`, `recovered_success`, `terminal_failure`, or `uncertain`.
 
@@ -68,7 +68,7 @@ The annotator is one native HTML/CSS/JavaScript application with three hash-rout
 - `#/analysis` — live annotation/manifest statistics plus the latest complete baseline temporal-analysis snapshot. The page does not start model inference.
 - `#/settings` — project-wide appearance settings. Changing a control previews it immediately; leaving Review or Settings with unsaved changes asks for confirmation.
 
-The current rollout selection, Review queue filters, Analysis filters, and annotation state remain in browser memory while switching tabs. The default Analysis scope is `primary_natural`; `reference_natural`, `natural_observation` (all natural roles), and `controlled_analysis` must be selected explicitly.
+The current rollout selection, Review queue filters, Analysis filters, and annotation state remain in browser memory while switching tabs. The default Analysis scope is `libero_10`; `libero_spatial`, `natural_observation` (all natural roles), and `controlled_analysis` must be selected explicitly.
 
 ## Shared Settings
 
@@ -100,7 +100,7 @@ The API is:
 
 ## Analysis page
 
-The live section uses the `/api/rollouts` manifest records already loaded by the Review page and recalculates when an annotation is saved; saved annotation outcomes override provisional manifest outcomes. Its default `primary_natural` scope reports:
+The live section uses the `/api/rollouts` manifest records already loaded by the Review page and recalculates when an annotation is saved; saved annotation outcomes override provisional manifest outcomes. Its default `libero_10` scope reports:
 
 - rollout count, completed annotation count, resolved count, resolved success rate, failure event count, and observable-onset coverage;
 - clean-success, recovered-success, terminal-failure, and uncertain outcome distribution;
@@ -108,9 +108,9 @@ The live section uses the `/api/rollouts` manifest records already loaded by the
 - causal-to-observable latency, normalized observable onset position (`observable_frame / (total_frames - 1)`), and observable-to-recovery latency, shown as median/IQR summaries;
 - per-task stacked outcome counts with clickable task filtering.
 
-Live filters are partition (`all`, `primary_natural`, `reference_natural`, `natural_observation`, or `controlled_analysis`), task suite, task, and outcome. Natural and controlled counts are never combined unless `All partitions` is selected. Clicking an outcome/task mark applies the same live filter.
+Live filters are partition (`all`, `libero_10`, `libero_spatial`, `natural_observation`, or `controlled_analysis`), task suite, task, and outcome. Natural and controlled counts are never combined unless `All partitions` is selected. Clicking an outcome/task mark applies the same live filter.
 
-The baseline section calls GET /api/analysis. The server chooses the newest directory under outputs/baseline_signal_analysis/ containing metadata.json, event_metrics.jsonl, and all required summary CSVs. On the current checkout this is highres_primary_20260830; it contains the 125-rollout primary-natural high-resolution analysis, its source time, selection count, manifest hash match, and stale status are shown. A stale snapshot remains viewable for description, but it is not silently presented as current.
+The baseline section calls GET /api/analysis. The server chooses the newest directory under outputs/baseline_signal_analysis/ containing metadata.json, event_metrics.jsonl, and all required summary CSVs. On the current checkout this is highres_primary_20260830; it contains the 125-rollout LIBERO-10 high-resolution analysis, its source time, selection count, manifest hash match, and stale status are shown. A stale snapshot remains viewable for description, but it is not silently presented as current.
 
 The snapshot API returns method coverage, method/signal/outcome summaries, onset threshold/direction statistics, compact temporal event metrics, and the failure-localization summary/threshold/failure-type tables joined with rollout and task metadata. Large frame arrays are intentionally removed before JSON is sent to the browser. The page visualizes coverage, recovered-versus-terminal normalized response magnitude (median/IQR), post-event persistence, recovered-event recovery-to-baseline fraction, clean-success Q95 threshold exceedance/direction consistency, and the top anomalous event table. Method, snapshot-outcome, and snapshot-task filters are independent of the live filters; Review buttons navigate back to the corresponding rollout.
 
@@ -119,7 +119,7 @@ The snapshot is descriptive signal analysis, not detector-performance evaluation
 
 ### Analysis information hierarchy
 
-Analysis is split into Overview, Method comparison, Failure types, Event explorer, Signal shape, and Archive & downloads. The hash route #/analysis aliases #/analysis/overview. The dashboard defaults to primary_natural, Q95, local level, 16 frames, and all events. Categorical comparisons use readable HTML bars and heatmaps; only the single onset-aligned Signal shape view uses SVG. Legacy charts are collapsed instead of being dumped into the first view.
+Analysis is split into Overview, Method comparison, Failure types, Event explorer, Signal shape, and Archive & downloads. The hash route #/analysis aliases #/analysis/overview. The dashboard defaults to libero_10, Q95, local level, 16 frames, and all events. Categorical comparisons use readable HTML bars and heatmaps; only the single onset-aligned Signal shape view uses SVG. Legacy charts are collapsed instead of being dumped into the first view.
 
 The default GET /api/analysis response is dashboard/compact mode. It contains live statistics, snapshot provenance/freshness, coverage, aggregate rows, detail counts, available tabs, and declared artifact links; large event/frame arrays are kept out of the initial response. Use GET /api/analysis?view=full only for legacy compatibility.
 
@@ -129,7 +129,7 @@ The Event explorer loads detail rows on demand through GET /api/analysis/details
 
 The Analysis page uses the latest lf3r_baseline_change_points snapshot as its primary analysis and retains the legacy temporal snapshot for comparison only. It reads changepoint_summary.csv, changepoint_reference_summary.csv, changepoint_by_failure_type.csv, changepoint_scales.csv, method_coverage.csv, the compact changepoint_event_metrics.jsonl, and comparison_with_full_136_20260827.csv. Filters keep method, signal, local feature (level, variance, or slope), frame scale, threshold, outcome, and task separate. The page shows recall versus trajectory-level clean-success false alarms, peak distance/tolerance hits, failure-type summaries with precision/F1/AUROC/AP, legacy/current comparisons, and event rows with Review links.
 
-The current project snapshot is outputs/baseline_signal_analysis/changepoint_primary_20260830/: 125 primary-natural rollouts, 58 observable events, four local scales, and method coverage SAFE 125/125, ProcVLM 125/125, RynnValue 124/125, Robo-Dopamine 125/125. The RynnValue missing ID is explicit and is not filled by an older run. The local features use native samples only; the scale is a video-frame radius, so different baseline sampling densities remain visible. These are descriptive diagnostics from the annotated collection, not independently validated detector-performance estimates.
+The current project snapshot is outputs/baseline_signal_analysis/changepoint_primary_20260830/: 125 LIBERO-10 rollouts, 58 observable events, four local scales, and method coverage SAFE 125/125, ProcVLM 125/125, RynnValue 124/125, Robo-Dopamine 125/125. The RynnValue missing ID is explicit and is not filled by an older run. The local features use native samples only; the scale is a video-frame radius, so different baseline sampling densities remain visible. These are descriptive diagnostics from the annotated collection, not independently validated detector-performance estimates.
 
 ### Event-triggered onset view
 
@@ -173,6 +173,7 @@ Selecting a rollout loads any completed baseline output that is available for th
 - Missing outputs are explicit rather than silently treated as zero or failure. A warning is shown when a baseline emits a raw frame index outside the video bounds; the displayed sample is clipped only for alignment and the raw index remains visible.
 - Each baseline signal chart uses the full video frame domain (0 ... total_frames-1) and overlays the same color-coded causal/observable/terminal/recovery markers as the playback timeline. The curve and onset overlay share a responsive plot track with the video timeline, so they resize together; markers refresh while editing.
 - The baseline chart legend is interactive: click or keyboard-focus a signal label to show/hide that curve. Visibility is remembered per rollout and method during the current page session. Multi-perspective Robo-Dopamine charts show fused `progress` and `hop` by default; incremental/forward/backward component progress and hop curves remain available from the labels. RynnValue cards from new wrapper runs expose both `absolute remaining time` (`value`) and `relative temporal displacement` (`relative_value`) from the official heads. The latter is aligned to each sampled prefix using its last native relative slot; its complete per-prefix slot rows remain in `raw_model_outputs.json`. Existing runs made before this capture change remain absolute-only and are not silently reconstructed.
+- ProcVLM exposes **Frame stride** in both single-rollout and batch configuration. It defaults to `1`, which preserves the current behavior. To test the 30 FPS video versus 10 FPS training cadence while keeping an eight-image window, set **Window size** to `8` and **Frame stride** to `3`; the raw output records the source-frame window indices and stride.
 - Each baseline card has a **Result run** selector. `Automatic` keeps the existing newest-readable-run behavior; selecting a concrete run makes only the current rollout read that run. **Apply to all** stores the same run choice for the current instruction condition while navigating Review. Other rollouts use it only when that run contains their raw output; otherwise the card explicitly shows unavailable and never silently mixes in another run. Selecting `Automatic` and applying it clears the method-wide override.
 - The selector is populated from `GET /api/baselines/runs?scope=all&condition=...`; the catalog is filtered to the active instruction condition. Run paths remain project-local and are validated server-side under `outputs/baselines`.
 - The per-method **Run baseline** button calls POST /api/baselines/run/<rollout-id>. It is deliberately bounded to one rollout; independent method jobs may run at the same time and each is tracked separately until its parsed result is refreshed.
@@ -201,8 +202,8 @@ The Review page has a **Batch baseline** panel. Select one method per request an
 | --- | --- |
 | `all` | `--partition all` |
 | `natural_observation` | `--partition natural_observation` |
-| `primary_natural` | `--partition natural_observation --dataset-role primary_natural` |
-| `reference_natural` | `--partition natural_observation --dataset-role reference_natural` |
+| `libero_10` | `--partition natural_observation --dataset-role libero_10` |
+| `libero_spatial` | `--partition natural_observation --dataset-role libero_spatial` |
 | `controlled_analysis` | `--partition controlled_analysis` |
 
 The **Instruction condition** selector applies to both single-rollout and batch execution. Full instruction selects the source manifest. A/B selects the prepared variant manifest, uses `--instruction-condition subtask_a|subtask_b`, and changes the scope-relative index list to only rollouts with that variant. A/B output is isolated under `outputs/baselines/instruction_variants/libero_10/<condition>/`; it is not mixed with the full-instruction catalog.
@@ -217,7 +218,7 @@ The API equivalent is `POST /api/baselines/run-batch` with `baseline`, `scope`, 
 
     {
       "baseline": "rynnvalue",
-      "scope": "primary_natural",
+      "scope": "libero_10",
       "start_index": 10,
       "end_index": 20,
       "workers": [
@@ -244,7 +245,7 @@ The Analysis page's **Run temporal analysis** panel performs analysis using exis
 The default windows are `pre_window_frames=60`, `post_window_frames=60`, and `background_stride_frames=30`. The output label is limited to letters, numbers, dot, underscore, and hyphen. The API payload is:
 
     {
-      "scope": "primary_natural",
+      "scope": "libero_10",
       "runs": {
         "safe": "outputs/baselines/...",
         "procvlm": "outputs/baselines/...",
@@ -259,7 +260,7 @@ The default windows are `pre_window_frames=60`, `post_window_frames=60`, and `ba
 
 POST /api/analysis/run creates a hidden project-local selection at outputs/baseline_signal_analysis/.web_jobs/<job-id>/selection.json, runs analyze_baseline_temporal_signals.py on the four selected inputs (including repeated --rynnvalue-run values when RynnValue is multi-source), and atomically moves a complete result into outputs/baseline_signal_analysis/web_<timestamp>_<label>_<job-suffix>/. It only reads baseline outputs and annotations. `GET /api/analysis-jobs/<job-id>` and `/log` expose status and recent output; after success the browser rereads `GET /api/analysis` and shows the new snapshot freshness/source metadata.
 
-If the current scope is empty or any method has no compatible run, the button stays disabled with the missing method/scope reason. The default `primary_natural` scope covers the fair 125-rollout comparison. `natural_observation` includes both natural dataset roles and is an explicit broader selection; controlled data remain excluded until `controlled_analysis` is selected explicitly.
+If the current scope is empty or any method has no compatible run, the button stays disabled with the missing method/scope reason. The default `libero_10` scope covers the fair 125-rollout comparison. `natural_observation` includes both natural dataset roles and is an explicit broader selection; controlled data remain excluded until `controlled_analysis` is selected explicitly.
 
 ### Timeline and font-scale behavior
 
@@ -294,7 +295,7 @@ The manifest deliberately prevents injected trajectories from being counted as n
 - `natural_policy / natural_observation`: no action or environment intervention;
 - `controlled_injected / controlled_analysis`: known interventions for controlled analysis only.
 
-LIBERO-10 natural rollouts carry `dataset_role=primary_natural`. Existing LIBERO-Spatial natural runs are `reference_natural`; injected runs are always `controlled_analysis`.
+LIBERO-10 natural rollouts carry `dataset_role=libero_10`. Existing LIBERO-Spatial natural runs are `libero_spatial`; injected runs are always `controlled_analysis`.
 
 Rebuild the manifest after generating rollouts:
 
@@ -314,7 +315,7 @@ For every recognized rollout it:
 5. attaches task metadata, checkpoint identity, and a stable rollout ID;
 6. atomically rewrites `manifest.jsonl` and `summary.json`.
 
-Unknown run-name provenance is skipped instead of guessed. Only registered controlled run names receive injection metadata. A natural LIBERO-10 record becomes `primary_natural`; natural rollouts from other suites remain `reference_natural`.
+Unknown run-name provenance is skipped instead of guessed. Only registered controlled run names receive injection metadata. A natural LIBERO-10 record becomes `libero_10`; natural rollouts from other suites remain `libero_spatial`.
 
 ### LIBERO-10 instruction-variant diagnostic manifest
 
@@ -408,7 +409,7 @@ features are never stored in JSON. The optional flag is intended for a single-ro
 rollout or annotation is modified. The shell wrapper accepts the same mode as
 its optional seventh argument, `--log-safe-features`.
 
-It uses the official OpenVLA LIBERO-10 checkpoint and evaluator with no action or environment intervention. Outputs are named lf3r-data-natural-libero10-<timestamp>-<label>, logged under logs/, and added to the manifest only as primary_natural. Exit code 75 with WAITING_FOR_GPU_MEMORY means the memory gate did not pass; do not bypass it.
+It uses the official OpenVLA LIBERO-10 checkpoint and evaluator with no action or environment intervention. Outputs are named lf3r-data-natural-libero10-<timestamp>-<label>, logged under logs/, and added to the manifest only as libero_10. Exit code 75 with WAITING_FOR_GPU_MEMORY means the memory gate did not pass; do not bypass it.
 
 ## Generate native LIBERO-Spatial data
 
@@ -420,7 +421,7 @@ Use the separate wrapper when you want a new native-resolution run:
 
 Its positional arguments are the same as the LIBERO-10 wrapper: GPU, inclusive task start, inclusive task end, trials per task, seed, and a run note. The run note must start with lf3r-data-natural-libero-spatial-256-. Outputs are written only below outputs/openvla_libero_spatial_native/<run-note>/libero_spatial/; an existing run directory is never overwritten.
 
-This path uses the existing Spatial OpenVLA checkpoint and official evaluator. By default the simulator camera and replay video are native 256x256, while policy preprocessing remains the official 224x224 get_image_resize_size path. The same `--render-resolution` and `--record-resolution` flags can override those saved dimensions independently; changing replay resolution does not change model input semantics. The resulting manifest rows are classified as reference_natural because LIBERO-Spatial is not the primary LIBERO-10 dataset.
+This path uses the existing Spatial OpenVLA checkpoint and official evaluator. By default the simulator camera and replay video are native 256x256, while policy preprocessing remains the official 224x224 get_image_resize_size path. The same `--render-resolution` and `--record-resolution` flags can override those saved dimensions independently; changing replay resolution does not change model input semantics. The resulting manifest rows are classified as libero_spatial because LIBERO-Spatial is not the primary LIBERO-10 dataset.
 
 The Review rollout-generation form exposes the same choice as task_suite=libero_spatial and provides separate Render resolution and Record resolution fields. It reports the suite, output root, policy input resolution, and both selected save resolutions in the persistent job record. Switching suites restores their defaults; changing either field affects only newly generated rollouts. This change only prepares the command/UI path; no Spatial rollout generation is started automatically.
 

@@ -15,7 +15,7 @@
   "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
   "source_selection": {
     "analysis_partition": "natural_observation",
-    "dataset_role": "primary_natural",
+    "dataset_role": "libero_10",
     "task_suite": "libero_10"
   },
   "source_task_metadata": "datasets/lf3r_failure_rollouts/v1/task_metadata.json"

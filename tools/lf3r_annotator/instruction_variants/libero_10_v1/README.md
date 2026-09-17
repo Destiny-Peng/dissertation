@@ -4,7 +4,7 @@ This directory is a separate diagnostic dataset description generated from
 datasets/lf3r_failure_rollouts/v1/manifest.jsonl. It does not replace or modify the source manifest,
 videos, frame sidecars, annotations, or existing baseline outputs.
 
-The source selection is task_suite=libero_10, dataset_role=primary_natural,
+The source selection is task_suite=libero_10, dataset_role=libero_10,
 and analysis_partition=natural_observation. The source manifest hash is:
 
     e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980
