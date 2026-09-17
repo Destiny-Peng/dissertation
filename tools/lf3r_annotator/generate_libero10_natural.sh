@@ -69,12 +69,16 @@ if [[ ! "$RUN_NOTE" =~ ^lf3r-data-natural-libero10-[A-Za-z0-9._-]+$ ]]; then
 fi
 
 LOG_FILE="$(lf3r_log_path openvla_libero10_natural_rollouts)"
+ROBOSUITE_LOG_DIR="${LOGS}/robosuite"
+ROBOSUITE_LOG_FILE="${ROBOSUITE_LOG_DIR}/${RUN_NOTE}.log"
+mkdir -p "$ROBOSUITE_LOG_DIR"
 
 echo "RUN_NOTE=$RUN_NOTE" | tee "$LOG_FILE"
 echo "GPU=$GPU_ID TASK_START=$TASK_START TASK_END=$TASK_END TRIALS=$TRIALS SEED=$SEED RUN_NOTE=$RUN_NOTE" | tee -a "$LOG_FILE"
 echo "GPU_SELECTION=user_managed gpu=$GPU_ID" | tee -a "$LOG_FILE"
 echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
 echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
+echo "ROBOSUITE_LOG_PATH=$ROBOSUITE_LOG_FILE" | tee -a "$LOG_FILE"
 
 set -o pipefail
 env \
@@ -84,6 +88,7 @@ env \
     LIBERO_CONFIG_PATH="$CACHE/libero" \
     PYTHONPATH="$REPOS/safe-openvla" \
     WANDB_DISABLED=true \
+    ROBOSUITE_LOG_PATH="$ROBOSUITE_LOG_FILE" \
     TOKENIZERS_PARALLELISM=false \
     "$LF3R_ENV_OPENVLA/bin/python" \
     "$PROJECT_ROOT/tools/lf3r_annotator/run_openvla_libero10_natural.py" \
