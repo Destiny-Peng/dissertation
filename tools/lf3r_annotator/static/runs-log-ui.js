@@ -11,19 +11,32 @@
       log: document.getElementById("baselineBatchLog"),
       endpoint: function (jobId) {
         return "/api/baseline-jobs/" + encodeURIComponent(jobId) + "/log?tail=240";
-      }
+      },
+      requestSerial: 0
     },
     rollout_generation: {
       jobs: document.getElementById("rolloutGenerationJobs"),
       log: document.getElementById("rolloutGenerationLog"),
       endpoint: function (jobId) {
         return "/api/rollout-jobs/" + encodeURIComponent(jobId) + "/log?tail=240";
-      }
+      },
+      requestSerial: 0
     }
   };
 
   function activityFor(channel) {
     return channel && channel.log ? channel.log.closest(".runs-activity") : null;
+  }
+
+  function visibleJobId(channel) {
+    if (!channel || !channel.log || channel.log.hidden) return "";
+    return String(channel.log.dataset.visibleJobId || "");
+  }
+
+  function invalidateLogRequests(channel) {
+    if (!channel) return 0;
+    channel.requestSerial = (channel.requestSerial || 0) + 1;
+    return channel.requestSerial;
   }
 
   function setLogOpen(channel, jobId, open) {
@@ -45,6 +58,7 @@
     Object.keys(channels).forEach(function (key) {
       var channel = channels[key];
       if (!channel.log) return;
+      invalidateLogRequests(channel);
       setLogOpen(channel, "", false);
     });
   }
@@ -54,11 +68,11 @@
       var channel = channels[jobType];
       if (!channel.jobs || !channel.log) return;
 
-      var visibleJobId = channel.log.hidden ? "" : String(channel.log.dataset.visibleJobId || "");
+      var currentJobId = visibleJobId(channel);
       var matchingVisibleButton = false;
       channel.jobs.querySelectorAll("[data-persistent-job-log]").forEach(function (button) {
         var jobId = String(button.dataset.persistentJobLog || "");
-        var open = Boolean(visibleJobId && jobId === visibleJobId);
+        var open = Boolean(currentJobId && jobId === currentJobId);
         if (open) matchingVisibleButton = true;
         if (button.textContent !== (open ? "Hide log" : "View log")) {
           button.textContent = open ? "Hide log" : "View log";
@@ -68,7 +82,8 @@
         }
       });
 
-      if (visibleJobId && !matchingVisibleButton) {
+      if (currentJobId && !matchingVisibleButton) {
+        invalidateLogRequests(channel);
         channel.log.hidden = true;
         channel.log.dataset.visibleJobId = "";
         var activity = activityFor(channel);
@@ -81,32 +96,81 @@
     });
   }
 
+  async function fetchLogText(channel, jobId) {
+    var response = await fetch(channel.endpoint(jobId), { cache: "no-store" });
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not read job log");
+    return payload.log ? payload.log.text : "";
+  }
+
   async function showLog(jobType, jobId, button) {
     var channel = channels[jobType];
     if (!channel || !channel.log) return;
 
-    if (!channel.log.hidden && channel.log.dataset.visibleJobId === jobId) {
+    if (visibleJobId(channel) === jobId) {
+      invalidateLogRequests(channel);
       setLogOpen(channel, jobId, false);
       return;
     }
 
+    var requestSerial = invalidateLogRequests(channel);
     if (button) {
       button.disabled = true;
       button.textContent = "Loading…";
     }
     try {
-      var response = await fetch(channel.endpoint(jobId), { cache: "no-store" });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not read job log");
-      channel.log.textContent = payload.log ? payload.log.text : "";
+      var text = await fetchLogText(channel, jobId);
+      // A user can switch logs while this request is in flight. Never let a
+      // late response from the old selection steal the shared log panel.
+      if (requestSerial !== channel.requestSerial) return;
+      channel.log.textContent = text;
       setLogOpen(channel, jobId, true);
     } catch (error) {
+      if (requestSerial !== channel.requestSerial) return;
       channel.log.textContent = "Job log error: " + error.message;
       setLogOpen(channel, jobId, true);
     } finally {
       if (button) button.disabled = false;
       syncButtons();
     }
+  }
+
+  async function refreshSelectedLog(jobType, jobId) {
+    var channel = channels[jobType];
+    jobId = String(jobId || "");
+    if (!channel || !channel.log || visibleJobId(channel) !== jobId) return;
+
+    var requestSerial = invalidateLogRequests(channel);
+    try {
+      var text = await fetchLogText(channel, jobId);
+      // Re-check both the request generation and selected job after await.
+      // Multiple active jobs are polled concurrently, and their responses can
+      // arrive in any order.
+      if (requestSerial !== channel.requestSerial || visibleJobId(channel) !== jobId) return;
+      channel.log.textContent = text;
+    } catch (_error) {
+      // Keep the last visible log text on a transient refresh failure. The job
+      // status poll remains responsible for surfacing persistent errors.
+    }
+  }
+
+  function installLegacyPollingBridge() {
+    // app.js polls every active persistent job. Its legacy refresh functions
+    // write the shared Runs <pre> for whichever job is globally "latest".
+    // When several jobs run together that races with the user's View log
+    // selection. Replace those writers so polling refreshes only the log that
+    // is actually visible.
+    var baselineRefresh = function (jobId) {
+      return refreshSelectedLog("baseline", jobId);
+    };
+    var rolloutRefresh = function (jobId) {
+      return refreshSelectedLog("rollout_generation", jobId);
+    };
+
+    window.loadBaselineBatchLog = baselineRefresh;
+    window.loadRolloutGenerationLog = rolloutRefresh;
+    try { loadBaselineBatchLog = baselineRefresh; } catch (_) {}
+    try { loadRolloutGenerationLog = rolloutRefresh; } catch (_) {}
   }
 
   view.addEventListener("click", function (event) {
@@ -146,6 +210,7 @@
     }
   });
 
+  installLegacyPollingBridge();
   closeAllInitialLogs();
   syncButtons();
 })();
