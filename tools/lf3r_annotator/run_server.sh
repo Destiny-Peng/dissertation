@@ -19,7 +19,7 @@ if [[ -f "$PID_FILE" ]]; then
     rm -f "$PID_FILE"
 fi
 
-python3 -u "$PROJECT_ROOT/tools/lf3r_annotator/server_entry_v3.py" \
+python3 -u "$PROJECT_ROOT/tools/lf3r_annotator/server_entry_v4.py" \
     --host "$ANNOTATOR_HOST" \
     --port "$ANNOTATOR_PORT" \
     > >(tee "$LOG_FILE") 2>&1 &
