@@ -21,3 +21,4 @@ assets/sbert/
 grounding/testcases/
 grounding/postprocess/*test.py
 .gradio/
+*oneshot*/
