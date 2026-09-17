@@ -69,15 +69,19 @@ if [[ ! "$RUN_NOTE" =~ ^lf3r-data-natural-libero-spatial-256-[A-Za-z0-9._-]+$ ]]
 fi
 
 LOG_FILE="$(lf3r_log_path openvla_libero_spatial_native_rollouts)"
+ROBOSUITE_LOG_DIR="${LOGS}/robosuite"
+ROBOSUITE_LOG_FILE="${ROBOSUITE_LOG_DIR}/${RUN_NOTE}.log"
+mkdir -p "$ROBOSUITE_LOG_DIR"
 echo "RUN_NOTE=$RUN_NOTE" | tee -a "$LOG_FILE"
 echo "TASK_SUITE=libero_spatial" | tee -a "$LOG_FILE"
 echo "TASK_RANGE start=$TASK_START end=$TASK_END trials=$TRIALS" | tee -a "$LOG_FILE"
 echo "GPU_SELECTION=user_managed gpu=$GPU_ID" | tee -a "$LOG_FILE"
 echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
 echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
+echo "ROBOSUITE_LOG_PATH=$ROBOSUITE_LOG_FILE" | tee -a "$LOG_FILE"
 
 set -o pipefail
-env CUDA_VISIBLE_DEVICES="$GPU_ID" MUJOCO_GL=egl PYOPENGL_PLATFORM=egl LIBERO_CONFIG_PATH="$CACHE/libero" PYTHONPATH="$REPOS/safe-openvla:$REPOS/LIBERO" WANDB_DISABLED=true TOKENIZERS_PARALLELISM=false \
+env CUDA_VISIBLE_DEVICES="$GPU_ID" MUJOCO_GL=egl PYOPENGL_PLATFORM=egl LIBERO_CONFIG_PATH="$CACHE/libero" PYTHONPATH="$REPOS/safe-openvla:$REPOS/LIBERO" WANDB_DISABLED=true ROBOSUITE_LOG_PATH="$ROBOSUITE_LOG_FILE" TOKENIZERS_PARALLELISM=false \
   "$LF3R_ENV_OPENVLA/bin/python" "$PROJECT_ROOT/tools/lf3r_annotator/run_openvla_libero10_natural.py" \
   --task-suite libero_spatial --task-start "$TASK_START" --task-end "$TASK_END" --trials "$TRIALS" --run-note "$RUN_NOTE" --seed "$SEED" \
   "${SAFE_FEATURE_ARGS[@]}" "${RESOLUTION_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
