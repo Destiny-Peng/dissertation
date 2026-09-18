@@ -403,25 +403,27 @@ In Review, choose ProcVLM in Batch baseline and expand its parameters. `Enable v
 This change was reviewed statically only; no tests or inference were run, as requested.
 
 
-## Stateful ProcVLM procedure tracker
+## ProcVLM external procedure tracking
 
-ProcVLM now has three explicit procedure modes. `baseline` preserves the existing
-original-task + recent-window inference path. `canonical` adds a fixed manual
-canonical procedure but no memory. `stateful` additionally feeds only
-temporally confirmed per-chain state into the next prompt. Value-head output is
-never used to confirm a transition.
+ProcVLM has three explicit modes:
 
-The initial checked-in procedure is only for LIBERO-10 task0:
+- `baseline`: official-style ProcVLM inference only. No ontology, tracker, or history is sent to the model.
+- `tracker_only`: official-style ProcVLM inference plus CPU-only external semantic canonicalization and a persistent forward-only tracker. Tracker state is recorded but never fed back to ProcVLM.
+- `stateful_history`: the same external tracker, with only a short natural-language task history generated from persistent state added to the next ProcVLM prompt.
+
+The canonical procedure is an **external ontology only**. Canonical IDs and the procedure graph are never injected into ProcVLM prompts. The checked-in initial ontology is for LIBERO-10 task0:
 
 `config/procvlm_procedures/libero10_task0.json`
 
-The wrapper rejects a procedure whose task text does not match the selected
-rollout, so this task0 file cannot silently be applied to another task. Every
-canonical/stateful run copies the selected procedure into
-`<run>/procedure/canonical_procedure.json` and records its SHA-256 in
-`run.json`; resume uses that frozen copy.
+It defines task-specific verb/object/target aliases, semantic actions, chains, and deterministic history text. The wrapper rejects an ontology whose task text does not match the selected rollout. Non-baseline runs snapshot the ontology to:
 
-A bounded task0 run can be planned without model inference:
+`<run>/procedure/external_procedure.json`
+
+and record its SHA-256 in `run.json`; resume uses the frozen snapshot.
+
+The V1 tracker defaults to a rolling window of 9 valid canonicalized observations and requires 7 supporting observations to advance one stage. Persistent state is forward-only and may move by at most one stage per update. Invalid parses do not enter the tracker window. Evidence used for a committed chain transition is cleared for that chain so the same observations cannot immediately advance a second stage.
+
+A bounded run can be planned without model inference:
 
 ~~~bash
 bash tools/baselines/run_baseline.sh \
@@ -431,50 +433,35 @@ bash tools/baselines/run_baseline.sh \
   --output-dir outputs/baselines \
   --logs-dir logs/baselines \
   --rollout-id <task0-rollout-id> \
-  --procvlm-procedure-mode stateful \
+  --procvlm-procedure-mode stateful_history \
   --procvlm-procedure-config config/procvlm_procedures/libero10_task0.json \
+  --procvlm-tracker-support-threshold 7 \
+  --procvlm-tracker-window-size 9 \
   --dry-run
 ~~~
 
-Defaults follow the first calibration proposal: tracker evidence every 3 source
-frames, forward transition 3-of-4 with 0.2 s minimum span, chain completion
-4-of-5 with 0.3 s minimum span, 0.5 s candidate timeout, maximum forward jump
-of one stage, and no rollback. Override them with the corresponding
-`--procvlm-tracker-*` options. Stateful inference is necessarily sequential
-across selected prediction frames because a newly confirmed state changes the
-next prompt; canonical and baseline modes retain batched inference.
+`tracker_only` can remain batched because its prompt never changes. `stateful_history` is sequential across selected prediction frames because a persistent-state update can change the next prompt.
 
-Non-baseline `procvlm_raw.jsonl` rows include the original model text and
-progress plus `parsed_remaining_ids`, `parse_valid`, `observed_stage`,
-`candidate_stage`, `confirmed_stage`, transition support, and transition
-events. The descriptive stability metrics can be computed without inference:
+Non-baseline `procvlm_raw.jsonl` rows include the original model output and progress together with:
+
+- `parsed_actions`
+- `canonical_remaining_ids`
+- `parse_valid`
+- `observed_state`
+- `persistent_state`
+- `transition_support`
+- `state_update` / `state_updates`
+- `task_history_text`
+- `next_task_history_text`
+
+For a baseline run, the same external parser/tracker diagnostics can be applied offline without changing inference:
 
 ~~~bash
 python3 tools/baselines/analyze_procvlm_procedure_tracker.py \
-  outputs/baselines/<run>/raw/<rollout-id>/procvlm_raw.jsonl
+  outputs/baselines/<run>/raw/<rollout-id>/procvlm_raw.jsonl \
+  --procedure-config config/procvlm_procedures/libero10_task0.json
 ~~~
 
-For a `baseline` run, add
-`--procedure-config config/procvlm_procedures/libero10_task0.json` to parse the
-free-form baseline reasoning post-hoc against the same canonical vocabulary.
-This does not alter baseline inference and makes the normalized reasoning-state
-switch/reopen metrics comparable with canonical/stateful runs.
+The analysis reports raw reasoning state switches, raw subtask reopen count/rate, persistent-state regression count, state updates, progress regressions, and maximum progress drop. With human subtask-transition labels it also reports false state updates and state-update lag.
 
-This reports normalized reasoning-state switches, completed-subtask reopen
-events, confirmed transitions, progress regressions below -20 by default, and
-the maximum single-step progress regression. False commits and transition lag
-require human transition labels; supply a JSON file such as:
-
-~~~json
-{
-  "transitions": [
-    {"chain": "alphabet", "to_stage": 1, "frame": 58},
-    {"chain": "alphabet", "to_stage": 2, "frame": 91}
-  ]
-}
-~~~
-
-with `--ground-truth <file>`. A confirmed transition earlier than the matching
-human transition is counted as a false commit unless allowed by
-`--early-tolerance-frames`; unmatched commits are also false commits. These
-metrics are diagnostics for threshold calibration, not detector accuracy.
+Progress/value output is descriptive only and is never used for tracker state transitions.
