@@ -56,9 +56,11 @@
   }
 
   function environmentReady() {
-    return !window.workspaceState
-      || !workspaceState.analysisEnvironment
-      || workspaceState.analysisEnvironment.ready;
+    return Boolean(
+      window.workspaceState
+      && workspaceState.analysisEnvironment
+      && workspaceState.analysisEnvironment.ready
+    );
   }
 
   function activeJob() {
@@ -299,7 +301,7 @@
     badge("queued");
     status("Starting incremental-hop analysis…", "");
     node("analysisHopLog").textContent = "";
-    updateButton();
+    node("analysisHopRunButton").disabled = true;
     try {
       var response = await fetch("/api/analysis/run", {
         method: "POST",
@@ -363,9 +365,18 @@
     scope.addEventListener("change", loadRuns);
     run.addEventListener("change", updateButton);
     patchSnapshotRenderer();
+    if (typeof window.workspaceRenderAnalysisRunPanel === "function") {
+      var previousRunPanel = window.workspaceRenderAnalysisRunPanel;
+      window.workspaceRenderAnalysisRunPanel = function () {
+        var result = previousRunPanel.apply(this, arguments);
+        updateButton();
+        return result;
+      };
+    }
     loadRuns();
     recoverLatestJob();
     renderSnapshot();
+    updateButton();
   }
 
   init();
