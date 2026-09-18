@@ -1001,8 +1001,15 @@ class AnalysisService:
             },
             "signal": metadata.get("signal") or {},
             "counts": metadata.get("counts") or {},
+            "counts_by_signal_mode": metadata.get("counts_by_signal_mode") or {},
             "generalization": metadata.get("generalization") or {},
-            "detector_config_n": metadata.get("detector_config_n"),
+            "detector_config_n": (
+                metadata.get("detector_config_n_total")
+                or metadata.get("detector_config_n")
+            ),
+            "detector_config_n_per_signal": metadata.get(
+                "detector_config_n_per_signal"
+            ),
             "selected_config_n": metadata.get("selected_config_n"),
             "families": families,
             "signal_modes": signal_modes,
