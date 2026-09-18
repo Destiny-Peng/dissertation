@@ -607,6 +607,51 @@
             aria-label="Persistent temporal analysis jobs"></div>
         </section>
 
+        <section class="analysis-card analysis-run-card" aria-labelledby="analysisHopTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE HOP DETECTOR</p>
+              <h3 id="analysisHopTitle">Incremental-hop failure evidence</h3>
+            </div>
+            <span id="analysisHopBadge" class="analysis-badge">Idle</span>
+          </div>
+          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine <strong>incremental</strong>
+            hop. It does not run inference and does not use accumulated/fused progress, change-point detection, or
+            whole-rollout statistics.</p>
+          <form id="analysisHopForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Rollout scope</span>
+                <select id="analysisHopScope">
+                  <option value="libero_10" selected>LIBERO-10 (default)</option>
+                  <option value="all">All loaded rollouts</option>
+                  <option value="libero_spatial">LIBERO-Spatial</option>
+                  <option value="controlled_analysis">Controlled</option>
+                </select>
+              </label>
+              <label><span>Robo-Dopamine run</span>
+                <select id="analysisHopRun">
+                  <option value="">Loading compatible runs...</option>
+                </select>
+                <small class="analysis-run-field-help">Choose a fused/multi-perspective or incremental-mode run with
+                  saved incremental pred_vllm.json outputs.</small>
+              </label>
+              <label><span>Output label</span>
+                <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>Generalization</span>
+                <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
+              </label>
+            </div>
+            <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
+              Robo-Dopamine runs.</p>
+            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run incremental-hop analysis</button>
+          </form>
+          <pre id="analysisHopLog" class="job-log" aria-label="Latest incremental-hop analysis log"></pre>
+          <div id="analysisHopResults" class="analysis-table-wrap"></div>
+          <div id="analysisHopArtifacts" class="analysis-provenance"></div>
+        </section>
+
         <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
         <section class="analysis-card primary-analysis-card" aria-labelledby="analysisConclusionTitle">
           <div class="analysis-card-heading">
