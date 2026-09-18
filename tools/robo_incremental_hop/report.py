@@ -120,7 +120,7 @@ def evaluate_all_configs(
                 "positive_episode_n": (
                     positive_episode_count(mask)
                 ),
-                "incremental_source": (
+                "signal_source": (
                     project_relative(
                         signal["prediction_path"]
                     )
