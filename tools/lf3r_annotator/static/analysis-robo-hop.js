@@ -83,30 +83,38 @@
   function populateRuns() {
     var select = node("analysisHopRun");
     if (!select) return;
-    var choices = (hopState.runs || []).filter(function (run) {
+    var roboRuns = (hopState.runs || []).filter(function (run) {
       return run.baseline === "robo_dopamine"
-        && run.compatible
-        && run.incremental_compatible;
+        && (run.status === "complete" || run.status === "complete_with_errors");
+    });
+    var choices = roboRuns.filter(function (run) {
+      return Number(run.incremental_scope_rollout_count || 0) > 0;
     });
     var previous = select.value;
     if (!choices.length) {
       select.innerHTML = '<option value="">No compatible completed Robo-Dopamine run</option>';
       select.disabled = true;
       status(
-        "No completed Robo-Dopamine run covers this scope with saved incremental output.",
+        roboRuns.length
+          ? roboRuns.length + " completed Robo-Dopamine run(s) were found, but none contain raw incremental output for this scope. Forward-only hop is a difference of forward progress, not the raw incremental hop required by this analysis."
+          : "No completed Robo-Dopamine run was found for this scope.",
         "warning"
       );
     } else {
       select.innerHTML = choices.map(function (run) {
-        return '<option value="' + esc(run.run_root) + '">' + esc(runLabel(run)) + '</option>';
+        var available = Number(run.incremental_scope_rollout_count || 0);
+        var requested = Number(run.selected_scope_rollouts || 0);
+        var coverage = requested ? Math.round(1000 * available / requested) / 10 : 0;
+        return '<option value="' + esc(run.run_root) + '">'
+          + esc(runLabel(run) + " · incremental " + available + "/" + requested + " (" + coverage + "%)")
+          + '</option>';
       }).join("");
       select.disabled = false;
       if (choices.some(function (run) { return run.run_root === previous; })) {
         select.value = previous;
       }
       status(
-        choices.length + " completed Robo-Dopamine run(s) cover this scope "
-          + "and contain saved incremental output for every selected rollout.",
+        choices.length + " completed Robo-Dopamine run(s) contain usable raw incremental output in this scope. Partial coverage is allowed and the analysis will use only those saved incremental rollouts.",
         ""
       );
     }
