@@ -15,128 +15,141 @@ from procvlm_procedure_state import (  # noqa: E402
     Chain,
     Procedure,
     StatefulProcedureTracker,
+    build_stateful_history_prompt,
     parse_remaining_actions,
+    task_history_text,
 )
 
 
 def procedure() -> Procedure:
+    alphabet = (
+        Action(
+            "A1", "grasp", "alphabet_soup_can",
+            text="grasp the alphabet soup can",
+            history="The alphabet soup can has already been grasped.",
+        ),
+        Action(
+            "A2", "place", "alphabet_soup_can", "basket",
+            text="place the alphabet soup can into the basket",
+            history="The alphabet soup can has already been placed into the basket.",
+        ),
+    )
+    tomato = (
+        Action(
+            "B1", "grasp", "tomato_sauce_can",
+            text="grasp the tomato sauce can",
+            history="The tomato sauce can has already been grasped.",
+        ),
+        Action(
+            "B2", "place", "tomato_sauce_can", "basket",
+            text="place the tomato sauce can into the basket",
+            history="The tomato sauce can has already been placed into the basket.",
+        ),
+    )
     return Procedure(
         "task0",
         "put both cans in the basket",
-        (
-            Chain("alphabet", (Action("A1", "grasp alphabet"), Action("A2", "place alphabet"))),
-            Chain("tomato", (Action("B1", "grasp tomato"), Action("B2", "place tomato"))),
-        ),
+        (Chain("alphabet", alphabet), Chain("tomato", tomato)),
+        verb_aliases={
+            "grasp": ("grasp", "pick up", "grab"),
+            "place": ("place", "put"),
+        },
+        object_aliases={
+            "alphabet_soup_can": ("alphabet soup", "alphabet soup can"),
+            "tomato_sauce_can": ("tomato sauce", "tomato sauce can"),
+        },
+        target_aliases={"basket": ("basket",)},
     )
 
 
 def parsed(text: str):
-    return parse_remaining_actions(text, procedure(), allow_text_fallback=False)
+    return parse_remaining_actions(text, procedure())
+
+
+def test_semantic_parser_uses_remaining_actions_section_and_aliases() -> None:
+    result = parsed(
+        "Earlier explanation mentions grasping the alphabet soup can.\n"
+        "The following actions are required:\n"
+        "1. Put the alphabet soup can in the basket.\n"
+        "2. Pick up the tomato sauce can.\n"
+        "3. Place the tomato sauce can into the basket.\n"
+        "Therefore, the estimated progress is <progress>25%</progress>."
+    )
+    assert result.parse_valid is True
+    assert result.remaining_ids == ("A2", "B1", "B2")
+    assert result.observed_stage == {"alphabet": 1, "tomato": 0}
+    assert len(result.parsed_actions) == 3
 
 
 def test_suffix_property_rejects_non_suffix_remaining_set() -> None:
     result = parsed(
         "The following actions are required:\n"
-        "1. [A1] grasp alphabet\n"
-        "2. [B1] grasp tomato\n"
-        "3. [B2] place tomato\n"
+        "1. grasp the alphabet soup can\n"
+        "2. grasp the tomato sauce can\n"
+        "3. place the tomato sauce can into the basket\n"
         "<progress>20%</progress>"
     )
     assert result.parse_valid is False
     assert any("suffix property" in error for error in result.errors)
 
 
-def test_forward_transition_requires_three_of_four_and_minimum_span() -> None:
-    tracker = StatefulProcedureTracker(procedure(), fps=30.0)
-    obs = parsed(
-        "The following actions are required:\n"
-        "1. [A2] place alphabet\n"
-        "2. [B1] grasp tomato\n"
-        "3. [B2] place tomato\n"
-        "<progress>25%</progress>"
-    )
-    assert obs.parse_valid
-    assert tracker.update(0, obs)["confirmed_stage"]["alphabet"] == 0
-    assert tracker.update(3, obs)["confirmed_stage"]["alphabet"] == 0
-    out = tracker.update(6, obs)
-    assert out["confirmed_stage"]["alphabet"] == 1
-    assert out["transition_event"]["from_stage"] == 0
-    assert out["transition_event"]["to_stage"] == 1
-
-
-def test_chain_completion_requires_four_of_five_and_point_three_seconds() -> None:
-    tracker = StatefulProcedureTracker(procedure(), fps=30.0)
+def test_forward_transition_requires_seven_of_nine_valid_observations() -> None:
+    tracker = StatefulProcedureTracker(procedure())
     stage1 = parsed(
         "The following actions are required:\n"
-        "1. [A2] place alphabet\n"
-        "2. [B1] grasp tomato\n"
-        "3. [B2] place tomato\n"
+        "1. place the alphabet soup can into the basket\n"
+        "2. grasp the tomato sauce can\n"
+        "3. place the tomato sauce can into the basket\n"
         "<progress>25%</progress>"
     )
-    for frame in (0, 3, 6):
-        tracker.update(frame, stage1)
-    assert tracker.confirmed_stage["alphabet"] == 1
+    assert stage1.parse_valid
 
-    done_alphabet = parsed(
-        "The following actions are required:\n"
-        "1. [B1] grasp tomato\n"
-        "2. [B2] place tomato\n"
-        "<progress>50%</progress>"
-    )
-    for frame in (9, 12, 15):
-        assert tracker.update(frame, done_alphabet)["confirmed_stage"]["alphabet"] == 1
-    out = tracker.update(18, done_alphabet)
-    assert out["confirmed_stage"]["alphabet"] == 2
-    assert out["transition_event"]["reason"].startswith("4-of-5")
+    for frame in range(6):
+        out = tracker.update(frame, stage1)
+        assert out["persistent_stage"]["alphabet"] == 0
+
+    out = tracker.update(6, stage1)
+    assert out["persistent_stage"]["alphabet"] == 1
+    assert out["state_update"]["from"] == 0
+    assert out["state_update"]["to"] == 1
+    assert out["transition_support"]["alphabet"]["positive"] == 7
+    assert out["transition_support"]["alphabet"]["required"] == 7
+
+
+def test_invalid_observations_do_not_enter_tracker_window() -> None:
+    tracker = StatefulProcedureTracker(procedure())
+    invalid = parsed("No useful structured reasoning here.")
+    assert invalid.parse_valid is False
+    out = tracker.update(0, invalid)
+    assert out["valid_observation_count"] == 0
 
 
 def test_maximum_forward_jump_is_one_stage() -> None:
     tracker = StatefulProcedureTracker(
         procedure(),
-        fps=30.0,
-        forward_votes=1,
-        forward_window=1,
-        forward_min_span_sec=0.0,
-        completion_votes=1,
-        completion_window=1,
-        completion_min_span_sec=0.0,
+        support_threshold=1,
+        window_size=1,
     )
     all_done = parsed("The following actions are required: none. <progress>100%</progress>")
     out = tracker.update(0, all_done)
-    assert out["confirmed_stage"]["alphabet"] == 1
-    assert out["confirmed_stage"]["tomato"] == 1
+    assert out["persistent_stage"]["alphabet"] == 1
+    assert out["persistent_stage"]["tomato"] == 1
 
 
-def test_candidate_timeout_discards_old_support() -> None:
-    tracker = StatefulProcedureTracker(
-        procedure(),
-        fps=30.0,
-        decision_interval_frames=3,
-        forward_votes=2,
-        forward_window=4,
-        forward_min_span_sec=0.0,
-        candidate_timeout_sec=0.5,
-    )
-    obs = parsed(
-        "The following actions are required:\n"
-        "1. [A2] place alphabet\n"
-        "2. [B1] grasp tomato\n"
-        "3. [B2] place tomato\n"
-        "<progress>25%</progress>"
-    )
-    tracker.update(0, obs)
-    neutral = parsed(
-        "The following actions are required:\n"
-        "1. [A1] grasp alphabet\n"
-        "2. [A2] place alphabet\n"
-        "3. [B1] grasp tomato\n"
-        "4. [B2] place tomato\n"
-        "<progress>0%</progress>"
-    )
-    tracker.update(18, neutral)
-    out = tracker.update(21, obs)
-    assert out["confirmed_stage"]["alphabet"] == 0
-    assert out["transition_support"]["alphabet"]["votes"] == 1
+def test_history_uses_only_highest_postcondition_per_chain() -> None:
+    text = task_history_text(procedure(), {"alphabet": 2, "tomato": 0})
+    assert text == "The alphabet soup can has already been placed into the basket."
+    assert "grasped" not in text
+
+
+def test_stateful_prompt_contains_history_but_no_canonical_ids() -> None:
+    history = "The alphabet soup can has already been placed into the basket."
+    prompt = build_stateful_history_prompt("put both cans in the basket", history)
+    assert "Task history:" in prompt
+    assert history in prompt
+    assert "A1" not in prompt
+    assert "A2" not in prompt
+    assert "Confirmed" not in prompt
 
 
 def test_baseline_mode_keeps_upstream_inference_path_without_procedure_config(monkeypatch) -> None:
