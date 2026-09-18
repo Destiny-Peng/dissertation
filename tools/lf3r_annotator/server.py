@@ -963,6 +963,8 @@ class AnalysisService:
         if latest_annotation_update and latest_annotation_update > generated_at:
             stale = True
         best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
+        sweep_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["sweep_summary"])
+        recovery_results = self._read_csv(directory / ROBO_HOP_TABLE_FILES["recovery_results"])
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -997,6 +999,8 @@ class AnalysisService:
             "families": families,
             "best_configs": best_configs,
             "selected_configs": selected_configs,
+            "sweep_summary": sweep_summary,
+            "recovery_results": recovery_results,
             "task_cv_available": task_cv_path.is_file(),
             "artifacts": [
                 {
@@ -2555,6 +2559,42 @@ class BaselineService:
             f"for rollout {source_rollout_id}"
         )
 
+    @staticmethod
+    def _robo_run_incremental_ids(
+        run_path: Path,
+        run_ids: set[str],
+    ) -> set[str]:
+        """Return rollout IDs with a saved native incremental Robo-Dopamine output."""
+        available: set[str] = set()
+        for rollout_id in run_ids:
+            result_path = run_path / "raw" / rollout_id / "worker_result.json"
+            if not result_path.is_file():
+                continue
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            perspectives = result.get("perspective_outputs")
+            if isinstance(perspectives, dict):
+                incremental = perspectives.get("incremental")
+                if (
+                    isinstance(incremental, dict)
+                    and incremental.get("raw_model_output")
+                ):
+                    available.add(rollout_id)
+                    continue
+            eval_mode = str(result.get("eval_mode") or "").lower()
+            eval_modes = [
+                str(value).lower()
+                for value in (result.get("eval_modes") or [])
+            ]
+            if (
+                (eval_mode == "incremental" or eval_modes == ["incremental"])
+                and result.get("raw_model_output")
+            ):
+                available.add(rollout_id)
+        return available
+
     def list_runs(
         self,
         scope: Any = "libero_10",
@@ -2594,6 +2634,11 @@ class BaselineService:
                 if condition == "full_instruction":
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
+                incremental_ids: set[str] = set()
+                if method == "robo_dopamine":
+                    incremental_ids = self._robo_run_incremental_ids(
+                        run_path, run_ids
+                    )
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
@@ -2608,6 +2653,20 @@ class BaselineService:
                     "missing_rollouts": len(missing),
                     "scope": scope,
                     "instruction_condition": run_condition,
+                    "incremental_rollout_count": (
+                        len(incremental_ids) if method == "robo_dopamine" else None
+                    ),
+                    "incremental_missing_rollouts": (
+                        len(selected_ids - incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "incremental_compatible": (
+                        bool(selected_ids)
+                        and selected_ids.issubset(incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
                 })
                 summaries.append(summary)
         summaries.sort(
