@@ -1025,14 +1025,26 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             ]),
             encoding="utf-8",
         )
+        metadata_dir = raw_root / "multi_perspective"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        (metadata_dir / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "prediction_paths": {
+                        "incremental": str(incremental),
+                        "forward": str(raw_root / "forward" / "pred_vllm.json"),
+                        "backward": str(raw_root / "backward" / "pred_vllm.json"),
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         (raw_root / "worker_result.json").write_text(
             json.dumps(
                 {
                     "eval_mode": "fused",
                     "eval_modes": ["incremental", "forward", "backward"],
-                    "perspective_outputs": {
-                        "incremental": {"raw_model_output": str(incremental)}
-                    },
+                    "raw_model_output": str(raw_root / "fused" / "pred_vllm.json"),
                 }
             ),
             encoding="utf-8",
@@ -1047,7 +1059,9 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         )
         self.assertTrue(robo_run["incremental_compatible"])
         self.assertEqual(robo_run["incremental_rollout_count"], 1)
+        self.assertEqual(robo_run["incremental_scope_rollout_count"], 1)
         self.assertEqual(robo_run["incremental_missing_rollouts"], 0)
+        self.assertEqual(robo_run["incremental_scope_coverage"], 1)
 
         with self.request(
             "/api/analysis/run",
@@ -1071,10 +1085,15 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertNotIn("--rynnvalue-run", job["command"])
 
         selection_path = self.root / job["selection_path"]
+        selection_doc = json.loads(selection_path.read_text())
         self.assertEqual(
-            json.loads(selection_path.read_text())["selection"],
+            selection_doc["selection"],
             [{"id": self.rollout["id"]}],
         )
+        self.assertEqual(selection_doc["requested_rollouts"], 1)
+        self.assertEqual(selection_doc["available_incremental_rollouts"], 1)
+        self.assertEqual(job["requested_rollouts"], 1)
+        self.assertEqual(job["incremental_coverage"], 1)
         final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
         with self.request("/api/analysis") as response:
