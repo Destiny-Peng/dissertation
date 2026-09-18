@@ -48,3 +48,5 @@ __pycache__/
 *.ckpt
 *.bin
 *.log
+*.zip
+Robo-Dopamine-Bench/**
