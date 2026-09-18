@@ -36,6 +36,59 @@ from robo_dopamine_multi_perspective import (
 )
 
 
+ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "output" / "robodopamine_goal"
+
+
+def resolve_goal_image(
+    record: dict[str, Any],
+    args: argparse.Namespace,
+    config: dict[str, Any],
+) -> Path:
+    """Resolve one Robo-Dopamine goal image with per-task LIBERO-10 defaults."""
+    explicit = record.get("goal_image")
+    if explicit in (None, ""):
+        explicit = args.goal_image
+    if explicit not in (None, ""):
+        goal = Path(explicit).expanduser()
+        if not goal.is_absolute():
+            goal = resolve_record_path(str(goal), args.data_root)
+        goal = goal.resolve()
+        if not goal.is_file():
+            raise FileNotFoundError(f"Explicit Robo-Dopamine goal image does not exist: {goal}")
+        return goal
+
+    task_suite = str(
+        record.get("task_suite")
+        or record.get("dataset_role")
+        or ""
+    ).strip().lower()
+    if task_suite == "libero_10":
+        raw_task_id = record.get("task_id")
+        try:
+            task_id = int(raw_task_id)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "LIBERO-10 Robo-Dopamine rollout is missing a valid task_id "
+                f"for automatic goal-image selection: {record.get('id') or record.get('rollout_id')}"
+            ) from error
+        if not 0 <= task_id <= 9:
+            raise ValueError(
+                f"LIBERO-10 task_id must be in [0, 9] for goal-image selection; got {task_id}"
+            )
+        goal = (ROBO_LIBERO10_GOAL_ROOT / f"libero-10-task{task_id}.jpg").resolve()
+        if not goal.is_file():
+            raise FileNotFoundError(
+                "Missing task-specific Robo-Dopamine goal image for "
+                f"LIBERO-10 task {task_id}: {goal}"
+            )
+        return goal
+
+    default_goal = (config["repo"] / "examples/blank_goal.png").resolve()
+    if not default_goal.is_file():
+        raise FileNotFoundError(f"Default Robo-Dopamine goal image does not exist: {default_goal}")
+    return default_goal
+
+
 def build_job_specs(
     records: list[dict[str, Any]],
     args: argparse.Namespace,
@@ -43,7 +96,6 @@ def build_job_specs(
     raw_root: Path,
 ) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
-    default_goal = config["repo"] / "examples/blank_goal.png"
     for index, record in enumerate(records):
         rollout_id = str(record.get("rollout_id", record.get("id", "")))
         if not rollout_id:
@@ -58,13 +110,7 @@ def build_job_specs(
         if task is None:
             raise ValueError(f"Robo-Dopamine job {rollout_id} is missing task description")
 
-        goal_value = record.get("goal_image")
-        if goal_value is None:
-            goal_value = args.goal_image or default_goal
-        goal = Path(goal_value).expanduser()
-        goal = goal.resolve() if goal.is_absolute() else resolve_record_path(str(goal), args.data_root)
-        if not goal.is_file():
-            raise FileNotFoundError(f"Goal image for {rollout_id} does not exist: {goal}")
+        goal = resolve_goal_image(record, args, config)
 
         output_value = record.get("raw_output_dir", raw_root / rollout_id)
         output_dir = Path(output_value).expanduser()
