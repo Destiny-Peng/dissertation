@@ -679,7 +679,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument(
         "--procedure-mode",
-        choices=("baseline", "canonical", "stateful"),
+        choices=("baseline", "tracker_only", "stateful_history"),
         default="baseline",
     )
     parser.add_argument("--procedure-config", type=Path, default=None)
@@ -703,34 +703,20 @@ def parse_args() -> argparse.Namespace:
         "frame_stride",
         "max_new_tokens",
         "tp",
-        "tracker_decision_interval_frames",
-        "tracker_forward_votes",
-        "tracker_forward_window",
-        "tracker_completion_votes",
-        "tracker_completion_window",
+        "tracker_support_threshold",
+        "tracker_window_size",
         "tracker_max_forward_jump",
     ):
         if getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be positive")
-    if args.tracker_forward_votes > args.tracker_forward_window:
-        parser.error("--tracker-forward-votes cannot exceed --tracker-forward-window")
-    if args.tracker_completion_votes > args.tracker_completion_window:
-        parser.error("--tracker-completion-votes cannot exceed --tracker-completion-window")
+    if args.tracker_support_threshold > args.tracker_window_size:
+        parser.error("--tracker-support-threshold cannot exceed --tracker-window-size")
     if args.tracker_max_forward_jump != 1:
         parser.error("V1 requires --tracker-max-forward-jump 1")
-    for name in (
-        "tracker_forward_min_span_sec",
-        "tracker_completion_min_span_sec",
-        "tracker_candidate_timeout_sec",
-    ):
-        if getattr(args, name) < 0:
-            parser.error(f"--{name.replace('_', '-')} must be non-negative")
-    if args.tracker_candidate_timeout_sec <= 0:
-        parser.error("--tracker-candidate-timeout-sec must be positive")
     if args.max_sampled_frames is not None and args.max_sampled_frames < 1:
         parser.error("--max-sampled-frames must be positive when provided")
     if args.procedure_mode != "baseline" and args.procedure_config is None:
-        parser.error("--procedure-config is required for canonical/stateful mode")
+        parser.error("--procedure-config is required for tracker_only/stateful_history mode")
     if args.dry_run:
         if args.vllm_free_memory_fraction is not None and not 0.0 < args.vllm_free_memory_fraction <= 1.0:
             parser.error("--vllm-free-memory-fraction must be in (0, 1]")
