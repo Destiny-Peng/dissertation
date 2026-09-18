@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import importlib.util
+import sys
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "baselines" / "procvlm_procedure_state.py"
-SPEC = importlib.util.spec_from_file_location("procvlm_procedure_state", MODULE_PATH)
-assert SPEC is not None and SPEC.loader is not None
-tracker_mod = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(tracker_mod)
+BASELINES_DIR = Path(__file__).resolve().parents[2] / "baselines"
+sys.path.insert(0, str(BASELINES_DIR))
 
-Action = tracker_mod.Action
-Chain = tracker_mod.Chain
-Procedure = tracker_mod.Procedure
-StatefulProcedureTracker = tracker_mod.StatefulProcedureTracker
-parse_remaining_actions = tracker_mod.parse_remaining_actions
+from procvlm_procedure_state import (  # noqa: E402
+    Action,
+    Chain,
+    Procedure,
+    StatefulProcedureTracker,
+    parse_remaining_actions,
+)
 
 
 def procedure() -> Procedure:
