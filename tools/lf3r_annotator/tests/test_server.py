@@ -1009,6 +1009,13 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
     def test_robo_hop_analysis_run_uses_incremental_saved_output(self) -> None:
         self.install_fake_robo_hop_analyzer()
         roots = self.seed_analysis_runs()
+        extra_rollout = {
+            **self.rollout,
+            "id": "sample-rollout-without-incremental",
+            "episode_index": 1,
+        }
+        with (self.root / "manifest.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(extra_rollout) + "\n")
         robo_root = self.root / roots["robo_dopamine"]
         raw_root = robo_root / "raw" / self.rollout["id"]
         incremental = raw_root / "incremental" / "pred_vllm.json"
@@ -1057,11 +1064,12 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             if row["baseline"] == "robo_dopamine"
             and row["run_root"] == roots["robo_dopamine"]
         )
-        self.assertTrue(robo_run["incremental_compatible"])
+        self.assertFalse(robo_run["compatible"])
+        self.assertFalse(robo_run["incremental_compatible"])
         self.assertEqual(robo_run["incremental_rollout_count"], 1)
         self.assertEqual(robo_run["incremental_scope_rollout_count"], 1)
-        self.assertEqual(robo_run["incremental_missing_rollouts"], 0)
-        self.assertEqual(robo_run["incremental_scope_coverage"], 1)
+        self.assertEqual(robo_run["incremental_missing_rollouts"], 1)
+        self.assertEqual(robo_run["incremental_scope_coverage"], 0.5)
 
         with self.request(
             "/api/analysis/run",
@@ -1077,7 +1085,9 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             job = json.load(response)["job"]
 
         self.assertEqual(job["analysis_kind"], "robo_incremental_hop")
+        self.assertEqual(job["requested_rollouts"], 2)
         self.assertEqual(job["selected_rollouts"], 1)
+        self.assertEqual(job["incremental_coverage"], 0.5)
         self.assertIn("--selection", job["command"])
         self.assertIn("--run-root", job["command"])
         self.assertNotIn("--safe-run", job["command"])
@@ -1090,10 +1100,10 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             selection_doc["selection"],
             [{"id": self.rollout["id"]}],
         )
-        self.assertEqual(selection_doc["requested_rollouts"], 1)
+        self.assertEqual(selection_doc["requested_rollouts"], 2)
         self.assertEqual(selection_doc["available_incremental_rollouts"], 1)
-        self.assertEqual(job["requested_rollouts"], 1)
-        self.assertEqual(job["incremental_coverage"], 1)
+        self.assertEqual(job["requested_rollouts"], 2)
+        self.assertEqual(job["incremental_coverage"], 0.5)
         final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
         with self.request("/api/analysis") as response:
