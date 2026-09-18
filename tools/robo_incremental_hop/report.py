@@ -82,7 +82,7 @@ def evaluate_all_configs(
                     "native_sample_n": len(
                         signal["frames"]
                     ),
-                    "incremental_source": (
+                    "signal_source": (
                         project_relative(
                             signal["prediction_path"]
                         )
@@ -661,7 +661,7 @@ def plot_tradeoff(
         "event recall @ 3 native samples"
     )
     axis.set_title(
-        "Robo-Dopamine incremental-hop detector trade-off"
+        "Robo-Dopamine hop detector trade-off"
     )
     axis.set_ylim(0, 1.02)
     axis.grid(alpha=0.2)
@@ -1061,7 +1061,7 @@ def choose_representative_rollouts(
         if unknown:
             raise ValueError(
                 "Representative rollout(s) "
-                "have no usable incremental signal: "
+                "have no usable hop signal: "
                 f"{unknown}"
             )
         return list(
@@ -1125,6 +1125,7 @@ def plot_representative_rollouts(
     signals: Mapping[str, Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
     plot_dir: Path,
+    signal_mode: str = "incremental",
 ) -> None:
     events_by_rollout: dict[
         str, list[Mapping[str, Any]]
@@ -1162,7 +1163,7 @@ def plot_representative_rollouts(
                 marker="o",
                 markersize=3,
                 linewidth=1.2,
-                label="incremental hop",
+                label=f"{signal_mode} hop",
             )
             axis.axhline(
                 0.0,
@@ -1212,11 +1213,14 @@ def plot_representative_rollouts(
                 "(native Robo-Dopamine samples)"
             )
             axis.set_ylabel(
-                "incremental hop "
-                "(normalized [-1,1])"
+                (
+                    "incremental hop (normalized [-1,1])"
+                    if signal_mode == "incremental"
+                    else f"{signal_mode} hop (saved native scale)"
+                )
             )
             axis.set_title(
-                f"{rollout_id} · "
+                f"{rollout_id} · {signal_mode} · "
                 f"{config['detector_family']} · "
                 f"{config['parameters_json']}"
             )
