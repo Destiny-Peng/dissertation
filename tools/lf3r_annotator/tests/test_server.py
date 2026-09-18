@@ -668,6 +668,54 @@ class ServerTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def install_fake_robo_hop_analyzer(self) -> None:
+        script = self.root / "tools" / "analyze_robo_dopamine_incremental_hop.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import csv
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', type=Path, required=True)
+parser.add_argument('--selection', type=Path, required=True)
+parser.add_argument('--run-root', type=Path, required=True)
+args = parser.parse_known_args()[0]
+args.output_dir.mkdir(parents=True, exist_ok=True)
+selection = json.loads(args.selection.read_text())
+metadata = {
+    'signal': {'name': 'Robo-Dopamine incremental hop'},
+    'input': {'run_root': str(args.run_root), 'selection': str(args.selection)},
+    'counts': {'usable_rollout_n': len(selection['selection']), 'event_n': 1, 'clean_rollout_n': 1},
+    'detector_config_n': 1,
+    'selected_config_n': 1,
+    'generalization': {'task_cv_enabled': False},
+}
+(args.output_dir / 'metadata.json').write_text(json.dumps(metadata))
+with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'detector_family', 'clean_fpr_constraint', 'selection_status', 'config_id',
+        'epsilon', 'n', 'event_n', 'event_recall_at_3', 'median_delay_samples',
+        'median_delay_frames', 'clean_rollout_fpr'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'detector_family': 'consecutive', 'clean_fpr_constraint': 0.1,
+        'selection_status': 'selected', 'config_id': 'cfg0001',
+        'epsilon': 0.0, 'n': 3, 'event_n': 1, 'event_recall_at_3': 1.0,
+        'median_delay_samples': 2, 'median_delay_frames': 4, 'clean_rollout_fpr': 0.0,
+    })
+for name in (
+    'sweep_summary.csv', 'event_results.csv', 'clean_rollout_results.csv',
+    'recovery_results.csv', 'breakdown_summary.csv'
+):
+    (args.output_dir / name).write_text('config_id\n')
+print('fake incremental hop analysis complete')
+""",
+            encoding="utf-8",
+        )
+
     def install_fake_rollout_generator(self, exit_code: int = 0) -> None:
         script = self.root / "tools" / "lf3r_annotator" / "generate_libero10_natural.sh"
         script.parent.mkdir(parents=True, exist_ok=True)
@@ -946,6 +994,77 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             analysis = json.load(response)["analysis"]
         self.assertTrue(analysis["available"])
         self.assertEqual(analysis["source"]["selection_count"], 1)
+
+    def test_robo_hop_analysis_run_uses_incremental_saved_output(self) -> None:
+        self.install_fake_robo_hop_analyzer()
+        roots = self.seed_analysis_runs()
+        robo_root = self.root / roots["robo_dopamine"]
+        raw_root = robo_root / "raw" / self.rollout["id"]
+        incremental = raw_root / "incremental" / "pred_vllm.json"
+        incremental.parent.mkdir(parents=True, exist_ok=True)
+        incremental.write_text(
+            json.dumps([
+                {
+                    "id": "sample-af_000002",
+                    "image": ["", "", "", "", "", "frame_000002.png"],
+                    "hop": -0.1,
+                    "progress": 0.2,
+                    "pred": "<score>-10%</score>",
+                }
+            ]),
+            encoding="utf-8",
+        )
+        (raw_root / "worker_result.json").write_text(
+            json.dumps(
+                {
+                    "eval_mode": "fused",
+                    "eval_modes": ["incremental", "forward", "backward"],
+                    "perspective_outputs": {
+                        "incremental": {"raw_model_output": str(incremental)}
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.request(
+            "/api/analysis/run",
+            {
+                "analysis_kind": "robo_incremental_hop",
+                "scope": "libero_10",
+                "runs": {"robo_dopamine": roots["robo_dopamine"]},
+                "task_cv": False,
+                "output_label": "hop_test",
+            },
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+
+        self.assertEqual(job["analysis_kind"], "robo_incremental_hop")
+        self.assertEqual(job["selected_rollouts"], 1)
+        self.assertIn("--selection", job["command"])
+        self.assertIn("--run-root", job["command"])
+        self.assertNotIn("--safe-run", job["command"])
+        self.assertNotIn("--procvlm-run", job["command"])
+        self.assertNotIn("--rynnvalue-run", job["command"])
+
+        selection_path = self.root / job["selection_path"]
+        self.assertEqual(
+            json.loads(selection_path.read_text())["selection"],
+            [{"id": self.rollout["id"]}],
+        )
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        with self.request("/api/analysis") as response:
+            analysis = json.load(response)["analysis"]
+        self.assertTrue(analysis["robo_incremental_hop_available"])
+        hop = analysis["robo_incremental_hop"]
+        self.assertTrue(hop["available"])
+        self.assertEqual(hop["selected_configs"][0]["detector_family"], "consecutive")
+        self.assertEqual(hop["selected_configs"][0]["event_recall_at_3"], 1)
+        self.assertTrue(
+            any(item["name"] == "best_configs.csv" for item in hop["artifacts"])
+        )
 
     def test_analysis_run_rejects_missing_ids_and_paths(self) -> None:
         self.install_fake_temporal_analyzer()
