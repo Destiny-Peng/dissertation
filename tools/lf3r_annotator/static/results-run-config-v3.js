@@ -38,6 +38,8 @@
       core: [
         { key: "procvlm_window_size", label: "Window size", type: "number", defaultValue: 4, min: 1 },
         { key: "procvlm_frame_stride", label: "Frame stride", type: "number", defaultValue: 1, min: 1 },
+        { key: "procvlm_procedure_mode", label: "Procedure mode", type: "select", defaultValue: "baseline", options: [["baseline", "Baseline"], ["tracker_only", "Tracker only"], ["stateful_history", "Stateful history"]] },
+        { key: "procvlm_procedure_config", label: "External procedure config", type: "text", defaultValue: "config/procvlm_procedures/libero10_task0.json" },
         { key: "procvlm_max_sampled_frames", label: "Max sampled frames", type: "number", placeholder: "Runner default", min: 1 },
         { key: "procvlm_max_new_tokens", label: "Max new tokens", type: "number", defaultValue: 4096, min: 1 },
         { key: "procvlm_enable_value_head", label: "Enable value head", type: "checkbox", defaultValue: false, sourceId: "procvlmEnableValueHead" }
@@ -45,7 +47,10 @@
       advanced: [
         { key: "model_path", label: "Model path", type: "text", placeholder: "Use configured checkpoint" },
         { key: "dtype", label: "Dtype", type: "text", defaultValue: "bf16" },
-        { key: "tensor_parallel_size", label: "Tensor parallel size", type: "number", defaultValue: 1, min: 1 }
+        { key: "tensor_parallel_size", label: "Tensor parallel size", type: "number", defaultValue: 1, min: 1 },
+        { key: "procvlm_tracker_support_threshold", label: "Tracker support threshold", type: "number", defaultValue: 7, min: 1 },
+        { key: "procvlm_tracker_window_size", label: "Tracker window size", type: "number", defaultValue: 9, min: 1 },
+        { key: "procvlm_tracker_max_forward_jump", label: "Max forward jump", type: "number", defaultValue: 1, min: 1 }
       ],
       execution: [
         { key: "render_video", label: "Render baseline video", type: "checkbox", defaultValue: false }
@@ -188,6 +193,7 @@
     return '<label><span>' + esc(field.label) + '</span><input data-option="'
       + esc(field.key) + '" type="' + esc(field.type || "text") + '"'
       + (field.min != null ? ' min="' + field.min + '"' : "")
+      + (field.step != null ? ' step="' + field.step + '"' : "")
       + (field.placeholder ? ' placeholder="' + esc(field.placeholder) + '"' : "")
       + ' value="' + esc(value == null ? "" : value) + '"></label>';
   }
