@@ -175,6 +175,7 @@ def infer_procedure_rollout(
         StatefulProcedureTracker,
         build_procedure_prompt,
         load_procedure,
+        normalize_text,
         parse_remaining_actions,
     )
 
@@ -186,6 +187,12 @@ def infer_procedure_rollout(
         raise ValueError(f"--procedure-config is required for procedure mode {mode}")
     procedure_path = Path(config_value).expanduser().resolve()
     procedure = load_procedure(procedure_path)
+    job_task = str(job["task"])
+    if normalize_text(procedure.task) != normalize_text(job_task):
+        raise ValueError(
+            "procedure config task does not match rollout task: "
+            f"{procedure.task!r} != {job_task!r}"
+        )
 
     video_path = Path(job["video_path"]).expanduser().resolve()
     output_path = Path(job["output_path"]).expanduser().resolve()
