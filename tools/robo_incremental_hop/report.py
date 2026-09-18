@@ -448,154 +448,113 @@ def build_recovery_rows(
     return rows
 
 
-def summary_for_tasks(
-    config_id: str,
-    event_rows: Sequence[Mapping[str, Any]],
-    clean_rows: Sequence[Mapping[str, Any]],
-    tasks: set[str],
-) -> dict[str, Any]:
-    events = [
-        row
-        for row in event_rows
-        if (
-            str(row["config_id"])
-            == config_id
-            and str(row["task_key"])
-            in tasks
-        )
-    ]
-    clean = [
-        row
-        for row in clean_rows
-        if (
-            str(row["config_id"])
-            == config_id
-            and str(row["task_key"])
-            in tasks
-        )
-    ]
-    return {
-        **aggregate_event_metrics(events),
-        **aggregate_clean_metrics(clean),
-    }
-
-
 def task_cross_validation(
     configs: Sequence[Mapping[str, Any]],
     event_rows: Sequence[Mapping[str, Any]],
     clean_rows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Tune on all other tasks and evaluate the selected config on one held-out task."""
     task_keys = sorted(
-        {
-            str(row["task_key"])
-            for row in event_rows
-        }
-        | {
-            str(row["task_key"])
-            for row in clean_rows
-        }
+        {str(row["task_key"]) for row in event_rows}
+        | {str(row["task_key"]) for row in clean_rows}
     )
-    all_tasks = set(task_keys)
     config_by_id = {
         str(config["config_id"]): config
         for config in configs
     }
-    result: list[dict[str, Any]] = []
+    events_by_config: dict[
+        str, list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    clean_by_config: dict[
+        str, list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    for row in event_rows:
+        events_by_config[
+            str(row["config_id"])
+        ].append(row)
+    for row in clean_rows:
+        clean_by_config[
+            str(row["config_id"])
+        ].append(row)
 
+    result: list[dict[str, Any]] = []
     for held_out in task_keys:
-        train_tasks = all_tasks - {held_out}
-        train_summary = []
+        train_summary: list[dict[str, Any]] = []
         for config in configs:
+            config_id = str(config["config_id"])
+            train_events = [
+                row
+                for row in events_by_config.get(config_id, [])
+                if str(row["task_key"]) != held_out
+            ]
+            train_clean = [
+                row
+                for row in clean_by_config.get(config_id, [])
+                if str(row["task_key"]) != held_out
+            ]
             train_summary.append(
                 {
                     **config_row(config),
-                    **summary_for_tasks(
-                        str(
-                            config[
-                                "config_id"
-                            ]
-                        ),
-                        event_rows,
-                        clean_rows,
-                        train_tasks,
-                    ),
+                    **aggregate_event_metrics(train_events),
+                    **aggregate_clean_metrics(train_clean),
                 }
             )
-        selected = select_best_configs(
-            train_summary
-        )
 
+        selected = select_best_configs(train_summary)
         for row in selected:
             base = {
                 "held_out_task": held_out,
-                "train_task_n": len(
-                    train_tasks
-                ),
-                "detector_family": row[
-                    "detector_family"
-                ],
+                "train_task_n": max(0, len(task_keys) - 1),
+                "detector_family": row["detector_family"],
                 "clean_fpr_constraint": row[
                     "clean_fpr_constraint"
                 ],
-                "selection_status": row[
-                    "selection_status"
-                ],
+                "selection_status": row["selection_status"],
             }
-            if (
-                row["selection_status"]
-                != "selected"
-            ):
+            if row["selection_status"] != "selected":
                 result.append(base)
                 continue
 
-            config_id = str(
-                row["config_id"]
-            )
-            heldout = summary_for_tasks(
-                config_id,
-                event_rows,
-                clean_rows,
-                {held_out},
-            )
-            config = config_by_id[
-                config_id
+            config_id = str(row["config_id"])
+            heldout_events = [
+                item
+                for item in events_by_config.get(config_id, [])
+                if str(item["task_key"]) == held_out
             ]
+            heldout_clean = [
+                item
+                for item in clean_by_config.get(config_id, [])
+                if str(item["task_key"]) == held_out
+            ]
+            heldout = {
+                **aggregate_event_metrics(heldout_events),
+                **aggregate_clean_metrics(heldout_clean),
+            }
+            config = config_by_id[config_id]
             result.append(
                 {
                     **base,
                     **config_row(config),
-                    "train_event_n": row.get(
-                        "event_n"
+                    "train_event_n": row.get("event_n"),
+                    "train_event_recall_at_3": row.get(
+                        "event_recall_at_3"
                     ),
-                    "train_event_recall_at_3": (
-                        row.get(
-                            "event_recall_at_3"
-                        )
+                    "train_median_delay_samples": row.get(
+                        "median_delay_samples"
                     ),
-                    "train_median_delay_samples": (
-                        row.get(
-                            "median_delay_samples"
-                        )
+                    "train_clean_rollout_n": row.get(
+                        "clean_rollout_n"
                     ),
-                    "train_clean_rollout_n": (
-                        row.get(
-                            "clean_rollout_n"
-                        )
-                    ),
-                    "train_clean_rollout_fpr": (
-                        row.get(
-                            "clean_rollout_fpr"
-                        )
+                    "train_clean_rollout_fpr": row.get(
+                        "clean_rollout_fpr"
                     ),
                     **{
                         f"heldout_{key}": value
-                        for key, value
-                        in heldout.items()
+                        for key, value in heldout.items()
                     },
                 }
             )
     return result
-
 
 def write_csv(
     path: Path,
