@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize Stateful ProcVLM procedure-tracker stability from one raw JSONL file."""
+"""Summarize external ProcVLM procedure tracking from one raw JSONL file."""
 
 from __future__ import annotations
 
@@ -25,11 +25,10 @@ def add_posthoc_procedure_states(
     rows: list[dict[str, Any]],
     procedure_path: Path,
 ) -> list[dict[str, Any]]:
-    """Parse baseline/free-form ProcVLM text against a fixed canonical procedure.
+    """Parse baseline/free-form ProcVLM reasoning against an external ontology.
 
-    Existing canonical/stateful parse fields are left untouched. This makes the
-    reasoning-state stability metrics comparable across baseline/canonical/stateful
-    without changing baseline inference.
+    Existing tracker fields are left untouched. Baseline inference itself is never
+    changed; this is CPU-only post-processing.
     """
     from procvlm_procedure_state import load_procedure, parse_remaining_actions
 
@@ -39,12 +38,15 @@ def add_posthoc_procedure_states(
         item = dict(row)
         if "parse_valid" not in item:
             answer = str(item.get("model_output") or item.get("reasoning") or "")
-            parsed = parse_remaining_actions(answer, procedure, allow_text_fallback=True)
+            parsed = parse_remaining_actions(answer, procedure)
+            item["parsed_actions"] = list(parsed.parsed_actions)
+            item["canonical_remaining_ids"] = list(parsed.remaining_ids)
             item["parsed_remaining_ids"] = list(parsed.remaining_ids)
             item["parse_valid"] = bool(parsed.parse_valid)
             item["parse_source"] = "posthoc_" + parsed.source
             item["parse_errors"] = list(parsed.errors)
             item["observed_stage"] = parsed.observed_stage
+            item["observed_state"] = parsed.observed_stage
         enriched.append(item)
     return enriched
 
@@ -88,6 +90,9 @@ def summarize(
     reopen_count = 0
     previous_by_chain: dict[str, int] = {}
 
+    persistent_regression_count = 0
+    previous_persistent: dict[str, int] = {}
+
     finite_progress: list[tuple[int, float]] = []
     progress_regression_count = 0
     maximum_progress_regression = 0.0
@@ -106,6 +111,17 @@ def summarize(
                     reopen_count += 1
                 previous_by_chain[chain] = stage
             previous_state = state
+
+        persistent = row.get("persistent_state") or row.get("persistent_stage")
+        if isinstance(persistent, dict):
+            try:
+                current_persistent = {str(k): int(v) for k, v in persistent.items()}
+            except (TypeError, ValueError):
+                current_persistent = {}
+            for chain, stage in current_persistent.items():
+                if chain in previous_persistent and stage < previous_persistent[chain]:
+                    persistent_regression_count += 1
+            previous_persistent.update(current_persistent)
 
         value = row.get("progress")
         try:
@@ -128,6 +144,13 @@ def summarize(
         "parse_invalid_count": sum(row.get("parse_valid") is False for row in rows),
         "reasoning_state_switch_count": state_switch_count,
         "completed_subtask_reopen_count": reopen_count,
+        "raw_subtask_reopen_count": reopen_count,
+        "raw_subtask_reopen_rate": (
+            reopen_count / max(len(valid_states) - 1, 1) if valid_states else 0.0
+        ),
+        "persistent_state_regression_count": persistent_regression_count,
+        "state_update_count": len(events),
+        "state_updates": events,
         "confirmed_transition_count": len(events),
         "confirmed_transitions": events,
         "progress_regression_threshold": progress_regression_threshold,
@@ -175,7 +198,8 @@ def compare_transitions(
 
     for event in confirmed:
         try:
-            key = (str(event["chain"]), int(event["to_stage"]))
+            to_stage = event.get("to", event.get("to_stage"))
+            key = (str(event["chain"]), int(to_stage))
             frame = int(event["frame_index"])
         except (KeyError, TypeError, ValueError):
             continue
@@ -204,6 +228,9 @@ def compare_transitions(
         if key not in seen
     ]
     return {
+        "false_state_update_count": len(false_commits),
+        "false_state_updates": false_commits,
+        "state_update_lag": lags,
         "false_commit_count": len(false_commits),
         "false_commits": false_commits,
         "transition_detection_lag": lags,
@@ -221,7 +248,7 @@ def parse_args() -> argparse.Namespace:
         "--procedure-config",
         type=Path,
         default=None,
-        help="Post-hoc canonical parser for baseline rows that lack parse fields",
+        help="External ontology for post-hoc baseline canonicalization",
     )
     parser.add_argument("--progress-regression-threshold", type=float, default=-20.0)
     parser.add_argument("--early-tolerance-frames", type=int, default=0)
