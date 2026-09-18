@@ -215,13 +215,27 @@ def relocate_recorded_path(
         )
 
     for candidate in candidates:
-        if candidate.is_file():
+        if not candidate.is_file():
+            continue
+        try:
             return ensure_within_project(
                 candidate, "incremental prediction"
             )
-    candidate = candidates[0] if candidates else path
-    return ensure_within_project(
-        candidate, "incremental prediction"
+        except ValueError:
+            # A saved absolute path may still exist on another checkout.
+            # Ignore it and prefer a project-relative relocation candidate.
+            continue
+
+    for candidate in candidates:
+        try:
+            return ensure_within_project(
+                candidate, "incremental prediction"
+            )
+        except ValueError:
+            continue
+    raise ValueError(
+        "Recorded incremental prediction cannot be relocated inside "
+        f"PROJECT_ROOT: {value}"
     )
 
 
