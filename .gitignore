@@ -49,3 +49,4 @@ __pycache__/
 *.bin
 *.log
 Robo-Dopamine-Bench/**
+*.zip
