@@ -2391,12 +2391,18 @@ def main() -> int:
     args.logs_dir = args.logs_dir.expanduser().resolve()
     if args.goal_image is not None:
         args.goal_image = args.goal_image.expanduser().resolve()
-    if args.procvlm_procedure_config is not None:
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode == "baseline":
+        # Baseline mode must remain independent of canonical/tracker state.
+        # Ignore any stale procedure path supplied by an old WebUI/session.
+        args.procvlm_procedure_config = None
+    elif args.baseline == "procvlm":
+        if args.procvlm_procedure_config is None:
+            raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
         args.procvlm_procedure_config = args.procvlm_procedure_config.expanduser().resolve()
         if not args.procvlm_procedure_config.is_file():
-            raise FileNotFoundError(f"ProcVLM procedure config does not exist: {args.procvlm_procedure_config}")
-    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline" and args.procvlm_procedure_config is None:
-        raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
+            raise FileNotFoundError(
+                f"ProcVLM procedure config does not exist: {args.procvlm_procedure_config}"
+            )
     if not args.manifest.is_file():
         raise FileNotFoundError(f"Manifest does not exist: {args.manifest}")
 
