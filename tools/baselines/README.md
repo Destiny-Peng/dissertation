@@ -454,6 +454,12 @@ python3 tools/baselines/analyze_procvlm_procedure_tracker.py \
   outputs/baselines/<run>/raw/<rollout-id>/procvlm_raw.jsonl
 ~~~
 
+For a `baseline` run, add
+`--procedure-config config/procvlm_procedures/libero10_task0.json` to parse the
+free-form baseline reasoning post-hoc against the same canonical vocabulary.
+This does not alter baseline inference and makes the normalized reasoning-state
+switch/reopen metrics comparable with canonical/stateful runs.
+
 This reports normalized reasoning-state switches, completed-subtask reopen
 events, confirmed transitions, progress regressions below -20 by default, and
 the maximum single-step progress regression. False commits and transition lag
