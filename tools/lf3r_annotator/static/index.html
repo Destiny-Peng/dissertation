@@ -334,19 +334,13 @@
                   <label data-cli-help="baseline.tensor_parallel_size" data-batch-methods="procvlm,robo_dopamine"><span>Tensor parallel size</span><input data-batch-option="tensor_parallel_size" type="number" min="1" step="1" value="1"></label>
                   <label data-cli-help="baseline.procvlm_window_size" data-batch-methods="procvlm"><span>Window size</span><input data-batch-option="procvlm_window_size" type="number" min="1" step="1" value="4"></label>
                   <label data-cli-help="baseline.procvlm_frame_stride" data-batch-methods="procvlm"><span>Frame stride</span><input data-batch-option="procvlm_frame_stride" type="number" min="1" step="1" value="1"></label>
-                  <label data-batch-methods="procvlm"><span>Procedure mode</span><select data-batch-option="procvlm_procedure_mode"><option value="baseline" selected>Baseline</option><option value="canonical">Canonical</option><option value="stateful">Stateful</option></select></label>
-                  <label data-batch-methods="procvlm"><span>Canonical procedure config</span><input data-batch-option="procvlm_procedure_config" type="text" value="config/procvlm_procedures/libero10_task0.json"></label>
+                  <label data-batch-methods="procvlm"><span>Procedure mode</span><select data-batch-option="procvlm_procedure_mode"><option value="baseline" selected>Baseline</option><option value="tracker_only">Tracker only</option><option value="stateful_history">Stateful history</option></select></label>
+                  <label data-batch-methods="procvlm"><span>External procedure config</span><input data-batch-option="procvlm_procedure_config" type="text" value="config/procvlm_procedures/libero10_task0.json"></label>
                   <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1" placeholder="Runner default"></label>
                   <label data-cli-help="baseline.procvlm_max_new_tokens" data-batch-methods="procvlm"><span>Max new tokens</span><input data-batch-option="procvlm_max_new_tokens" type="number" min="1" step="1" value="4096"></label>
                   <label data-cli-help="baseline.procvlm_enable_value_head" data-batch-methods="procvlm"><span>Enable value head (also single-rollout reruns)</span><input id="procvlmEnableValueHead" data-batch-option="procvlm_enable_value_head" type="checkbox"></label>
-                  <label data-batch-methods="procvlm"><span>Tracker decision interval (frames)</span><input data-batch-option="procvlm_tracker_decision_interval_frames" type="number" min="1" step="1" value="3"></label>
-                  <label data-batch-methods="procvlm"><span>Forward votes / window</span><input data-batch-option="procvlm_tracker_forward_votes" type="number" min="1" step="1" value="3"></label>
-                  <label data-batch-methods="procvlm"><span>Forward window</span><input data-batch-option="procvlm_tracker_forward_window" type="number" min="1" step="1" value="4"></label>
-                  <label data-batch-methods="procvlm"><span>Forward min span (s)</span><input data-batch-option="procvlm_tracker_forward_min_span_sec" type="number" min="0" step="0.01" value="0.2"></label>
-                  <label data-batch-methods="procvlm"><span>Completion votes</span><input data-batch-option="procvlm_tracker_completion_votes" type="number" min="1" step="1" value="4"></label>
-                  <label data-batch-methods="procvlm"><span>Completion window</span><input data-batch-option="procvlm_tracker_completion_window" type="number" min="1" step="1" value="5"></label>
-                  <label data-batch-methods="procvlm"><span>Completion min span (s)</span><input data-batch-option="procvlm_tracker_completion_min_span_sec" type="number" min="0" step="0.01" value="0.3"></label>
-                  <label data-batch-methods="procvlm"><span>Candidate timeout (s)</span><input data-batch-option="procvlm_tracker_candidate_timeout_sec" type="number" min="0.01" step="0.01" value="0.5"></label>
+                  <label data-batch-methods="procvlm"><span>Tracker support threshold</span><input data-batch-option="procvlm_tracker_support_threshold" type="number" min="1" step="1" value="7"></label>
+                  <label data-batch-methods="procvlm"><span>Tracker window size</span><input data-batch-option="procvlm_tracker_window_size" type="number" min="1" step="1" value="9"></label>
                   <label data-batch-methods="procvlm"><span>Max forward jump</span><input data-batch-option="procvlm_tracker_max_forward_jump" type="number" min="1" max="1" step="1" value="1"></label>
                   <label data-cli-help="baseline.densereward_frame_interval" data-batch-methods="densereward"><span>Frame interval</span><input data-batch-option="densereward_frame_interval" type="number" min="1" step="1" value="1"></label>
                   <label data-cli-help="baseline.densereward_max_new_tokens" data-batch-methods="densereward"><span>Max new tokens</span><input data-batch-option="densereward_max_new_tokens" type="number" min="1" step="1" value="32"></label>
@@ -732,8 +726,8 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=procvlm-stateful-20260918" defer></script>
-  <script src="/static/workspace.js?v=procvlm-stateful-20260918" defer></script>
+  <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
+  <script src="/static/workspace.js?v=procvlm-external-history-20260918" defer></script>
 </body>
 
 </html>
