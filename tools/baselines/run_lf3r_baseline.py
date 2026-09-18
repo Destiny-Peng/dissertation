@@ -314,7 +314,19 @@ def build_procvlm_worker_command(
         "--max-new-tokens", str(args.procvlm_max_new_tokens),
         "--torch-dtype", args.dtype,
         "--tp", str(args.tensor_parallel_size),
+        "--procedure-mode", str(getattr(args, "procvlm_procedure_mode", "baseline")),
+        "--tracker-decision-interval-frames", str(args.procvlm_tracker_decision_interval_frames),
+        "--tracker-forward-votes", str(args.procvlm_tracker_forward_votes),
+        "--tracker-forward-window", str(args.procvlm_tracker_forward_window),
+        "--tracker-forward-min-span-sec", str(args.procvlm_tracker_forward_min_span_sec),
+        "--tracker-completion-votes", str(args.procvlm_tracker_completion_votes),
+        "--tracker-completion-window", str(args.procvlm_tracker_completion_window),
+        "--tracker-completion-min-span-sec", str(args.procvlm_tracker_completion_min_span_sec),
+        "--tracker-candidate-timeout-sec", str(args.procvlm_tracker_candidate_timeout_sec),
+        "--tracker-max-forward-jump", str(args.procvlm_tracker_max_forward_jump),
     ]
+    if getattr(args, "procvlm_procedure_config", None) is not None:
+        command.extend(["--procedure-config", str(args.procvlm_procedure_config)])
     if getattr(args, "procvlm_enable_value_head", False):
         command.append("--enable-value-head")
     if vllm_total_memory_fraction is None:
@@ -668,6 +680,22 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
     )
     args.procvlm_max_new_tokens = int(stored_arguments.get("procvlm_max_new_tokens", 4096))
     args.procvlm_enable_value_head = bool(stored_arguments.get("procvlm_enable_value_head", False))
+    args.procvlm_procedure_mode = str(stored_arguments.get("procvlm_procedure_mode", "baseline"))
+    stored_procedure_config = stored_arguments.get("procvlm_procedure_config")
+    args.procvlm_procedure_config = (
+        Path(stored_procedure_config).expanduser().resolve()
+        if stored_procedure_config not in (None, "", "None")
+        else None
+    )
+    args.procvlm_tracker_decision_interval_frames = int(stored_arguments.get("procvlm_tracker_decision_interval_frames", 3))
+    args.procvlm_tracker_forward_votes = int(stored_arguments.get("procvlm_tracker_forward_votes", 3))
+    args.procvlm_tracker_forward_window = int(stored_arguments.get("procvlm_tracker_forward_window", 4))
+    args.procvlm_tracker_forward_min_span_sec = float(stored_arguments.get("procvlm_tracker_forward_min_span_sec", 0.2))
+    args.procvlm_tracker_completion_votes = int(stored_arguments.get("procvlm_tracker_completion_votes", 4))
+    args.procvlm_tracker_completion_window = int(stored_arguments.get("procvlm_tracker_completion_window", 5))
+    args.procvlm_tracker_completion_min_span_sec = float(stored_arguments.get("procvlm_tracker_completion_min_span_sec", 0.3))
+    args.procvlm_tracker_candidate_timeout_sec = float(stored_arguments.get("procvlm_tracker_candidate_timeout_sec", 0.5))
+    args.procvlm_tracker_max_forward_jump = int(stored_arguments.get("procvlm_tracker_max_forward_jump", 1))
     args.dtype = str(stored_arguments.get("dtype", "bf16"))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     args.dry_run = False
@@ -2180,6 +2208,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--procvlm-max-new-tokens", type=int, default=4096)
     parser.add_argument("--procvlm-enable-value-head", action="store_true")
+    parser.add_argument(
+        "--procvlm-procedure-mode",
+        choices=("baseline", "canonical", "stateful"),
+        default="baseline",
+        help="Training-free procedure tracker mode; baseline preserves existing ProcVLM behavior",
+    )
+    parser.add_argument(
+        "--procvlm-procedure-config",
+        type=Path,
+        default=None,
+        help="Canonical procedure JSON required by canonical/stateful modes",
+    )
+    parser.add_argument("--procvlm-tracker-decision-interval-frames", type=int, default=3)
+    parser.add_argument("--procvlm-tracker-forward-votes", type=int, default=3)
+    parser.add_argument("--procvlm-tracker-forward-window", type=int, default=4)
+    parser.add_argument("--procvlm-tracker-forward-min-span-sec", type=float, default=0.2)
+    parser.add_argument("--procvlm-tracker-completion-votes", type=int, default=4)
+    parser.add_argument("--procvlm-tracker-completion-window", type=int, default=5)
+    parser.add_argument("--procvlm-tracker-completion-min-span-sec", type=float, default=0.3)
+    parser.add_argument("--procvlm-tracker-candidate-timeout-sec", type=float, default=0.5)
+    parser.add_argument("--procvlm-tracker-max-forward-jump", type=int, default=1)
 
     parser.add_argument(
         "--rynn-num-frames",
@@ -2274,6 +2323,28 @@ def parse_args() -> argparse.Namespace:
     if args.procvlm_frame_stride < 1:
         parser.error("--procvlm-frame-stride must be positive")
     for name in (
+        "procvlm_tracker_decision_interval_frames",
+        "procvlm_tracker_forward_votes",
+        "procvlm_tracker_forward_window",
+        "procvlm_tracker_completion_votes",
+        "procvlm_tracker_completion_window",
+        "procvlm_tracker_max_forward_jump",
+    ):
+        if getattr(args, name) < 1:
+            parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.procvlm_tracker_forward_votes > args.procvlm_tracker_forward_window:
+        parser.error("--procvlm-tracker-forward-votes cannot exceed its window")
+    if args.procvlm_tracker_completion_votes > args.procvlm_tracker_completion_window:
+        parser.error("--procvlm-tracker-completion-votes cannot exceed its window")
+    if args.procvlm_tracker_max_forward_jump != 1:
+        parser.error("V1 requires --procvlm-tracker-max-forward-jump 1")
+    if args.procvlm_tracker_forward_min_span_sec < 0 or args.procvlm_tracker_completion_min_span_sec < 0:
+        parser.error("ProcVLM tracker minimum spans must be non-negative")
+    if args.procvlm_tracker_candidate_timeout_sec <= 0:
+        parser.error("--procvlm-tracker-candidate-timeout-sec must be positive")
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline" and args.procvlm_procedure_config is None:
+        parser.error("--procvlm-procedure-config is required for canonical/stateful mode")
+    for name in (
         "procvlm_window_size", "procvlm_max_new_tokens",
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",
         "rynn_evaluation_interval", "rynn_batch_size",
@@ -2318,6 +2389,12 @@ def main() -> int:
     args.logs_dir = args.logs_dir.expanduser().resolve()
     if args.goal_image is not None:
         args.goal_image = args.goal_image.expanduser().resolve()
+    if args.procvlm_procedure_config is not None:
+        args.procvlm_procedure_config = args.procvlm_procedure_config.expanduser().resolve()
+        if not args.procvlm_procedure_config.is_file():
+            raise FileNotFoundError(f"ProcVLM procedure config does not exist: {args.procvlm_procedure_config}")
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline" and args.procvlm_procedure_config is None:
+        raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
     if not args.manifest.is_file():
         raise FileNotFoundError(f"Manifest does not exist: {args.manifest}")
 
@@ -2340,9 +2417,12 @@ def main() -> int:
         records = select_records(args, manifest_records)
 
     run_stamp = timestamp()
-    run_root = args.output_dir / f"{args.baseline}_{run_stamp}"
+    run_label = args.baseline
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline":
+        run_label = f"procvlm_{args.procvlm_procedure_mode}"
+    run_root = args.output_dir / f"{run_label}_{run_stamp}"
     raw_root = run_root / "raw"
-    log_path = args.logs_dir / f"{args.baseline}_{run_stamp}.log"
+    log_path = args.logs_dir / f"{run_label}_{run_stamp}.log"
     metadata_path = run_root / "run.json"
     jobs_path = run_root / "jobs.jsonl"
     commands_path = run_root / "commands.jsonl"
@@ -2354,6 +2434,14 @@ def main() -> int:
         "status": "planning",
         "created_at": iso_now(),
         "baseline": args.baseline,
+        "procedure_mode": (
+            args.procvlm_procedure_mode if args.baseline == "procvlm" else None
+        ),
+        "procedure_config": (
+            str(args.procvlm_procedure_config)
+            if args.baseline == "procvlm" and args.procvlm_procedure_config is not None
+            else None
+        ),
         "dry_run": args.dry_run,
         "manifest": str(args.manifest),
         "manifest_sha256": file_sha256(args.manifest),
