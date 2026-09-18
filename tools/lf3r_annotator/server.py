@@ -962,12 +962,8 @@ class AnalysisService:
         )
         if latest_annotation_update and latest_annotation_update > generated_at:
             stale = True
-        tables = {
-            name: self._read_csv(directory / filename)
-            for name, filename in ROBO_HOP_TABLE_FILES.items()
-        }
+        best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
         task_cv_path = directory / "task_cv_results.csv"
-        best_configs = tables["best_configs"]
         selected_configs = [
             row for row in best_configs
             if row.get("selection_status") == "selected"
@@ -1001,9 +997,6 @@ class AnalysisService:
             "families": families,
             "best_configs": best_configs,
             "selected_configs": selected_configs,
-            "sweep_summary": tables["sweep_summary"],
-            "recovery_results": tables["recovery_results"],
-            "breakdown_summary": tables["breakdown_summary"],
             "task_cv_available": task_cv_path.is_file(),
             "artifacts": [
                 {
@@ -1406,6 +1399,7 @@ class AnalysisService:
 
     def _artifact_links(self) -> list[dict[str, Any]]:
         selected = [
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
@@ -1585,6 +1579,7 @@ class AnalysisService:
         if name not in ANALYSIS_ARTIFACT_NAMES or "/" in name or "\\" in name:
             raise ValidationError("Unsupported analysis artifact")
         for _source_type, result in (
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
@@ -1604,10 +1599,13 @@ class AnalysisService:
     def _full_response(self) -> dict[str, Any]:
         change_point = self._change_point_response()
         event_triggered = self._event_triggered_response()
+        robo_hop = self._robo_hop_response()
         selected = self._latest_snapshot()
         if selected is None:
             has_analysis_artifact = bool(
-                change_point.get("available") or event_triggered.get("available")
+                change_point.get("available")
+                or event_triggered.get("available")
+                or robo_hop.get("available")
             )
             return {
                 "available": has_analysis_artifact,
@@ -1645,6 +1643,8 @@ class AnalysisService:
                 "change_point": change_point,
                 "event_triggered_available": bool(event_triggered.get("available")),
                 "event_triggered": event_triggered,
+                "robo_incremental_hop_available": bool(robo_hop.get("available")),
+                "robo_incremental_hop": robo_hop,
                 "primary_analysis_type": (
                     "change_point"
                     if change_point.get("available")
@@ -1751,6 +1751,8 @@ class AnalysisService:
             "change_point": change_point,
             "event_triggered_available": bool(event_triggered.get("available")),
             "event_triggered": event_triggered,
+            "robo_incremental_hop_available": bool(robo_hop.get("available")),
+            "robo_incremental_hop": robo_hop,
             "primary_analysis_type": (
                 "change_point"
                 if change_point.get("available")
