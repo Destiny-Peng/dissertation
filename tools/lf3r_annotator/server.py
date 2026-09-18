@@ -1399,10 +1399,10 @@ class AnalysisService:
 
     def _artifact_links(self) -> list[dict[str, Any]]:
         selected = [
-            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
         ]
         links: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -1579,10 +1579,10 @@ class AnalysisService:
         if name not in ANALYSIS_ARTIFACT_NAMES or "/" in name or "\\" in name:
             raise ValidationError("Unsupported analysis artifact")
         for _source_type, result in (
-            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
         ):
             if result is None:
                 continue
