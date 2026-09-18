@@ -363,6 +363,15 @@
             <label data-cli-help="baseline.procvlm_frame_stride" data-batch-methods="procvlm"><span>Frame
                 stride</span><input data-batch-option="procvlm_frame_stride" type="number" min="1" step="1"
                 value="1"></label>
+            <label data-batch-methods="procvlm"><span>Procedure mode</span><select
+                data-batch-option="procvlm_procedure_mode">
+                <option value="baseline" selected>Baseline</option>
+                <option value="tracker_only">Tracker only</option>
+                <option value="stateful_history">Stateful history</option>
+              </select></label>
+            <label data-batch-methods="procvlm"><span>External procedure config</span><input
+                data-batch-option="procvlm_procedure_config" type="text"
+                value="config/procvlm_procedures/libero10_task0.json"></label>
             <label data-cli-help="baseline.procvlm_max_sampled_frames" data-batch-methods="procvlm"><span>Max sampled
                 frames</span><input data-batch-option="procvlm_max_sampled_frames" type="number" min="1" step="1"
                 placeholder="Runner default"></label>
@@ -372,6 +381,15 @@
             <label data-cli-help="baseline.procvlm_enable_value_head" data-batch-methods="procvlm"><span>Enable value
                 head (also single-rollout reruns)</span><input id="procvlmEnableValueHead"
                 data-batch-option="procvlm_enable_value_head" type="checkbox"></label>
+            <label data-batch-methods="procvlm"><span>Tracker support threshold</span><input
+                data-batch-option="procvlm_tracker_support_threshold" type="number" min="1" step="1"
+                value="7"></label>
+            <label data-batch-methods="procvlm"><span>Tracker window size</span><input
+                data-batch-option="procvlm_tracker_window_size" type="number" min="1" step="1"
+                value="9"></label>
+            <label data-batch-methods="procvlm"><span>Max forward jump</span><input
+                data-batch-option="procvlm_tracker_max_forward_jump" type="number" min="1" max="1" step="1"
+                value="1"></label>
             <label data-cli-help="baseline.densereward_frame_interval" data-batch-methods="densereward"><span>Frame
                 interval</span><input data-batch-option="densereward_frame_interval" type="number" min="1" step="1"
                 value="1"></label>
@@ -1142,8 +1160,8 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=video-cache-20260916-1" defer></script>
-  <script src="/static/workspace.js?v=layout-throttle-20260916" defer></script>
+  <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
+  <script src="/static/workspace.js?v=procvlm-external-history-20260918" defer></script>
 </body>
 
 </html>
