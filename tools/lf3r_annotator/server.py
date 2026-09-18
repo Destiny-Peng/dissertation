@@ -3794,7 +3794,7 @@ class AnalysisJobService:
         )
         if metadata.get("status") not in BASELINE_RUN_STATUSES:
             raise ValidationError(
-                "Incremental-hop analysis requires a completed Robo-Dopamine run"
+                "Four-signal hop analysis requires a completed Robo-Dopamine run"
             )
         run_ids = run_rollout_ids(run_path)
         overlap = selected_ids.intersection(run_ids)
@@ -3819,7 +3819,7 @@ class AnalysisJobService:
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
             raise ValidationError(
-                "Unknown incremental-hop analysis field(s): "
+                "Unknown Robo-Dopamine hop-analysis field(s): "
                 + ", ".join(sorted(unknown_fields))
             )
         scope = validate_run_scope(payload.get("scope"))
@@ -3850,7 +3850,7 @@ class AnalysisJobService:
         )
         if not script.is_file():
             raise ValidationError(
-                "Robo-Dopamine incremental-hop analysis script is not installed"
+                "Robo-Dopamine hop-comparison analysis script is not installed"
             )
 
         job_id = "analysis-hop-" + uuid.uuid4().hex[:12]
@@ -4089,10 +4089,13 @@ class AnalysisJobService:
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                if job.get("analysis_kind") == "robo_incremental_hop":
+                if job.get("analysis_kind") in {
+                    "robo_incremental_hop",
+                    "robo_hop_comparison",
+                }:
                     required = ROBO_HOP_REQUIRED_FILES
                     missing_message = (
-                        "Incremental-hop analysis completed without all required artifacts"
+                        "Robo-Dopamine hop comparison completed without all required artifacts"
                     )
                 else:
                     required = (
@@ -4112,8 +4115,11 @@ class AnalysisJobService:
             else:
                 job["status"] = "failed"
                 label = (
-                    "Incremental-hop analysis"
-                    if job.get("analysis_kind") == "robo_incremental_hop"
+                    "Robo-Dopamine hop comparison"
+                    if job.get("analysis_kind") in {
+                        "robo_incremental_hop",
+                        "robo_hop_comparison",
+                    }
                     else "Temporal analysis"
                 )
                 error = error or f"{label} exited with code {return_code}"
