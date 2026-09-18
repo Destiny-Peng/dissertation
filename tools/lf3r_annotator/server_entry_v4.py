@@ -119,35 +119,7 @@ def _progressive_run_candidates(
     self: server.BaselineService,
     method: str,
 ) -> list[tuple[Path, dict[str, Any]]]:
-    candidates: list[tuple[tuple[str, int, str], Path, dict[str, Any]]] = []
-    if not self.baseline_root.is_dir():
-        return []
-    baseline_root = self.baseline_root.resolve()
-    for metadata_path in self.baseline_root.rglob("run.json"):
-        try:
-            metadata_path.parent.resolve().relative_to(baseline_root)
-        except ValueError:
-            continue
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if metadata.get("baseline") != method:
-            continue
-        if metadata.get("status") not in _PROGRESSIVE_RUN_STATUSES:
-            continue
-        try:
-            selected = int(metadata.get("selected_rollouts") or 0)
-        except (TypeError, ValueError):
-            continue
-        key = (
-            str(metadata.get("completed_at") or metadata.get("created_at") or ""),
-            selected,
-            str(metadata_path),
-        )
-        candidates.append((key, metadata_path.parent, metadata))
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return [(path, metadata) for _, path, metadata in candidates]
+    return self._indexed_run_candidates(method, _PROGRESSIVE_RUN_STATUSES)
 
 
 server.BaselineService._run_candidates = _progressive_run_candidates

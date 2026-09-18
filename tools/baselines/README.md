@@ -401,3 +401,67 @@ bash tools/baselines/run_baseline.sh \
 In Review, choose ProcVLM in Batch baseline and expand its parameters. `Enable value head` defaults to off and also applies to ProcVLM single-rollout Re-run. The option forwards `--procvlm-enable-value-head` to the runner and `enable_value_head=True` to official inference. Enabled runs use the cached official PyTorch model (trained pooler/value-head weights are required), which replaces generated progress tags with regression predictions. Disabled runs retain text-based vLLM inference. The vLLM free-memory fraction does not cap PyTorch allocations; upstream maps tensor-parallel count to data-parallel workers on this path. Resume retains the option. Restart the annotator server and refresh the page after updating.
 
 This change was reviewed statically only; no tests or inference were run, as requested.
+
+
+## ProcVLM external procedure tracking
+
+ProcVLM has three explicit modes:
+
+- `baseline`: official-style ProcVLM inference only. No ontology, tracker, or history is sent to the model.
+- `tracker_only`: official-style ProcVLM inference plus CPU-only external semantic canonicalization and a persistent forward-only tracker. Tracker state is recorded but never fed back to ProcVLM.
+- `stateful_history`: the same external tracker, with only a short natural-language task history generated from persistent state added to the next ProcVLM prompt.
+
+The canonical procedure is an **external ontology only**. Canonical IDs and the procedure graph are never injected into ProcVLM prompts. The checked-in initial ontology is for LIBERO-10 task0:
+
+`config/procvlm_procedures/libero10_task0.json`
+
+It defines task-specific verb/object/target aliases, semantic actions, chains, and deterministic history text. The wrapper rejects an ontology whose task text does not match the selected rollout. Non-baseline runs snapshot the ontology to:
+
+`<run>/procedure/external_procedure.json`
+
+and record its SHA-256 in `run.json`; resume uses the frozen snapshot.
+
+The V1 tracker defaults to a rolling window of 9 valid canonicalized observations and requires 7 supporting observations to advance one stage. Persistent state is forward-only and may move by at most one stage per update. Invalid parses do not enter the tracker window. Evidence used for a committed chain transition is cleared for that chain so the same observations cannot immediately advance a second stage.
+
+A bounded run can be planned without model inference:
+
+~~~bash
+bash tools/baselines/run_baseline.sh \
+  --baseline procvlm \
+  --manifest datasets/lf3r_failure_rollouts/v1/manifest.jsonl \
+  --data-root "$PROJECT_ROOT" \
+  --output-dir outputs/baselines \
+  --logs-dir logs/baselines \
+  --rollout-id <task0-rollout-id> \
+  --procvlm-procedure-mode stateful_history \
+  --procvlm-procedure-config config/procvlm_procedures/libero10_task0.json \
+  --procvlm-tracker-support-threshold 7 \
+  --procvlm-tracker-window-size 9 \
+  --dry-run
+~~~
+
+`tracker_only` can remain batched because its prompt never changes. `stateful_history` is sequential across selected prediction frames because a persistent-state update can change the next prompt.
+
+Non-baseline `procvlm_raw.jsonl` rows include the original model output and progress together with:
+
+- `parsed_actions`
+- `canonical_remaining_ids`
+- `parse_valid`
+- `observed_state`
+- `persistent_state`
+- `transition_support`
+- `state_update` / `state_updates`
+- `task_history_text`
+- `next_task_history_text`
+
+For a baseline run, the same external parser/tracker diagnostics can be applied offline without changing inference:
+
+~~~bash
+python3 tools/baselines/analyze_procvlm_procedure_tracker.py \
+  outputs/baselines/<run>/raw/<rollout-id>/procvlm_raw.jsonl \
+  --procedure-config config/procvlm_procedures/libero10_task0.json
+~~~
+
+The analysis reports raw reasoning state switches, raw subtask reopen count/rate, persistent-state regression count, state updates, progress regressions, and maximum progress drop. With human subtask-transition labels it also reports false state updates and state-update lag.
+
+Progress/value output is descriptive only and is never used for tracker state transitions.

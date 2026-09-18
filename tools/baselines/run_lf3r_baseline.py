@@ -314,7 +314,13 @@ def build_procvlm_worker_command(
         "--max-new-tokens", str(args.procvlm_max_new_tokens),
         "--torch-dtype", args.dtype,
         "--tp", str(args.tensor_parallel_size),
+        "--procedure-mode", str(getattr(args, "procvlm_procedure_mode", "baseline")),
+        "--tracker-support-threshold", str(args.procvlm_tracker_support_threshold),
+        "--tracker-window-size", str(args.procvlm_tracker_window_size),
+        "--tracker-max-forward-jump", str(args.procvlm_tracker_max_forward_jump),
     ]
+    if getattr(args, "procvlm_procedure_config", None) is not None:
+        command.extend(["--procedure-config", str(args.procvlm_procedure_config)])
     if getattr(args, "procvlm_enable_value_head", False):
         command.append("--enable-value-head")
     if vllm_total_memory_fraction is None:
@@ -677,6 +683,18 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
         else None
     )
     args.procvlm_enable_value_head = bool(stored_arguments.get("procvlm_enable_value_head", False))
+    args.procvlm_procedure_mode = str(stored_arguments.get("procvlm_procedure_mode", "baseline"))
+    stored_procedure_config = stored_arguments.get("procvlm_procedure_config")
+    snapshot_procedure_config = metadata.get("procedure_config_snapshot")
+    procedure_config_value = snapshot_procedure_config or stored_procedure_config
+    args.procvlm_procedure_config = (
+        Path(procedure_config_value).expanduser().resolve()
+        if procedure_config_value not in (None, "", "None")
+        else None
+    )
+    args.procvlm_tracker_support_threshold = int(stored_arguments.get("procvlm_tracker_support_threshold", 7))
+    args.procvlm_tracker_window_size = int(stored_arguments.get("procvlm_tracker_window_size", 9))
+    args.procvlm_tracker_max_forward_jump = int(stored_arguments.get("procvlm_tracker_max_forward_jump", 1))
     args.dtype = str(stored_arguments.get("dtype", "bf16"))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     args.dry_run = False
@@ -804,6 +822,34 @@ def select_records(args: argparse.Namespace, records: list[dict[str, Any]]) -> l
     if not selected:
         raise ValueError("No rollouts matched the requested filters")
     return selected
+
+
+def validate_procvlm_procedure_selection(
+    records: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> None:
+    """Reject an external procedure ontology that does not match every selected rollout."""
+    if args.baseline != "procvlm" or args.procvlm_procedure_mode == "baseline":
+        return
+    if args.procvlm_procedure_config is None:
+        raise ValueError("tracker_only/stateful_history ProcVLM requires --procvlm-procedure-config")
+
+    from procvlm_procedure_state import load_procedure, normalize_text
+
+    procedure = load_procedure(args.procvlm_procedure_config)
+    expected = normalize_text(procedure.task)
+    mismatches: list[str] = []
+    for record in records:
+        task = record.get("task", record.get("task_description"))
+        if task is None or normalize_text(str(task)) != expected:
+            mismatches.append(str(record.get("id", "<unknown>")))
+    if mismatches:
+        preview = ", ".join(mismatches[:8])
+        suffix = "" if len(mismatches) <= 8 else f", ... (+{len(mismatches) - 8})"
+        raise ValueError(
+            "ProcVLM procedure config matches only task "
+            f"{procedure.task!r}; selected rollout task mismatch: {preview}{suffix}"
+        )
 
 
 def parse_worker_spec(value: str) -> dict[str, int | str]:
@@ -2195,6 +2241,21 @@ def parse_args() -> argparse.Namespace:
         help="Optional vLLM context limit; forwarded as max_model_len",
     )
     parser.add_argument("--procvlm-enable-value-head", action="store_true")
+    parser.add_argument(
+        "--procvlm-procedure-mode",
+        choices=("baseline", "tracker_only", "stateful_history"),
+        default="baseline",
+        help="External procedure mode; baseline preserves existing ProcVLM behavior",
+    )
+    parser.add_argument(
+        "--procvlm-procedure-config",
+        type=Path,
+        default=None,
+        help="External canonical ontology required by tracker_only/stateful_history modes",
+    )
+    parser.add_argument("--procvlm-tracker-support-threshold", type=int, default=7)
+    parser.add_argument("--procvlm-tracker-window-size", type=int, default=9)
+    parser.add_argument("--procvlm-tracker-max-forward-jump", type=int, default=1)
 
     parser.add_argument(
         "--rynn-num-frames",
@@ -2286,8 +2347,23 @@ def parse_args() -> argparse.Namespace:
         parser.error("--parallel-workers must be positive")
     if args.procvlm_max_sampled_frames is not None and args.procvlm_max_sampled_frames < 1:
         parser.error("--procvlm-max-sampled-frames must be positive when provided")
+    if args.procvlm_max_model_len is not None and args.procvlm_max_model_len < 1:
+        parser.error("--procvlm-max-model-len must be positive when provided")
     if args.procvlm_frame_stride < 1:
         parser.error("--procvlm-frame-stride must be positive")
+    for name in (
+        "procvlm_tracker_support_threshold",
+        "procvlm_tracker_window_size",
+        "procvlm_tracker_max_forward_jump",
+    ):
+        if getattr(args, name) < 1:
+            parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.procvlm_tracker_support_threshold > args.procvlm_tracker_window_size:
+        parser.error("--procvlm-tracker-support-threshold cannot exceed its window")
+    if args.procvlm_tracker_max_forward_jump != 1:
+        parser.error("V1 requires --procvlm-tracker-max-forward-jump 1")
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline" and args.procvlm_procedure_config is None:
+        parser.error("--procvlm-procedure-config is required for tracker_only/stateful_history mode")
     for name in (
         "procvlm_window_size", "procvlm_max_new_tokens",
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",
@@ -2333,6 +2409,18 @@ def main() -> int:
     args.logs_dir = args.logs_dir.expanduser().resolve()
     if args.goal_image is not None:
         args.goal_image = args.goal_image.expanduser().resolve()
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode == "baseline":
+        # Baseline mode must remain independent of canonical/tracker state.
+        # Ignore any stale procedure path supplied by an old WebUI/session.
+        args.procvlm_procedure_config = None
+    elif args.baseline == "procvlm":
+        if args.procvlm_procedure_config is None:
+            raise ValueError("tracker_only/stateful_history ProcVLM requires --procvlm-procedure-config")
+        args.procvlm_procedure_config = args.procvlm_procedure_config.expanduser().resolve()
+        if not args.procvlm_procedure_config.is_file():
+            raise FileNotFoundError(
+                f"ProcVLM procedure config does not exist: {args.procvlm_procedure_config}"
+            )
     if not args.manifest.is_file():
         raise FileNotFoundError(f"Manifest does not exist: {args.manifest}")
 
@@ -2354,10 +2442,15 @@ def main() -> int:
     else:
         records = select_records(args, manifest_records)
 
+    validate_procvlm_procedure_selection(records, args)
+
     run_stamp = timestamp()
-    run_root = args.output_dir / f"{args.baseline}_{run_stamp}"
+    run_label = args.baseline
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline":
+        run_label = f"procvlm_{args.procvlm_procedure_mode}"
+    run_root = args.output_dir / f"{run_label}_{run_stamp}"
     raw_root = run_root / "raw"
-    log_path = args.logs_dir / f"{args.baseline}_{run_stamp}.log"
+    log_path = args.logs_dir / f"{run_label}_{run_stamp}.log"
     metadata_path = run_root / "run.json"
     jobs_path = run_root / "jobs.jsonl"
     commands_path = run_root / "commands.jsonl"
@@ -2369,6 +2462,14 @@ def main() -> int:
         "status": "planning",
         "created_at": iso_now(),
         "baseline": args.baseline,
+        "procedure_mode": (
+            args.procvlm_procedure_mode if args.baseline == "procvlm" else None
+        ),
+        "procedure_config": (
+            str(args.procvlm_procedure_config)
+            if args.baseline == "procvlm" and args.procvlm_procedure_config is not None
+            else None
+        ),
         "dry_run": args.dry_run,
         "manifest": str(args.manifest),
         "manifest_sha256": file_sha256(args.manifest),
@@ -2390,6 +2491,19 @@ def main() -> int:
         "completed_jobs": 0,
         "failed_jobs": 0,
     }
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline":
+        source_config = args.procvlm_procedure_config
+        if source_config is None:
+            raise ValueError("tracker_only/stateful_history ProcVLM requires a procedure config")
+        procedure_dir = run_root / "procedure"
+        procedure_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_config = procedure_dir / "external_procedure.json"
+        snapshot_config.write_bytes(source_config.read_bytes())
+        metadata["procedure_config_source"] = str(source_config)
+        metadata["procedure_config_snapshot"] = str(snapshot_config)
+        metadata["procedure_config_sha256"] = file_sha256(snapshot_config)
+        metadata["procedure_config"] = str(snapshot_config)
+        args.procvlm_procedure_config = snapshot_config
     atomic_json(metadata_path, metadata)
     log_line(log_path, f"START baseline={args.baseline} rollouts={len(records)} dry_run={args.dry_run}")
 
