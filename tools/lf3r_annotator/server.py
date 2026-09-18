@@ -183,6 +183,21 @@ EVENT_TRIGGERED_TABLE_FILES = {
     "controls": "event_triggered_controls.csv",
     "method_coverage": "method_coverage.csv",
 }
+ROBO_HOP_TABLE_FILES = {
+    "sweep_summary": "sweep_summary.csv",
+    "best_configs": "best_configs.csv",
+    "recovery_results": "recovery_results.csv",
+    "breakdown_summary": "breakdown_summary.csv",
+}
+ROBO_HOP_REQUIRED_FILES = (
+    "metadata.json",
+    "sweep_summary.csv",
+    "event_results.csv",
+    "clean_rollout_results.csv",
+    "best_configs.csv",
+    "recovery_results.csv",
+    "breakdown_summary.csv",
+)
 
 # These allowlists are deliberately kept server-side. The Analysis page can
 # browse high-cardinality CSV/JSONL artifacts without turning the generic file
@@ -235,6 +250,13 @@ ANALYSIS_ARTIFACT_NAMES = {
     "event_triggered_summary.csv",
     "event_triggered_peak_events.csv",
     "event_triggered_controls.csv",
+    "sweep_summary.csv",
+    "event_results.csv",
+    "clean_rollout_results.csv",
+    "best_configs.csv",
+    "recovery_results.csv",
+    "breakdown_summary.csv",
+    "task_cv_results.csv",
 }
 CHANGEPOINT_EVENT_FIELDS = (
     "method",
