@@ -819,11 +819,11 @@ def validate_procvlm_procedure_selection(
     records: list[dict[str, Any]],
     args: argparse.Namespace,
 ) -> None:
-    """Reject a canonical procedure that does not match every selected rollout."""
+    """Reject an external procedure ontology that does not match every selected rollout."""
     if args.baseline != "procvlm" or args.procvlm_procedure_mode == "baseline":
         return
     if args.procvlm_procedure_config is None:
-        raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
+        raise ValueError("tracker_only/stateful_history ProcVLM requires --procvlm-procedure-config")
 
     from procvlm_procedure_state import load_procedure, normalize_text
 
@@ -2398,7 +2398,7 @@ def main() -> int:
         args.procvlm_procedure_config = None
     elif args.baseline == "procvlm":
         if args.procvlm_procedure_config is None:
-            raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
+            raise ValueError("tracker_only/stateful_history ProcVLM requires --procvlm-procedure-config")
         args.procvlm_procedure_config = args.procvlm_procedure_config.expanduser().resolve()
         if not args.procvlm_procedure_config.is_file():
             raise FileNotFoundError(
@@ -2477,10 +2477,10 @@ def main() -> int:
     if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline":
         source_config = args.procvlm_procedure_config
         if source_config is None:
-            raise ValueError("canonical/stateful ProcVLM requires a procedure config")
+            raise ValueError("tracker_only/stateful_history ProcVLM requires a procedure config")
         procedure_dir = run_root / "procedure"
         procedure_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_config = procedure_dir / "canonical_procedure.json"
+        snapshot_config = procedure_dir / "external_procedure.json"
         snapshot_config.write_bytes(source_config.read_bytes())
         metadata["procedure_config_source"] = str(source_config)
         metadata["procedure_config_snapshot"] = str(snapshot_config)
