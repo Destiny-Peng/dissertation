@@ -99,6 +99,7 @@ def main() -> None:
             elif baseline == "robo_dopamine":
                 assert Path(argv[1]).name == "robo_dopamine_persistent_worker.py"
                 assert argv[argv.index("--frame-interval") + 1] == "4"
+                assert argv[argv.index("--tp") + 1] == "1"
                 assert argv[argv.index("--vllm-free-memory-fraction") + 1] == "0.8"
                 assert "--gpu-memory-utilization" not in argv
                 assert commands[0]["execution_scope"] == "persistent_robo_dopamine_worker"
