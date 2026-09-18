@@ -315,14 +315,8 @@ def build_procvlm_worker_command(
         "--torch-dtype", args.dtype,
         "--tp", str(args.tensor_parallel_size),
         "--procedure-mode", str(getattr(args, "procvlm_procedure_mode", "baseline")),
-        "--tracker-decision-interval-frames", str(args.procvlm_tracker_decision_interval_frames),
-        "--tracker-forward-votes", str(args.procvlm_tracker_forward_votes),
-        "--tracker-forward-window", str(args.procvlm_tracker_forward_window),
-        "--tracker-forward-min-span-sec", str(args.procvlm_tracker_forward_min_span_sec),
-        "--tracker-completion-votes", str(args.procvlm_tracker_completion_votes),
-        "--tracker-completion-window", str(args.procvlm_tracker_completion_window),
-        "--tracker-completion-min-span-sec", str(args.procvlm_tracker_completion_min_span_sec),
-        "--tracker-candidate-timeout-sec", str(args.procvlm_tracker_candidate_timeout_sec),
+        "--tracker-support-threshold", str(args.procvlm_tracker_support_threshold),
+        "--tracker-window-size", str(args.procvlm_tracker_window_size),
         "--tracker-max-forward-jump", str(args.procvlm_tracker_max_forward_jump),
     ]
     if getattr(args, "procvlm_procedure_config", None) is not None:
@@ -689,14 +683,8 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
         if procedure_config_value not in (None, "", "None")
         else None
     )
-    args.procvlm_tracker_decision_interval_frames = int(stored_arguments.get("procvlm_tracker_decision_interval_frames", 3))
-    args.procvlm_tracker_forward_votes = int(stored_arguments.get("procvlm_tracker_forward_votes", 3))
-    args.procvlm_tracker_forward_window = int(stored_arguments.get("procvlm_tracker_forward_window", 4))
-    args.procvlm_tracker_forward_min_span_sec = float(stored_arguments.get("procvlm_tracker_forward_min_span_sec", 0.2))
-    args.procvlm_tracker_completion_votes = int(stored_arguments.get("procvlm_tracker_completion_votes", 4))
-    args.procvlm_tracker_completion_window = int(stored_arguments.get("procvlm_tracker_completion_window", 5))
-    args.procvlm_tracker_completion_min_span_sec = float(stored_arguments.get("procvlm_tracker_completion_min_span_sec", 0.3))
-    args.procvlm_tracker_candidate_timeout_sec = float(stored_arguments.get("procvlm_tracker_candidate_timeout_sec", 0.5))
+    args.procvlm_tracker_support_threshold = int(stored_arguments.get("procvlm_tracker_support_threshold", 7))
+    args.procvlm_tracker_window_size = int(stored_arguments.get("procvlm_tracker_window_size", 9))
     args.procvlm_tracker_max_forward_jump = int(stored_arguments.get("procvlm_tracker_max_forward_jump", 1))
     args.dtype = str(stored_arguments.get("dtype", "bf16"))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
@@ -2240,24 +2228,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--procvlm-enable-value-head", action="store_true")
     parser.add_argument(
         "--procvlm-procedure-mode",
-        choices=("baseline", "canonical", "stateful"),
+        choices=("baseline", "tracker_only", "stateful_history"),
         default="baseline",
-        help="Training-free procedure tracker mode; baseline preserves existing ProcVLM behavior",
+        help="External procedure mode; baseline preserves existing ProcVLM behavior",
     )
     parser.add_argument(
         "--procvlm-procedure-config",
         type=Path,
         default=None,
-        help="Canonical procedure JSON required by canonical/stateful modes",
+        help="External canonical ontology required by tracker_only/stateful_history modes",
     )
-    parser.add_argument("--procvlm-tracker-decision-interval-frames", type=int, default=3)
-    parser.add_argument("--procvlm-tracker-forward-votes", type=int, default=3)
-    parser.add_argument("--procvlm-tracker-forward-window", type=int, default=4)
-    parser.add_argument("--procvlm-tracker-forward-min-span-sec", type=float, default=0.2)
-    parser.add_argument("--procvlm-tracker-completion-votes", type=int, default=4)
-    parser.add_argument("--procvlm-tracker-completion-window", type=int, default=5)
-    parser.add_argument("--procvlm-tracker-completion-min-span-sec", type=float, default=0.3)
-    parser.add_argument("--procvlm-tracker-candidate-timeout-sec", type=float, default=0.5)
+    parser.add_argument("--procvlm-tracker-support-threshold", type=int, default=7)
+    parser.add_argument("--procvlm-tracker-window-size", type=int, default=9)
     parser.add_argument("--procvlm-tracker-max-forward-jump", type=int, default=1)
 
     parser.add_argument(
@@ -2353,27 +2335,18 @@ def parse_args() -> argparse.Namespace:
     if args.procvlm_frame_stride < 1:
         parser.error("--procvlm-frame-stride must be positive")
     for name in (
-        "procvlm_tracker_decision_interval_frames",
-        "procvlm_tracker_forward_votes",
-        "procvlm_tracker_forward_window",
-        "procvlm_tracker_completion_votes",
-        "procvlm_tracker_completion_window",
+        "procvlm_tracker_support_threshold",
+        "procvlm_tracker_window_size",
         "procvlm_tracker_max_forward_jump",
     ):
         if getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be positive")
-    if args.procvlm_tracker_forward_votes > args.procvlm_tracker_forward_window:
-        parser.error("--procvlm-tracker-forward-votes cannot exceed its window")
-    if args.procvlm_tracker_completion_votes > args.procvlm_tracker_completion_window:
-        parser.error("--procvlm-tracker-completion-votes cannot exceed its window")
+    if args.procvlm_tracker_support_threshold > args.procvlm_tracker_window_size:
+        parser.error("--procvlm-tracker-support-threshold cannot exceed its window")
     if args.procvlm_tracker_max_forward_jump != 1:
         parser.error("V1 requires --procvlm-tracker-max-forward-jump 1")
-    if args.procvlm_tracker_forward_min_span_sec < 0 or args.procvlm_tracker_completion_min_span_sec < 0:
-        parser.error("ProcVLM tracker minimum spans must be non-negative")
-    if args.procvlm_tracker_candidate_timeout_sec <= 0:
-        parser.error("--procvlm-tracker-candidate-timeout-sec must be positive")
     if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline" and args.procvlm_procedure_config is None:
-        parser.error("--procvlm-procedure-config is required for canonical/stateful mode")
+        parser.error("--procvlm-procedure-config is required for tracker_only/stateful_history mode")
     for name in (
         "procvlm_window_size", "procvlm_max_new_tokens",
         "tensor_parallel_size", "rynn_num_frames", "rynn_num_steps",
