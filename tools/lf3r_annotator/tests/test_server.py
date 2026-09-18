@@ -706,8 +706,19 @@ with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
         'epsilon': 0.0, 'n': 3, 'event_n': 1, 'event_recall_at_3': 1.0,
         'median_delay_samples': 2, 'median_delay_frames': 4, 'clean_rollout_fpr': 0.0,
     })
+with (args.output_dir / 'sweep_summary.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'config_id', 'detector_family', 'clean_rollout_fpr',
+        'event_recall_at_3', 'median_delay_samples'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'config_id': 'cfg0001', 'detector_family': 'consecutive',
+        'clean_rollout_fpr': 0.0, 'event_recall_at_3': 1.0,
+        'median_delay_samples': 2,
+    })
 for name in (
-    'sweep_summary.csv', 'event_results.csv', 'clean_rollout_results.csv',
+    'event_results.csv', 'clean_rollout_results.csv',
     'recovery_results.csv', 'breakdown_summary.csv'
 ):
     (args.output_dir / name).write_text('config_id\n')
@@ -1027,6 +1038,17 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             encoding="utf-8",
         )
 
+        with self.request("/api/baselines/runs?scope=libero_10") as response:
+            discovered = json.load(response)["runs"]
+        robo_run = next(
+            row for row in discovered
+            if row["baseline"] == "robo_dopamine"
+            and row["run_root"] == roots["robo_dopamine"]
+        )
+        self.assertTrue(robo_run["incremental_compatible"])
+        self.assertEqual(robo_run["incremental_rollout_count"], 1)
+        self.assertEqual(robo_run["incremental_missing_rollouts"], 0)
+
         with self.request(
             "/api/analysis/run",
             {
@@ -1062,6 +1084,9 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(hop["available"])
         self.assertEqual(hop["selected_configs"][0]["detector_family"], "consecutive")
         self.assertEqual(hop["selected_configs"][0]["event_recall_at_3"], 1)
+        self.assertEqual(len(hop["sweep_summary"]), 1)
+        self.assertEqual(hop["sweep_summary"][0]["event_recall_at_3"], 1)
+        self.assertEqual(hop["recovery_results"], [])
         self.assertTrue(
             any(item["name"] == "best_configs.csv" for item in hop["artifacts"])
         )
