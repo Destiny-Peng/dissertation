@@ -16,6 +16,10 @@ python3 tools/analyze_robo_dopamine_incremental_hop.py \
 
 Add `--task-cv` for optional leave-one-task-out parameter selection and
 held-out evaluation. Add `--no-plots` to write only CSV/JSON artifacts.
+`--selection <path>` restricts a superset completed run to the rollout IDs
+listed in a project-local JSON selection document; selected IDs without a
+completed Robo-Dopamine job are rejected rather than silently dropped. The
+WebUI Analysis runner uses this option for its scope selector.
 
 The analysis preserves Robo-Dopamine's native sampled frame indices. Current
 official inference already stores incremental hop in `[-1, 1]`; the loader
