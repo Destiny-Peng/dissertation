@@ -827,6 +827,34 @@ def select_records(args: argparse.Namespace, records: list[dict[str, Any]]) -> l
     return selected
 
 
+def validate_procvlm_procedure_selection(
+    records: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> None:
+    """Reject a canonical procedure that does not match every selected rollout."""
+    if args.baseline != "procvlm" or args.procvlm_procedure_mode == "baseline":
+        return
+    if args.procvlm_procedure_config is None:
+        raise ValueError("canonical/stateful ProcVLM requires --procvlm-procedure-config")
+
+    from procvlm_procedure_state import load_procedure, normalize_text
+
+    procedure = load_procedure(args.procvlm_procedure_config)
+    expected = normalize_text(procedure.task)
+    mismatches: list[str] = []
+    for record in records:
+        task = record.get("task", record.get("task_description"))
+        if task is None or normalize_text(str(task)) != expected:
+            mismatches.append(str(record.get("id", "<unknown>")))
+    if mismatches:
+        preview = ", ".join(mismatches[:8])
+        suffix = "" if len(mismatches) <= 8 else f", ... (+{len(mismatches) - 8})"
+        raise ValueError(
+            "ProcVLM procedure config matches only task "
+            f"{procedure.task!r}; selected rollout task mismatch: {preview}{suffix}"
+        )
+
+
 def parse_worker_spec(value: str) -> dict[str, int | str]:
     """Parse one baseline worker assignment: GPU:START:END."""
     parts = str(value).strip().split(":")
@@ -2423,6 +2451,8 @@ def main() -> int:
         worker_plan = build_worker_plan(scope_records, args)
     else:
         records = select_records(args, manifest_records)
+
+    validate_procvlm_procedure_selection(records, args)
 
     run_stamp = timestamp()
     run_label = args.baseline
