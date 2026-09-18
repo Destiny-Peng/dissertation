@@ -1,30 +1,39 @@
-# Robo-Dopamine incremental-hop failure analysis
+# Robo-Dopamine four-signal hop failure analysis
 
-This module is CPU-only post-processing over already saved Robo-Dopamine
-incremental `pred_vllm.json` outputs and the existing LF3R human annotations.
+This module performs CPU-only post-processing over already saved Robo-Dopamine
+multi-perspective outputs and existing LF3R human annotations. It compares the
+saved `hop` signal from:
 
-It intentionally does **not** use accumulated/fused progress, generic
-change-point detection, whole-rollout Q95/std statistics, or model inference.
+- `incremental`
+- `forward`
+- `backward`
+- `fused`
+
+The same detector families, parameter grids, onset reference, clean false-positive
+metrics, delay metrics, recovery diagnostics, and optional task-level CV are run
+separately for each signal mode.
+
+For direct comparison, only rollouts with all four saved signals are included.
+Native Robo-Dopamine sample frame indices are preserved and no interpolation is
+performed.
+
+`incremental.hop` is the official raw score and legacy percentage-point storage
+is normalized only when confirmed. `forward.hop`, `backward.hop`, and
+`fused.hop` are saved progress-difference signals and are used without
+rescaling.
 
 Run from the repository root:
 
 ```bash
 source ./project_env.sh
 python3 tools/analyze_robo_dopamine_incremental_hop.py \
-  --run-root outputs/baselines/<completed-robo-dopamine-run>
+  --run-root outputs/baselines/<completed-multi-perspective-robo-run>
 ```
 
-Add `--task-cv` for optional leave-one-task-out parameter selection and
-held-out evaluation. Add `--no-plots` to write only CSV/JSON artifacts.
-`--selection <path>` restricts a superset completed run to the rollout IDs
-listed in a project-local JSON selection document; selected IDs without a
-completed Robo-Dopamine job are rejected rather than silently dropped. The
-WebUI Analysis runner uses this option for its scope selector.
-
-The analysis preserves Robo-Dopamine's native sampled frame indices. Current
-official inference already stores incremental hop in `[-1, 1]`; the loader
-cross-checks the saved `<score>...%</score>` text and only divides by 100 when
-a saved result is confirmed to use percentage-point hop values.
+Add `--task-cv` for optional leave-one-task-out parameter selection and held-out
+evaluation. Add `--no-plots` to write only CSV/JSON artifacts. `--selection`
+restricts a superset run to requested rollout IDs; the final analysis still uses
+the four-signal intersection within that selection.
 
 Required outputs are:
 
@@ -35,5 +44,6 @@ Required outputs are:
 - `recovery_results.csv`
 - `metadata.json`
 
-Additional outputs are `breakdown_summary.csv`, optional
-`task_cv_results.csv`, and plots under `plots/`.
+All result tables include `signal_mode`. Additional outputs are
+`breakdown_summary.csv`, optional `task_cv_results.csv`, and mode-separated
+plots under `plots/<signal_mode>/`.
