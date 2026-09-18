@@ -3385,6 +3385,9 @@ class AnalysisJobService:
         self.coordinator = coordinator
         self.tmux = tmux
         self.analysis_root = self.project_root / "outputs" / "baseline_signal_analysis"
+        self.robo_hop_root = (
+            self.project_root / "outputs" / "robo_dopamine_incremental_hop"
+        )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
             analysis_python
@@ -3541,10 +3544,185 @@ class AnalysisJobService:
             validated[method] = method_runs
         return validated
 
-    def start_run(self, payload: Any) -> dict[str, Any]:
+    def _robo_hop_run_has_incremental(
+        self,
+        run_path: Path,
+        rollout_id: str,
+    ) -> bool:
+        result_path = run_path / "raw" / rollout_id / "worker_result.json"
+        if not result_path.is_file():
+            return False
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        perspectives = result.get("perspective_outputs")
+        if isinstance(perspectives, dict):
+            incremental = perspectives.get("incremental")
+            if isinstance(incremental, dict) and incremental.get("raw_model_output"):
+                return True
+        eval_mode = str(result.get("eval_mode") or "").lower()
+        eval_modes = [str(value).lower() for value in (result.get("eval_modes") or [])]
+        return bool(
+            (eval_mode == "incremental" or eval_modes == ["incremental"])
+            and result.get("raw_model_output")
+        )
+
+    def _validate_robo_hop_run(
+        self,
+        raw_run: Any,
+        selected_ids: set[str],
+    ) -> tuple[Path, dict[str, Any]]:
+        run_path, metadata = self.baselines._explicit_run_candidate(
+            "robo_dopamine",
+            raw_run,
+            {"full_instruction", "unknown"},
+        )
+        run_ids = run_rollout_ids(run_path)
+        missing = sorted(selected_ids - run_ids)
+        if missing:
+            raise ValidationError(
+                "Selected Robo-Dopamine run does not cover "
+                f"{len(missing)} requested rollout(s)"
+            )
+        missing_incremental = sorted(
+            rollout_id
+            for rollout_id in selected_ids
+            if not self._robo_hop_run_has_incremental(run_path, rollout_id)
+        )
+        if missing_incremental:
+            raise ValidationError(
+                "Selected Robo-Dopamine run is missing saved incremental "
+                f"perspective output for {len(missing_incremental)} rollout(s). "
+                "Choose a fused/multi-perspective or incremental-mode run."
+            )
+        return run_path, metadata
+
+    def start_robo_hop_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
+        allowed_fields = {
+            "analysis_kind", "scope", "runs", "task_cv", "output_label",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise ValidationError(
+                "Unknown incremental-hop analysis field(s): "
+                + ", ".join(sorted(unknown_fields))
+            )
+        scope = validate_run_scope(payload.get("scope"))
+        records = select_scope_records(self._manifest_records(), scope)
+        if not records:
+            raise ValidationError(f"No rollouts matched scope {scope}")
+        selected_ids = {record["id"] for record in records}
+        raw_runs = payload.get("runs")
+        if not isinstance(raw_runs, dict):
+            raise ValidationError("runs must be an object")
+        run_path, _metadata = self._validate_robo_hop_run(
+            raw_runs.get("robo_dopamine"),
+            selected_ids,
+        )
+        task_cv = payload.get("task_cv", False)
+        if not isinstance(task_cv, bool):
+            raise ValidationError("task_cv must be boolean")
+        label = str(payload.get("output_label") or "web_robo_hop").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
+            raise ValidationError(
+                "output_label must contain only letters, numbers, dot, underscore, or hyphen"
+            )
+        script = (
+            self.project_root / "tools" / "analyze_robo_dopamine_incremental_hop.py"
+        )
+        if not script.is_file():
+            raise ValidationError(
+                "Robo-Dopamine incremental-hop analysis script is not installed"
+            )
+
+        job_id = "analysis-hop-" + uuid.uuid4().hex[:12]
+        workspace = self.robo_hop_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.robo_hop_root / (
+            "web_"
+            + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_"
+            + label
+            + "_"
+            + job_id[-8:]
+        )
+        selection_path = workspace / "selection.json"
+        selection_doc = {
+            "schema_version": 1,
+            "scope": scope,
+            "selection": [{"id": record["id"]} for record in records],
+        }
+        command = [
+            str(self.analysis_python),
+            str(script),
+            "--run-root",
+            str(run_path),
+            "--selection",
+            str(selection_path),
+            "--manifest",
+            str(self.manifest_path),
+            "--annotations",
+            str(self.annotation_root / "records"),
+            "--output-dir",
+            str(output_temp),
+        ]
+        if task_cv:
+            command.append("--task-cv")
+
+        self.robo_hop_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        (self.robo_hop_root / ".web_jobs").mkdir(parents=True, exist_ok=True)
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            workspace.mkdir(parents=True, exist_ok=False)
+            atomic_json_write(selection_path, selection_doc)
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "robo_incremental_hop",
+                "status": "queued",
+                "scope": scope,
+                "selected_rollouts": len(records),
+                "runs": {"robo_dopamine": self._relative(run_path)},
+                "parameters": {"task_cv": task_cv},
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "selection_path": self._relative(selection_path),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.analysis_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job,
+                command,
+                self.log_root / f"{job_id}.log",
+                interpreter=str(self.analysis_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
+    def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
+        if payload.get("analysis_kind") == "robo_incremental_hop":
+            return self.start_robo_hop_run(payload)
+        self.require_environment()
         allowed_fields = {
             "scope", "runs", "pre_window_frames", "post_window_frames",
             "background_stride_frames", "output_label", "allow_partial_coverage",
@@ -3686,16 +3864,34 @@ class AnalysisJobService:
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                required = ("metadata.json", "event_metrics.jsonl", *ANALYSIS_TABLE_FILES.values())
+                if job.get("analysis_kind") == "robo_incremental_hop":
+                    required = ROBO_HOP_REQUIRED_FILES
+                    missing_message = (
+                        "Incremental-hop analysis completed without all required artifacts"
+                    )
+                else:
+                    required = (
+                        "metadata.json",
+                        "event_metrics.jsonl",
+                        *ANALYSIS_TABLE_FILES.values(),
+                    )
+                    missing_message = (
+                        "Temporal analysis completed without all required artifacts"
+                    )
                 if not all((output_temp / name).is_file() for name in required):
-                    raise OSError("Temporal analysis completed without all required artifacts")
+                    raise OSError(missing_message)
                 if output_final.exists():
                     raise OSError(f"Analysis output already exists: {output_final}")
                 os.replace(output_temp, output_final)
                 job["status"] = "complete"
             else:
                 job["status"] = "failed"
-                error = error or f"Temporal analysis exited with code {return_code}"
+                label = (
+                    "Incremental-hop analysis"
+                    if job.get("analysis_kind") == "robo_incremental_hop"
+                    else "Temporal analysis"
+                )
+                error = error or f"{label} exited with code {return_code}"
         except Exception as exc:
             job["status"] = "failed"
             error = str(exc)
