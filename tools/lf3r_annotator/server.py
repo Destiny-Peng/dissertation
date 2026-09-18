@@ -84,6 +84,11 @@ BASELINE_METHOD_OPTION_FIELDS = {
     "procvlm": {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
         "procvlm_frame_stride", "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
+        "procvlm_procedure_mode", "procvlm_procedure_config",
+        "procvlm_tracker_decision_interval_frames",
+        "procvlm_tracker_forward_votes", "procvlm_tracker_forward_window", "procvlm_tracker_forward_min_span_sec",
+        "procvlm_tracker_completion_votes", "procvlm_tracker_completion_window", "procvlm_tracker_completion_min_span_sec",
+        "procvlm_tracker_candidate_timeout_sec", "procvlm_tracker_max_forward_jump",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -110,6 +115,17 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
+    "procvlm_procedure_mode",
+    "procvlm_procedure_config",
+    "procvlm_tracker_decision_interval_frames",
+    "procvlm_tracker_forward_votes",
+    "procvlm_tracker_forward_window",
+    "procvlm_tracker_forward_min_span_sec",
+    "procvlm_tracker_completion_votes",
+    "procvlm_tracker_completion_window",
+    "procvlm_tracker_completion_min_span_sec",
+    "procvlm_tracker_candidate_timeout_sec",
+    "procvlm_tracker_max_forward_jump",
     "rynn_num_frames",
     "rynn_num_steps",
     "rynn_evaluation_interval",
@@ -1994,6 +2010,8 @@ class BaselineService:
             "run_root": self._relative(run_path),
             "completed_at": metadata.get("completed_at"),
             "instruction_condition": self._run_instruction_condition(metadata),
+            "procedure_mode": metadata.get("procedure_mode") or metadata.get("arguments", {}).get("procvlm_procedure_mode"),
+            "procedure_config": metadata.get("procedure_config") or metadata.get("arguments", {}).get("procvlm_procedure_config"),
         }
 
     def _pack(
@@ -2076,9 +2094,17 @@ class BaselineService:
                 continue
             frame = min(max(raw_frame, 0), total_frames - 1)
             sample = {"frame": frame, "raw_frame": raw_frame, "signals": {"progress": value}}
-            for field in ("model_output", "reasoning"):
+            for field in ("model_output", "reasoning", "raw_reasoning"):
                 if row.get(field):
                     sample[field] = str(row[field])[:12000]
+            for field in (
+                "procedure_mode", "procedure_task_id", "parsed_remaining_ids", "parse_valid",
+                "parse_source", "parse_errors", "observed_stage", "candidate_stage",
+                "confirmed_stage", "transition_support", "transition_event",
+                "transition_events", "tracker_decision_sample", "prompt_confirmed_stage",
+            ):
+                if field in row:
+                    sample[field] = row[field]
             samples.append(sample)
             raw_frames.append(raw_frame)
         return self._pack("procvlm", run_summary, samples, [path], raw_frames, {"_total_frames": total_frames, "kind": "model_text_and_progress"})
@@ -2538,6 +2564,12 @@ class BaselineService:
             "procvlm_frame_stride": (1, 1000000),
             "procvlm_max_sampled_frames": (1, 1000000),
             "procvlm_max_new_tokens": (1, 1000000),
+            "procvlm_tracker_decision_interval_frames": (1, 1000000),
+            "procvlm_tracker_forward_votes": (1, 1000000),
+            "procvlm_tracker_forward_window": (1, 1000000),
+            "procvlm_tracker_completion_votes": (1, 1000000),
+            "procvlm_tracker_completion_window": (1, 1000000),
+            "procvlm_tracker_max_forward_jump": (1, 1),
             "rynn_num_frames": (1, 1000000),
             "rynn_num_steps": (1, 1000000),
             "rynn_evaluation_interval": (1, 1000000),
@@ -2553,12 +2585,14 @@ class BaselineService:
                 options[name] = self._integer(options[name], name, minimum, maximum)
         if "rynn_batch_size" in options and options["rynn_batch_size"] is not None:
             options["rynn_batch_size"] = self._positive_integer(options["rynn_batch_size"], "rynn_batch_size")
-        for name in ("dtype", "robo_eval_mode"):
+        for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
             if name in options and options[name] is not None:
                 value = str(options[name]).strip()
                 if not value or len(value) > 80:
                     raise ValidationError(f"{name} must be a non-empty short string")
                 options[name] = value
+        if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "canonical", "stateful"}:
+            raise ValidationError("procvlm_procedure_mode must be baseline, canonical, or stateful")
         if "robo_eval_mode" in options and options["robo_eval_mode"] not in {"fused", "forward", "incremental", "backward"}:
             raise ValidationError("robo_eval_mode must be fused, forward, incremental, or backward")
         for name in ("robot_description", "camera_description"):
@@ -2573,6 +2607,38 @@ class BaselineService:
                 if not resolved.is_file():
                     raise ValidationError(f"{name} does not exist inside the project: {options[name]}")
                 options[name] = str(resolved)
+        if "procvlm_procedure_config" in options and options["procvlm_procedure_config"] not in (None, ""):
+            resolved = self._project_path(str(options["procvlm_procedure_config"]))
+            if not resolved.is_file():
+                raise ValidationError(
+                    f"procvlm_procedure_config does not exist inside the project: {options['procvlm_procedure_config']}"
+                )
+            options["procvlm_procedure_config"] = str(resolved)
+        float_fields = {
+            "procvlm_tracker_forward_min_span_sec": 0.0,
+            "procvlm_tracker_completion_min_span_sec": 0.0,
+            "procvlm_tracker_candidate_timeout_sec": 0.0,
+        }
+        for name, minimum in float_fields.items():
+            if name not in options or options[name] is None:
+                continue
+            if isinstance(options[name], bool):
+                raise ValidationError(f"{name} must be a number")
+            try:
+                value = float(options[name])
+            except (TypeError, ValueError) as error:
+                raise ValidationError(f"{name} must be a number") from error
+            if not math.isfinite(value) or value < minimum:
+                raise ValidationError(f"{name} must be >= {minimum}")
+            if name == "procvlm_tracker_candidate_timeout_sec" and value <= 0:
+                raise ValidationError("procvlm_tracker_candidate_timeout_sec must be positive")
+            options[name] = value
+        if options.get("procvlm_tracker_forward_votes", 3) > options.get("procvlm_tracker_forward_window", 4):
+            raise ValidationError("procvlm_tracker_forward_votes cannot exceed procvlm_tracker_forward_window")
+        if options.get("procvlm_tracker_completion_votes", 4) > options.get("procvlm_tracker_completion_window", 5):
+            raise ValidationError("procvlm_tracker_completion_votes cannot exceed procvlm_tracker_completion_window")
+        if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
+            raise ValidationError("canonical/stateful ProcVLM requires procvlm_procedure_config")
         for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
@@ -2777,6 +2843,17 @@ class BaselineService:
             "procvlm_frame_stride": "--procvlm-frame-stride",
             "procvlm_max_sampled_frames": "--procvlm-max-sampled-frames",
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
+            "procvlm_procedure_mode": "--procvlm-procedure-mode",
+            "procvlm_procedure_config": "--procvlm-procedure-config",
+            "procvlm_tracker_decision_interval_frames": "--procvlm-tracker-decision-interval-frames",
+            "procvlm_tracker_forward_votes": "--procvlm-tracker-forward-votes",
+            "procvlm_tracker_forward_window": "--procvlm-tracker-forward-window",
+            "procvlm_tracker_forward_min_span_sec": "--procvlm-tracker-forward-min-span-sec",
+            "procvlm_tracker_completion_votes": "--procvlm-tracker-completion-votes",
+            "procvlm_tracker_completion_window": "--procvlm-tracker-completion-window",
+            "procvlm_tracker_completion_min_span_sec": "--procvlm-tracker-completion-min-span-sec",
+            "procvlm_tracker_candidate_timeout_sec": "--procvlm-tracker-candidate-timeout-sec",
+            "procvlm_tracker_max_forward_jump": "--procvlm-tracker-max-forward-jump",
             "rynn_num_frames": "--rynn-num-frames",
             "rynn_num_steps": "--rynn-num-steps",
             "rynn_evaluation_interval": "--rynn-evaluation-interval",
