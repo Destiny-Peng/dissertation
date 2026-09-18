@@ -419,6 +419,13 @@ def build_base_records(
     )
     completed_before_filter = len(completed_ids)
     if allowed_rollout_ids is not None:
+        completed_set = set(completed_ids)
+        missing_selected = sorted(allowed_rollout_ids - completed_set)
+        if missing_selected:
+            raise ValueError(
+                "Selection contains rollout ids without completed Robo-Dopamine "
+                f"jobs: {missing_selected[:10]}"
+            )
         completed_ids = [
             rollout_id
             for rollout_id in completed_ids
