@@ -236,6 +236,28 @@ All baseline and rollout-generation fields with a help marker show a body-mounte
 
 ### Running temporal analysis from Analysis
 
+### Robo-Dopamine incremental-hop analysis
+
+Analysis Overview includes a separate **Incremental-hop failure evidence** runner for the saved Robo-Dopamine incremental perspective. It is intentionally independent from the existing four-method temporal/change-point comparison: only one compatible completed Robo-Dopamine run is selected, and the server verifies that every rollout in the selected scope has a saved incremental perspective before launching the analysis.
+
+The runner is CPU-only and reuses the persistent Analysis tmux/job/log infrastructure. It writes a project-local scope selection and executes `tools/analyze_robo_dopamine_incremental_hop.py`; it does not start Robo-Dopamine inference, does not use fused/forward/backward progress as the detector signal, and does not interpolate the native sample grid. Current official incremental hop is already stored on the normalized `[-1,1]` scale; the analyzer validates that contract and only normalizes legacy percentage-point storage when confirmed from the saved score text.
+
+The WebUI payload uses the existing `POST /api/analysis/run` endpoint with an explicit analysis kind:
+
+    {
+      "analysis_kind": "robo_incremental_hop",
+      "scope": "libero_10",
+      "runs": {
+        "robo_dopamine": "outputs/baselines/..."
+      },
+      "task_cv": false,
+      "output_label": "web_robo_hop"
+    }
+
+The scope is materialized as a selection file so a superset baseline run does not silently add extra rollouts. The output is atomically promoted under `outputs/robo_dopamine_incremental_hop/web_<timestamp>_<label>_<suffix>/`. The Analysis API discovers the newest complete snapshot and exposes only its compact selected-configuration summary on the dashboard; full sweep, event, clean-rollout, recovery, breakdown, and optional task-CV tables remain downloadable artifacts.
+
+The result table shows each detector family's selected configuration under the 5%, 10%, and 20% clean-rollout FPR constraints together with event N, recall@3 native samples, median sample/frame delay, and observed clean FPR. Existing temporal Analysis jobs are kept separate by `analysis_kind`, so their badges, logs, and result refreshes do not share state with the incremental-hop runner.
+
 ### Robo-Dopamine multi-perspective outputs
 
 The Review baseline UI defaults to `fused` for Robo-Dopamine, for both the single-rollout button and the Batch baseline panel. `fused` runs `incremental`, `forward`, and `backward` with one persistent GRM/vLLM engine and averages their native progress outputs. Explicit CLI or batch-API selection of `forward`, `incremental`, or `backward` remains available for compatibility. The same native sampled frame grid is required for fusion. The aggregate raw directory keeps the three official `pred_vllm.json` files separately and adds `multi_perspective/fused_progress.json`, `progress_curves.csv`, `progress_curves.png`, and `metadata.json`. The annotator reads fused progress as the primary curve and exposes component progress/hop signals when present. The arithmetic mean follows the official Robo-Dopamine README recommendation; it is descriptive and does not rerun inference from Analysis.
