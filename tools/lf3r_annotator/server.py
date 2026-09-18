@@ -2558,9 +2558,6 @@ class BaselineService:
             "procvlm_max_new_tokens": (1, 1000000),
             "procvlm_tracker_support_threshold": (1, 1000000),
             "procvlm_tracker_window_size": (1, 1000000),
-            "procvlm_tracker_window_size": (1, 1000000),
-            "procvlm_tracker_window_size": (1, 1000000),
-            "procvlm_tracker_window_size": (1, 1000000),
             "procvlm_tracker_max_forward_jump": (1, 1),
             "rynn_num_frames": (1, 1000000),
             "rynn_num_steps": (1, 1000000),
@@ -2590,12 +2587,6 @@ class BaselineService:
                 "procvlm_procedure_config",
                 "procvlm_tracker_support_threshold",
                 "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
-                "procvlm_tracker_window_size",
                 "procvlm_tracker_max_forward_jump",
             ):
                 options.pop(name, None)
@@ -2620,31 +2611,10 @@ class BaselineService:
                     f"procvlm_procedure_config does not exist inside the project: {options['procvlm_procedure_config']}"
                 )
             options["procvlm_procedure_config"] = str(resolved)
-        float_fields = {
-            "procvlm_tracker_window_size": 0.0,
-            "procvlm_tracker_window_size": 0.0,
-            "procvlm_tracker_window_size": 0.0,
-        }
-        for name, minimum in float_fields.items():
-            if name not in options or options[name] is None:
-                continue
-            if isinstance(options[name], bool):
-                raise ValidationError(f"{name} must be a number")
-            try:
-                value = float(options[name])
-            except (TypeError, ValueError) as error:
-                raise ValidationError(f"{name} must be a number") from error
-            if not math.isfinite(value) or value < minimum:
-                raise ValidationError(f"{name} must be >= {minimum}")
-            if name == "procvlm_tracker_window_size" and value <= 0:
-                raise ValidationError("procvlm_tracker_window_size must be positive")
-            options[name] = value
-        if options.get("procvlm_tracker_window_size", 3) > options.get("procvlm_tracker_window_size", 4):
-            raise ValidationError("procvlm_tracker_window_size cannot exceed procvlm_tracker_window_size")
-        if options.get("procvlm_tracker_window_size", 4) > options.get("procvlm_tracker_window_size", 5):
-            raise ValidationError("procvlm_tracker_window_size cannot exceed procvlm_tracker_window_size")
+        if options.get("procvlm_tracker_support_threshold", 7) > options.get("procvlm_tracker_window_size", 9):
+            raise ValidationError("procvlm_tracker_support_threshold cannot exceed procvlm_tracker_window_size")
         if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
-            raise ValidationError("canonical/stateful ProcVLM requires procvlm_procedure_config")
+            raise ValidationError("tracker_only/stateful_history ProcVLM requires procvlm_procedure_config")
         for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
@@ -2851,14 +2821,8 @@ class BaselineService:
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
             "procvlm_procedure_mode": "--procvlm-procedure-mode",
             "procvlm_procedure_config": "--procvlm-procedure-config",
-            "procvlm_tracker_support_threshold": "--procvlm-tracker-decision-interval-frames",
-            "procvlm_tracker_window_size": "--procvlm-tracker-forward-votes",
-            "procvlm_tracker_window_size": "--procvlm-tracker-forward-window",
-            "procvlm_tracker_window_size": "--procvlm-tracker-forward-min-span-sec",
-            "procvlm_tracker_window_size": "--procvlm-tracker-completion-votes",
-            "procvlm_tracker_window_size": "--procvlm-tracker-completion-window",
-            "procvlm_tracker_window_size": "--procvlm-tracker-completion-min-span-sec",
-            "procvlm_tracker_window_size": "--procvlm-tracker-candidate-timeout-sec",
+            "procvlm_tracker_support_threshold": "--procvlm-tracker-support-threshold",
+            "procvlm_tracker_window_size": "--procvlm-tracker-window-size",
             "procvlm_tracker_max_forward_jump": "--procvlm-tracker-max-forward-jump",
             "rynn_num_frames": "--rynn-num-frames",
             "rynn_num_steps": "--rynn-num-steps",
