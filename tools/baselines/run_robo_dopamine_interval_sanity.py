@@ -78,6 +78,7 @@ def main() -> int:
         eval_modes=list(PERSPECTIVE_MODES),
         render_video=False,
         vllm_total_memory_fraction=total_fraction,
+        tp=1,
     )
     run_root = output_dir / f"interval_sweep_{timestamp()}"
     run_root.mkdir(parents=True, exist_ok=False)
