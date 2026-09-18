@@ -2088,6 +2088,15 @@ class BaselineRunIndex:
             )
         return {"scanned": scanned, "indexed": len(rows)}
 
+    def _delete_roots(self, run_roots: list[str]) -> None:
+        if not run_roots:
+            return
+        with self.lock, self._connect() as connection:
+            connection.executemany(
+                "DELETE FROM baseline_runs WHERE run_root = ?",
+                [(run_root,) for run_root in run_roots],
+            )
+
     def candidates(
         self,
         method: str,
@@ -2108,41 +2117,66 @@ class BaselineRunIndex:
             rows = connection.execute(query, parameters).fetchall()
 
         result: list[tuple[Path, dict[str, Any]]] = []
-        stale_paths: list[Path] = []
-        missing_roots: list[str] = []
+        remove_roots: list[str] = []
         for run_root, mtime_ns, size, metadata_json in rows:
             run_path = (self.project_root / str(run_root)).resolve()
             metadata_path = run_path / "run.json"
             if not metadata_path.is_file():
-                missing_roots.append(str(run_root))
+                remove_roots.append(str(run_root))
                 continue
             try:
                 stat = metadata_path.stat()
             except OSError:
                 continue
-            if stat.st_mtime_ns != int(mtime_ns) or stat.st_size != int(size):
-                stale_paths.append(run_path)
+
+            metadata: dict[str, Any] | None = None
+            if stat.st_mtime_ns == int(mtime_ns) and stat.st_size == int(size):
+                try:
+                    cached = json.loads(metadata_json)
+                except json.JSONDecodeError:
+                    cached = None
+                if isinstance(cached, dict):
+                    metadata = cached
+            else:
+                try:
+                    current = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    # run.json may be between atomic rewrites. Keep the cached
+                    # row for this request and retry naturally on the next one.
+                    try:
+                        cached = json.loads(metadata_json)
+                    except json.JSONDecodeError:
+                        cached = None
+                    if isinstance(cached, dict):
+                        metadata = cached
+                else:
+                    if isinstance(current, dict):
+                        self.upsert(run_path, current)
+                        metadata = current
+                    else:
+                        remove_roots.append(str(run_root))
+
+            if metadata is None:
                 continue
-            try:
-                metadata = json.loads(metadata_json)
-            except json.JSONDecodeError:
-                stale_paths.append(run_path)
+            if metadata.get("baseline") != method:
                 continue
-            if isinstance(metadata, dict):
-                result.append((run_path, metadata))
+            if str(metadata.get("status") or "") not in statuses:
+                continue
+            result.append((run_path, metadata))
 
-        for run_path in stale_paths:
-            self.upsert(run_path)
-
-        if stale_paths:
-            return self.candidates(method, statuses)
-
-        if missing_roots:
-            with self.lock, self._connect() as connection:
-                connection.executemany(
-                    "DELETE FROM baseline_runs WHERE run_root = ?",
-                    [(run_root,) for run_root in missing_roots],
-                )
+        self._delete_roots(remove_roots)
+        result.sort(
+            key=lambda item: (
+                str(
+                    item[1].get("completed_at")
+                    or item[1].get("created_at")
+                    or ""
+                ),
+                self._selected_rollouts(item[1]),
+                str(item[0]),
+            ),
+            reverse=True,
+        )
         return result
 
 
