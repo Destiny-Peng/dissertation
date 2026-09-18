@@ -65,6 +65,7 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
 
     def bounded_llm(*model_args: Any, **model_kwargs: Any) -> Any:
         model_kwargs["gpu_memory_utilization"] = args.vllm_total_memory_fraction
+        model_kwargs["tensor_parallel_size"] = args.tp
         return official_llm(*model_args, **model_kwargs)
 
     official.LLM = bounded_llm
@@ -563,6 +564,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--goal-image", type=Path, required=True)
     parser.add_argument("--frame-interval", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--tp", type=int, default=1)
     parser.add_argument(
         "--eval-mode",
         choices=(FUSED_EVAL_MODE, "forward", "incremental", "backward"),
@@ -587,6 +589,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--frame-interval must be positive")
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.tp < 1:
+        parser.error("--tp must be positive")
     if args.eval_modes:
         if len(set(args.eval_modes)) != len(args.eval_modes):
             parser.error("--eval-modes must not contain duplicates")
@@ -627,6 +631,7 @@ def main() -> int:
                     "jobs_file": str(args.jobs_file),
                     "jobs": len(jobs),
                     "requested_free_memory_fraction": args.vllm_free_memory_fraction,
+                    "tensor_parallel_size": args.tp,
                 },
                 ensure_ascii=False,
             )
