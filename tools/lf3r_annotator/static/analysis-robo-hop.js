@@ -88,7 +88,7 @@
         && (run.status === "complete" || run.status === "complete_with_errors");
     });
     var choices = roboRuns.filter(function (run) {
-      return Number(run.incremental_scope_rollout_count || 0) > 0;
+      return Number(run.four_signal_scope_rollout_count || 0) > 0;
     });
     var previous = select.value;
     if (!choices.length) {
@@ -96,17 +96,17 @@
       select.disabled = true;
       status(
         roboRuns.length
-          ? roboRuns.length + " completed Robo-Dopamine run(s) were found, but none contain raw incremental output for this scope. Forward-only hop is a difference of forward progress, not the raw incremental hop required by this analysis."
+          ? roboRuns.length + " completed Robo-Dopamine run(s) were found, but none contain a common rollout set with all four hop signals: incremental, forward, backward, and fused."
           : "No completed Robo-Dopamine run was found for this scope.",
         "warning"
       );
     } else {
       select.innerHTML = choices.map(function (run) {
-        var available = Number(run.incremental_scope_rollout_count || 0);
+        var available = Number(run.four_signal_scope_rollout_count || 0);
         var requested = Number(run.selected_scope_rollouts || 0);
         var coverage = requested ? Math.round(1000 * available / requested) / 10 : 0;
         return '<option value="' + esc(run.run_root) + '">'
-          + esc(runLabel(run) + " · incremental " + available + "/" + requested + " (" + coverage + "%)")
+          + esc(runLabel(run) + " · four-signal " + available + "/" + requested + " (" + coverage + "%)")
           + '</option>';
       }).join("");
       select.disabled = false;
@@ -114,7 +114,7 @@
         select.value = previous;
       }
       status(
-        choices.length + " completed Robo-Dopamine run(s) contain usable raw incremental output in this scope. Partial coverage is allowed and the analysis will use only those saved incremental rollouts.",
+        choices.length + " completed Robo-Dopamine run(s) contain a common four-signal rollout set in this scope. The analysis compares incremental, forward, backward, and fused hop on exactly the same rollouts.",
         ""
       );
     }
@@ -180,84 +180,97 @@
     var artifacts = node("analysisHopArtifacts");
     if (!host || !artifacts) return;
     var snapshot = window.workspaceState && workspaceState.analysisSnapshot;
-    var hop = snapshot && snapshot.robo_incremental_hop;
+    var hop = snapshot && (snapshot.robo_hop || snapshot.robo_incremental_hop);
     if (!hop || !hop.available) {
-      host.innerHTML = '<p class="analysis-empty">No completed incremental-hop analysis snapshot yet.</p>';
+      host.innerHTML = '<p class="analysis-empty">No completed four-signal Robo-Dopamine hop analysis snapshot yet.</p>';
       artifacts.innerHTML = "";
       if (!activeJob()) badge("idle");
       return;
     }
 
+    var modeOrder = ["incremental", "forward", "backward", "fused"];
     var rows = (hop.best_configs || []).filter(function (row) {
       return row.selection_status === "selected";
     }).sort(function (left, right) {
-      return String(left.detector_family).localeCompare(String(right.detector_family))
+      return modeOrder.indexOf(String(left.signal_mode)) - modeOrder.indexOf(String(right.signal_mode))
+        || String(left.detector_family).localeCompare(String(right.detector_family))
         || Number(left.clean_fpr_constraint) - Number(right.clean_fpr_constraint);
     });
 
     if (!rows.length) {
       host.innerHTML = '<p class="analysis-empty">The latest snapshot has no parameter configuration satisfying the requested clean-FPR constraints.</p>';
     } else {
-      var tenPercent = rows.filter(function (row) {
-        return Math.abs(Number(row.clean_fpr_constraint) - 0.10) < 1e-9;
-      });
-      var headline = '';
-      if (tenPercent.length) {
-        headline = '<div class="analysis-kpis">'
-          + tenPercent.map(function (row) {
-            return '<article><span>' + esc(familyLabel(row.detector_family)) + ' · ≤10% clean FPR</span>'
-              + '<strong>' + esc(percent(row.event_recall_at_3)) + '</strong>'
-              + '<small>recall@3 · median ' + esc(number(row.median_delay_samples))
-              + ' samples · observed FPR ' + esc(percent(row.clean_rollout_fpr)) + '</small></article>';
-          }).join('')
-          + '</div>';
-      }
-
       var sweep = Array.isArray(hop.sweep_summary) ? hop.sweep_summary : [];
-      var feasible5 = sweep.filter(function (row) {
-        return Number(row.clean_rollout_fpr) <= 0.05 + 1e-12;
-      }).length;
-      var feasible10 = sweep.filter(function (row) {
-        return Number(row.clean_rollout_fpr) <= 0.10 + 1e-12;
-      }).length;
-      var feasible20 = sweep.filter(function (row) {
-        return Number(row.clean_rollout_fpr) <= 0.20 + 1e-12;
-      }).length;
-      var sweepNote = sweep.length
-        ? '<p class="analysis-card-note">Full sweep: ' + esc(sweep.length)
+      var sections = modeOrder.map(function (mode) {
+        var modeRows = rows.filter(function (row) {
+          return String(row.signal_mode) === mode;
+        });
+        if (!modeRows.length) return "";
+
+        var tenPercent = modeRows.filter(function (row) {
+          return Math.abs(Number(row.clean_fpr_constraint) - 0.10) < 1e-9;
+        });
+        var modeSweep = sweep.filter(function (row) {
+          return String(row.signal_mode) === mode;
+        });
+        var feasible5 = modeSweep.filter(function (row) {
+          return Number(row.clean_rollout_fpr) <= 0.05 + 1e-12;
+        }).length;
+        var feasible10 = modeSweep.filter(function (row) {
+          return Number(row.clean_rollout_fpr) <= 0.10 + 1e-12;
+        }).length;
+        var feasible20 = modeSweep.filter(function (row) {
+          return Number(row.clean_rollout_fpr) <= 0.20 + 1e-12;
+        }).length;
+
+        var headline = tenPercent.length
+          ? '<div class="analysis-kpis">'
+            + tenPercent.map(function (row) {
+              return '<article><span>' + esc(familyLabel(row.detector_family)) + ' · ≤10% clean FPR</span>'
+                + '<strong>' + esc(percent(row.event_recall_at_3)) + '</strong>'
+                + '<small>recall@3 · median ' + esc(number(row.median_delay_samples))
+                + ' samples · observed FPR ' + esc(percent(row.clean_rollout_fpr)) + '</small></article>';
+            }).join('')
+            + '</div>'
+          : '';
+
+        var html = '<section class="analysis-subsection">'
+          + '<h4>' + esc(mode.charAt(0).toUpperCase() + mode.slice(1)) + ' hop</h4>'
+          + '<p class="analysis-card-note">Full sweep: ' + esc(modeSweep.length)
           + ' configurations · feasible under clean-FPR caps: '
           + esc(feasible5) + ' @5%, ' + esc(feasible10) + ' @10%, ' + esc(feasible20) + ' @20%.</p>'
-        : '';
+          + headline
+          + '<table class="analysis-table"><caption>Best ' + esc(mode)
+          + ' configurations under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
+          + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th><th>Recall@3</th><th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
 
-      var html = headline + sweepNote
-        + '<table class="analysis-table"><caption>Best configuration within each detector family under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
-        + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th><th>Recall@3</th><th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
-      rows.forEach(function (row) {
-        html += '<tr>'
-          + '<td><strong>' + esc(familyLabel(row.detector_family)) + '</strong></td>'
-          + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
-          + '<td>' + esc(configParameters(row)) + '</td>'
-          + '<td class="numeric">' + esc(row.event_n == null ? "n/a" : row.event_n) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
-          + '<td class="numeric">' + esc(number(row.median_delay_samples)) + ' samples / '
-          + esc(number(row.median_delay_frames)) + ' frames</td>'
-          + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
-          + '</tr>';
-      });
-      host.innerHTML = html + '</tbody></table>';
+        modeRows.forEach(function (row) {
+          html += '<tr>'
+            + '<td><strong>' + esc(familyLabel(row.detector_family)) + '</strong></td>'
+            + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
+            + '<td>' + esc(configParameters(row)) + '</td>'
+            + '<td class="numeric">' + esc(row.event_n == null ? "n/a" : row.event_n) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_delay_samples)) + ' samples / '
+            + esc(number(row.median_delay_frames)) + ' frames</td>'
+            + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
+            + '</tr>';
+        });
+        return html + '</tbody></table></section>';
+      }).join("");
+      host.innerHTML = sections;
     }
 
     var source = hop.source || {};
     var freshness = hop.freshness || {};
-    var counts = hop.counts || {};
+    var signal = hop.signal || {};
+    var commonCount = signal.common_rollout_n;
     var sourceText = "Latest snapshot: " + (source.directory || "unknown")
-      + " · usable rollouts " + (counts.usable_rollout_n == null ? "n/a" : counts.usable_rollout_n)
-      + " · observable events " + (counts.event_n == null ? "n/a" : counts.event_n)
-      + " · clean rollouts " + (counts.clean_rollout_n == null ? "n/a" : counts.clean_rollout_n)
+      + " · common four-signal rollouts " + (commonCount == null ? "n/a" : commonCount)
       + (freshness.stale ? " · STALE against current annotations/manifest" : " · current");
     var links = (hop.artifacts || []).map(function (item) {
       return '<a class="analysis-download-link" href="' + esc(item.url) + '" download><strong>'
-        + esc(item.name) + '</strong><small>incremental hop</small></a>';
+        + esc(item.name) + '</strong><small>four-signal hop comparison</small></a>';
     }).join("");
     artifacts.innerHTML = '<p>' + esc(sourceText) + '</p>'
       + (links ? '<div class="analysis-download-grid">' + links + '</div>' : "");
@@ -286,15 +299,15 @@
         { cache: "no-store" }
       );
       var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not read incremental-hop job");
+      if (!response.ok) throw new Error(payload.error || "Could not read Robo-Dopamine hop-comparison job");
       var job = payload.job;
-      if (!job || job.analysis_kind !== "robo_incremental_hop") return;
+      if (!job || ["robo_hop_comparison", "robo_incremental_hop"].indexOf(job.analysis_kind) === -1) return;
       hopState.job = job;
       badge(job.status);
       await loadLog(jobId);
       if (job.status === "queued" || job.status === "running") {
         status(
-          "Incremental-hop analysis " + job.status + " · "
+          "Four-signal hop analysis " + job.status + " · "
             + job.selected_rollouts + " rollout(s) · CPU post-processing only.",
           ""
         );
@@ -306,17 +319,17 @@
         return;
       }
       if (job.status === "complete") {
-        status("Incremental-hop analysis complete · " + (job.output_dir || "snapshot ready"), "");
+        status("Four-signal hop analysis complete · " + (job.output_dir || "snapshot ready"), "");
         if (typeof window.workspaceLoadAnalysis === "function") {
           await window.workspaceLoadAnalysis(true);
         }
         renderSnapshot();
       } else {
-        status("Incremental-hop analysis failed; inspect the log.", "error");
+        status("Four-signal hop analysis failed; inspect the log.", "error");
       }
     } catch (error) {
       badge("failed");
-      status("Incremental-hop job error: " + error.message, "error");
+      status("Robo-Dopamine hop-comparison job error: " + error.message, "error");
     } finally {
       if (!activeJob()) hopState.polling = false;
       updateButton();
@@ -344,7 +357,7 @@
     }
 
     badge("queued");
-    status("Starting incremental-hop analysis…", "");
+    status("Starting four-signal Robo-Dopamine hop analysis…", "");
     node("analysisHopLog").textContent = "";
     node("analysisHopRunButton").disabled = true;
     try {
@@ -352,7 +365,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          analysis_kind: "robo_incremental_hop",
+          analysis_kind: "robo_hop_comparison",
           scope: scope,
           runs: { robo_dopamine: run },
           task_cv: taskCv,
@@ -360,14 +373,14 @@
         })
       });
       var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not start incremental-hop analysis");
+      if (!response.ok) throw new Error(payload.error || "Could not start four-signal hop analysis");
       hopState.job = payload.job;
       await loadLog(payload.job.job_id);
       pollJob(payload.job.job_id);
     } catch (error) {
       hopState.job = null;
       badge("failed");
-      status("Incremental-hop analysis error: " + error.message, "error");
+      status("Four-signal hop analysis error: " + error.message, "error");
       updateButton();
     }
   }
@@ -378,7 +391,7 @@
       var payload = await response.json();
       if (!response.ok) return;
       var jobs = (payload.jobs || []).filter(function (job) {
-        return job.analysis_kind === "robo_incremental_hop";
+        return ["robo_hop_comparison", "robo_incremental_hop"].indexOf(job.analysis_kind) !== -1;
       });
       if (!jobs.length) return;
       hopState.job = jobs[0];
