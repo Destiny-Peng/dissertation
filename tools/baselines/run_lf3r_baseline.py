@@ -682,9 +682,11 @@ def resume_procvlm_run(args: argparse.Namespace) -> int:
     args.procvlm_enable_value_head = bool(stored_arguments.get("procvlm_enable_value_head", False))
     args.procvlm_procedure_mode = str(stored_arguments.get("procvlm_procedure_mode", "baseline"))
     stored_procedure_config = stored_arguments.get("procvlm_procedure_config")
+    snapshot_procedure_config = metadata.get("procedure_config_snapshot")
+    procedure_config_value = snapshot_procedure_config or stored_procedure_config
     args.procvlm_procedure_config = (
-        Path(stored_procedure_config).expanduser().resolve()
-        if stored_procedure_config not in (None, "", "None")
+        Path(procedure_config_value).expanduser().resolve()
+        if procedure_config_value not in (None, "", "None")
         else None
     )
     args.procvlm_tracker_decision_interval_frames = int(stored_arguments.get("procvlm_tracker_decision_interval_frames", 3))
@@ -2463,6 +2465,19 @@ def main() -> int:
         "completed_jobs": 0,
         "failed_jobs": 0,
     }
+    if args.baseline == "procvlm" and args.procvlm_procedure_mode != "baseline":
+        source_config = args.procvlm_procedure_config
+        if source_config is None:
+            raise ValueError("canonical/stateful ProcVLM requires a procedure config")
+        procedure_dir = run_root / "procedure"
+        procedure_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_config = procedure_dir / "canonical_procedure.json"
+        snapshot_config.write_bytes(source_config.read_bytes())
+        metadata["procedure_config_source"] = str(source_config)
+        metadata["procedure_config_snapshot"] = str(snapshot_config)
+        metadata["procedure_config_sha256"] = file_sha256(snapshot_config)
+        metadata["procedure_config"] = str(snapshot_config)
+        args.procvlm_procedure_config = snapshot_config
     atomic_json(metadata_path, metadata)
     log_line(log_path, f"START baseline={args.baseline} rollouts={len(records)} dry_run={args.dry_run}")
 
