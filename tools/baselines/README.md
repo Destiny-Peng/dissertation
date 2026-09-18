@@ -138,7 +138,7 @@ bash tools/baselines/run_baseline.sh \
   --continue-on-error
 ```
 
-The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE, Robo-Dopamine, and DenseReward; the worker table in the annotator sends these flags for all five methods. A legacy invocation with no worker options keeps the existing single-worker behavior, including ProcVLM/Robo-Dopamine multi-GPU tensor parallel configuration.
+The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE, Robo-Dopamine, and DenseReward; the worker table in the annotator sends these flags for all five methods. A single-worker invocation supports ProcVLM/Robo-Dopamine tensor parallelism. For Robo-Dopamine on GPU 0 and 1, use `--gpu 0,1 --parallel-workers 1 --tensor-parallel-size 2`; the persistent worker forwards `--tp 2` into vLLM. This is different from `--gpu 0,1 --parallel-workers 2 --tensor-parallel-size 1`, which launches two independent model replicas for rollout throughput. Robo-Dopamine rejects TP>1 together with multiple rollout workers.
 
 RynnValue keeps its existing temporal semantics inside each rollout worker: `--rynn-batch-size` is the prefix batch size, and `--rynn-evaluation-interval` is converted to the official sampler's approximate endpoint count. Each RynnValue rollout subprocess receives one `CUDA_VISIBLE_DEVICES` value.
 
