@@ -436,6 +436,7 @@ def analyse(
                 signals,
                 events,
                 plot_dir,
+                signal_mode=signal_mode,
             )
 
     write_csv(output_dir / "sweep_summary.csv", all_summary_rows)
