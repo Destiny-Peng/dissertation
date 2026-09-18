@@ -20,6 +20,7 @@ import mimetypes
 import os
 import re
 import signal
+import sqlite3
 import subprocess
 import sys
 import time
@@ -1848,6 +1849,303 @@ def validate_annotation(payload: Any, rollout: dict[str, Any]) -> dict[str, Any]
     }
 
 
+class BaselineRunIndex:
+    """Persistent catalog for baseline run metadata.
+
+    The filesystem remains authoritative. The index only replaces repeated
+    recursive discovery under outputs/baselines. A full recursive scan is done
+    once when no catalog exists, or explicitly through rebuild().
+    """
+
+    def __init__(self, project_root: Path, baseline_root: Path) -> None:
+        self.project_root = project_root.resolve()
+        self.baseline_root = baseline_root.resolve()
+        self.path = (
+            self.project_root
+            / "cache"
+            / "lf3r_annotator"
+            / "baseline_runs.sqlite3"
+        )
+        self.lock = threading.RLock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=5.0)
+        connection.execute("PRAGMA busy_timeout = 5000")
+        return connection
+
+    def _initialize(self) -> None:
+        with self.lock, self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS baseline_run_index_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS baseline_runs (
+                    run_root TEXT PRIMARY KEY,
+                    baseline TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    sort_time TEXT NOT NULL,
+                    selected_rollouts INTEGER NOT NULL,
+                    metadata_mtime_ns INTEGER NOT NULL,
+                    metadata_size INTEGER NOT NULL,
+                    metadata_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS baseline_runs_method_status
+                ON baseline_runs (baseline, status, sort_time DESC)
+                """
+            )
+
+    def _relative_run_root(self, run_path: Path) -> str:
+        resolved = run_path.resolve()
+        try:
+            resolved.relative_to(self.baseline_root)
+            return str(resolved.relative_to(self.project_root))
+        except ValueError as error:
+            raise ValidationError(
+                "Baseline run index path must be inside outputs/baselines"
+            ) from error
+
+    @staticmethod
+    def _selected_rollouts(metadata: dict[str, Any]) -> int:
+        try:
+            return int(metadata.get("selected_rollouts") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _built(self) -> bool:
+        with self.lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM baseline_run_index_meta WHERE key = 'scan_complete'"
+            ).fetchone()
+        return bool(row and row[0] == "1")
+
+    def ensure_built(self) -> None:
+        if not self._built():
+            self.rebuild()
+
+    def upsert(
+        self,
+        run_path: Path,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        run_path = run_path.resolve()
+        metadata_path = run_path / "run.json"
+        if not metadata_path.is_file():
+            return False
+        relative_run_root = self._relative_run_root(run_path)
+        try:
+            stat = metadata_path.stat()
+        except OSError:
+            return False
+
+        with self.lock, self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT metadata_mtime_ns, metadata_size
+                FROM baseline_runs
+                WHERE run_root = ?
+                """,
+                (relative_run_root,),
+            ).fetchone()
+            if (
+                existing is not None
+                and int(existing[0]) == stat.st_mtime_ns
+                and int(existing[1]) == stat.st_size
+            ):
+                return False
+
+        if metadata is None:
+            try:
+                value = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return False
+            if not isinstance(value, dict):
+                return False
+            metadata = value
+
+        baseline = str(metadata.get("baseline") or "").strip()
+        status = str(metadata.get("status") or "").strip()
+        if not baseline:
+            return False
+        sort_time = str(
+            metadata.get("completed_at")
+            or metadata.get("created_at")
+            or ""
+        )
+        payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+
+        with self.lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO baseline_runs (
+                    run_root, baseline, status, sort_time, selected_rollouts,
+                    metadata_mtime_ns, metadata_size, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_root) DO UPDATE SET
+                    baseline = excluded.baseline,
+                    status = excluded.status,
+                    sort_time = excluded.sort_time,
+                    selected_rollouts = excluded.selected_rollouts,
+                    metadata_mtime_ns = excluded.metadata_mtime_ns,
+                    metadata_size = excluded.metadata_size,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    relative_run_root,
+                    baseline,
+                    status,
+                    sort_time,
+                    self._selected_rollouts(metadata),
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                    payload,
+                ),
+            )
+        return True
+
+    def rebuild(self) -> dict[str, int]:
+        rows: list[
+            tuple[str, str, str, str, int, int, int, str]
+        ] = []
+        scanned = 0
+        if self.baseline_root.is_dir():
+            for metadata_path in self.baseline_root.rglob("run.json"):
+                scanned += 1
+                try:
+                    run_path = metadata_path.parent.resolve()
+                    relative_run_root = self._relative_run_root(run_path)
+                    stat = metadata_path.stat()
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValidationError):
+                    continue
+                if not isinstance(metadata, dict):
+                    continue
+                baseline = str(metadata.get("baseline") or "").strip()
+                if not baseline:
+                    continue
+                status = str(metadata.get("status") or "").strip()
+                sort_time = str(
+                    metadata.get("completed_at")
+                    or metadata.get("created_at")
+                    or ""
+                )
+                rows.append(
+                    (
+                        relative_run_root,
+                        baseline,
+                        status,
+                        sort_time,
+                        self._selected_rollouts(metadata),
+                        stat.st_mtime_ns,
+                        stat.st_size,
+                        json.dumps(
+                            metadata,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                    )
+                )
+
+        with self.lock, self._connect() as connection:
+            connection.execute("DELETE FROM baseline_runs")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO baseline_runs (
+                        run_root, baseline, status, sort_time, selected_rollouts,
+                        metadata_mtime_ns, metadata_size, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+            connection.execute(
+                """
+                INSERT INTO baseline_run_index_meta (key, value)
+                VALUES ('scan_complete', '1')
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO baseline_run_index_meta (key, value)
+                VALUES ('last_scan_at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (dt.datetime.now(dt.timezone.utc).isoformat(),),
+            )
+        return {"scanned": scanned, "indexed": len(rows)}
+
+    def candidates(
+        self,
+        method: str,
+        statuses: set[str],
+    ) -> list[tuple[Path, dict[str, Any]]]:
+        self.ensure_built()
+        if not statuses:
+            return []
+        placeholders = ",".join("?" for _ in statuses)
+        parameters: list[Any] = [method, *sorted(statuses)]
+        query = f"""
+            SELECT run_root, metadata_mtime_ns, metadata_size, metadata_json
+            FROM baseline_runs
+            WHERE baseline = ? AND status IN ({placeholders})
+            ORDER BY sort_time DESC, selected_rollouts DESC, run_root DESC
+        """
+        with self.lock, self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+
+        result: list[tuple[Path, dict[str, Any]]] = []
+        stale_paths: list[Path] = []
+        missing_roots: list[str] = []
+        for run_root, mtime_ns, size, metadata_json in rows:
+            run_path = (self.project_root / str(run_root)).resolve()
+            metadata_path = run_path / "run.json"
+            if not metadata_path.is_file():
+                missing_roots.append(str(run_root))
+                continue
+            try:
+                stat = metadata_path.stat()
+            except OSError:
+                continue
+            if stat.st_mtime_ns != int(mtime_ns) or stat.st_size != int(size):
+                stale_paths.append(run_path)
+                continue
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError:
+                stale_paths.append(run_path)
+                continue
+            if isinstance(metadata, dict):
+                result.append((run_path, metadata))
+
+        for run_path in stale_paths:
+            self.upsert(run_path)
+
+        if stale_paths:
+            return self.candidates(method, statuses)
+
+        if missing_roots:
+            with self.lock, self._connect() as connection:
+                connection.executemany(
+                    "DELETE FROM baseline_runs WHERE run_root = ?",
+                    [(run_root,) for run_root in missing_roots],
+                )
+        return result
+
+
 class BaselineService:
     """Read existing baseline outputs and optionally launch one bounded rollout."""
 
@@ -1874,6 +2172,7 @@ class BaselineService:
             self.baseline_root / "instruction_variants" / "libero_10"
         )
         self.web_logs_root = self.project_root / "logs" / "baselines" / "web_runs"
+        self.run_index = BaselineRunIndex(self.project_root, self.baseline_root)
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
         self.coordinator = coordinator or JobCoordinator()
@@ -1908,30 +2207,18 @@ class BaselineService:
             return None
         return number if math.isfinite(number) else None
 
+    def _indexed_run_candidates(
+        self,
+        method: str,
+        statuses: set[str],
+    ) -> list[tuple[Path, dict[str, Any]]]:
+        return self.run_index.candidates(method, statuses)
+
+    def rebuild_run_index(self) -> dict[str, int]:
+        return self.run_index.rebuild()
+
     def _run_candidates(self, method: str) -> list[tuple[Path, dict[str, Any]]]:
-        candidates: list[tuple[tuple[str, int, str], Path, dict[str, Any]]] = []
-        if not self.baseline_root.is_dir():
-            return []
-        baseline_root = self.baseline_root.resolve()
-        for path in self.baseline_root.rglob("run.json"):
-            try:
-                path.parent.resolve().relative_to(baseline_root)
-            except ValueError:
-                continue
-            try:
-                metadata = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if metadata.get("baseline") != method or metadata.get("status") not in BASELINE_RUN_STATUSES:
-                continue
-            try:
-                selected = int(metadata.get("selected_rollouts") or 0)
-            except (TypeError, ValueError):
-                continue
-            key = (str(metadata.get("completed_at") or metadata.get("created_at") or ""), selected, str(path))
-            candidates.append((key, path.parent, metadata))
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        return [(path, metadata) for _, path, metadata in candidates]
+        return self._indexed_run_candidates(method, BASELINE_RUN_STATUSES)
 
     def _explicit_run_candidate(
         self,
@@ -3200,6 +3487,7 @@ class BaselineService:
             run_path, metadata = self._find_job_run(job)
             if run_path is None or metadata is None:
                 return
+            self.run_index.upsert(run_path, metadata)
             job["run_root"] = self._relative(run_path)
             for field in (
                 "selected_rollouts", "unique_selected_rollouts", "completed_jobs",
@@ -4272,14 +4560,22 @@ class LF3RHandler(BaseHTTPRequestHandler):
             if path == "/api/baselines/runs":
                 scope = query.get("scope", ["libero_10"])[0]
                 condition = query.get("condition", ["full_instruction"])[0]
-                self.json_response(
-                    HTTPStatus.OK,
-                    {
-                        "scope": scope,
-                        "condition": condition,
-                        "runs": self.app.baselines.list_runs(scope, condition),
-                    },
+                rescan = str(query.get("rescan", ["0"])[0]).lower() in {
+                    "1", "true", "yes"
+                }
+                index_refresh = (
+                    self.app.baselines.rebuild_run_index()
+                    if rescan
+                    else None
                 )
+                payload = {
+                    "scope": scope,
+                    "condition": condition,
+                    "runs": self.app.baselines.list_runs(scope, condition),
+                }
+                if index_refresh is not None:
+                    payload["index_refresh"] = index_refresh
+                self.json_response(HTTPStatus.OK, payload)
                 return
             if path == "/api/jobs":
                 job_type = query.get("job_type", [None])[0] or None
