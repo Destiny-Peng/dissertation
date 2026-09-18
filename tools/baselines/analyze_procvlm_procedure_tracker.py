@@ -21,6 +21,34 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def add_posthoc_procedure_states(
+    rows: list[dict[str, Any]],
+    procedure_path: Path,
+) -> list[dict[str, Any]]:
+    """Parse baseline/free-form ProcVLM text against a fixed canonical procedure.
+
+    Existing canonical/stateful parse fields are left untouched. This makes the
+    reasoning-state stability metrics comparable across baseline/canonical/stateful
+    without changing baseline inference.
+    """
+    from procvlm_procedure_state import load_procedure, parse_remaining_actions
+
+    procedure = load_procedure(procedure_path)
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        if "parse_valid" not in item:
+            answer = str(item.get("model_output") or item.get("reasoning") or "")
+            parsed = parse_remaining_actions(answer, procedure, allow_text_fallback=True)
+            item["parsed_remaining_ids"] = list(parsed.remaining_ids)
+            item["parse_valid"] = bool(parsed.parse_valid)
+            item["parse_source"] = "posthoc_" + parsed.source
+            item["parse_errors"] = list(parsed.errors)
+            item["observed_stage"] = parsed.observed_stage
+        enriched.append(item)
+    return enriched
+
+
 def normalized_state(row: dict[str, Any]) -> tuple[tuple[str, int], ...] | None:
     if not row.get("parse_valid"):
         return None
@@ -189,6 +217,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("raw_jsonl", type=Path)
     parser.add_argument("--ground-truth", type=Path, default=None)
+    parser.add_argument(
+        "--procedure-config",
+        type=Path,
+        default=None,
+        help="Post-hoc canonical parser for baseline rows that lack parse fields",
+    )
     parser.add_argument("--progress-regression-threshold", type=float, default=-20.0)
     parser.add_argument("--early-tolerance-frames", type=int, default=0)
     parser.add_argument("--output", type=Path, default=None)
@@ -202,11 +236,17 @@ def main() -> int:
     args = parse_args()
     raw_path = args.raw_jsonl.expanduser().resolve()
     rows = load_jsonl(raw_path)
+    if args.procedure_config is not None:
+        procedure_path = args.procedure_config.expanduser().resolve()
+        rows = add_posthoc_procedure_states(rows, procedure_path)
+    else:
+        procedure_path = None
     report = summarize(
         rows,
         progress_regression_threshold=args.progress_regression_threshold,
     )
     report["raw_jsonl"] = str(raw_path)
+    report["posthoc_procedure_config"] = str(procedure_path) if procedure_path else None
 
     if args.ground_truth is not None:
         ground_truth_path = args.ground_truth.expanduser().resolve()
