@@ -84,13 +84,18 @@
     var select = node("analysisHopRun");
     if (!select) return;
     var choices = (hopState.runs || []).filter(function (run) {
-      return run.baseline === "robo_dopamine" && run.compatible;
+      return run.baseline === "robo_dopamine"
+        && run.compatible
+        && run.incremental_compatible;
     });
     var previous = select.value;
     if (!choices.length) {
       select.innerHTML = '<option value="">No compatible completed Robo-Dopamine run</option>';
       select.disabled = true;
-      status("No completed Robo-Dopamine run covers this scope.", "warning");
+      status(
+        "No completed Robo-Dopamine run covers this scope with saved incremental output.",
+        "warning"
+      );
     } else {
       select.innerHTML = choices.map(function (run) {
         return '<option value="' + esc(run.run_root) + '">' + esc(runLabel(run)) + '</option>';
@@ -100,8 +105,8 @@
         select.value = previous;
       }
       status(
-        choices.length + " compatible Robo-Dopamine run(s). "
-          + "The server will verify saved incremental perspective output before launch.",
+        choices.length + " completed Robo-Dopamine run(s) cover this scope "
+          + "and contain saved incremental output for every selected rollout.",
         ""
       );
     }
@@ -185,7 +190,39 @@
     if (!rows.length) {
       host.innerHTML = '<p class="analysis-empty">The latest snapshot has no parameter configuration satisfying the requested clean-FPR constraints.</p>';
     } else {
-      var html = '<table class="analysis-table"><caption>Best configuration within each detector family under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
+      var tenPercent = rows.filter(function (row) {
+        return Math.abs(Number(row.clean_fpr_constraint) - 0.10) < 1e-9;
+      });
+      var headline = '';
+      if (tenPercent.length) {
+        headline = '<div class="analysis-kpis">'
+          + tenPercent.map(function (row) {
+            return '<article><span>' + esc(familyLabel(row.detector_family)) + ' · ≤10% clean FPR</span>'
+              + '<strong>' + esc(percent(row.event_recall_at_3)) + '</strong>'
+              + '<small>recall@3 · median ' + esc(number(row.median_delay_samples))
+              + ' samples · observed FPR ' + esc(percent(row.clean_rollout_fpr)) + '</small></article>';
+          }).join('')
+          + '</div>';
+      }
+
+      var sweep = Array.isArray(hop.sweep_summary) ? hop.sweep_summary : [];
+      var feasible5 = sweep.filter(function (row) {
+        return Number(row.clean_rollout_fpr) <= 0.05 + 1e-12;
+      }).length;
+      var feasible10 = sweep.filter(function (row) {
+        return Number(row.clean_rollout_fpr) <= 0.10 + 1e-12;
+      }).length;
+      var feasible20 = sweep.filter(function (row) {
+        return Number(row.clean_rollout_fpr) <= 0.20 + 1e-12;
+      }).length;
+      var sweepNote = sweep.length
+        ? '<p class="analysis-card-note">Full sweep: ' + esc(sweep.length)
+          + ' configurations · feasible under clean-FPR caps: '
+          + esc(feasible5) + ' @5%, ' + esc(feasible10) + ' @10%, ' + esc(feasible20) + ' @20%.</p>'
+        : '';
+
+      var html = headline + sweepNote
+        + '<table class="analysis-table"><caption>Best configuration within each detector family under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
         + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th><th>Recall@3</th><th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
       rows.forEach(function (row) {
         html += '<tr>'
