@@ -236,16 +236,25 @@ All baseline and rollout-generation fields with a help marker show a body-mounte
 
 ### Running temporal analysis from Analysis
 
-### Robo-Dopamine incremental-hop analysis
+### Robo-Dopamine four-signal hop analysis
 
-Analysis Overview includes a separate **Incremental-hop failure evidence** runner for the saved Robo-Dopamine incremental perspective. It is intentionally independent from the existing four-method temporal/change-point comparison: only one compatible completed Robo-Dopamine run is selected, and the server verifies that every rollout in the selected scope has a saved incremental perspective before launching the analysis.
+Analysis Overview includes a separate **Four-signal failure evidence** runner for saved Robo-Dopamine multi-perspective outputs. It applies the same detector families and parameter sweep independently to four saved hop signals: `incremental`, `forward`, `backward`, and `fused`.
 
-The runner is CPU-only and reuses the persistent Analysis tmux/job/log infrastructure. It writes a project-local scope selection and executes `tools/analyze_robo_dopamine_incremental_hop.py`; it does not start Robo-Dopamine inference, does not use fused/forward/backward progress as the detector signal, and does not interpolate the native sample grid. Current official incremental hop is already stored on the normalized `[-1,1]` scale; the analyzer validates that contract and only normalizes legacy percentage-point storage when confirmed from the saved score text.
+The runner is CPU-only and reuses the persistent Analysis tmux/job/log infrastructure. It never starts Robo-Dopamine inference. For a fair comparison it analyzes only the rollout intersection that has all four signals, so event N, clean-rollout N, recall, FPR, and delay are directly comparable across modes.
 
-The WebUI payload uses the existing `POST /api/analysis/run` endpoint with an explicit analysis kind:
+Signal semantics are preserved rather than redefined:
+
+- `incremental.hop`: official raw incremental model score. Legacy percentage-point storage is normalized to `[-1,1]` only when confirmed.
+- `forward.hop`: saved difference of consecutive forward progress predictions.
+- `backward.hop`: saved difference of consecutive backward-derived progress values.
+- `fused.hop`: saved difference of consecutive arithmetic-mean fused progress values.
+
+Forward/backward/fused hop are used on their saved native scale and are not rescaled from `<score>` text.
+
+The WebUI payload uses the existing `POST /api/analysis/run` endpoint:
 
     {
-      "analysis_kind": "robo_incremental_hop",
+      "analysis_kind": "robo_hop_comparison",
       "scope": "libero_10",
       "runs": {
         "robo_dopamine": "outputs/baselines/..."
@@ -254,9 +263,9 @@ The WebUI payload uses the existing `POST /api/analysis/run` endpoint with an ex
       "output_label": "web_robo_hop"
     }
 
-The scope is materialized as a selection file so a superset baseline run does not silently add extra rollouts. The output is atomically promoted under `outputs/robo_dopamine_incremental_hop/web_<timestamp>_<label>_<suffix>/`. The Analysis API discovers the newest complete snapshot and exposes only its compact selected-configuration summary on the dashboard; full sweep, event, clean-rollout, recovery, breakdown, and optional task-CV tables remain downloadable artifacts.
+Run discovery reports per-mode coverage plus the common four-signal coverage. A run is selectable when the requested scope contains at least one rollout with all four signals; partial scope coverage is allowed, but the four signals are always evaluated on the same common rollout subset.
 
-The result table shows each detector family's selected configuration under the 5%, 10%, and 20% clean-rollout FPR constraints together with event N, recall@3 native samples, median sample/frame delay, and observed clean FPR. Existing temporal Analysis jobs are kept separate by `analysis_kind`, so their badges, logs, and result refreshes do not share state with the incremental-hop runner.
+The output remains under `outputs/robo_dopamine_incremental_hop/web_<timestamp>_<label>_<suffix>/` for compatibility. Every CSV row includes `signal_mode`. The Analysis page renders separate Incremental, Forward, Backward, and Fused sections, while the full sweep, event, clean-rollout, recovery, breakdown, and optional task-CV tables remain downloadable artifacts.
 
 ### Robo-Dopamine multi-perspective outputs
 
