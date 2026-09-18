@@ -7,6 +7,7 @@ import tempfile
 import time
 import threading
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -198,6 +199,47 @@ class ServerTest(unittest.TestCase):
             encoding="utf-8",
         )
         (dense_root / "jobs.jsonl").write_text(json.dumps({"rollout_id": self.rollout["id"], "status": "complete"}) + "\n", encoding="utf-8")
+
+    def test_baseline_run_catalog_uses_persistent_index_after_first_scan(self) -> None:
+        self.seed_baseline_outputs()
+
+        with self.request(
+            "/api/baselines/runs?scope=libero_10&condition=full_instruction"
+        ) as response:
+            first = json.load(response)
+        self.assertTrue(first["runs"])
+
+        index_path = (
+            self.root
+            / "cache"
+            / "lf3r_annotator"
+            / "baseline_runs.sqlite3"
+        )
+        self.assertTrue(index_path.is_file())
+
+        with mock.patch.object(
+            Path,
+            "rglob",
+            side_effect=AssertionError("baseline tree should not be rescanned"),
+        ):
+            with self.request(
+                "/api/baselines/runs?scope=libero_10&condition=full_instruction"
+            ) as response:
+                second = json.load(response)
+        self.assertEqual(
+            [run["run_root"] for run in first["runs"]],
+            [run["run_root"] for run in second["runs"]],
+        )
+
+    def test_baseline_run_catalog_supports_explicit_rescan(self) -> None:
+        self.seed_baseline_outputs()
+        with self.request(
+            "/api/baselines/runs?scope=libero_10&condition=full_instruction&rescan=1"
+        ) as response:
+            payload = json.load(response)
+        self.assertEqual(payload["index_refresh"]["indexed"], 5)
+        self.assertGreaterEqual(payload["index_refresh"]["scanned"], 5)
+        self.assertTrue(payload["runs"])
 
     def test_baseline_evaluation_reads_all_output_types(self) -> None:
         self.seed_baseline_outputs()
