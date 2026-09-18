@@ -1272,7 +1272,10 @@ function baselineRunDisplay(run) {
   var when = run && (run.completed_at || run.created_at);
   var date = when ? formatDate(when) : "unknown time";
   var status = run && run.status ? " · " + run.status : "";
-  return date + " · " + completed + "/" + selected + status + " · " + shortRoot;
+  var procedureMode = run && run.procedure_mode
+    ? " · " + String(run.procedure_mode)
+    : "";
+  return date + " · " + completed + "/" + selected + status + procedureMode + " · " + shortRoot;
 }
 
 function baselineRunOptions(method, record, condition) {
