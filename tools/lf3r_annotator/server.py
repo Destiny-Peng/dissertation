@@ -662,6 +662,9 @@ class AnalysisService:
         self.manifest_path = manifest_path.resolve()
         self.annotation_root = annotation_root.resolve()
         self.analysis_root = self.project_root / "outputs" / "baseline_signal_analysis"
+        self.robo_hop_root = (
+            self.project_root / "outputs" / "robo_dopamine_incremental_hop"
+        )
 
     def _relative(self, path: Path) -> str:
         try:
@@ -910,6 +913,114 @@ class AnalysisService:
             "summary": tables["summary"],
             "peak_events": tables["peak_events"],
             "controls": tables["controls"],
+        }
+
+    def _latest_robo_hop_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
+        if not self.robo_hop_root.is_dir():
+            return None
+        candidates = []
+        for metadata_path in self.robo_hop_root.glob("*/metadata.json"):
+            directory = metadata_path.parent
+            if not all((directory / name).is_file() for name in ROBO_HOP_REQUIRED_FILES):
+                continue
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            signal = metadata.get("signal") or {}
+            if signal.get("name") != "Robo-Dopamine incremental hop":
+                continue
+            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+        if not candidates:
+            return None
+        _, directory, metadata = max(candidates, key=lambda item: item[0])
+        return directory, metadata
+
+    def _robo_hop_response(self) -> dict[str, Any]:
+        selected = self._latest_robo_hop_snapshot()
+        if selected is None:
+            return {
+                "available": False,
+                "message": (
+                    "No complete Robo-Dopamine incremental-hop analysis found under "
+                    "outputs/robo_dopamine_incremental_hop."
+                ),
+            }
+        directory, metadata = selected
+        metadata_path = directory / "metadata.json"
+        generated_at = str(
+            metadata.get("generated_at")
+            or self._iso_mtime(metadata_path)
+        )
+        current_manifest_hash = self._sha256(self.manifest_path)
+        input_metadata = metadata.get("input") or {}
+        snapshot_manifest_hash = input_metadata.get("manifest_sha256")
+        latest_annotation_update = self._latest_annotation_update()
+        stale = bool(
+            snapshot_manifest_hash
+            and snapshot_manifest_hash != current_manifest_hash
+        )
+        if latest_annotation_update and latest_annotation_update > generated_at:
+            stale = True
+        tables = {
+            name: self._read_csv(directory / filename)
+            for name, filename in ROBO_HOP_TABLE_FILES.items()
+        }
+        task_cv_path = directory / "task_cv_results.csv"
+        best_configs = tables["best_configs"]
+        selected_configs = [
+            row for row in best_configs
+            if row.get("selection_status") == "selected"
+        ]
+        families = sorted({
+            str(row.get("detector_family"))
+            for row in best_configs
+            if row.get("detector_family")
+        })
+        return {
+            "available": True,
+            "source": {
+                "directory": self._relative(directory),
+                "metadata": self._relative(metadata_path),
+                "generated_at": generated_at,
+                "run_root": input_metadata.get("run_root"),
+                "selection": input_metadata.get("selection"),
+            },
+            "freshness": {
+                "stale": stale,
+                "manifest_matches": snapshot_manifest_hash == current_manifest_hash,
+                "snapshot_manifest_sha256": snapshot_manifest_hash,
+                "current_manifest_sha256": current_manifest_hash,
+                "latest_annotation_update": latest_annotation_update,
+            },
+            "signal": metadata.get("signal") or {},
+            "counts": metadata.get("counts") or {},
+            "generalization": metadata.get("generalization") or {},
+            "detector_config_n": metadata.get("detector_config_n"),
+            "selected_config_n": metadata.get("selected_config_n"),
+            "families": families,
+            "best_configs": best_configs,
+            "selected_configs": selected_configs,
+            "sweep_summary": tables["sweep_summary"],
+            "recovery_results": tables["recovery_results"],
+            "breakdown_summary": tables["breakdown_summary"],
+            "task_cv_available": task_cv_path.is_file(),
+            "artifacts": [
+                {
+                    "name": name,
+                    "url": "/api/analysis/artifacts/" + name,
+                }
+                for name in (
+                    "sweep_summary.csv",
+                    "event_results.csv",
+                    "clean_rollout_results.csv",
+                    "best_configs.csv",
+                    "recovery_results.csv",
+                    "breakdown_summary.csv",
+                    "task_cv_results.csv",
+                )
+                if (directory / name).is_file()
+            ],
         }
 
     def _latest_change_point_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
