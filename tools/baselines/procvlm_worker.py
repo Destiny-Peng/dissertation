@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -155,6 +156,210 @@ def initialize_vllm_engine(model_path: str, tp: int, engine_kwargs: dict[str, An
     return get_vllm(model_path, tp, dict(engine_kwargs))
 
 
+def infer_procedure_rollout(
+    job: dict[str, Any],
+    args: argparse.Namespace,
+    engine_kwargs: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Run external ProcVLM procedure tracking without changing upstream model code."""
+    from evqa.inference import (
+        build_uniform_indices,
+        build_window_values,
+        extract_frames_moviepy,
+        extract_progress,
+        extract_reasoning_text,
+        load_prompt_template,
+        run_batch_progress_inference,
+        write_jsonl,
+    )
+    from procvlm_procedure_state import (
+        StatefulProcedureTracker,
+        build_stateful_history_prompt,
+        load_procedure,
+        normalize_text,
+        parse_remaining_actions,
+        task_history_text,
+    )
+
+    mode = str(args.procedure_mode)
+    if mode not in {"tracker_only", "stateful_history"}:
+        raise ValueError(
+            "procedure inference requires tracker_only/stateful_history mode, "
+            f"got {mode!r}"
+        )
+    config_value = job.get("procedure_config") or args.procedure_config
+    if not config_value:
+        raise ValueError(f"--procedure-config is required for procedure mode {mode}")
+    procedure_path = Path(config_value).expanduser().resolve()
+    procedure = load_procedure(procedure_path)
+    job_task = str(job["task"])
+    if normalize_text(procedure.task) != normalize_text(job_task):
+        raise ValueError(
+            "procedure config task does not match rollout task: "
+            f"{procedure.task!r} != {job_task!r}"
+        )
+
+    video_path = Path(job["video_path"]).expanduser().resolve()
+    output_path = Path(job["output_path"]).expanduser().resolve()
+    frame_dir = output_path.parent / "_procedure_frames"
+    all_frame_paths, fps = extract_frames_moviepy(str(video_path), frame_dir)
+    source_frames = len(all_frame_paths)
+    max_sampled_frames = 512 if args.max_sampled_frames is None else int(args.max_sampled_frames)
+    sampled_count = min(source_frames, max(max_sampled_frames, 1))
+    selected_indices = build_uniform_indices(source_frames, sampled_count)
+    if not selected_indices:
+        raise RuntimeError("no frames selected for procedure inference")
+
+    source_frame_indices = list(range(source_frames))
+    official_prompt = load_prompt_template(job_task)
+    tracker = StatefulProcedureTracker(
+        procedure,
+        support_threshold=args.tracker_support_threshold,
+        window_size=args.tracker_window_size,
+        max_forward_jump=args.tracker_max_forward_jump,
+    )
+    last_progress = 0.0
+    records: list[dict[str, Any]] = []
+
+    def window_for(frame_index: int) -> tuple[list[str], list[int]]:
+        window_paths = build_window_values(
+            all_frame_paths,
+            frame_index,
+            max(1, args.window_size),
+            args.frame_stride,
+        )
+        window_indices = [
+            int(value)
+            for value in build_window_values(
+                source_frame_indices,
+                frame_index,
+                max(1, args.window_size),
+                args.frame_stride,
+            )
+        ]
+        return window_paths, window_indices
+
+    def run_items(items: list[dict[str, Any]]) -> list[str]:
+        answers = run_batch_progress_inference(
+            batch_items=items,
+            model_path=str(args.model_path),
+            max_new_tokens=args.max_new_tokens,
+            enable_value_head=getattr(args, "enable_value_head", False),
+            use_lora=getattr(args, "use_lora", False),
+            torch_dtype=args.torch_dtype,
+            tp=args.tp,
+            engine_kwargs=engine_kwargs,
+        )
+        return [str(answer) for answer in answers]
+
+    def append_record(
+        *,
+        sample_index: int,
+        frame_index: int,
+        window_indices: list[int],
+        answer: str,
+        prompt_history: str,
+    ) -> None:
+        nonlocal last_progress
+        parsed = parse_remaining_actions(answer, procedure)
+        tracker_row = tracker.update(int(frame_index), parsed)
+        parsed_progress = extract_progress(answer)
+        if parsed_progress is not None:
+            last_progress = parsed_progress
+        records.append({
+            "video_path": str(video_path),
+            "task": job["task"],
+            "sample_index": sample_index,
+            "frame_index": int(frame_index),
+            "timestamp_sec": float(frame_index) / max(float(fps), 1e-6),
+            "window_frame_indices": window_indices,
+            "frame_stride": int(args.frame_stride),
+            "procedure_mode": mode,
+            "procedure_task_id": procedure.task_id,
+            "procedure_config": str(procedure_path),
+            "raw_reasoning": extract_reasoning_text(answer),
+            "reasoning": extract_reasoning_text(answer),
+            "model_output": answer,
+            "parsed_actions": list(parsed.parsed_actions),
+            "canonical_remaining_ids": list(parsed.remaining_ids),
+            "parsed_remaining_ids": list(parsed.remaining_ids),
+            "parse_valid": bool(parsed.parse_valid),
+            "parse_source": parsed.source,
+            "parse_errors": list(parsed.errors),
+            "observed_stage": parsed.observed_stage,
+            "observed_state": parsed.observed_stage,
+            "persistent_stage": tracker_row["persistent_stage"],
+            "persistent_state": tracker_row["persistent_stage"],
+            "confirmed_stage": tracker_row["persistent_stage"],
+            "transition_support": tracker_row["transition_support"],
+            "state_update": tracker_row["state_update"],
+            "state_updates": tracker_row["state_updates"],
+            "transition_event": tracker_row["transition_event"],
+            "transition_events": tracker_row["transition_events"],
+            "tracker_window_counts": tracker_row["tracker_window_counts"],
+            "task_history_text": prompt_history,
+            "next_task_history_text": task_history_text(
+                procedure, tracker_row["persistent_stage"]
+            ),
+            "progress": float(last_progress),
+            "parsed_progress": parsed_progress,
+            "progress_source": "model" if parsed_progress is not None else "previous",
+        })
+
+    try:
+        if mode == "tracker_only":
+            batch_items: list[dict[str, Any]] = []
+            windows: list[list[int]] = []
+            for frame_index in selected_indices:
+                window_paths, window_indices = window_for(frame_index)
+                windows.append(window_indices)
+                batch_items.append({
+                    "image": window_paths,
+                    "conversations": [{"from": "human", "value": official_prompt}],
+                })
+            answers = run_items(batch_items)
+            if len(answers) != len(selected_indices):
+                raise RuntimeError(
+                    f"ProcVLM returned {len(answers)} answers for "
+                    f"{len(selected_indices)} tracker-only items"
+                )
+            for sample_index, (frame_index, window_indices, answer) in enumerate(
+                zip(selected_indices, windows, answers)
+            ):
+                append_record(
+                    sample_index=sample_index,
+                    frame_index=int(frame_index),
+                    window_indices=window_indices,
+                    answer=answer,
+                    prompt_history="",
+                )
+        else:
+            for sample_index, frame_index in enumerate(selected_indices):
+                prompt_history = task_history_text(procedure, tracker.persistent_stage)
+                prompt = build_stateful_history_prompt(job_task, prompt_history)
+                window_paths, window_indices = window_for(frame_index)
+                answers = run_items([{
+                    "image": window_paths,
+                    "conversations": [{"from": "human", "value": prompt}],
+                }])
+                if len(answers) != 1:
+                    raise RuntimeError(
+                        f"ProcVLM returned {len(answers)} answers for one stateful-history item"
+                    )
+                append_record(
+                    sample_index=sample_index,
+                    frame_index=int(frame_index),
+                    window_indices=window_indices,
+                    answer=answers[0],
+                    prompt_history=prompt_history,
+                )
+
+        write_jsonl(records, output_path)
+        return records
+    finally:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+
+
 def infer_rollout(
     job: dict[str, Any],
     args: argparse.Namespace,
@@ -163,6 +368,9 @@ def infer_rollout(
 ) -> Any:
     """Run one rollout through the already-initialized upstream cache."""
     del engine_bundle
+    if getattr(args, "procedure_mode", "baseline") != "baseline":
+        return infer_procedure_rollout(job, args, engine_kwargs)
+
     from evqa.inference import infer_progress_from_video
 
     max_sampled_frames = (
@@ -475,19 +683,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-sampled-frames", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--max-model-len", type=int, default=None)
+    parser.add_argument(
+        "--procedure-mode",
+        choices=("baseline", "tracker_only", "stateful_history"),
+        default="baseline",
+    )
+    parser.add_argument("--procedure-config", type=Path, default=None)
+    parser.add_argument("--tracker-support-threshold", type=int, default=7)
+    parser.add_argument("--tracker-window-size", type=int, default=9)
+    parser.add_argument("--tracker-max-forward-jump", type=int, default=1)
     parser.add_argument("--torch-dtype", default="bf16")
     parser.add_argument("--enable-value-head", action="store_true")
     parser.add_argument("--use-lora", action="store_true")
     parser.add_argument("--tp", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    for name in ("window_size", "frame_stride", "max_new_tokens", "tp"):
+    for name in (
+        "window_size",
+        "frame_stride",
+        "max_new_tokens",
+        "tp",
+        "tracker_support_threshold",
+        "tracker_window_size",
+        "tracker_max_forward_jump",
+    ):
         if getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.tracker_support_threshold > args.tracker_window_size:
+        parser.error("--tracker-support-threshold cannot exceed --tracker-window-size")
+    if args.tracker_max_forward_jump != 1:
+        parser.error("V1 requires --tracker-max-forward-jump 1")
     if args.max_sampled_frames is not None and args.max_sampled_frames < 1:
         parser.error("--max-sampled-frames must be positive when provided")
     if args.max_model_len is not None and args.max_model_len < 1:
         parser.error("--max-model-len must be positive when provided")
+    if args.procedure_mode != "baseline" and args.procedure_config is None:
+        parser.error("--procedure-config is required for tracker_only/stateful_history mode")
     if args.dry_run:
         if args.vllm_free_memory_fraction is not None and not 0.0 < args.vllm_free_memory_fraction <= 1.0:
             parser.error("--vllm-free-memory-fraction must be in (0, 1]")
@@ -512,6 +743,10 @@ def main() -> int:
     args.progress_file = args.progress_file.expanduser().resolve()
     args.state_file = args.state_file.expanduser().resolve()
     args.model_path = args.model_path.expanduser().resolve()
+    if args.procedure_config is not None:
+        args.procedure_config = args.procedure_config.expanduser().resolve()
+        if not args.procedure_config.is_file():
+            raise FileNotFoundError(f"procedure config not found: {args.procedure_config}")
     adapter_checkpoint = is_lora_adapter_path(args.model_path)
     if args.use_lora and not adapter_checkpoint:
         raise ValueError(
