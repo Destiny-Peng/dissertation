@@ -1,0 +1,30 @@
+{
+  "task_id": "libero10_task0",
+  "task": "put both the alphabet soup and the tomato sauce in the basket",
+  "chains": {
+    "alphabet": [
+      {
+        "id": "A1",
+        "text": "grasp the alphabet soup can",
+        "aliases": ["pick up the alphabet soup can", "grasp alphabet soup"]
+      },
+      {
+        "id": "A2",
+        "text": "place the alphabet soup can into the basket",
+        "aliases": ["put the alphabet soup can in the basket", "place alphabet soup in basket"]
+      }
+    ],
+    "tomato": [
+      {
+        "id": "B1",
+        "text": "grasp the tomato sauce can",
+        "aliases": ["pick up the tomato sauce can", "grasp tomato sauce"]
+      },
+      {
+        "id": "B2",
+        "text": "place the tomato sauce can into the basket",
+        "aliases": ["put the tomato sauce can in the basket", "place tomato sauce in basket"]
+      }
+    ]
+  }
+}
