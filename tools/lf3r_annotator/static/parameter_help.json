@@ -53,7 +53,7 @@
       "cli": "--gpu ID[,ID...]",
       "default": "0",
       "applies_to": "all baseline runs",
-      "description": "Sets CUDA_VISIBLE_DEVICES. With explicit worker rows, each worker receives its one numeric GPU ID and duplicate IDs are allowed. --gpu 0,1 supplies IDs for automatic worker assignment when parallel workers are requested. A legacy single ProcVLM/Robo-Dopamine worker may still expose a comma-separated tensor-parallel GPU list."
+      "description": "Sets CUDA_VISIBLE_DEVICES. With parallel rollout workers, --gpu 0,1 assigns independent workers across GPU 0 and 1. With one ProcVLM/Robo-Dopamine worker, the comma-separated list is the visible GPU set for tensor parallelism; Robo-Dopamine TP=2 therefore uses GPU IDs 0,1, parallel workers 1, and tensor parallel size 2."
     },
     "memory_utilization": {
       "cli": "--vllm-free-memory-fraction VALUE",
