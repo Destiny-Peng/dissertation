@@ -2090,10 +2090,12 @@ class BaselineService:
                 if row.get(field):
                     sample[field] = str(row[field])[:12000]
             for field in (
-                "procedure_mode", "procedure_task_id", "parsed_remaining_ids", "parse_valid",
-                "parse_source", "parse_errors", "observed_stage", "candidate_stage",
-                "confirmed_stage", "transition_support", "transition_event",
-                "transition_events", "tracker_decision_sample", "prompt_confirmed_stage",
+                "procedure_mode", "procedure_task_id", "parsed_actions",
+                "canonical_remaining_ids", "parsed_remaining_ids", "parse_valid",
+                "parse_source", "parse_errors", "observed_stage", "observed_state",
+                "persistent_stage", "persistent_state", "confirmed_stage",
+                "transition_support", "state_update", "transition_event",
+                "transition_events", "task_history_text", "next_task_history_text",
             ):
                 if field in row:
                     sample[field] = row[field]
