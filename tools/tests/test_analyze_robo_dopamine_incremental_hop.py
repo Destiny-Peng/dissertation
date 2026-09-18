@@ -3,7 +3,13 @@
 
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
+
+TOOLS_DIR = Path(__file__).resolve().parents[1]
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
 
 from robo_incremental_hop.core import (
     detect_hop_scale,
