@@ -407,6 +407,7 @@ def build_base_records(
     run_root: Path,
     manifest: Mapping[str, Mapping[str, Any]],
     annotation_dir: Path,
+    allowed_rollout_ids: set[str] | None = None,
 ) -> tuple[
     dict[str, dict[str, Any]],
     list[dict[str, Any]],
@@ -416,6 +417,13 @@ def build_base_records(
     completed_ids, jobs_sources = completed_rollout_ids(
         run_root
     )
+    completed_before_filter = len(completed_ids)
+    if allowed_rollout_ids is not None:
+        completed_ids = [
+            rollout_id
+            for rollout_id in completed_ids
+            if rollout_id in allowed_rollout_ids
+        ]
     if not completed_ids:
         raise ValueError(
             f"No completed Robo-Dopamine jobs found under {run_root}"
@@ -582,6 +590,12 @@ def build_base_records(
 
     provenance = {
         "completed_rollout_n": len(completed_ids),
+        "completed_rollout_n_before_selection": completed_before_filter,
+        "selection_filter_n": (
+            len(allowed_rollout_ids)
+            if allowed_rollout_ids is not None
+            else None
+        ),
         "usable_rollout_n": len(signals),
         "event_n": len(events),
         "clean_rollout_n": len(clean_rollouts),
