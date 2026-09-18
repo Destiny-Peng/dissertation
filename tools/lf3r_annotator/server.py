@@ -2559,12 +2559,17 @@ class BaselineService:
             f"for rollout {source_rollout_id}"
         )
 
-    def _resolve_robo_incremental_prediction(
+    ROBO_HOP_SIGNAL_MODES = ("incremental", "forward", "backward", "fused")
+
+    def _resolve_robo_signal_prediction(
         self,
         run_path: Path,
         rollout_id: str,
+        signal_mode: str,
     ) -> Path | None:
-        """Resolve the same saved incremental output accepted by the analyzer."""
+        """Resolve one saved Robo-Dopamine hop source without changing its semantics."""
+        if signal_mode not in self.ROBO_HOP_SIGNAL_MODES:
+            return None
         worker_dir = run_path / "raw" / rollout_id
         result_path = worker_dir / "worker_result.json"
         if not result_path.is_file():
@@ -2578,27 +2583,44 @@ class BaselineService:
 
         recorded: Any = None
         perspectives = result.get("perspective_outputs")
-        if isinstance(perspectives, dict):
-            incremental = perspectives.get("incremental")
-            if isinstance(incremental, dict):
-                recorded = incremental.get("raw_model_output")
+        if signal_mode != "fused" and isinstance(perspectives, dict):
+            mode_output = perspectives.get(signal_mode)
+            if isinstance(mode_output, dict):
+                recorded = mode_output.get("raw_model_output")
 
-        if recorded in (None, ""):
-            fusion = result.get("fusion")
-            if isinstance(fusion, dict):
-                source_paths = fusion.get("source_prediction_paths")
-                if isinstance(source_paths, dict):
-                    recorded = source_paths.get("incremental")
+        fusion = result.get("fusion")
+        if (
+            recorded in (None, "")
+            and signal_mode != "fused"
+            and isinstance(fusion, dict)
+        ):
+            source_paths = fusion.get("source_prediction_paths")
+            if isinstance(source_paths, dict):
+                recorded = source_paths.get(signal_mode)
 
         eval_mode = str(result.get("eval_mode") or "").lower()
         eval_modes = [
             str(value).lower()
             for value in (result.get("eval_modes") or [])
         ]
-        if recorded in (None, "") and (
-            eval_mode == "incremental" or eval_modes == ["incremental"]
+        if (
+            recorded in (None, "")
+            and signal_mode != "fused"
+            and (eval_mode == signal_mode or eval_modes == [signal_mode])
         ):
             recorded = result.get("raw_model_output")
+
+        if signal_mode == "fused" and recorded in (None, ""):
+            if result.get("fused_model_output"):
+                recorded = result["fused_model_output"]
+            elif isinstance(fusion, dict) and fusion.get("output_path"):
+                recorded = fusion["output_path"]
+            elif (
+                result.get("multi_perspective")
+                or eval_mode == "fused"
+                or set(eval_modes) >= {"incremental", "forward", "backward"}
+            ) and result.get("raw_model_output"):
+                recorded = result["raw_model_output"]
 
         if recorded in (None, ""):
             metadata_path = worker_dir / "multi_perspective" / "metadata.json"
@@ -2608,9 +2630,12 @@ class BaselineService:
                 except (OSError, json.JSONDecodeError):
                     metadata = None
                 if isinstance(metadata, dict):
-                    prediction_paths = metadata.get("prediction_paths")
-                    if isinstance(prediction_paths, dict):
-                        recorded = prediction_paths.get("incremental")
+                    if signal_mode == "fused":
+                        recorded = metadata.get("fused_path")
+                    else:
+                        prediction_paths = metadata.get("prediction_paths")
+                        if isinstance(prediction_paths, dict):
+                            recorded = prediction_paths.get(signal_mode)
 
         candidates: list[Path] = []
         if recorded not in (None, ""):
@@ -2632,13 +2657,10 @@ class BaselineService:
                     )
                 )
 
-        # Older multi-perspective runs can retain the mode directory even when
-        # worker metadata is incomplete. Only accept a path explicitly nested
-        # under an "incremental" component; never substitute forward/fused hop.
         candidates.extend(
             path
             for path in worker_dir.rglob("pred_vllm.json")
-            if "incremental" in path.parts
+            if signal_mode in path.parts
         )
 
         for candidate in candidates:
@@ -2651,18 +2673,40 @@ class BaselineService:
                 return resolved
         return None
 
+    def _robo_run_signal_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+        signal_mode: str,
+    ) -> set[str]:
+        return {
+            rollout_id
+            for rollout_id in run_ids
+            if self._resolve_robo_signal_prediction(
+                run_path, rollout_id, signal_mode
+            ) is not None
+        }
+
+    def _robo_run_four_signal_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+    ) -> tuple[set[str], dict[str, set[str]]]:
+        by_mode = {
+            mode: self._robo_run_signal_ids(run_path, run_ids, mode)
+            for mode in self.ROBO_HOP_SIGNAL_MODES
+        }
+        common = set(run_ids)
+        for mode in self.ROBO_HOP_SIGNAL_MODES:
+            common.intersection_update(by_mode[mode])
+        return common, by_mode
+
     def _robo_run_incremental_ids(
         self,
         run_path: Path,
         run_ids: set[str],
     ) -> set[str]:
-        """Return rollout IDs with a saved native incremental Robo-Dopamine output."""
-        return {
-            rollout_id
-            for rollout_id in run_ids
-            if self._resolve_robo_incremental_prediction(run_path, rollout_id)
-            is not None
-        }
+        return self._robo_run_signal_ids(run_path, run_ids, "incremental")
 
     def list_runs(
         self,
@@ -2704,10 +2748,13 @@ class BaselineService:
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
                 incremental_ids: set[str] = set()
+                four_signal_ids: set[str] = set()
+                signal_ids_by_mode: dict[str, set[str]] = {}
                 if method == "robo_dopamine":
-                    incremental_ids = self._robo_run_incremental_ids(
-                        run_path, run_ids
+                    four_signal_ids, signal_ids_by_mode = (
+                        self._robo_run_four_signal_ids(run_path, run_ids)
                     )
+                    incremental_ids = signal_ids_by_mode["incremental"]
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
@@ -2746,6 +2793,43 @@ class BaselineService:
                     "incremental_compatible": (
                         bool(selected_ids)
                         and selected_ids.issubset(incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "hop_signal_rollout_counts": (
+                        {
+                            mode: len(ids)
+                            for mode, ids in signal_ids_by_mode.items()
+                        }
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_rollout_count": (
+                        len(four_signal_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_scope_rollout_count": (
+                        len(selected_ids.intersection(four_signal_ids))
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_missing_rollouts": (
+                        len(selected_ids - four_signal_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_scope_coverage": (
+                        (
+                            len(selected_ids.intersection(four_signal_ids))
+                            / len(selected_ids)
+                        )
+                        if method == "robo_dopamine" and selected_ids
+                        else None
+                    ),
+                    "four_signal_compatible": (
+                        bool(selected_ids)
+                        and selected_ids.issubset(four_signal_ids)
                         if method == "robo_dopamine"
                         else None
                     ),
@@ -3701,16 +3785,18 @@ class AnalysisJobService:
             )
         run_ids = run_rollout_ids(run_path)
         overlap = selected_ids.intersection(run_ids)
-        incremental_ids = self.baselines._robo_run_incremental_ids(
-            run_path,
-            overlap,
-        )
-        if not incremental_ids:
-            raise ValidationError(
-                "Selected Robo-Dopamine run has no saved raw incremental output "
-                "for the requested scope. Forward-only hop is not raw incremental hop."
+        four_signal_ids, _signal_ids_by_mode = (
+            self.baselines._robo_run_four_signal_ids(
+                run_path,
+                overlap,
             )
-        return run_path, metadata, incremental_ids
+        )
+        if not four_signal_ids:
+            raise ValidationError(
+                "Selected Robo-Dopamine run has no rollout in this scope with all "
+                "four saved hop signals: incremental, forward, backward, and fused."
+            )
+        return run_path, metadata, four_signal_ids
 
     def start_robo_hop_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
@@ -3770,7 +3856,7 @@ class AnalysisJobService:
             "schema_version": 1,
             "scope": scope,
             "requested_rollouts": len(records),
-            "available_incremental_rollouts": len(available_records),
+            "available_four_signal_rollouts": len(available_records),
             "selection": [{"id": record["id"]} for record in available_records],
         }
         command = [
@@ -3805,7 +3891,7 @@ class AnalysisJobService:
                 "scope": scope,
                 "requested_rollouts": len(records),
                 "selected_rollouts": len(available_records),
-                "incremental_coverage": (
+                "four_signal_coverage": (
                     len(available_records) / len(records) if records else 0.0
                 ),
                 "runs": {"robo_dopamine": self._relative(run_path)},
