@@ -22,6 +22,7 @@ from run_lf3r_baseline import (
     log_line,
     make_execution_environment,
     resolve_record_path,
+    selected_gpu_ids,
     resolve_vllm_memory_budget,
     run_streamed,
     timestamp,
@@ -467,6 +468,16 @@ def resume_run(args: argparse.Namespace) -> int:
     args.robo_frame_interval = int(stored_arguments.get("robo_frame_interval", 4))
     args.robo_batch_size = int(stored_arguments.get("robo_batch_size", 1))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
+    if args.tensor_parallel_size > 1:
+        tp_gpus = selected_gpu_ids(args.gpu)
+        if (
+            len(tp_gpus) != args.tensor_parallel_size
+            or len(set(tp_gpus)) != args.tensor_parallel_size
+        ):
+            raise ValueError(
+                "Resumed Robo-Dopamine tensor-parallel run requires exactly "
+                f"{args.tensor_parallel_size} distinct GPUs in --gpu; got {args.gpu!r}"
+            )
     args.robo_eval_mode = str(stored_arguments.get("robo_eval_mode", FUSED_EVAL_MODE))
     stored_modes = stored_arguments.get("robo_eval_modes")
     args.robo_eval_modes = list(stored_modes) if stored_modes else None
