@@ -318,6 +318,16 @@ def resolve_incremental_prediction(
                 )
 
     if recorded is None:
+        direct_candidates = [
+            path
+            for path in worker_result_path.parent.rglob("pred_vllm.json")
+            if "incremental" in path.parts
+        ]
+        if direct_candidates:
+            recorded = str(sorted(direct_candidates)[0])
+            source = "incremental_directory_fallback"
+
+    if recorded is None:
         raise FileNotFoundError(
             "Completed Robo-Dopamine rollout has no saved "
             f"incremental perspective: {worker_result_path}"
