@@ -51,6 +51,7 @@ def make_args(root: Path) -> argparse.Namespace:
         goal_image=root / "goal.png",
         frame_interval=4,
         batch_size=1,
+        tp=1,
         eval_mode="forward",
         render_video=False,
         vllm_total_memory_fraction=0.55,
