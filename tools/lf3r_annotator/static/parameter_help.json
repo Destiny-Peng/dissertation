@@ -92,7 +92,7 @@
       "cli": "--tensor-parallel-size N",
       "default": "1",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Sets the vLLM/model tensor-parallel degree. Pair --gpu 0,1 with --tensor-parallel-size 2.",
+      "description": "Sets the vLLM/model tensor-parallel degree. For Robo-Dopamine TP=2, use one persistent worker with GPU IDs 0,1 and tensor parallel size 2. Do not combine Robo-Dopamine TP>1 with parallel rollout workers; parallel workers are independent model replicas.",
       "forwarded_as": "--tp N"
     },
     "procvlm_window_size": {
