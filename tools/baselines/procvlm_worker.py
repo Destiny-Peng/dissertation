@@ -161,27 +161,32 @@ def infer_procedure_rollout(
     args: argparse.Namespace,
     engine_kwargs: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Run canonical/stateful ProcVLM inference without changing upstream model code."""
+    """Run external ProcVLM procedure tracking without changing upstream model code."""
     from evqa.inference import (
         build_uniform_indices,
         build_window_values,
         extract_frames_moviepy,
         extract_progress,
         extract_reasoning_text,
+        load_prompt_template,
         run_batch_progress_inference,
         write_jsonl,
     )
     from procvlm_procedure_state import (
         StatefulProcedureTracker,
-        build_procedure_prompt,
+        build_stateful_history_prompt,
         load_procedure,
         normalize_text,
         parse_remaining_actions,
+        task_history_text,
     )
 
     mode = str(args.procedure_mode)
-    if mode not in {"canonical", "stateful"}:
-        raise ValueError(f"procedure inference requires canonical/stateful mode, got {mode!r}")
+    if mode not in {"tracker_only", "stateful_history"}:
+        raise ValueError(
+            "procedure inference requires tracker_only/stateful_history mode, "
+            f"got {mode!r}"
+        )
     config_value = job.get("procedure_config") or args.procedure_config
     if not config_value:
         raise ValueError(f"--procedure-config is required for procedure mode {mode}")
@@ -206,27 +211,37 @@ def infer_procedure_rollout(
         raise RuntimeError("no frames selected for procedure inference")
 
     source_frame_indices = list(range(source_frames))
+    official_prompt = load_prompt_template(job_task)
+    tracker = StatefulProcedureTracker(
+        procedure,
+        support_threshold=args.tracker_support_threshold,
+        window_size=args.tracker_window_size,
+        max_forward_jump=args.tracker_max_forward_jump,
+    )
     last_progress = 0.0
     records: list[dict[str, Any]] = []
 
-    def infer_one(frame_index: int, prompt: str) -> tuple[str, list[int]]:
+    def window_for(frame_index: int) -> tuple[list[str], list[int]]:
         window_paths = build_window_values(
             all_frame_paths,
             frame_index,
             max(1, args.window_size),
             args.frame_stride,
         )
-        window_indices = build_window_values(
-            source_frame_indices,
-            frame_index,
-            max(1, args.window_size),
-            args.frame_stride,
-        )
+        window_indices = [
+            int(value)
+            for value in build_window_values(
+                source_frame_indices,
+                frame_index,
+                max(1, args.window_size),
+                args.frame_stride,
+            )
+        ]
+        return window_paths, window_indices
+
+    def run_items(items: list[dict[str, Any]]) -> list[str]:
         answers = run_batch_progress_inference(
-            batch_items=[{
-                "image": window_paths,
-                "conversations": [{"from": "human", "value": prompt}],
-            }],
+            batch_items=items,
             model_path=str(args.model_path),
             max_new_tokens=args.max_new_tokens,
             enable_value_head=getattr(args, "enable_value_head", False),
@@ -235,141 +250,108 @@ def infer_procedure_rollout(
             tp=args.tp,
             engine_kwargs=engine_kwargs,
         )
-        if len(answers) != 1:
-            raise RuntimeError(f"ProcVLM returned {len(answers)} answers for one stateful item")
-        return str(answers[0]), [int(value) for value in window_indices]
+        return [str(answer) for answer in answers]
+
+    def append_record(
+        *,
+        sample_index: int,
+        frame_index: int,
+        window_indices: list[int],
+        answer: str,
+        prompt_history: str,
+    ) -> None:
+        nonlocal last_progress
+        parsed = parse_remaining_actions(answer, procedure)
+        tracker_row = tracker.update(int(frame_index), parsed)
+        parsed_progress = extract_progress(answer)
+        if parsed_progress is not None:
+            last_progress = parsed_progress
+        records.append({
+            "video_path": str(video_path),
+            "task": job["task"],
+            "sample_index": sample_index,
+            "frame_index": int(frame_index),
+            "timestamp_sec": float(frame_index) / max(float(fps), 1e-6),
+            "window_frame_indices": window_indices,
+            "frame_stride": int(args.frame_stride),
+            "procedure_mode": mode,
+            "procedure_task_id": procedure.task_id,
+            "procedure_config": str(procedure_path),
+            "raw_reasoning": extract_reasoning_text(answer),
+            "reasoning": extract_reasoning_text(answer),
+            "model_output": answer,
+            "parsed_actions": list(parsed.parsed_actions),
+            "canonical_remaining_ids": list(parsed.remaining_ids),
+            "parsed_remaining_ids": list(parsed.remaining_ids),
+            "parse_valid": bool(parsed.parse_valid),
+            "parse_source": parsed.source,
+            "parse_errors": list(parsed.errors),
+            "observed_stage": parsed.observed_stage,
+            "observed_state": parsed.observed_stage,
+            "persistent_stage": tracker_row["persistent_stage"],
+            "persistent_state": tracker_row["persistent_stage"],
+            "confirmed_stage": tracker_row["persistent_stage"],
+            "transition_support": tracker_row["transition_support"],
+            "state_update": tracker_row["state_update"],
+            "transition_event": tracker_row["transition_event"],
+            "transition_events": tracker_row["transition_events"],
+            "task_history_text": prompt_history,
+            "next_task_history_text": task_history_text(
+                procedure, tracker_row["persistent_stage"]
+            ),
+            "progress": float(last_progress),
+            "parsed_progress": parsed_progress,
+            "progress_source": "model" if parsed_progress is not None else "previous",
+        })
 
     try:
-        if mode == "canonical":
-            prompt = build_procedure_prompt(procedure, mode="canonical")
+        if mode == "tracker_only":
             batch_items: list[dict[str, Any]] = []
             windows: list[list[int]] = []
             for frame_index in selected_indices:
-                window_paths = build_window_values(
-                    all_frame_paths,
-                    frame_index,
-                    max(1, args.window_size),
-                    args.frame_stride,
-                )
-                windows.append([
-                    int(value)
-                    for value in build_window_values(
-                        source_frame_indices,
-                        frame_index,
-                        max(1, args.window_size),
-                        args.frame_stride,
-                    )
-                ])
+                window_paths, window_indices = window_for(frame_index)
+                windows.append(window_indices)
                 batch_items.append({
                     "image": window_paths,
-                    "conversations": [{"from": "human", "value": prompt}],
+                    "conversations": [{"from": "human", "value": official_prompt}],
                 })
-            answers = run_batch_progress_inference(
-                batch_items=batch_items,
-                model_path=str(args.model_path),
-                max_new_tokens=args.max_new_tokens,
-                enable_value_head=getattr(args, "enable_value_head", False),
-                use_lora=getattr(args, "use_lora", False),
-                torch_dtype=args.torch_dtype,
-                tp=args.tp,
-                engine_kwargs=engine_kwargs,
-            )
+            answers = run_items(batch_items)
             if len(answers) != len(selected_indices):
                 raise RuntimeError(
-                    f"ProcVLM returned {len(answers)} answers for {len(selected_indices)} canonical items"
+                    f"ProcVLM returned {len(answers)} answers for "
+                    f"{len(selected_indices)} tracker-only items"
                 )
-            answer_rows = zip(selected_indices, windows, answers)
-            for sample_index, (frame_index, window_indices, answer) in enumerate(answer_rows):
-                answer = str(answer)
-                parsed = parse_remaining_actions(answer, procedure)
-                parsed_progress = extract_progress(answer)
-                if parsed_progress is not None:
-                    last_progress = parsed_progress
-                records.append({
-                    "video_path": str(video_path),
-                    "task": job["task"],
-                    "sample_index": sample_index,
-                    "frame_index": int(frame_index),
-                    "timestamp_sec": float(frame_index) / max(float(fps), 1e-6),
-                    "window_frame_indices": window_indices,
-                    "frame_stride": int(args.frame_stride),
-                    "procedure_mode": mode,
-                    "procedure_task_id": procedure.task_id,
-                    "procedure_config": str(procedure_path),
-                    "progress": float(last_progress),
-                    "parsed_progress": parsed_progress,
-                    "progress_source": "model" if parsed_progress is not None else "previous",
-                    "raw_reasoning": extract_reasoning_text(answer),
-                    "reasoning": extract_reasoning_text(answer),
-                    "model_output": answer,
-                    "parsed_remaining_ids": list(parsed.remaining_ids),
-                    "parse_valid": bool(parsed.parse_valid),
-                    "parse_source": parsed.source,
-                    "parse_errors": list(parsed.errors),
-                    "observed_stage": parsed.observed_stage,
-                    "candidate_stage": parsed.observed_stage if parsed.parse_valid else None,
-                    "confirmed_stage": None,
-                    "transition_support": {},
-                    "transition_event": None,
-                    "transition_events": [],
-                })
+            for sample_index, (frame_index, window_indices, answer) in enumerate(
+                zip(selected_indices, windows, answers)
+            ):
+                append_record(
+                    sample_index=sample_index,
+                    frame_index=int(frame_index),
+                    window_indices=window_indices,
+                    answer=answer,
+                    prompt_history="",
+                )
         else:
-            tracker = StatefulProcedureTracker(
-                procedure,
-                fps=fps,
-                decision_interval_frames=args.tracker_decision_interval_frames,
-                forward_votes=args.tracker_forward_votes,
-                forward_window=args.tracker_forward_window,
-                forward_min_span_sec=args.tracker_forward_min_span_sec,
-                completion_votes=args.tracker_completion_votes,
-                completion_window=args.tracker_completion_window,
-                completion_min_span_sec=args.tracker_completion_min_span_sec,
-                candidate_timeout_sec=args.tracker_candidate_timeout_sec,
-                max_forward_jump=args.tracker_max_forward_jump,
-            )
             for sample_index, frame_index in enumerate(selected_indices):
-                prompt_state = dict(tracker.confirmed_stage)
-                prompt = build_procedure_prompt(
-                    procedure,
-                    mode="stateful",
-                    confirmed_stage=prompt_state,
+                prompt_history = task_history_text(procedure, tracker.persistent_stage)
+                prompt = build_stateful_history_prompt(job_task, prompt_history)
+                window_paths, window_indices = window_for(frame_index)
+                answers = run_items([{
+                    "image": window_paths,
+                    "conversations": [{"from": "human", "value": prompt}],
+                }])
+                if len(answers) != 1:
+                    raise RuntimeError(
+                        f"ProcVLM returned {len(answers)} answers for one stateful-history item"
+                    )
+                append_record(
+                    sample_index=sample_index,
+                    frame_index=int(frame_index),
+                    window_indices=window_indices,
+                    answer=answers[0],
+                    prompt_history=prompt_history,
                 )
-                answer, window_indices = infer_one(frame_index, prompt)
-                parsed = parse_remaining_actions(answer, procedure)
-                tracker_row = tracker.update(int(frame_index), parsed)
-                parsed_progress = extract_progress(answer)
-                if parsed_progress is not None:
-                    last_progress = parsed_progress
-                records.append({
-                    "video_path": str(video_path),
-                    "task": job["task"],
-                    "sample_index": sample_index,
-                    "frame_index": int(frame_index),
-                    "timestamp_sec": float(frame_index) / max(float(fps), 1e-6),
-                    "window_frame_indices": window_indices,
-                    "frame_stride": int(args.frame_stride),
-                    "procedure_mode": mode,
-                    "procedure_task_id": procedure.task_id,
-                    "procedure_config": str(procedure_path),
-                    "prompt_confirmed_stage": prompt_state,
-                    "progress": float(last_progress),
-                    "parsed_progress": parsed_progress,
-                    "progress_source": "model" if parsed_progress is not None else "previous",
-                    "raw_reasoning": extract_reasoning_text(answer),
-                    "reasoning": extract_reasoning_text(answer),
-                    "model_output": answer,
-                    "parsed_remaining_ids": list(parsed.remaining_ids),
-                    "parse_valid": bool(parsed.parse_valid),
-                    "parse_source": parsed.source,
-                    "parse_errors": list(parsed.errors),
-                    "observed_stage": parsed.observed_stage,
-                    "candidate_stage": tracker_row["candidate_stage"],
-                    "confirmed_stage": tracker_row["confirmed_stage"],
-                    "transition_support": tracker_row["transition_support"],
-                    "transition_event": tracker_row["transition_event"],
-                    "transition_events": tracker_row["transition_events"],
-                    "tracker_decision_sample": tracker_row["decision_sample"],
-                })
+
         write_jsonl(records, output_path)
         return records
     finally:
