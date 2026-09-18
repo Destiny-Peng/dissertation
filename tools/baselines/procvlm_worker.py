@@ -293,8 +293,10 @@ def infer_procedure_rollout(
             "confirmed_stage": tracker_row["persistent_stage"],
             "transition_support": tracker_row["transition_support"],
             "state_update": tracker_row["state_update"],
+            "state_updates": tracker_row["state_updates"],
             "transition_event": tracker_row["transition_event"],
             "transition_events": tracker_row["transition_events"],
+            "tracker_window_counts": tracker_row["tracker_window_counts"],
             "task_history_text": prompt_history,
             "next_task_history_text": task_history_text(
                 procedure, tracker_row["persistent_stage"]
