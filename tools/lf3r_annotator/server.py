@@ -85,10 +85,8 @@ BASELINE_METHOD_OPTION_FIELDS = {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
         "procvlm_frame_stride", "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
         "procvlm_procedure_mode", "procvlm_procedure_config",
-        "procvlm_tracker_decision_interval_frames",
-        "procvlm_tracker_forward_votes", "procvlm_tracker_forward_window", "procvlm_tracker_forward_min_span_sec",
-        "procvlm_tracker_completion_votes", "procvlm_tracker_completion_window", "procvlm_tracker_completion_min_span_sec",
-        "procvlm_tracker_candidate_timeout_sec", "procvlm_tracker_max_forward_jump",
+        "procvlm_tracker_support_threshold", "procvlm_tracker_window_size",
+        "procvlm_tracker_max_forward_jump",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -117,14 +115,8 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_enable_value_head",
     "procvlm_procedure_mode",
     "procvlm_procedure_config",
-    "procvlm_tracker_decision_interval_frames",
-    "procvlm_tracker_forward_votes",
-    "procvlm_tracker_forward_window",
-    "procvlm_tracker_forward_min_span_sec",
-    "procvlm_tracker_completion_votes",
-    "procvlm_tracker_completion_window",
-    "procvlm_tracker_completion_min_span_sec",
-    "procvlm_tracker_candidate_timeout_sec",
+    "procvlm_tracker_support_threshold",
+    "procvlm_tracker_window_size",
     "procvlm_tracker_max_forward_jump",
     "rynn_num_frames",
     "rynn_num_steps",
@@ -2564,11 +2556,11 @@ class BaselineService:
             "procvlm_frame_stride": (1, 1000000),
             "procvlm_max_sampled_frames": (1, 1000000),
             "procvlm_max_new_tokens": (1, 1000000),
-            "procvlm_tracker_decision_interval_frames": (1, 1000000),
-            "procvlm_tracker_forward_votes": (1, 1000000),
-            "procvlm_tracker_forward_window": (1, 1000000),
-            "procvlm_tracker_completion_votes": (1, 1000000),
-            "procvlm_tracker_completion_window": (1, 1000000),
+            "procvlm_tracker_support_threshold": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
             "procvlm_tracker_max_forward_jump": (1, 1),
             "rynn_num_frames": (1, 1000000),
             "rynn_num_steps": (1, 1000000),
@@ -2591,19 +2583,19 @@ class BaselineService:
                 if not value or len(value) > 80:
                     raise ValidationError(f"{name} must be a non-empty short string")
                 options[name] = value
-        if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "canonical", "stateful"}:
-            raise ValidationError("procvlm_procedure_mode must be baseline, canonical, or stateful")
+        if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "tracker_only", "stateful_history"}:
+            raise ValidationError("procvlm_procedure_mode must be baseline, tracker_only, or stateful_history")
         if baseline == "procvlm" and options.get("procvlm_procedure_mode", "baseline") == "baseline":
             for name in (
                 "procvlm_procedure_config",
-                "procvlm_tracker_decision_interval_frames",
-                "procvlm_tracker_forward_votes",
-                "procvlm_tracker_forward_window",
-                "procvlm_tracker_forward_min_span_sec",
-                "procvlm_tracker_completion_votes",
-                "procvlm_tracker_completion_window",
-                "procvlm_tracker_completion_min_span_sec",
-                "procvlm_tracker_candidate_timeout_sec",
+                "procvlm_tracker_support_threshold",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_window_size",
                 "procvlm_tracker_max_forward_jump",
             ):
                 options.pop(name, None)
@@ -2629,9 +2621,9 @@ class BaselineService:
                 )
             options["procvlm_procedure_config"] = str(resolved)
         float_fields = {
-            "procvlm_tracker_forward_min_span_sec": 0.0,
-            "procvlm_tracker_completion_min_span_sec": 0.0,
-            "procvlm_tracker_candidate_timeout_sec": 0.0,
+            "procvlm_tracker_window_size": 0.0,
+            "procvlm_tracker_window_size": 0.0,
+            "procvlm_tracker_window_size": 0.0,
         }
         for name, minimum in float_fields.items():
             if name not in options or options[name] is None:
@@ -2644,13 +2636,13 @@ class BaselineService:
                 raise ValidationError(f"{name} must be a number") from error
             if not math.isfinite(value) or value < minimum:
                 raise ValidationError(f"{name} must be >= {minimum}")
-            if name == "procvlm_tracker_candidate_timeout_sec" and value <= 0:
-                raise ValidationError("procvlm_tracker_candidate_timeout_sec must be positive")
+            if name == "procvlm_tracker_window_size" and value <= 0:
+                raise ValidationError("procvlm_tracker_window_size must be positive")
             options[name] = value
-        if options.get("procvlm_tracker_forward_votes", 3) > options.get("procvlm_tracker_forward_window", 4):
-            raise ValidationError("procvlm_tracker_forward_votes cannot exceed procvlm_tracker_forward_window")
-        if options.get("procvlm_tracker_completion_votes", 4) > options.get("procvlm_tracker_completion_window", 5):
-            raise ValidationError("procvlm_tracker_completion_votes cannot exceed procvlm_tracker_completion_window")
+        if options.get("procvlm_tracker_window_size", 3) > options.get("procvlm_tracker_window_size", 4):
+            raise ValidationError("procvlm_tracker_window_size cannot exceed procvlm_tracker_window_size")
+        if options.get("procvlm_tracker_window_size", 4) > options.get("procvlm_tracker_window_size", 5):
+            raise ValidationError("procvlm_tracker_window_size cannot exceed procvlm_tracker_window_size")
         if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
             raise ValidationError("canonical/stateful ProcVLM requires procvlm_procedure_config")
         for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
@@ -2859,14 +2851,14 @@ class BaselineService:
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
             "procvlm_procedure_mode": "--procvlm-procedure-mode",
             "procvlm_procedure_config": "--procvlm-procedure-config",
-            "procvlm_tracker_decision_interval_frames": "--procvlm-tracker-decision-interval-frames",
-            "procvlm_tracker_forward_votes": "--procvlm-tracker-forward-votes",
-            "procvlm_tracker_forward_window": "--procvlm-tracker-forward-window",
-            "procvlm_tracker_forward_min_span_sec": "--procvlm-tracker-forward-min-span-sec",
-            "procvlm_tracker_completion_votes": "--procvlm-tracker-completion-votes",
-            "procvlm_tracker_completion_window": "--procvlm-tracker-completion-window",
-            "procvlm_tracker_completion_min_span_sec": "--procvlm-tracker-completion-min-span-sec",
-            "procvlm_tracker_candidate_timeout_sec": "--procvlm-tracker-candidate-timeout-sec",
+            "procvlm_tracker_support_threshold": "--procvlm-tracker-decision-interval-frames",
+            "procvlm_tracker_window_size": "--procvlm-tracker-forward-votes",
+            "procvlm_tracker_window_size": "--procvlm-tracker-forward-window",
+            "procvlm_tracker_window_size": "--procvlm-tracker-forward-min-span-sec",
+            "procvlm_tracker_window_size": "--procvlm-tracker-completion-votes",
+            "procvlm_tracker_window_size": "--procvlm-tracker-completion-window",
+            "procvlm_tracker_window_size": "--procvlm-tracker-completion-min-span-sec",
+            "procvlm_tracker_window_size": "--procvlm-tracker-candidate-timeout-sec",
             "procvlm_tracker_max_forward_jump": "--procvlm-tracker-max-forward-jump",
             "rynn_num_frames": "--rynn-num-frames",
             "rynn_num_steps": "--rynn-num-steps",
