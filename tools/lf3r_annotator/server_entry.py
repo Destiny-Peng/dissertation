@@ -9,6 +9,7 @@ endpoints used by the Runs console.
 from __future__ import annotations
 
 import json
+import math
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -49,8 +50,15 @@ def _validate_baseline_options(
     integer_fields = {
         "tensor_parallel_size": (1, 32),
         "procvlm_window_size": (1, 4096),
+        "procvlm_frame_stride": (1, 1_000_000),
         "procvlm_max_sampled_frames": (1, 1_000_000),
         "procvlm_max_new_tokens": (1, 1_000_000),
+        "procvlm_tracker_decision_interval_frames": (1, 1_000_000),
+        "procvlm_tracker_forward_votes": (1, 1_000_000),
+        "procvlm_tracker_forward_window": (1, 1_000_000),
+        "procvlm_tracker_completion_votes": (1, 1_000_000),
+        "procvlm_tracker_completion_window": (1, 1_000_000),
+        "procvlm_tracker_max_forward_jump": (1, 1),
         "rynn_num_frames": (1, 1_000_000),
         "rynn_num_steps": (1, 1_000_000),
         "rynn_evaluation_interval": (1, 1_000_000),
@@ -70,12 +78,35 @@ def _validate_baseline_options(
             options["rynn_batch_size"], "rynn_batch_size"
         )
 
-    for name in ("dtype", "robo_eval_mode"):
+    for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
         if name in options and options[name] is not None:
             value = str(options[name]).strip()
             if not value or len(value) > 80:
                 raise server.ValidationError(f"{name} must be a non-empty short string")
             options[name] = value
+
+    if (
+        "procvlm_procedure_mode" in options
+        and options["procvlm_procedure_mode"] not in {"baseline", "canonical", "stateful"}
+    ):
+        raise server.ValidationError(
+            "procvlm_procedure_mode must be baseline, canonical, or stateful"
+        )
+
+    if baseline == "procvlm" and options.get("procvlm_procedure_mode", "baseline") == "baseline":
+        for name in (
+            "procvlm_procedure_config",
+            "procvlm_tracker_decision_interval_frames",
+            "procvlm_tracker_forward_votes",
+            "procvlm_tracker_forward_window",
+            "procvlm_tracker_forward_min_span_sec",
+            "procvlm_tracker_completion_votes",
+            "procvlm_tracker_completion_window",
+            "procvlm_tracker_completion_min_span_sec",
+            "procvlm_tracker_candidate_timeout_sec",
+            "procvlm_tracker_max_forward_jump",
+        ):
+            options.pop(name, None)
 
     if (
         "robo_eval_mode" in options
@@ -133,6 +164,50 @@ def _validate_baseline_options(
             raise server.ValidationError(
                 "model_path is a ProcVLM LoRA adapter checkpoint; select Inference mode = One-shot LoRA"
             )
+
+    if "procvlm_procedure_config" in options and options["procvlm_procedure_config"] not in (None, ""):
+        resolved = self._project_path(str(options["procvlm_procedure_config"]))
+        if not resolved.is_file():
+            raise server.ValidationError(
+                f"procvlm_procedure_config does not exist inside the project: {options['procvlm_procedure_config']}"
+            )
+        options["procvlm_procedure_config"] = str(resolved)
+
+    for name in (
+        "procvlm_tracker_forward_min_span_sec",
+        "procvlm_tracker_completion_min_span_sec",
+        "procvlm_tracker_candidate_timeout_sec",
+    ):
+        if name not in options or options[name] is None:
+            continue
+        if isinstance(options[name], bool):
+            raise server.ValidationError(f"{name} must be a number")
+        try:
+            value = float(options[name])
+        except (TypeError, ValueError) as error:
+            raise server.ValidationError(f"{name} must be a number") from error
+        if not math.isfinite(value) or value < 0:
+            raise server.ValidationError(f"{name} must be non-negative")
+        if name == "procvlm_tracker_candidate_timeout_sec" and value <= 0:
+            raise server.ValidationError("procvlm_tracker_candidate_timeout_sec must be positive")
+        options[name] = value
+
+    if options.get("procvlm_tracker_forward_votes", 3) > options.get("procvlm_tracker_forward_window", 4):
+        raise server.ValidationError(
+            "procvlm_tracker_forward_votes cannot exceed procvlm_tracker_forward_window"
+        )
+    if options.get("procvlm_tracker_completion_votes", 4) > options.get("procvlm_tracker_completion_window", 5):
+        raise server.ValidationError(
+            "procvlm_tracker_completion_votes cannot exceed procvlm_tracker_completion_window"
+        )
+    if (
+        baseline == "procvlm"
+        and options.get("procvlm_procedure_mode", "baseline") != "baseline"
+        and not options.get("procvlm_procedure_config")
+    ):
+        raise server.ValidationError(
+            "canonical/stateful ProcVLM requires procvlm_procedure_config"
+        )
 
     if "goal_image" in options and options["goal_image"] not in (None, ""):
         resolved = self._project_path(str(options["goal_image"]))
