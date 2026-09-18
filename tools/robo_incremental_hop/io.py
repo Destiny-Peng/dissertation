@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
-from .core import detect_hop_scale
+from .core import detect_hop_scale, finite_number
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +15,8 @@ if str(BASELINES_DIR) not in sys.path:
     sys.path.insert(0, str(BASELINES_DIR))
 
 from robo_dopamine_multi_perspective import frame_index  # noqa: E402
+
+SIGNAL_MODES = ("incremental", "forward", "backward", "fused")
 
 
 def load_json(path: Path) -> Any:
@@ -239,60 +241,64 @@ def relocate_recorded_path(
     )
 
 
-def resolve_incremental_prediction(
+def resolve_signal_prediction(
     worker_result_path: Path,
     run_root: Path,
+    signal_mode: str,
 ) -> tuple[Path, dict[str, Any], str]:
+    if signal_mode not in SIGNAL_MODES:
+        raise ValueError(f"Unknown Robo-Dopamine signal mode: {signal_mode}")
+
     result = load_json(worker_result_path)
     if not isinstance(result, dict):
-        raise ValueError(
-            f"Invalid worker result: {worker_result_path}"
-        )
+        raise ValueError(f"Invalid worker result: {worker_result_path}")
 
     recorded: Any = None
     source = ""
     perspectives = result.get("perspective_outputs")
-    if isinstance(perspectives, dict):
-        incremental = perspectives.get("incremental")
-        if (
-            isinstance(incremental, dict)
-            and incremental.get("raw_model_output")
-        ):
-            recorded = incremental["raw_model_output"]
+    if signal_mode != "fused" and isinstance(perspectives, dict):
+        mode_output = perspectives.get(signal_mode)
+        if isinstance(mode_output, dict) and mode_output.get("raw_model_output"):
+            recorded = mode_output["raw_model_output"]
+            source = f"worker_result.perspective_outputs.{signal_mode}"
+
+    fusion = result.get("fusion")
+    if recorded is None and signal_mode != "fused" and isinstance(fusion, dict):
+        paths = fusion.get("source_prediction_paths")
+        if isinstance(paths, dict) and paths.get(signal_mode):
+            recorded = paths[signal_mode]
             source = (
-                "worker_result.perspective_outputs.incremental"
+                "worker_result.fusion."
+                f"source_prediction_paths.{signal_mode}"
             )
 
-    if recorded is None:
-        fusion = result.get("fusion")
-        if isinstance(fusion, dict):
-            paths = fusion.get("source_prediction_paths")
-            if (
-                isinstance(paths, dict)
-                and paths.get("incremental")
-            ):
-                recorded = paths["incremental"]
-                source = (
-                    "worker_result.fusion."
-                    "source_prediction_paths.incremental"
-                )
-
-    eval_mode = str(
-        result.get("eval_mode") or ""
-    ).lower()
+    eval_mode = str(result.get("eval_mode") or "").lower()
     eval_modes = [
         str(value).lower()
         for value in (result.get("eval_modes") or [])
     ]
     if (
         recorded is None
-        and (
-            eval_mode == "incremental"
-            or eval_modes == ["incremental"]
-        )
+        and signal_mode != "fused"
+        and (eval_mode == signal_mode or eval_modes == [signal_mode])
     ):
         recorded = result.get("raw_model_output")
         source = "worker_result.raw_model_output"
+
+    if signal_mode == "fused" and recorded is None:
+        if result.get("fused_model_output"):
+            recorded = result["fused_model_output"]
+            source = "worker_result.fused_model_output"
+        elif isinstance(fusion, dict) and fusion.get("output_path"):
+            recorded = fusion["output_path"]
+            source = "worker_result.fusion.output_path"
+        elif (
+            result.get("multi_perspective")
+            or eval_mode == "fused"
+            or set(eval_modes) >= {"incremental", "forward", "backward"}
+        ) and result.get("raw_model_output"):
+            recorded = result["raw_model_output"]
+            source = "worker_result.raw_model_output_fused"
 
     if recorded is None:
         metadata_path = (
@@ -302,35 +308,33 @@ def resolve_incremental_prediction(
         )
         if metadata_path.is_file():
             metadata = load_json(metadata_path)
-            paths = (
-                metadata.get("prediction_paths")
-                if isinstance(metadata, dict)
-                else None
-            )
-            if (
-                isinstance(paths, dict)
-                and paths.get("incremental")
-            ):
-                recorded = paths["incremental"]
-                source = (
-                    "multi_perspective.metadata."
-                    "prediction_paths.incremental"
-                )
+            if isinstance(metadata, dict):
+                if signal_mode == "fused" and metadata.get("fused_path"):
+                    recorded = metadata["fused_path"]
+                    source = "multi_perspective.metadata.fused_path"
+                elif signal_mode != "fused":
+                    paths = metadata.get("prediction_paths")
+                    if isinstance(paths, dict) and paths.get(signal_mode):
+                        recorded = paths[signal_mode]
+                        source = (
+                            "multi_perspective.metadata."
+                            f"prediction_paths.{signal_mode}"
+                        )
 
     if recorded is None:
         direct_candidates = [
             path
             for path in worker_result_path.parent.rglob("pred_vllm.json")
-            if "incremental" in path.parts
+            if signal_mode in path.parts
         ]
         if direct_candidates:
             recorded = str(sorted(direct_candidates)[0])
-            source = "incremental_directory_fallback"
+            source = f"{signal_mode}_directory_fallback"
 
     if recorded is None:
         raise FileNotFoundError(
             "Completed Robo-Dopamine rollout has no saved "
-            f"incremental perspective: {worker_result_path}"
+            f"{signal_mode} hop signal: {worker_result_path}"
         )
 
     prediction = relocate_recorded_path(
@@ -340,15 +344,27 @@ def resolve_incremental_prediction(
     )
     if not prediction.is_file():
         raise FileNotFoundError(
-            "Recorded incremental pred_vllm.json does not exist: "
+            f"Recorded {signal_mode} pred_vllm.json does not exist: "
             f"{prediction}"
         )
     return prediction, result, source
 
 
-def load_incremental_signal(
+def resolve_incremental_prediction(
+    worker_result_path: Path,
+    run_root: Path,
+) -> tuple[Path, dict[str, Any], str]:
+    return resolve_signal_prediction(
+        worker_result_path,
+        run_root,
+        "incremental",
+    )
+
+
+def load_signal(
     run_root: Path,
     rollout_id: str,
+    signal_mode: str,
 ) -> dict[str, Any]:
     worker_result_path = (
         run_root / "raw" / rollout_id / "worker_result.json"
@@ -357,14 +373,16 @@ def load_incremental_signal(
         raise FileNotFoundError(worker_result_path)
 
     prediction_path, worker_result, path_source = (
-        resolve_incremental_prediction(
-            worker_result_path, run_root
+        resolve_signal_prediction(
+            worker_result_path,
+            run_root,
+            signal_mode,
         )
     )
     raw_rows = load_json(prediction_path)
     if not isinstance(raw_rows, list):
         raise ValueError(
-            "Robo-Dopamine incremental pred_vllm.json "
+            f"Robo-Dopamine {signal_mode} pred_vllm.json "
             f"is not a list: {prediction_path}"
         )
 
@@ -386,22 +404,46 @@ def load_incremental_signal(
     order = sorted(range(len(frames)), key=frames.__getitem__)
     frames = [frames[index] for index in order]
     rows = [rows[index] for index in order]
-    scale = detect_hop_scale(rows)
 
-    return {
-        "rollout_id": rollout_id,
-        "frames": frames,
-        "raw_hops": list(scale["raw_hops"]),
-        "hops": list(scale["normalized_hops"]),
-        "source_scale": scale["source_scale"],
-        "normalization_divisor": scale[
-            "normalization_divisor"
-        ],
-        "scale_detection": {
+    if signal_mode == "incremental":
+        scale = detect_hop_scale(rows)
+        raw_hops = list(scale["raw_hops"])
+        hops = list(scale["normalized_hops"])
+        scale_detection = {
             key: value
             for key, value in scale.items()
             if key not in {"raw_hops", "normalized_hops"}
-        },
+        }
+        source_scale = scale["source_scale"]
+        divisor = scale["normalization_divisor"]
+    else:
+        raw_hops = [
+            finite_number(row.get("hop"), f"{signal_mode} hop")
+            for row in rows
+        ]
+        hops = list(raw_hops)
+        source_scale = "saved_native_hop"
+        divisor = 1.0
+        scale_detection = {
+            "source_scale": source_scale,
+            "normalization_divisor": divisor,
+            "detection_method": "saved_hop_passthrough",
+            "max_abs_raw_hop": (
+                max(abs(value) for value in raw_hops)
+                if raw_hops
+                else None
+            ),
+        }
+
+    return {
+        "rollout_id": rollout_id,
+        "signal_mode": signal_mode,
+        "frames": frames,
+        "raw_hops": raw_hops,
+        "hops": hops,
+        "source_scale": source_scale,
+        "normalization_divisor": divisor,
+        "scale_detection": scale_detection,
         "prediction_path": prediction_path,
         "prediction_path_source": path_source,
         "worker_result_path": worker_result_path,
@@ -413,11 +455,18 @@ def load_incremental_signal(
     }
 
 
+def load_incremental_signal(
+    run_root: Path,
+    rollout_id: str,
+) -> dict[str, Any]:
+    return load_signal(run_root, rollout_id, "incremental")
+
 def build_base_records(
     run_root: Path,
     manifest: Mapping[str, Mapping[str, Any]],
     annotation_dir: Path,
     allowed_rollout_ids: set[str] | None = None,
+    signal_mode: str = "incremental",
 ) -> tuple[
     dict[str, dict[str, Any]],
     list[dict[str, Any]],
@@ -480,15 +529,15 @@ def build_base_records(
             continue
 
         try:
-            signal = load_incremental_signal(
-                run_root, rollout_id
+            signal = load_signal(
+                run_root, rollout_id, signal_mode
             )
         except (FileNotFoundError, OSError, ValueError) as exc:
             exclusions.append(
                 {
                     "rollout_id": rollout_id,
                     "reason": (
-                        "incremental_output_unavailable: "
+                        f"{signal_mode}_output_unavailable: "
                         + str(exc)
                     ),
                 }
@@ -499,7 +548,7 @@ def build_base_records(
             exclusions.append(
                 {
                     "rollout_id": rollout_id,
-                    "reason": "incremental_output_empty",
+                    "reason": f"{signal_mode}_output_empty",
                 }
             )
             continue
@@ -597,15 +646,16 @@ def build_base_records(
     if not signals:
         raise ValueError(
             "No completed rollouts have usable saved "
-            "incremental-hop outputs"
+            f"{signal_mode} hop outputs"
         )
     if len(scale_counter) > 1:
         raise ValueError(
-            "Mixed incremental-hop storage scales in one "
+            f"Mixed {signal_mode} hop storage scales in one "
             f"analysis run: {dict(scale_counter)}"
         )
 
     provenance = {
+        "signal_mode": signal_mode,
         "completed_rollout_n": len(completed_ids),
         "completed_rollout_n_before_selection": completed_before_filter,
         "selection_filter_n": (
