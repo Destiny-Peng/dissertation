@@ -2593,6 +2593,20 @@ class BaselineService:
                 options[name] = value
         if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "canonical", "stateful"}:
             raise ValidationError("procvlm_procedure_mode must be baseline, canonical, or stateful")
+        if baseline == "procvlm" and options.get("procvlm_procedure_mode", "baseline") == "baseline":
+            for name in (
+                "procvlm_procedure_config",
+                "procvlm_tracker_decision_interval_frames",
+                "procvlm_tracker_forward_votes",
+                "procvlm_tracker_forward_window",
+                "procvlm_tracker_forward_min_span_sec",
+                "procvlm_tracker_completion_votes",
+                "procvlm_tracker_completion_window",
+                "procvlm_tracker_completion_min_span_sec",
+                "procvlm_tracker_candidate_timeout_sec",
+                "procvlm_tracker_max_forward_jump",
+            ):
+                options.pop(name, None)
         if "robo_eval_mode" in options and options["robo_eval_mode"] not in {"fused", "forward", "incremental", "backward"}:
             raise ValidationError("robo_eval_mode must be fused, forward, incremental, or backward")
         for name in ("robot_description", "camera_description"):
