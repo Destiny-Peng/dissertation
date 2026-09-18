@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""CPU-only failure analysis from Robo-Dopamine incremental hop.
+"""CPU-only failure analysis from four saved Robo-Dopamine hop signals.
 
-Use only already saved Robo-Dopamine incremental pred_vllm.json outputs and
-existing LF3R human annotations. No inference is launched. No progress,
-fusion, generic change-point, or whole-rollout Q95/std detector is used.
+Compare incremental, forward, backward, and fused hop on the same rollout
+intersection using existing LF3R human annotations. No inference is launched.
+No generic change-point or whole-rollout Q95/std detector is used.
 
 Example:
     python3 tools/analyze_robo_dopamine_incremental_hop.py \
@@ -37,6 +37,7 @@ from robo_incremental_hop.core import (
 )
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
+    SIGNAL_MODES,
     build_base_records,
     ensure_within_project,
     load_manifest,
@@ -146,238 +147,123 @@ def write_metadata(
     manifest_path: Path,
     annotation_dir: Path,
     configs: Sequence[Mapping[str, Any]],
-    signals: Mapping[str, Mapping[str, Any]],
-    provenance: Mapping[str, Any],
+    signals_by_mode: Mapping[str, Mapping[str, Mapping[str, Any]]],
+    provenance_by_mode: Mapping[str, Mapping[str, Any]],
+    common_rollout_ids: set[str],
     best_rows: Sequence[Mapping[str, Any]],
 ) -> None:
     run_json = run_root / "run.json"
     jobs_jsonl = run_root / "jobs.jsonl"
-    scale_examples = [
-        signal["scale_detection"]
-        for signal in signals.values()
-    ][:10]
+    scale_examples = {
+        mode: [
+            signal["scale_detection"]
+            for signal in signals_by_mode.get(mode, {}).values()
+        ][:10]
+        for mode in SIGNAL_MODES
+    }
 
     metadata = {
-        "schema_version": 1,
-        "generated_at": (
-            dt.datetime.now(
-                dt.timezone.utc
-            ).isoformat()
-        ),
-        "script": project_relative(
-            Path(__file__)
-        ),
+        "schema_version": 2,
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "script": project_relative(Path(__file__)),
         "git_revision": git_revision(),
-        "analysis_mode": (
-            "CPU-only saved-output post-processing; "
-            "no inference"
-        ),
+        "analysis_mode": "CPU-only saved-output post-processing; no inference",
         "input": {
-            "run_root": project_relative(
-                run_root
-            ),
+            "run_root": project_relative(run_root),
             "selection": (
                 project_relative(resolve_project_path(args.selection))
                 if args.selection
                 else None
             ),
-            "run_json": (
-                project_relative(run_json)
-                if run_json.is_file()
-                else None
-            ),
-            "run_json_sha256": (
-                sha256(run_json)
-                if run_json.is_file()
-                else None
-            ),
+            "run_json": project_relative(run_json) if run_json.is_file() else None,
+            "run_json_sha256": sha256(run_json) if run_json.is_file() else None,
             "jobs_jsonl": (
-                project_relative(jobs_jsonl)
-                if jobs_jsonl.is_file()
-                else None
+                project_relative(jobs_jsonl) if jobs_jsonl.is_file() else None
             ),
             "jobs_jsonl_sha256": (
-                sha256(jobs_jsonl)
-                if jobs_jsonl.is_file()
-                else None
+                sha256(jobs_jsonl) if jobs_jsonl.is_file() else None
             ),
-            "manifest": project_relative(
-                manifest_path
-            ),
-            "manifest_sha256": sha256(
-                manifest_path
-            ),
-            "annotation_dir": (
-                project_relative(
-                    annotation_dir
-                )
-            ),
+            "manifest": project_relative(manifest_path),
+            "manifest_sha256": sha256(manifest_path),
+            "annotation_dir": project_relative(annotation_dir),
         },
         "signal": {
-            "name": (
-                "Robo-Dopamine incremental hop"
-            ),
+            "name": "Robo-Dopamine four-mode hop comparison",
+            "modes": list(SIGNAL_MODES),
             "native_grid_only": True,
             "interpolation": False,
-            "progress_used": False,
-            "fusion_used": False,
-            "hop_scale_observed": (
-                provenance.get(
-                    "hop_source_scales"
-                )
-            ),
-            "normalization": (
-                "Use saved hop directly when "
-                "confirmed in [-1,1]; divide by "
-                "100 only when saved values are "
-                "confirmed percentage points."
-            ),
-            "scale_detection_examples": (
-                scale_examples
-            ),
-            "frame_intervals": (
-                provenance.get(
-                    "frame_intervals"
-                )
-            ),
-            "official_semantics": (
-                "Current official GRMInference "
-                "parses <score> percentage / 100 "
-                "and sets incremental hop = "
-                "raw_score."
-            ),
+            "same_rollout_intersection": True,
+            "common_rollout_n": len(common_rollout_ids),
+            "common_rollout_ids": sorted(common_rollout_ids),
+            "normalization": {
+                "incremental": (
+                    "Use saved hop directly when confirmed in [-1,1]; divide "
+                    "legacy percentage-point storage by 100 only when confirmed."
+                ),
+                "forward": "Use saved derived hop without rescaling.",
+                "backward": "Use saved derived hop without rescaling.",
+                "fused": "Use saved fused-progress difference hop without rescaling.",
+            },
+            "semantics": {
+                "incremental": "official raw model score; hop = raw_score",
+                "forward": "difference of consecutive forward progress predictions",
+                "backward": "difference of consecutive backward-derived progress values",
+                "fused": "difference of consecutive arithmetic-mean fused progress values",
+            },
+            "scale_detection_examples": scale_examples,
         },
         "parameter_grids": {
             "epsilon": list(EPSILONS),
-            "consecutive_n": list(
-                CONSECUTIVE_NS
-            ),
+            "consecutive_n": list(CONSECUTIVE_NS),
             "k_of_m_m": list(KOFM_MS),
-            "k_rule": (
-                "ceil(0.6*m) ... m"
-            ),
-            "window_mean_m": list(
-                MEAN_MS
-            ),
-            "window_mean_theta": list(
-                MEAN_THRESHOLDS
-            ),
-            "cumulative_regression_m": (
-                list(REGRESSION_MS)
-            ),
-            "cumulative_regression_A": (
-                list(
-                    REGRESSION_THRESHOLDS
-                )
-            ),
-            "stagnation_delta": list(
-                STAGNATION_DELTAS
-            ),
-            "clean_fpr_constraints": list(
-                CLEAN_FPR_CONSTRAINTS
-            ),
+            "k_rule": "ceil(0.6*m) ... m",
+            "window_mean_m": list(MEAN_MS),
+            "window_mean_theta": list(MEAN_THRESHOLDS),
+            "cumulative_regression_m": list(REGRESSION_MS),
+            "cumulative_regression_A": list(REGRESSION_THRESHOLDS),
+            "stagnation_delta": list(STAGNATION_DELTAS),
+            "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
         },
         "detector_semantics": {
-            "consecutive": (
-                "h_t <= epsilon for n "
-                "consecutive native samples"
-            ),
-            "k_of_m": (
-                "at least k of latest m "
-                "native hops satisfy "
-                "h_i <= epsilon"
-            ),
-            "window_mean": (
-                "mean of latest m native "
-                "hops <= theta"
-            ),
-            "cumulative_regression": (
-                "sum(max(0,-h_i)) over "
-                "latest m native hops >= A"
-            ),
+            "consecutive": "h_t <= epsilon for n consecutive native samples",
+            "k_of_m": "at least k of latest m native hops satisfy h_i <= epsilon",
+            "window_mean": "mean of latest m native hops <= theta",
+            "cumulative_regression": "sum(max(0,-h_i)) over latest m native hops >= A",
             "stagnation": (
-                "abs(h_t) <= delta, "
-                "aggregated with consecutive-n "
-                "or k-of-m"
-            ),
-            "window_warmup": (
-                "k-of-m, mean and cumulative "
-                "regression require a full "
-                "m-sample native window"
+                "abs(h_t) <= delta, aggregated with consecutive-n or k-of-m"
             ),
         },
         "evaluation_semantics": {
-            "primary_reference": (
-                "human observable_onset_frame"
-            ),
+            "primary_reference": "human observable_onset_frame",
             "sample_delay": (
-                "1-based count from the first "
-                "native sample at/after onset; "
-                "that first sample is +1"
+                "1-based count from the first native sample at/after onset"
             ),
             "frame_delay": (
-                "detector_frame - "
-                "observable_onset_frame using "
-                "actual saved frame indices"
+                "detector_frame - observable_onset_frame using actual saved frame indices"
             ),
             "early_positives": (
-                "reported separately and never "
-                "converted to zero-delay "
-                "post-onset detections"
+                "reported separately and never converted to zero-delay detections"
             ),
             "pre_onset_lookback_samples": 10,
-            "clean_false_positive": (
-                "any detector-positive native "
-                "sample on a clean-success "
-                "rollout"
-            ),
-            "positive_episode": (
-                "maximal consecutive run of "
-                "detector-positive native "
-                "samples"
-            ),
             "parameter_selection": (
-                "within each detector family "
-                "and clean-rollout FPR "
-                "constraint: maximize event "
-                "recall@3, then smaller median "
-                "sample delay, then lower "
-                "clean-rollout FPR"
+                "separately for each signal mode and detector family under "
+                "clean-rollout FPR constraints: maximize recall@3, then smaller "
+                "median sample delay, then lower clean-rollout FPR"
             ),
-            "recovery_state": (
-                "latest native sample at/before "
-                "recovery_frame; clearance is "
-                "first detector-negative sample "
-                "at/after recovery_frame"
-            ),
-            "recovery_hop_window_samples": (
-                args.recovery_window_samples
-            ),
+            "recovery_hop_window_samples": args.recovery_window_samples,
         },
         "generalization": {
-            "task_cv_enabled": bool(
-                args.task_cv
-            ),
-            "method": (
-                "optional leave-one-task-out "
-                "tuning/evaluation"
-            ),
+            "task_cv_enabled": bool(args.task_cv),
+            "method": "optional leave-one-task-out tuning/evaluation per signal mode",
             "full_dataset_sweep_separate": True,
-            "established_project_split_used": (
-                False
-            ),
-            "note": (
-                "The discovered train/validation "
-                "split is SAFE-specific rather "
-                "than an established "
-                "Robo-Dopamine analysis split."
-            ),
         },
-        "counts": dict(provenance),
-        "detector_config_n": len(configs),
-        "selected_config_n": selected_count(
-            best_rows
-        ),
+        "counts_by_signal_mode": {
+            mode: dict(provenance_by_mode.get(mode, {}))
+            for mode in SIGNAL_MODES
+        },
+        "detector_config_n_per_signal": len(configs),
+        "detector_config_n_total": len(configs) * len(SIGNAL_MODES),
+        "selected_config_n": selected_count(best_rows),
         "outputs": [
             "sweep_summary.csv",
             "event_results.csv",
@@ -386,103 +272,52 @@ def write_metadata(
             "recovery_results.csv",
             "breakdown_summary.csv",
             "metadata.json",
-            (
-                "task_cv_results.csv "
-                "(only with --task-cv)"
-            ),
-            (
-                "plots/ "
-                "(unless --no-plots)"
-            ),
+            "task_cv_results.csv (only with --task-cv)",
+            "plots/<signal_mode>/ (unless --no-plots)",
         ],
     }
-    (
-        output_dir / "metadata.json"
-    ).write_text(
-        json.dumps(
-            metadata,
-            indent=2,
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        + "\n",
+    (output_dir / "metadata.json").write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-
 
 def analyse(
     args: argparse.Namespace,
 ) -> Path:
     run_root = ensure_within_project(
-        resolve_project_path(
-            args.run_root
-        ),
-        "run root",
+        resolve_project_path(args.run_root), "run root"
     )
     manifest_path = ensure_within_project(
-        resolve_project_path(
-            args.manifest
-        ),
-        "manifest",
+        resolve_project_path(args.manifest), "manifest"
     )
     annotation_dir = ensure_within_project(
-        resolve_project_path(
-            args.annotations
-        ),
-        "annotation directory",
+        resolve_project_path(args.annotations), "annotation directory"
     )
 
     if not run_root.is_dir():
-        raise FileNotFoundError(
-            f"Run root does not exist: {run_root}"
-        )
+        raise FileNotFoundError(f"Run root does not exist: {run_root}")
     if not manifest_path.is_file():
-        raise FileNotFoundError(
-            manifest_path
-        )
+        raise FileNotFoundError(manifest_path)
     if not annotation_dir.is_dir():
-        raise FileNotFoundError(
-            annotation_dir
-        )
+        raise FileNotFoundError(annotation_dir)
 
     if args.output_dir:
-        output_dir = (
-            ensure_within_project(
-                resolve_project_path(
-                    args.output_dir
-                ),
-                "output directory",
-            )
+        output_dir = ensure_within_project(
+            resolve_project_path(args.output_dir), "output directory"
         )
     else:
-        timestamp = (
-            dt.datetime.now().strftime(
-                "%Y%m%d_%H%M%S"
-            )
-        )
-        output_dir = (
-            DEFAULT_OUTPUT_ROOT
-            / timestamp
-        )
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = DEFAULT_OUTPUT_ROOT / timestamp
 
-    if (
-        output_dir.exists()
-        and any(output_dir.iterdir())
-    ):
-        raise FileExistsError(
-            "Output directory is not empty: "
-            f"{output_dir}"
-        )
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(f"Output directory is not empty: {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = load_manifest(
-        manifest_path
-    )
+    manifest = load_manifest(manifest_path)
     selection_path = (
-        ensure_within_project(resolve_project_path(args.selection), "selection")
+        ensure_within_project(
+            resolve_project_path(args.selection), "selection"
+        )
         if args.selection
         else None
     )
@@ -490,139 +325,127 @@ def analyse(
         raise FileNotFoundError(selection_path)
     allowed_rollout_ids = load_selection_ids(selection_path)
 
-    (
-        signals,
-        events,
-        clean_rollouts,
-        provenance,
-    ) = build_base_records(
-        run_root,
-        manifest,
-        annotation_dir,
-        allowed_rollout_ids=allowed_rollout_ids,
-    )
+    first_pass: dict[str, tuple[Any, Any, Any, Any]] = {}
+    for signal_mode in SIGNAL_MODES:
+        first_pass[signal_mode] = build_base_records(
+            run_root,
+            manifest,
+            annotation_dir,
+            allowed_rollout_ids=allowed_rollout_ids,
+            signal_mode=signal_mode,
+        )
+
+    common_rollout_ids: set[str] | None = None
+    for signal_mode in SIGNAL_MODES:
+        signal_ids = set(first_pass[signal_mode][0])
+        common_rollout_ids = (
+            signal_ids
+            if common_rollout_ids is None
+            else common_rollout_ids.intersection(signal_ids)
+        )
+    common_rollout_ids = common_rollout_ids or set()
+    if not common_rollout_ids:
+        raise ValueError(
+            "No rollout has all four saved Robo-Dopamine hop signals "
+            "(incremental, forward, backward, fused)"
+        )
 
     configs = build_detector_configs()
-    (
-        summary_rows,
-        event_rows,
-        clean_rows,
-    ) = evaluate_all_configs(
-        configs,
-        signals,
-        events,
-        clean_rollouts,
-    )
-    best_rows = select_best_configs(
-        summary_rows
-    )
-    breakdown_rows = (
-        summarize_breakdowns(
-            configs,
-            event_rows,
-            clean_rows,
-        )
-    )
+    all_summary_rows: list[dict[str, Any]] = []
+    all_event_rows: list[dict[str, Any]] = []
+    all_clean_rows: list[dict[str, Any]] = []
+    all_best_rows: list[dict[str, Any]] = []
+    all_breakdown_rows: list[dict[str, Any]] = []
+    all_recovery_rows: list[dict[str, Any]] = []
+    all_cv_rows: list[dict[str, Any]] = []
+    signals_by_mode: dict[str, Mapping[str, Mapping[str, Any]]] = {}
+    provenance_by_mode: dict[str, Mapping[str, Any]] = {}
 
-    selected_configs = (
-        selected_unique_configs(
-            best_rows, configs
+    def tag(signal_mode: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {"signal_mode": signal_mode, **dict(row)}
+            for row in rows
+        ]
+
+    for signal_mode in SIGNAL_MODES:
+        signals, events, clean_rollouts, provenance = build_base_records(
+            run_root,
+            manifest,
+            annotation_dir,
+            allowed_rollout_ids=common_rollout_ids,
+            signal_mode=signal_mode,
         )
-    )
-    recovery_rows = (
-        build_recovery_rows(
+        signals_by_mode[signal_mode] = signals
+        provenance_by_mode[signal_mode] = provenance
+
+        summary_rows, event_rows, clean_rows = evaluate_all_configs(
+            configs, signals, events, clean_rollouts
+        )
+        best_rows = select_best_configs(summary_rows)
+        breakdown_rows = summarize_breakdowns(
+            configs, event_rows, clean_rows
+        )
+        selected_configs = selected_unique_configs(best_rows, configs)
+        recovery_rows = build_recovery_rows(
             selected_configs,
             signals,
             events,
-            window_samples=(
-                args.recovery_window_samples
-            ),
+            window_samples=args.recovery_window_samples,
         )
-    )
 
-    write_csv(
-        output_dir
-        / "sweep_summary.csv",
-        summary_rows,
-    )
-    write_csv(
-        output_dir
-        / "event_results.csv",
-        event_rows,
-    )
-    write_csv(
-        output_dir
-        / "clean_rollout_results.csv",
-        clean_rows,
-    )
-    write_csv(
-        output_dir
-        / "best_configs.csv",
-        best_rows,
-    )
-    write_csv(
-        output_dir
-        / "recovery_results.csv",
-        recovery_rows,
-    )
-    write_csv(
-        output_dir
-        / "breakdown_summary.csv",
-        breakdown_rows,
-    )
+        all_summary_rows.extend(tag(signal_mode, summary_rows))
+        all_event_rows.extend(tag(signal_mode, event_rows))
+        all_clean_rows.extend(tag(signal_mode, clean_rows))
+        all_best_rows.extend(tag(signal_mode, best_rows))
+        all_breakdown_rows.extend(tag(signal_mode, breakdown_rows))
+        all_recovery_rows.extend(tag(signal_mode, recovery_rows))
 
-    if args.task_cv:
-        write_csv(
-            output_dir
-            / "task_cv_results.csv",
-            task_cross_validation(
-                configs,
+        if args.task_cv:
+            all_cv_rows.extend(
+                tag(
+                    signal_mode,
+                    task_cross_validation(
+                        configs,
+                        event_rows,
+                        clean_rows,
+                    ),
+                )
+            )
+
+        if not args.no_plots:
+            plot_dir = output_dir / "plots" / signal_mode
+            plot_tradeoff(
+                summary_rows,
+                plot_dir / "recall_at_3_vs_clean_fpr.png",
+            )
+            plot_detector_heatmaps(summary_rows, plot_dir)
+            plot_delay_distributions(
+                best_rows,
                 event_rows,
-                clean_rows,
-            ),
-        )
-
-    if not args.no_plots:
-        plot_dir = output_dir / "plots"
-        plot_tradeoff(
-            summary_rows,
-            plot_dir
-            / "recall_at_3_vs_clean_fpr.png",
-        )
-        plot_detector_heatmaps(
-            summary_rows,
-            plot_dir,
-        )
-        plot_delay_distributions(
-            best_rows,
-            event_rows,
-            plot_dir
-            / (
-                "selected_detection_"
-                "delay_boxplot.png"
-            ),
-        )
-        representative_ids = (
-            choose_representative_rollouts(
-                (
-                    args.representative_rollout
-                    or []
-                ),
+                plot_dir / "selected_detection_delay_boxplot.png",
+            )
+            representative_ids = choose_representative_rollouts(
+                args.representative_rollout or [],
                 events,
                 signals,
                 args.max_representative_rollouts,
             )
-        )
-        plot_representative_rollouts(
-            selected_plot_configs(
-                best_rows,
-                configs,
-            ),
-            representative_ids,
-            signals,
-            events,
-            plot_dir,
-        )
+            plot_representative_rollouts(
+                selected_plot_configs(best_rows, configs),
+                representative_ids,
+                signals,
+                events,
+                plot_dir,
+            )
+
+    write_csv(output_dir / "sweep_summary.csv", all_summary_rows)
+    write_csv(output_dir / "event_results.csv", all_event_rows)
+    write_csv(output_dir / "clean_rollout_results.csv", all_clean_rows)
+    write_csv(output_dir / "best_configs.csv", all_best_rows)
+    write_csv(output_dir / "recovery_results.csv", all_recovery_rows)
+    write_csv(output_dir / "breakdown_summary.csv", all_breakdown_rows)
+    if args.task_cv:
+        write_csv(output_dir / "task_cv_results.csv", all_cv_rows)
 
     write_metadata(
         output_dir,
@@ -631,12 +454,12 @@ def analyse(
         manifest_path=manifest_path,
         annotation_dir=annotation_dir,
         configs=configs,
-        signals=signals,
-        provenance=provenance,
-        best_rows=best_rows,
+        signals_by_mode=signals_by_mode,
+        provenance_by_mode=provenance_by_mode,
+        common_rollout_ids=common_rollout_ids,
+        best_rows=all_best_rows,
     )
     return output_dir
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -646,9 +469,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-root",
         required=True,
         help=(
-            "Completed Robo-Dopamine run "
-            "containing saved incremental "
-            "pred_vllm.json outputs."
+            "Completed Robo-Dopamine multi-perspective/fused run "
+            "containing saved incremental, forward, backward, and fused "
+            "hop outputs."
         ),
     )
     parser.add_argument(
