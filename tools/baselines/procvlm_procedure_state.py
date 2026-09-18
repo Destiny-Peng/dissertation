@@ -290,7 +290,9 @@ class StatefulProcedureTracker:
         self.window_size = int(window_size)
         self.max_forward_jump = int(max_forward_jump)
         self.persistent_stage = {chain.id: 0 for chain in procedure.chains}
-        self._history: deque[tuple[int, dict[str, int]]] = deque(maxlen=self.window_size)
+        self._history = {
+            chain.id: deque(maxlen=self.window_size) for chain in procedure.chains
+        }
 
     @property
     def confirmed_stage(self) -> dict[str, int]:
@@ -299,35 +301,35 @@ class StatefulProcedureTracker:
 
     def update(self, frame_index: int, parsed: ParseResult) -> dict[str, Any]:
         if parsed.parse_valid and parsed.observed_stage is not None:
-            self._history.append((int(frame_index), dict(parsed.observed_stage)))
+            for chain in self.procedure.chains:
+                self._history[chain.id].append(
+                    (int(frame_index), int(parsed.observed_stage[chain.id]))
+                )
 
         supports: dict[str, dict[str, Any]] = {}
         events: list[dict[str, Any]] = []
         for chain in self.procedure.chains:
+            history = self._history[chain.id]
             old = int(self.persistent_stage[chain.id])
             if old >= len(chain.actions):
                 supports[chain.id] = {
                     "positive": 0,
-                    "total": len(self._history),
+                    "total": len(history),
                     "required": self.support_threshold,
                     "target_stage": old,
                 }
                 continue
 
             target_stage = old + 1
-            positive = sum(
-                1
-                for _, state in self._history
-                if int(state.get(chain.id, 0)) >= target_stage
-            )
+            positive = sum(1 for _, stage in history if stage >= target_stage)
             support = {
                 "positive": positive,
-                "total": len(self._history),
+                "total": len(history),
                 "required": self.support_threshold,
                 "target_stage": target_stage,
             }
             supports[chain.id] = support
-            if len(self._history) < self.support_threshold or positive < self.support_threshold:
+            if len(history) < self.support_threshold or positive < self.support_threshold:
                 continue
 
             new = min(target_stage, old + self.max_forward_jump)
@@ -337,10 +339,12 @@ class StatefulProcedureTracker:
                     "chain": chain.id,
                     "from": old,
                     "to": new,
-                    "support": f"{positive}/{len(self._history)}",
+                    "support": f"{positive}/{len(history)}",
                     "frame_index": int(frame_index),
                 }
             )
+            # Do not reuse the same evidence for the next stage transition.
+            history.clear()
 
         return {
             "persistent_stage": dict(self.persistent_stage),
@@ -349,5 +353,10 @@ class StatefulProcedureTracker:
             "state_update": events[0] if len(events) == 1 else (events or None),
             "transition_event": events[0] if len(events) == 1 else None,
             "transition_events": events,
-            "valid_observation_count": len(self._history),
+            "valid_observation_count": max(
+                (len(history) for history in self._history.values()), default=0
+            ),
+            "tracker_window_counts": {
+                chain_id: len(history) for chain_id, history in self._history.items()
+            },
         }
