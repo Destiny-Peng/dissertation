@@ -928,7 +928,10 @@ class AnalysisService:
             except (OSError, json.JSONDecodeError):
                 continue
             signal = metadata.get("signal") or {}
-            if signal.get("name") != "Robo-Dopamine incremental hop":
+            if signal.get("name") not in {
+                "Robo-Dopamine incremental hop",
+                "Robo-Dopamine four-mode hop comparison",
+            }:
                 continue
             candidates.append((metadata_path.stat().st_mtime, directory, metadata))
         if not candidates:
@@ -942,7 +945,7 @@ class AnalysisService:
             return {
                 "available": False,
                 "message": (
-                    "No complete Robo-Dopamine incremental-hop analysis found under "
+                    "No complete Robo-Dopamine four-signal hop analysis found under "
                     "outputs/robo_dopamine_incremental_hop."
                 ),
             }
@@ -975,6 +978,11 @@ class AnalysisService:
             for row in best_configs
             if row.get("detector_family")
         })
+        signal_modes = sorted({
+            str(row.get("signal_mode"))
+            for row in best_configs
+            if row.get("signal_mode")
+        })
         return {
             "available": True,
             "source": {
@@ -997,6 +1005,7 @@ class AnalysisService:
             "detector_config_n": metadata.get("detector_config_n"),
             "selected_config_n": metadata.get("selected_config_n"),
             "families": families,
+            "signal_modes": signal_modes,
             "best_configs": best_configs,
             "selected_configs": selected_configs,
             "sweep_summary": sweep_summary,
@@ -1647,6 +1656,8 @@ class AnalysisService:
                 "change_point": change_point,
                 "event_triggered_available": bool(event_triggered.get("available")),
                 "event_triggered": event_triggered,
+                "robo_hop_available": bool(robo_hop.get("available")),
+                "robo_hop": robo_hop,
                 "robo_incremental_hop_available": bool(robo_hop.get("available")),
                 "robo_incremental_hop": robo_hop,
                 "primary_analysis_type": (
@@ -1755,6 +1766,8 @@ class AnalysisService:
             "change_point": change_point,
             "event_triggered_available": bool(event_triggered.get("available")),
             "event_triggered": event_triggered,
+            "robo_hop_available": bool(robo_hop.get("available")),
+            "robo_hop": robo_hop,
             "robo_incremental_hop_available": bool(robo_hop.get("available")),
             "robo_incremental_hop": robo_hop,
             "primary_analysis_type": (
@@ -3886,7 +3899,7 @@ class AnalysisJobService:
             job = {
                 "job_id": job_id,
                 "job_type": "analysis",
-                "analysis_kind": "robo_incremental_hop",
+                "analysis_kind": "robo_hop_comparison",
                 "status": "queued",
                 "scope": scope,
                 "requested_rollouts": len(records),
@@ -3929,7 +3942,10 @@ class AnalysisJobService:
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
-        if payload.get("analysis_kind") == "robo_incremental_hop":
+        if payload.get("analysis_kind") in {
+            "robo_incremental_hop",
+            "robo_hop_comparison",
+        }:
             return self.start_robo_hop_run(payload)
         self.require_environment()
         allowed_fields = {
