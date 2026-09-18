@@ -109,6 +109,26 @@ def git_revision() -> str | None:
     return result.stdout.strip() or None
 
 
+def load_selection_ids(path: Path | None) -> set[str] | None:
+    if path is None:
+        return None
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document.get("selection") if isinstance(document, dict) else document
+    if not isinstance(rows, list):
+        raise ValueError("Selection must be an array or object with selection[]")
+    result: set[str] = set()
+    for row in rows:
+        rollout_id = row.get("id") if isinstance(row, dict) else row
+        if not isinstance(rollout_id, str) or not rollout_id:
+            raise ValueError("Selection contains an invalid rollout id")
+        if rollout_id in result:
+            raise ValueError(f"Selection contains duplicate rollout id: {rollout_id}")
+        result.add(rollout_id)
+    if not result:
+        raise ValueError("Selection is empty")
+    return result
+
+
 def selected_count(
     rows: Sequence[Mapping[str, Any]],
 ) -> int:
@@ -155,6 +175,11 @@ def write_metadata(
         "input": {
             "run_root": project_relative(
                 run_root
+            ),
+            "selection": (
+                project_relative(resolve_project_path(args.selection))
+                if args.selection
+                else None
             ),
             "run_json": (
                 project_relative(run_json)
@@ -456,6 +481,15 @@ def analyse(
     manifest = load_manifest(
         manifest_path
     )
+    selection_path = (
+        ensure_within_project(resolve_project_path(args.selection), "selection")
+        if args.selection
+        else None
+    )
+    if selection_path is not None and not selection_path.is_file():
+        raise FileNotFoundError(selection_path)
+    allowed_rollout_ids = load_selection_ids(selection_path)
+
     (
         signals,
         events,
@@ -465,6 +499,7 @@ def analyse(
         run_root,
         manifest,
         annotation_dir,
+        allowed_rollout_ids=allowed_rollout_ids,
     )
 
     configs = build_detector_configs()
@@ -619,6 +654,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--manifest",
         default=str(DEFAULT_MANIFEST),
+    )
+    parser.add_argument(
+        "--selection",
+        default=None,
+        help=(
+            "Optional project-local JSON/JSONL-style selection document "
+            "containing rollout ids. Only completed run outputs whose ids "
+            "appear in selection are analyzed."
+        ),
     )
     parser.add_argument(
         "--annotations",
