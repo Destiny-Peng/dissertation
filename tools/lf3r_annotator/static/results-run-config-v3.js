@@ -38,6 +38,8 @@
       core: [
         { key: "procvlm_window_size", label: "Window size", type: "number", defaultValue: 4, min: 1 },
         { key: "procvlm_frame_stride", label: "Frame stride", type: "number", defaultValue: 1, min: 1 },
+        { key: "procvlm_procedure_mode", label: "Procedure mode", type: "select", defaultValue: "baseline", options: [["baseline", "Baseline"], ["canonical", "Canonical"], ["stateful", "Stateful"]] },
+        { key: "procvlm_procedure_config", label: "Canonical procedure config", type: "text", defaultValue: "config/procvlm_procedures/libero10_task0.json" },
         { key: "procvlm_max_sampled_frames", label: "Max sampled frames", type: "number", placeholder: "Runner default", min: 1 },
         { key: "procvlm_max_new_tokens", label: "Max new tokens", type: "number", defaultValue: 4096, min: 1 },
         { key: "procvlm_enable_value_head", label: "Enable value head", type: "checkbox", defaultValue: false, sourceId: "procvlmEnableValueHead" }
@@ -45,7 +47,16 @@
       advanced: [
         { key: "model_path", label: "Model path", type: "text", placeholder: "Use configured checkpoint" },
         { key: "dtype", label: "Dtype", type: "text", defaultValue: "bf16" },
-        { key: "tensor_parallel_size", label: "Tensor parallel size", type: "number", defaultValue: 1, min: 1 }
+        { key: "tensor_parallel_size", label: "Tensor parallel size", type: "number", defaultValue: 1, min: 1 },
+        { key: "procvlm_tracker_decision_interval_frames", label: "Tracker decision interval (frames)", type: "number", defaultValue: 3, min: 1 },
+        { key: "procvlm_tracker_forward_votes", label: "Forward votes", type: "number", defaultValue: 3, min: 1 },
+        { key: "procvlm_tracker_forward_window", label: "Forward window", type: "number", defaultValue: 4, min: 1 },
+        { key: "procvlm_tracker_forward_min_span_sec", label: "Forward min span (s)", type: "number", defaultValue: 0.2, min: 0 },
+        { key: "procvlm_tracker_completion_votes", label: "Completion votes", type: "number", defaultValue: 4, min: 1 },
+        { key: "procvlm_tracker_completion_window", label: "Completion window", type: "number", defaultValue: 5, min: 1 },
+        { key: "procvlm_tracker_completion_min_span_sec", label: "Completion min span (s)", type: "number", defaultValue: 0.3, min: 0 },
+        { key: "procvlm_tracker_candidate_timeout_sec", label: "Candidate timeout (s)", type: "number", defaultValue: 0.5, min: 0.01 },
+        { key: "procvlm_tracker_max_forward_jump", label: "Max forward jump", type: "number", defaultValue: 1, min: 1 }
       ],
       execution: [
         { key: "render_video", label: "Render baseline video", type: "checkbox", defaultValue: false }
