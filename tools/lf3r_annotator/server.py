@@ -20,6 +20,7 @@ import mimetypes
 import os
 import re
 import signal
+import sqlite3
 import subprocess
 import sys
 import time
@@ -84,6 +85,9 @@ BASELINE_METHOD_OPTION_FIELDS = {
     "procvlm": {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
         "procvlm_frame_stride", "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
+        "procvlm_procedure_mode", "procvlm_procedure_config",
+        "procvlm_tracker_support_threshold", "procvlm_tracker_window_size",
+        "procvlm_tracker_max_forward_jump",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -110,6 +114,11 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
+    "procvlm_procedure_mode",
+    "procvlm_procedure_config",
+    "procvlm_tracker_support_threshold",
+    "procvlm_tracker_window_size",
+    "procvlm_tracker_max_forward_jump",
     "rynn_num_frames",
     "rynn_num_steps",
     "rynn_evaluation_interval",
@@ -1999,6 +2008,337 @@ def validate_annotation(payload: Any, rollout: dict[str, Any]) -> dict[str, Any]
     }
 
 
+class BaselineRunIndex:
+    """Persistent catalog for baseline run metadata.
+
+    The filesystem remains authoritative. The index only replaces repeated
+    recursive discovery under outputs/baselines. A full recursive scan is done
+    once when no catalog exists, or explicitly through rebuild().
+    """
+
+    def __init__(self, project_root: Path, baseline_root: Path) -> None:
+        self.project_root = project_root.resolve()
+        self.baseline_root = baseline_root.resolve()
+        self.path = (
+            self.project_root
+            / "cache"
+            / "lf3r_annotator"
+            / "baseline_runs.sqlite3"
+        )
+        self.lock = threading.RLock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=5.0)
+        connection.execute("PRAGMA busy_timeout = 5000")
+        return connection
+
+    def _initialize(self) -> None:
+        with self.lock, self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS baseline_run_index_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS baseline_runs (
+                    run_root TEXT PRIMARY KEY,
+                    baseline TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    sort_time TEXT NOT NULL,
+                    selected_rollouts INTEGER NOT NULL,
+                    metadata_mtime_ns INTEGER NOT NULL,
+                    metadata_size INTEGER NOT NULL,
+                    metadata_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS baseline_runs_method_status
+                ON baseline_runs (baseline, status, sort_time DESC)
+                """
+            )
+
+    def _relative_run_root(self, run_path: Path) -> str:
+        resolved = run_path.resolve()
+        try:
+            resolved.relative_to(self.baseline_root)
+            return str(resolved.relative_to(self.project_root))
+        except ValueError as error:
+            raise ValidationError(
+                "Baseline run index path must be inside outputs/baselines"
+            ) from error
+
+    @staticmethod
+    def _selected_rollouts(metadata: dict[str, Any]) -> int:
+        try:
+            return int(metadata.get("selected_rollouts") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _built(self) -> bool:
+        with self.lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM baseline_run_index_meta WHERE key = 'scan_complete'"
+            ).fetchone()
+        return bool(row and row[0] == "1")
+
+    def ensure_built(self) -> None:
+        if not self._built():
+            self.rebuild()
+
+    def upsert(
+        self,
+        run_path: Path,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        run_path = run_path.resolve()
+        metadata_path = run_path / "run.json"
+        if not metadata_path.is_file():
+            return False
+        relative_run_root = self._relative_run_root(run_path)
+        try:
+            stat = metadata_path.stat()
+        except OSError:
+            return False
+
+        with self.lock, self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT metadata_mtime_ns, metadata_size
+                FROM baseline_runs
+                WHERE run_root = ?
+                """,
+                (relative_run_root,),
+            ).fetchone()
+            if (
+                existing is not None
+                and int(existing[0]) == stat.st_mtime_ns
+                and int(existing[1]) == stat.st_size
+            ):
+                return False
+
+        if metadata is None:
+            try:
+                value = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return False
+            if not isinstance(value, dict):
+                return False
+            metadata = value
+
+        baseline = str(metadata.get("baseline") or "").strip()
+        status = str(metadata.get("status") or "").strip()
+        if not baseline:
+            return False
+        sort_time = str(
+            metadata.get("completed_at")
+            or metadata.get("created_at")
+            or ""
+        )
+        payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+
+        with self.lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO baseline_runs (
+                    run_root, baseline, status, sort_time, selected_rollouts,
+                    metadata_mtime_ns, metadata_size, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_root) DO UPDATE SET
+                    baseline = excluded.baseline,
+                    status = excluded.status,
+                    sort_time = excluded.sort_time,
+                    selected_rollouts = excluded.selected_rollouts,
+                    metadata_mtime_ns = excluded.metadata_mtime_ns,
+                    metadata_size = excluded.metadata_size,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    relative_run_root,
+                    baseline,
+                    status,
+                    sort_time,
+                    self._selected_rollouts(metadata),
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                    payload,
+                ),
+            )
+        return True
+
+    def rebuild(self) -> dict[str, int]:
+        rows: list[
+            tuple[str, str, str, str, int, int, int, str]
+        ] = []
+        scanned = 0
+        if self.baseline_root.is_dir():
+            for metadata_path in self.baseline_root.rglob("run.json"):
+                scanned += 1
+                try:
+                    run_path = metadata_path.parent.resolve()
+                    relative_run_root = self._relative_run_root(run_path)
+                    stat = metadata_path.stat()
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValidationError):
+                    continue
+                if not isinstance(metadata, dict):
+                    continue
+                baseline = str(metadata.get("baseline") or "").strip()
+                if not baseline:
+                    continue
+                status = str(metadata.get("status") or "").strip()
+                sort_time = str(
+                    metadata.get("completed_at")
+                    or metadata.get("created_at")
+                    or ""
+                )
+                rows.append(
+                    (
+                        relative_run_root,
+                        baseline,
+                        status,
+                        sort_time,
+                        self._selected_rollouts(metadata),
+                        stat.st_mtime_ns,
+                        stat.st_size,
+                        json.dumps(
+                            metadata,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                    )
+                )
+
+        with self.lock, self._connect() as connection:
+            connection.execute("DELETE FROM baseline_runs")
+            if rows:
+                connection.executemany(
+                    """
+                    INSERT INTO baseline_runs (
+                        run_root, baseline, status, sort_time, selected_rollouts,
+                        metadata_mtime_ns, metadata_size, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+            connection.execute(
+                """
+                INSERT INTO baseline_run_index_meta (key, value)
+                VALUES ('scan_complete', '1')
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO baseline_run_index_meta (key, value)
+                VALUES ('last_scan_at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (dt.datetime.now(dt.timezone.utc).isoformat(),),
+            )
+        return {"scanned": scanned, "indexed": len(rows)}
+
+    def _delete_roots(self, run_roots: list[str]) -> None:
+        if not run_roots:
+            return
+        with self.lock, self._connect() as connection:
+            connection.executemany(
+                "DELETE FROM baseline_runs WHERE run_root = ?",
+                [(run_root,) for run_root in run_roots],
+            )
+
+    def candidates(
+        self,
+        method: str,
+        statuses: set[str],
+    ) -> list[tuple[Path, dict[str, Any]]]:
+        self.ensure_built()
+        if not statuses:
+            return []
+        placeholders = ",".join("?" for _ in statuses)
+        parameters: list[Any] = [method, *sorted(statuses)]
+        query = f"""
+            SELECT run_root, metadata_mtime_ns, metadata_size, metadata_json
+            FROM baseline_runs
+            WHERE baseline = ? AND status IN ({placeholders})
+            ORDER BY sort_time DESC, selected_rollouts DESC, run_root DESC
+        """
+        with self.lock, self._connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+
+        result: list[tuple[Path, dict[str, Any]]] = []
+        remove_roots: list[str] = []
+        for run_root, mtime_ns, size, metadata_json in rows:
+            run_path = (self.project_root / str(run_root)).resolve()
+            metadata_path = run_path / "run.json"
+            if not metadata_path.is_file():
+                remove_roots.append(str(run_root))
+                continue
+            try:
+                stat = metadata_path.stat()
+            except OSError:
+                continue
+
+            metadata: dict[str, Any] | None = None
+            if stat.st_mtime_ns == int(mtime_ns) and stat.st_size == int(size):
+                try:
+                    cached = json.loads(metadata_json)
+                except json.JSONDecodeError:
+                    cached = None
+                if isinstance(cached, dict):
+                    metadata = cached
+            else:
+                try:
+                    current = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    # run.json may be between atomic rewrites. Keep the cached
+                    # row for this request and retry naturally on the next one.
+                    try:
+                        cached = json.loads(metadata_json)
+                    except json.JSONDecodeError:
+                        cached = None
+                    if isinstance(cached, dict):
+                        metadata = cached
+                else:
+                    if isinstance(current, dict):
+                        self.upsert(run_path, current)
+                        metadata = current
+                    else:
+                        remove_roots.append(str(run_root))
+
+            if metadata is None:
+                continue
+            if metadata.get("baseline") != method:
+                continue
+            if str(metadata.get("status") or "") not in statuses:
+                continue
+            result.append((run_path, metadata))
+
+        self._delete_roots(remove_roots)
+        result.sort(
+            key=lambda item: (
+                str(
+                    item[1].get("completed_at")
+                    or item[1].get("created_at")
+                    or ""
+                ),
+                self._selected_rollouts(item[1]),
+                str(item[0]),
+            ),
+            reverse=True,
+        )
+        return result
+
+
 class BaselineService:
     """Read existing baseline outputs and optionally launch one bounded rollout."""
 
@@ -2025,6 +2365,7 @@ class BaselineService:
             self.baseline_root / "instruction_variants" / "libero_10"
         )
         self.web_logs_root = self.project_root / "logs" / "baselines" / "web_runs"
+        self.run_index = BaselineRunIndex(self.project_root, self.baseline_root)
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
         self.coordinator = coordinator or JobCoordinator()
@@ -2059,30 +2400,18 @@ class BaselineService:
             return None
         return number if math.isfinite(number) else None
 
+    def _indexed_run_candidates(
+        self,
+        method: str,
+        statuses: set[str],
+    ) -> list[tuple[Path, dict[str, Any]]]:
+        return self.run_index.candidates(method, statuses)
+
+    def rebuild_run_index(self) -> dict[str, int]:
+        return self.run_index.rebuild()
+
     def _run_candidates(self, method: str) -> list[tuple[Path, dict[str, Any]]]:
-        candidates: list[tuple[tuple[str, int, str], Path, dict[str, Any]]] = []
-        if not self.baseline_root.is_dir():
-            return []
-        baseline_root = self.baseline_root.resolve()
-        for path in self.baseline_root.rglob("run.json"):
-            try:
-                path.parent.resolve().relative_to(baseline_root)
-            except ValueError:
-                continue
-            try:
-                metadata = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if metadata.get("baseline") != method or metadata.get("status") not in BASELINE_RUN_STATUSES:
-                continue
-            try:
-                selected = int(metadata.get("selected_rollouts") or 0)
-            except (TypeError, ValueError):
-                continue
-            key = (str(metadata.get("completed_at") or metadata.get("created_at") or ""), selected, str(path))
-            candidates.append((key, path.parent, metadata))
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        return [(path, metadata) for _, path, metadata in candidates]
+        return self._indexed_run_candidates(method, BASELINE_RUN_STATUSES)
 
     def _explicit_run_candidate(
         self,
@@ -2153,6 +2482,8 @@ class BaselineService:
             "run_root": self._relative(run_path),
             "completed_at": metadata.get("completed_at"),
             "instruction_condition": self._run_instruction_condition(metadata),
+            "procedure_mode": metadata.get("procedure_mode") or metadata.get("arguments", {}).get("procvlm_procedure_mode"),
+            "procedure_config": metadata.get("procedure_config") or metadata.get("arguments", {}).get("procvlm_procedure_config"),
         }
 
     def _pack(
@@ -2235,9 +2566,20 @@ class BaselineService:
                 continue
             frame = min(max(raw_frame, 0), total_frames - 1)
             sample = {"frame": frame, "raw_frame": raw_frame, "signals": {"progress": value}}
-            for field in ("model_output", "reasoning"):
+            for field in ("model_output", "reasoning", "raw_reasoning"):
                 if row.get(field):
                     sample[field] = str(row[field])[:12000]
+            for field in (
+                "procedure_mode", "procedure_task_id", "parsed_actions",
+                "canonical_remaining_ids", "parsed_remaining_ids", "parse_valid",
+                "parse_source", "parse_errors", "observed_stage", "observed_state",
+                "persistent_stage", "persistent_state", "confirmed_stage",
+                "transition_support", "state_update", "state_updates",
+                "transition_event", "transition_events", "tracker_window_counts",
+                "task_history_text", "next_task_history_text",
+            ):
+                if field in row:
+                    sample[field] = row[field]
             samples.append(sample)
             raw_frames.append(raw_frame)
         return self._pack("procvlm", run_summary, samples, [path], raw_frames, {"_total_frames": total_frames, "kind": "model_text_and_progress"})
@@ -2918,6 +3260,9 @@ class BaselineService:
             "procvlm_frame_stride": (1, 1000000),
             "procvlm_max_sampled_frames": (1, 1000000),
             "procvlm_max_new_tokens": (1, 1000000),
+            "procvlm_tracker_support_threshold": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
+            "procvlm_tracker_max_forward_jump": (1, 1),
             "rynn_num_frames": (1, 1000000),
             "rynn_num_steps": (1, 1000000),
             "rynn_evaluation_interval": (1, 1000000),
@@ -2933,12 +3278,22 @@ class BaselineService:
                 options[name] = self._integer(options[name], name, minimum, maximum)
         if "rynn_batch_size" in options and options["rynn_batch_size"] is not None:
             options["rynn_batch_size"] = self._positive_integer(options["rynn_batch_size"], "rynn_batch_size")
-        for name in ("dtype", "robo_eval_mode"):
+        for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
             if name in options and options[name] is not None:
                 value = str(options[name]).strip()
                 if not value or len(value) > 80:
                     raise ValidationError(f"{name} must be a non-empty short string")
                 options[name] = value
+        if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "tracker_only", "stateful_history"}:
+            raise ValidationError("procvlm_procedure_mode must be baseline, tracker_only, or stateful_history")
+        if baseline == "procvlm" and options.get("procvlm_procedure_mode", "baseline") == "baseline":
+            for name in (
+                "procvlm_procedure_config",
+                "procvlm_tracker_support_threshold",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_max_forward_jump",
+            ):
+                options.pop(name, None)
         if "robo_eval_mode" in options and options["robo_eval_mode"] not in {"fused", "forward", "incremental", "backward"}:
             raise ValidationError("robo_eval_mode must be fused, forward, incremental, or backward")
         for name in ("robot_description", "camera_description"):
@@ -2953,6 +3308,17 @@ class BaselineService:
                 if not resolved.is_file():
                     raise ValidationError(f"{name} does not exist inside the project: {options[name]}")
                 options[name] = str(resolved)
+        if "procvlm_procedure_config" in options and options["procvlm_procedure_config"] not in (None, ""):
+            resolved = self._project_path(str(options["procvlm_procedure_config"]))
+            if not resolved.is_file():
+                raise ValidationError(
+                    f"procvlm_procedure_config does not exist inside the project: {options['procvlm_procedure_config']}"
+                )
+            options["procvlm_procedure_config"] = str(resolved)
+        if options.get("procvlm_tracker_support_threshold", 7) > options.get("procvlm_tracker_window_size", 9):
+            raise ValidationError("procvlm_tracker_support_threshold cannot exceed procvlm_tracker_window_size")
+        if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
+            raise ValidationError("tracker_only/stateful_history ProcVLM requires procvlm_procedure_config")
         for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
@@ -3157,6 +3523,11 @@ class BaselineService:
             "procvlm_frame_stride": "--procvlm-frame-stride",
             "procvlm_max_sampled_frames": "--procvlm-max-sampled-frames",
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
+            "procvlm_procedure_mode": "--procvlm-procedure-mode",
+            "procvlm_procedure_config": "--procvlm-procedure-config",
+            "procvlm_tracker_support_threshold": "--procvlm-tracker-support-threshold",
+            "procvlm_tracker_window_size": "--procvlm-tracker-window-size",
+            "procvlm_tracker_max_forward_jump": "--procvlm-tracker-max-forward-jump",
             "rynn_num_frames": "--rynn-num-frames",
             "rynn_num_steps": "--rynn-num-steps",
             "rynn_evaluation_interval": "--rynn-evaluation-interval",
@@ -3530,6 +3901,7 @@ class BaselineService:
             run_path, metadata = self._find_job_run(job)
             if run_path is None or metadata is None:
                 return
+            self.run_index.upsert(run_path, metadata)
             job["run_root"] = self._relative(run_path)
             for field in (
                 "selected_rollouts", "unique_selected_rollouts", "completed_jobs",
@@ -4791,14 +5163,22 @@ class LF3RHandler(BaseHTTPRequestHandler):
             if path == "/api/baselines/runs":
                 scope = query.get("scope", ["libero_10"])[0]
                 condition = query.get("condition", ["full_instruction"])[0]
-                self.json_response(
-                    HTTPStatus.OK,
-                    {
-                        "scope": scope,
-                        "condition": condition,
-                        "runs": self.app.baselines.list_runs(scope, condition),
-                    },
+                rescan = str(query.get("rescan", ["0"])[0]).lower() in {
+                    "1", "true", "yes"
+                }
+                index_refresh = (
+                    self.app.baselines.rebuild_run_index()
+                    if rescan
+                    else None
                 )
+                payload = {
+                    "scope": scope,
+                    "condition": condition,
+                    "runs": self.app.baselines.list_runs(scope, condition),
+                }
+                if index_refresh is not None:
+                    payload["index_refresh"] = index_refresh
+                self.json_response(HTTPStatus.OK, payload)
                 return
             if path == "/api/jobs":
                 job_type = query.get("job_type", [None])[0] or None
