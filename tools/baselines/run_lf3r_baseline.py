@@ -2378,6 +2378,30 @@ def parse_args() -> argparse.Namespace:
             parser.error("--robo-eval-modes must not contain duplicates")
         if len(args.robo_eval_modes) > 1 and set(args.robo_eval_modes) != {"incremental", "forward", "backward"}:
             parser.error("multi-perspective Robo-Dopamine requires incremental, forward, and backward")
+    if (
+        args.resume_run is None
+        and args.baseline == "robo_dopamine"
+        and args.tensor_parallel_size > 1
+    ):
+        if args.worker_spec or args.parallel_workers != 1:
+            parser.error(
+                "Robo-Dopamine tensor parallelism cannot be combined with "
+                "--worker-spec or --parallel-workers > 1; use one persistent "
+                "worker that sees all TP GPUs"
+            )
+        try:
+            tp_gpus = selected_gpu_ids(args.gpu or "0")
+        except ValueError as error:
+            parser.error(str(error))
+        if (
+            len(tp_gpus) != args.tensor_parallel_size
+            or len(set(tp_gpus)) != args.tensor_parallel_size
+        ):
+            parser.error(
+                "Robo-Dopamine tensor parallelism requires exactly "
+                "--tensor-parallel-size distinct GPU IDs in --gpu; "
+                "for TP=2 use --gpu 0,1 --tensor-parallel-size 2"
+            )
     if args.baseline == "rynnvalue":
         if args.rynn_num_frames < 1:
             parser.error("--rynn-num-frames must be positive; zero/all-frame mode is not supported")
