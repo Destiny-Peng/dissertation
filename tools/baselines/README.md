@@ -401,3 +401,74 @@ bash tools/baselines/run_baseline.sh \
 In Review, choose ProcVLM in Batch baseline and expand its parameters. `Enable value head` defaults to off and also applies to ProcVLM single-rollout Re-run. The option forwards `--procvlm-enable-value-head` to the runner and `enable_value_head=True` to official inference. Enabled runs use the cached official PyTorch model (trained pooler/value-head weights are required), which replaces generated progress tags with regression predictions. Disabled runs retain text-based vLLM inference. The vLLM free-memory fraction does not cap PyTorch allocations; upstream maps tensor-parallel count to data-parallel workers on this path. Resume retains the option. Restart the annotator server and refresh the page after updating.
 
 This change was reviewed statically only; no tests or inference were run, as requested.
+
+
+## Stateful ProcVLM procedure tracker
+
+ProcVLM now has three explicit procedure modes. `baseline` preserves the existing
+original-task + recent-window inference path. `canonical` adds a fixed manual
+canonical procedure but no memory. `stateful` additionally feeds only
+temporally confirmed per-chain state into the next prompt. Value-head output is
+never used to confirm a transition.
+
+The initial checked-in procedure is only for LIBERO-10 task0:
+
+`config/procvlm_procedures/libero10_task0.json`
+
+The wrapper rejects a procedure whose task text does not match the selected
+rollout, so this task0 file cannot silently be applied to another task. Every
+canonical/stateful run copies the selected procedure into
+`<run>/procedure/canonical_procedure.json` and records its SHA-256 in
+`run.json`; resume uses that frozen copy.
+
+A bounded task0 run can be planned without model inference:
+
+~~~bash
+bash tools/baselines/run_baseline.sh \
+  --baseline procvlm \
+  --manifest datasets/lf3r_failure_rollouts/v1/manifest.jsonl \
+  --data-root "$PROJECT_ROOT" \
+  --output-dir outputs/baselines \
+  --logs-dir logs/baselines \
+  --rollout-id <task0-rollout-id> \
+  --procvlm-procedure-mode stateful \
+  --procvlm-procedure-config config/procvlm_procedures/libero10_task0.json \
+  --dry-run
+~~~
+
+Defaults follow the first calibration proposal: tracker evidence every 3 source
+frames, forward transition 3-of-4 with 0.2 s minimum span, chain completion
+4-of-5 with 0.3 s minimum span, 0.5 s candidate timeout, maximum forward jump
+of one stage, and no rollback. Override them with the corresponding
+`--procvlm-tracker-*` options. Stateful inference is necessarily sequential
+across selected prediction frames because a newly confirmed state changes the
+next prompt; canonical and baseline modes retain batched inference.
+
+Non-baseline `procvlm_raw.jsonl` rows include the original model text and
+progress plus `parsed_remaining_ids`, `parse_valid`, `observed_stage`,
+`candidate_stage`, `confirmed_stage`, transition support, and transition
+events. The descriptive stability metrics can be computed without inference:
+
+~~~bash
+python3 tools/baselines/analyze_procvlm_procedure_tracker.py \
+  outputs/baselines/<run>/raw/<rollout-id>/procvlm_raw.jsonl
+~~~
+
+This reports normalized reasoning-state switches, completed-subtask reopen
+events, confirmed transitions, progress regressions below -20 by default, and
+the maximum single-step progress regression. False commits and transition lag
+require human transition labels; supply a JSON file such as:
+
+~~~json
+{
+  "transitions": [
+    {"chain": "alphabet", "to_stage": 1, "frame": 58},
+    {"chain": "alphabet", "to_stage": 2, "frame": 91}
+  ]
+}
+~~~
+
+with `--ground-truth <file>`. A confirmed transition earlier than the matching
+human transition is counted as a false commit unless allowed by
+`--early-tolerance-frames`; unmatched commits are also false commits. These
+metrics are diagnostics for threshold calibration, not detector accuracy.
