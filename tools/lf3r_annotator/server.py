@@ -84,6 +84,9 @@ BASELINE_METHOD_OPTION_FIELDS = {
     "procvlm": {
         "model_path", "dtype", "tensor_parallel_size", "procvlm_window_size",
         "procvlm_frame_stride", "procvlm_max_sampled_frames", "procvlm_max_new_tokens", "procvlm_enable_value_head",
+        "procvlm_procedure_mode", "procvlm_procedure_config",
+        "procvlm_tracker_support_threshold", "procvlm_tracker_window_size",
+        "procvlm_tracker_max_forward_jump",
         "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
@@ -110,6 +113,11 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
+    "procvlm_procedure_mode",
+    "procvlm_procedure_config",
+    "procvlm_tracker_support_threshold",
+    "procvlm_tracker_window_size",
+    "procvlm_tracker_max_forward_jump",
     "rynn_num_frames",
     "rynn_num_steps",
     "rynn_evaluation_interval",
@@ -1994,6 +2002,8 @@ class BaselineService:
             "run_root": self._relative(run_path),
             "completed_at": metadata.get("completed_at"),
             "instruction_condition": self._run_instruction_condition(metadata),
+            "procedure_mode": metadata.get("procedure_mode") or metadata.get("arguments", {}).get("procvlm_procedure_mode"),
+            "procedure_config": metadata.get("procedure_config") or metadata.get("arguments", {}).get("procvlm_procedure_config"),
         }
 
     def _pack(
@@ -2076,9 +2086,20 @@ class BaselineService:
                 continue
             frame = min(max(raw_frame, 0), total_frames - 1)
             sample = {"frame": frame, "raw_frame": raw_frame, "signals": {"progress": value}}
-            for field in ("model_output", "reasoning"):
+            for field in ("model_output", "reasoning", "raw_reasoning"):
                 if row.get(field):
                     sample[field] = str(row[field])[:12000]
+            for field in (
+                "procedure_mode", "procedure_task_id", "parsed_actions",
+                "canonical_remaining_ids", "parsed_remaining_ids", "parse_valid",
+                "parse_source", "parse_errors", "observed_stage", "observed_state",
+                "persistent_stage", "persistent_state", "confirmed_stage",
+                "transition_support", "state_update", "state_updates",
+                "transition_event", "transition_events", "tracker_window_counts",
+                "task_history_text", "next_task_history_text",
+            ):
+                if field in row:
+                    sample[field] = row[field]
             samples.append(sample)
             raw_frames.append(raw_frame)
         return self._pack("procvlm", run_summary, samples, [path], raw_frames, {"_total_frames": total_frames, "kind": "model_text_and_progress"})
@@ -2538,6 +2559,9 @@ class BaselineService:
             "procvlm_frame_stride": (1, 1000000),
             "procvlm_max_sampled_frames": (1, 1000000),
             "procvlm_max_new_tokens": (1, 1000000),
+            "procvlm_tracker_support_threshold": (1, 1000000),
+            "procvlm_tracker_window_size": (1, 1000000),
+            "procvlm_tracker_max_forward_jump": (1, 1),
             "rynn_num_frames": (1, 1000000),
             "rynn_num_steps": (1, 1000000),
             "rynn_evaluation_interval": (1, 1000000),
@@ -2553,12 +2577,22 @@ class BaselineService:
                 options[name] = self._integer(options[name], name, minimum, maximum)
         if "rynn_batch_size" in options and options["rynn_batch_size"] is not None:
             options["rynn_batch_size"] = self._positive_integer(options["rynn_batch_size"], "rynn_batch_size")
-        for name in ("dtype", "robo_eval_mode"):
+        for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
             if name in options and options[name] is not None:
                 value = str(options[name]).strip()
                 if not value or len(value) > 80:
                     raise ValidationError(f"{name} must be a non-empty short string")
                 options[name] = value
+        if "procvlm_procedure_mode" in options and options["procvlm_procedure_mode"] not in {"baseline", "tracker_only", "stateful_history"}:
+            raise ValidationError("procvlm_procedure_mode must be baseline, tracker_only, or stateful_history")
+        if baseline == "procvlm" and options.get("procvlm_procedure_mode", "baseline") == "baseline":
+            for name in (
+                "procvlm_procedure_config",
+                "procvlm_tracker_support_threshold",
+                "procvlm_tracker_window_size",
+                "procvlm_tracker_max_forward_jump",
+            ):
+                options.pop(name, None)
         if "robo_eval_mode" in options and options["robo_eval_mode"] not in {"fused", "forward", "incremental", "backward"}:
             raise ValidationError("robo_eval_mode must be fused, forward, incremental, or backward")
         for name in ("robot_description", "camera_description"):
@@ -2573,6 +2607,17 @@ class BaselineService:
                 if not resolved.is_file():
                     raise ValidationError(f"{name} does not exist inside the project: {options[name]}")
                 options[name] = str(resolved)
+        if "procvlm_procedure_config" in options and options["procvlm_procedure_config"] not in (None, ""):
+            resolved = self._project_path(str(options["procvlm_procedure_config"]))
+            if not resolved.is_file():
+                raise ValidationError(
+                    f"procvlm_procedure_config does not exist inside the project: {options['procvlm_procedure_config']}"
+                )
+            options["procvlm_procedure_config"] = str(resolved)
+        if options.get("procvlm_tracker_support_threshold", 7) > options.get("procvlm_tracker_window_size", 9):
+            raise ValidationError("procvlm_tracker_support_threshold cannot exceed procvlm_tracker_window_size")
+        if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
+            raise ValidationError("tracker_only/stateful_history ProcVLM requires procvlm_procedure_config")
         for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
@@ -2777,6 +2822,11 @@ class BaselineService:
             "procvlm_frame_stride": "--procvlm-frame-stride",
             "procvlm_max_sampled_frames": "--procvlm-max-sampled-frames",
             "procvlm_max_new_tokens": "--procvlm-max-new-tokens",
+            "procvlm_procedure_mode": "--procvlm-procedure-mode",
+            "procvlm_procedure_config": "--procvlm-procedure-config",
+            "procvlm_tracker_support_threshold": "--procvlm-tracker-support-threshold",
+            "procvlm_tracker_window_size": "--procvlm-tracker-window-size",
+            "procvlm_tracker_max_forward_jump": "--procvlm-tracker-max-forward-jump",
             "rynn_num_frames": "--rynn-num-frames",
             "rynn_num_steps": "--rynn-num-steps",
             "rynn_evaluation_interval": "--rynn-evaluation-interval",
