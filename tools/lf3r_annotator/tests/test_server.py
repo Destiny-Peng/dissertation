@@ -684,49 +684,61 @@ parser.add_argument('--run-root', type=Path, required=True)
 args = parser.parse_known_args()[0]
 args.output_dir.mkdir(parents=True, exist_ok=True)
 selection = json.loads(args.selection.read_text())
+modes = ['incremental', 'forward', 'backward', 'fused']
 metadata = {
-    'signal': {'name': 'Robo-Dopamine incremental hop'},
+    'signal': {
+        'name': 'Robo-Dopamine four-mode hop comparison',
+        'modes': modes,
+        'common_rollout_n': len(selection['selection']),
+    },
     'input': {'run_root': str(args.run_root), 'selection': str(args.selection)},
-    'counts': {'usable_rollout_n': len(selection['selection']), 'event_n': 1, 'clean_rollout_n': 1},
-    'detector_config_n': 1,
-    'selected_config_n': 1,
+    'counts_by_signal_mode': {
+        mode: {'usable_rollout_n': len(selection['selection']), 'event_n': 1, 'clean_rollout_n': 1}
+        for mode in modes
+    },
+    'detector_config_n_per_signal': 1,
+    'detector_config_n_total': 4,
+    'selected_config_n': 4,
     'generalization': {'task_cv_enabled': False},
 }
 (args.output_dir / 'metadata.json').write_text(json.dumps(metadata))
 with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=[
-        'detector_family', 'clean_fpr_constraint', 'selection_status', 'config_id',
-        'epsilon', 'n', 'event_n', 'event_recall_at_3', 'median_delay_samples',
-        'median_delay_frames', 'clean_rollout_fpr'
+        'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
+        'config_id', 'epsilon', 'n', 'event_n', 'event_recall_at_3',
+        'median_delay_samples', 'median_delay_frames', 'clean_rollout_fpr'
     ])
     writer.writeheader()
-    writer.writerow({
-        'detector_family': 'consecutive', 'clean_fpr_constraint': 0.1,
-        'selection_status': 'selected', 'config_id': 'cfg0001',
-        'epsilon': 0.0, 'n': 3, 'event_n': 1, 'event_recall_at_3': 1.0,
-        'median_delay_samples': 2, 'median_delay_frames': 4, 'clean_rollout_fpr': 0.0,
-    })
+    for mode in modes:
+        writer.writerow({
+            'signal_mode': mode, 'detector_family': 'consecutive',
+            'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
+            'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3,
+            'event_n': 1, 'event_recall_at_3': 1.0,
+            'median_delay_samples': 2, 'median_delay_frames': 4,
+            'clean_rollout_fpr': 0.0,
+        })
 with (args.output_dir / 'sweep_summary.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=[
-        'config_id', 'detector_family', 'clean_rollout_fpr',
+        'signal_mode', 'config_id', 'detector_family', 'clean_rollout_fpr',
         'event_recall_at_3', 'median_delay_samples'
     ])
     writer.writeheader()
-    writer.writerow({
-        'config_id': 'cfg0001', 'detector_family': 'consecutive',
-        'clean_rollout_fpr': 0.0, 'event_recall_at_3': 1.0,
-        'median_delay_samples': 2,
-    })
+    for mode in modes:
+        writer.writerow({
+            'signal_mode': mode, 'config_id': 'cfg0001',
+            'detector_family': 'consecutive', 'clean_rollout_fpr': 0.0,
+            'event_recall_at_3': 1.0, 'median_delay_samples': 2,
+        })
 for name in (
     'event_results.csv', 'clean_rollout_results.csv',
     'recovery_results.csv', 'breakdown_summary.csv'
 ):
-    (args.output_dir / name).write_text('config_id\n')
-print('fake incremental hop analysis complete')
+    (args.output_dir / name).write_text('signal_mode,config_id\\n')
+print('fake four-signal hop analysis complete')
 """,
             encoding="utf-8",
         )
-
     def install_fake_rollout_generator(self, exit_code: int = 0) -> None:
         script = self.root / "tools" / "lf3r_annotator" / "generate_libero10_natural.sh"
         script.parent.mkdir(parents=True, exist_ok=True)
@@ -1018,30 +1030,39 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             handle.write(json.dumps(extra_rollout) + "\n")
         robo_root = self.root / roots["robo_dopamine"]
         raw_root = robo_root / "raw" / self.rollout["id"]
-        incremental = raw_root / "incremental" / "pred_vllm.json"
-        incremental.parent.mkdir(parents=True, exist_ok=True)
-        incremental.write_text(
-            json.dumps([
-                {
-                    "id": "sample-af_000002",
-                    "image": ["", "", "", "", "", "frame_000002.png"],
-                    "hop": -0.1,
-                    "progress": 0.2,
-                    "pred": "<score>-10%</score>",
-                }
-            ]),
-            encoding="utf-8",
-        )
+        mode_paths = {}
+        for mode, hop, progress, score in (
+            ("incremental", -0.1, 0.2, "-10%"),
+            ("forward", -0.2, 0.4, "40%"),
+            ("backward", -0.15, 0.5, "-50%"),
+            ("fused", -0.12, 0.35, "0%"),
+        ):
+            path = raw_root / mode / "pred_vllm.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps([
+                    {
+                        "id": "sample-af_000002",
+                        "image": ["", "", "", "", "", "frame_000002.png"],
+                        "hop": hop,
+                        "progress": progress,
+                        "pred": "<score>" + score + "</score>",
+                    }
+                ]),
+                encoding="utf-8",
+            )
+            mode_paths[mode] = path
         metadata_dir = raw_root / "multi_perspective"
         metadata_dir.mkdir(parents=True, exist_ok=True)
         (metadata_dir / "metadata.json").write_text(
             json.dumps(
                 {
                     "prediction_paths": {
-                        "incremental": str(incremental),
-                        "forward": str(raw_root / "forward" / "pred_vllm.json"),
-                        "backward": str(raw_root / "backward" / "pred_vllm.json"),
-                    }
+                        "incremental": str(mode_paths["incremental"]),
+                        "forward": str(mode_paths["forward"]),
+                        "backward": str(mode_paths["backward"]),
+                    },
+                    "fused_path": str(mode_paths["fused"])
                 }
             ),
             encoding="utf-8",
@@ -1051,7 +1072,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 {
                     "eval_mode": "fused",
                     "eval_modes": ["incremental", "forward", "backward"],
-                    "raw_model_output": str(raw_root / "fused" / "pred_vllm.json"),
+                    "raw_model_output": str(mode_paths["fused"]),
+                    "fused_model_output": str(mode_paths["fused"]),
                 }
             ),
             encoding="utf-8",
@@ -1065,16 +1087,20 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             and row["run_root"] == roots["robo_dopamine"]
         )
         self.assertFalse(robo_run["compatible"])
-        self.assertFalse(robo_run["incremental_compatible"])
-        self.assertEqual(robo_run["incremental_rollout_count"], 1)
-        self.assertEqual(robo_run["incremental_scope_rollout_count"], 1)
-        self.assertEqual(robo_run["incremental_missing_rollouts"], 1)
-        self.assertEqual(robo_run["incremental_scope_coverage"], 0.5)
+        self.assertFalse(robo_run["four_signal_compatible"])
+        self.assertEqual(robo_run["four_signal_rollout_count"], 1)
+        self.assertEqual(robo_run["four_signal_scope_rollout_count"], 1)
+        self.assertEqual(robo_run["four_signal_missing_rollouts"], 1)
+        self.assertEqual(robo_run["four_signal_scope_coverage"], 0.5)
+        self.assertEqual(
+            robo_run["hop_signal_rollout_counts"],
+            {"incremental": 1, "forward": 1, "backward": 1, "fused": 1},
+        )
 
         with self.request(
             "/api/analysis/run",
             {
-                "analysis_kind": "robo_incremental_hop",
+                "analysis_kind": "robo_hop_comparison",
                 "scope": "libero_10",
                 "runs": {"robo_dopamine": roots["robo_dopamine"]},
                 "task_cv": False,
@@ -1084,10 +1110,10 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             self.assertEqual(response.status, 202)
             job = json.load(response)["job"]
 
-        self.assertEqual(job["analysis_kind"], "robo_incremental_hop")
+        self.assertEqual(job["analysis_kind"], "robo_hop_comparison")
         self.assertEqual(job["requested_rollouts"], 2)
         self.assertEqual(job["selected_rollouts"], 1)
-        self.assertEqual(job["incremental_coverage"], 0.5)
+        self.assertEqual(job["four_signal_coverage"], 0.5)
         self.assertIn("--selection", job["command"])
         self.assertIn("--run-root", job["command"])
         self.assertNotIn("--safe-run", job["command"])
@@ -1101,20 +1127,31 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             [{"id": self.rollout["id"]}],
         )
         self.assertEqual(selection_doc["requested_rollouts"], 2)
-        self.assertEqual(selection_doc["available_incremental_rollouts"], 1)
+        self.assertEqual(selection_doc["available_four_signal_rollouts"], 1)
         self.assertEqual(job["requested_rollouts"], 2)
-        self.assertEqual(job["incremental_coverage"], 0.5)
+        self.assertEqual(job["four_signal_coverage"], 0.5)
         final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
         with self.request("/api/analysis") as response:
             analysis = json.load(response)["analysis"]
-        self.assertTrue(analysis["robo_incremental_hop_available"])
-        hop = analysis["robo_incremental_hop"]
+        self.assertTrue(analysis["robo_hop_available"])
+        hop = analysis["robo_hop"]
         self.assertTrue(hop["available"])
-        self.assertEqual(hop["selected_configs"][0]["detector_family"], "consecutive")
-        self.assertEqual(hop["selected_configs"][0]["event_recall_at_3"], 1)
-        self.assertEqual(len(hop["sweep_summary"]), 1)
-        self.assertEqual(hop["sweep_summary"][0]["event_recall_at_3"], 1)
+        self.assertEqual(
+            {row["signal_mode"] for row in hop["selected_configs"]},
+            {"incremental", "forward", "backward", "fused"},
+        )
+        self.assertTrue(
+            all(row["detector_family"] == "consecutive" for row in hop["selected_configs"])
+        )
+        self.assertTrue(
+            all(row["event_recall_at_3"] == 1 for row in hop["selected_configs"])
+        )
+        self.assertEqual(len(hop["sweep_summary"]), 4)
+        self.assertEqual(
+            {row["signal_mode"] for row in hop["sweep_summary"]},
+            {"incremental", "forward", "backward", "fused"},
+        )
         self.assertEqual(hop["recovery_results"], [])
         self.assertTrue(
             any(item["name"] == "best_configs.csv" for item in hop["artifacts"])
