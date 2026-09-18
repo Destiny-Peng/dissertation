@@ -312,13 +312,14 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "localization_summary",
             "ROBO_HOP_REQUIRED_FILES",
             "start_robo_hop_run",
-            "robo_incremental_hop",
+            "robo_hop_comparison",
+            "four_signal_scope_rollout_count",
             "sweep_summary.csv",
             "best_configs.csv",
         ]:
             self.assertIn(marker, server)
         for marker in [
-            'analysis_kind: "robo_incremental_hop"',
+            'analysis_kind: "robo_hop_comparison"',
             "/api/analysis/run",
             "analysisHopRunButton",
             "event_recall_at_3",
@@ -424,7 +425,11 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysis-download-grid",
             "clipPath",
             "workspaceDashboardRenderSnapshot",
-            "Incremental-hop failure evidence",
+            "Four-signal failure evidence",
+            "incremental",
+            "forward",
+            "backward",
+            "fused",
         ]:
             self.assertIn(marker, html + workspace + hop_analysis)
         self.assertNotIn('transform="rotate(', workspace)
