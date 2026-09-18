@@ -2559,41 +2559,110 @@ class BaselineService:
             f"for rollout {source_rollout_id}"
         )
 
-    @staticmethod
+    def _resolve_robo_incremental_prediction(
+        self,
+        run_path: Path,
+        rollout_id: str,
+    ) -> Path | None:
+        """Resolve the same saved incremental output accepted by the analyzer."""
+        worker_dir = run_path / "raw" / rollout_id
+        result_path = worker_dir / "worker_result.json"
+        if not result_path.is_file():
+            return None
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(result, dict):
+            return None
+
+        recorded: Any = None
+        perspectives = result.get("perspective_outputs")
+        if isinstance(perspectives, dict):
+            incremental = perspectives.get("incremental")
+            if isinstance(incremental, dict):
+                recorded = incremental.get("raw_model_output")
+
+        if recorded in (None, ""):
+            fusion = result.get("fusion")
+            if isinstance(fusion, dict):
+                source_paths = fusion.get("source_prediction_paths")
+                if isinstance(source_paths, dict):
+                    recorded = source_paths.get("incremental")
+
+        eval_mode = str(result.get("eval_mode") or "").lower()
+        eval_modes = [
+            str(value).lower()
+            for value in (result.get("eval_modes") or [])
+        ]
+        if recorded in (None, "") and (
+            eval_mode == "incremental" or eval_modes == ["incremental"]
+        ):
+            recorded = result.get("raw_model_output")
+
+        if recorded in (None, ""):
+            metadata_path = worker_dir / "multi_perspective" / "metadata.json"
+            if metadata_path.is_file():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    metadata = None
+                if isinstance(metadata, dict):
+                    prediction_paths = metadata.get("prediction_paths")
+                    if isinstance(prediction_paths, dict):
+                        recorded = prediction_paths.get("incremental")
+
+        candidates: list[Path] = []
+        if recorded not in (None, ""):
+            path = Path(str(recorded)).expanduser()
+            if path.is_absolute():
+                candidates.append(path)
+                parts = path.parts
+                for anchor in ("outputs", "datasets", "annotations", "tools", "repos"):
+                    if anchor in parts:
+                        index = parts.index(anchor)
+                        candidates.append(self.project_root.joinpath(*parts[index:]))
+                        break
+            else:
+                candidates.extend(
+                    (
+                        worker_dir / path,
+                        run_path / path,
+                        self.project_root / path,
+                    )
+                )
+
+        # Older multi-perspective runs can retain the mode directory even when
+        # worker metadata is incomplete. Only accept a path explicitly nested
+        # under an "incremental" component; never substitute forward/fused hop.
+        candidates.extend(
+            path
+            for path in worker_dir.rglob("pred_vllm.json")
+            if "incremental" in path.parts
+        )
+
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                resolved.relative_to(self.project_root)
+            except (OSError, ValueError):
+                continue
+            if resolved.is_file():
+                return resolved
+        return None
+
     def _robo_run_incremental_ids(
+        self,
         run_path: Path,
         run_ids: set[str],
     ) -> set[str]:
         """Return rollout IDs with a saved native incremental Robo-Dopamine output."""
-        available: set[str] = set()
-        for rollout_id in run_ids:
-            result_path = run_path / "raw" / rollout_id / "worker_result.json"
-            if not result_path.is_file():
-                continue
-            try:
-                result = json.loads(result_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            perspectives = result.get("perspective_outputs")
-            if isinstance(perspectives, dict):
-                incremental = perspectives.get("incremental")
-                if (
-                    isinstance(incremental, dict)
-                    and incremental.get("raw_model_output")
-                ):
-                    available.add(rollout_id)
-                    continue
-            eval_mode = str(result.get("eval_mode") or "").lower()
-            eval_modes = [
-                str(value).lower()
-                for value in (result.get("eval_modes") or [])
-            ]
-            if (
-                (eval_mode == "incremental" or eval_modes == ["incremental"])
-                and result.get("raw_model_output")
-            ):
-                available.add(rollout_id)
-        return available
+        return {
+            rollout_id
+            for rollout_id in run_ids
+            if self._resolve_robo_incremental_prediction(run_path, rollout_id)
+            is not None
+        }
 
     def list_runs(
         self,
@@ -2656,9 +2725,22 @@ class BaselineService:
                     "incremental_rollout_count": (
                         len(incremental_ids) if method == "robo_dopamine" else None
                     ),
+                    "incremental_scope_rollout_count": (
+                        len(selected_ids.intersection(incremental_ids))
+                        if method == "robo_dopamine"
+                        else None
+                    ),
                     "incremental_missing_rollouts": (
                         len(selected_ids - incremental_ids)
                         if method == "robo_dopamine"
+                        else None
+                    ),
+                    "incremental_scope_coverage": (
+                        (
+                            len(selected_ids.intersection(incremental_ids))
+                            / len(selected_ids)
+                        )
+                        if method == "robo_dopamine" and selected_ids
                         else None
                     ),
                     "incremental_compatible": (
@@ -3603,59 +3685,32 @@ class AnalysisJobService:
             validated[method] = method_runs
         return validated
 
-    def _robo_hop_run_has_incremental(
-        self,
-        run_path: Path,
-        rollout_id: str,
-    ) -> bool:
-        result_path = run_path / "raw" / rollout_id / "worker_result.json"
-        if not result_path.is_file():
-            return False
-        try:
-            result = json.loads(result_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return False
-        perspectives = result.get("perspective_outputs")
-        if isinstance(perspectives, dict):
-            incremental = perspectives.get("incremental")
-            if isinstance(incremental, dict) and incremental.get("raw_model_output"):
-                return True
-        eval_mode = str(result.get("eval_mode") or "").lower()
-        eval_modes = [str(value).lower() for value in (result.get("eval_modes") or [])]
-        return bool(
-            (eval_mode == "incremental" or eval_modes == ["incremental"])
-            and result.get("raw_model_output")
-        )
-
     def _validate_robo_hop_run(
         self,
         raw_run: Any,
         selected_ids: set[str],
-    ) -> tuple[Path, dict[str, Any]]:
+    ) -> tuple[Path, dict[str, Any], set[str]]:
         run_path, metadata = self.baselines._explicit_run_candidate(
             "robo_dopamine",
             raw_run,
             {"full_instruction", "unknown"},
         )
+        if metadata.get("status") not in BASELINE_RUN_STATUSES:
+            raise ValidationError(
+                "Incremental-hop analysis requires a completed Robo-Dopamine run"
+            )
         run_ids = run_rollout_ids(run_path)
-        missing = sorted(selected_ids - run_ids)
-        if missing:
-            raise ValidationError(
-                "Selected Robo-Dopamine run does not cover "
-                f"{len(missing)} requested rollout(s)"
-            )
-        missing_incremental = sorted(
-            rollout_id
-            for rollout_id in selected_ids
-            if not self._robo_hop_run_has_incremental(run_path, rollout_id)
+        overlap = selected_ids.intersection(run_ids)
+        incremental_ids = self.baselines._robo_run_incremental_ids(
+            run_path,
+            overlap,
         )
-        if missing_incremental:
+        if not incremental_ids:
             raise ValidationError(
-                "Selected Robo-Dopamine run is missing saved incremental "
-                f"perspective output for {len(missing_incremental)} rollout(s). "
-                "Choose a fused/multi-perspective or incremental-mode run."
+                "Selected Robo-Dopamine run has no saved raw incremental output "
+                "for the requested scope. Forward-only hop is not raw incremental hop."
             )
-        return run_path, metadata
+        return run_path, metadata, incremental_ids
 
     def start_robo_hop_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
@@ -3676,10 +3731,13 @@ class AnalysisJobService:
         raw_runs = payload.get("runs")
         if not isinstance(raw_runs, dict):
             raise ValidationError("runs must be an object")
-        run_path, _metadata = self._validate_robo_hop_run(
+        run_path, _metadata, available_ids = self._validate_robo_hop_run(
             raw_runs.get("robo_dopamine"),
             selected_ids,
         )
+        available_records = [
+            record for record in records if record["id"] in available_ids
+        ]
         task_cv = payload.get("task_cv", False)
         if not isinstance(task_cv, bool):
             raise ValidationError("task_cv must be boolean")
@@ -3711,7 +3769,9 @@ class AnalysisJobService:
         selection_doc = {
             "schema_version": 1,
             "scope": scope,
-            "selection": [{"id": record["id"]} for record in records],
+            "requested_rollouts": len(records),
+            "available_incremental_rollouts": len(available_records),
+            "selection": [{"id": record["id"]} for record in available_records],
         }
         command = [
             str(self.analysis_python),
@@ -3743,7 +3803,11 @@ class AnalysisJobService:
                 "analysis_kind": "robo_incremental_hop",
                 "status": "queued",
                 "scope": scope,
-                "selected_rollouts": len(records),
+                "requested_rollouts": len(records),
+                "selected_rollouts": len(available_records),
+                "incremental_coverage": (
+                    len(available_records) / len(records) if records else 0.0
+                ),
                 "runs": {"robo_dopamine": self._relative(run_path)},
                 "parameters": {"task_cv": task_cv},
                 "command": command,
