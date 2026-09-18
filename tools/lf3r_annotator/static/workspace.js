@@ -40,7 +40,7 @@
             loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
             loadStyle("lf3rRunsLogStyles", "/static/styles-runs-log.css?v=runs-log-v2-20260916");
             loadStyle("lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css?v=baseline-job-filter-v1-20260916");
-            loadScript("/static/results-run-config-v3.js?v=single-baseline-config-v3c-20260916", function () {
+            loadScript("/static/results-run-config-v3.js?v=procvlm-stateful-config-20260918", function () {
               loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
                 loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
                   loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
