@@ -199,6 +199,7 @@ def parse_remaining_actions(answer: str, procedure: Procedure) -> ParseResult:
     )
     parsed_actions: list[str] = []
     matched_ids: list[str] = []
+    unmatched_lines: list[str] = []
 
     if not explicit_none:
         for line in _action_lines(section):
@@ -206,9 +207,15 @@ def parse_remaining_actions(answer: str, procedure: Procedure) -> ParseResult:
             if action_id is not None:
                 parsed_actions.append(line)
                 matched_ids.append(action_id)
+            elif source == "remaining_section":
+                unmatched_lines.append(line)
 
     errors: list[str] = []
     ids = set(matched_ids)
+    if unmatched_lines:
+        errors.append(
+            "unrecognized remaining action(s): " + " | ".join(unmatched_lines)
+        )
     if explicit_none and ids:
         errors.append("remaining-actions section contains both actions and an explicit none marker")
     if not explicit_none and not ids:
@@ -350,7 +357,8 @@ class StatefulProcedureTracker:
             "persistent_stage": dict(self.persistent_stage),
             "confirmed_stage": dict(self.persistent_stage),
             "transition_support": supports,
-            "state_update": events[0] if len(events) == 1 else (events or None),
+            "state_update": events[0] if events else None,
+            "state_updates": events,
             "transition_event": events[0] if len(events) == 1 else None,
             "transition_events": events,
             "valid_observation_count": max(
