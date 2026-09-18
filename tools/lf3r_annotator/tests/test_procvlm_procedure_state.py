@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import argparse
 import sys
+import types
 from pathlib import Path
 
 
 BASELINES_DIR = Path(__file__).resolve().parents[2] / "baselines"
 sys.path.insert(0, str(BASELINES_DIR))
 
+from procvlm_worker import infer_rollout  # noqa: E402
 from procvlm_procedure_state import (  # noqa: E402
     Action,
     Chain,
@@ -136,8 +139,41 @@ def test_candidate_timeout_discards_old_support() -> None:
     assert out["transition_support"]["alphabet"]["votes"] == 1
 
 
-def test_baseline_parser_is_not_required_for_baseline_mode_contract() -> None:
-    # Baseline mode is intentionally handled outside the tracker and may emit
-    # unrestricted ProcVLM text without canonical action IDs.
-    unrestricted = parsed("Pick up the can and put it away. <progress>10%</progress>")
-    assert unrestricted.parse_valid is False
+def test_baseline_mode_keeps_upstream_inference_path_without_procedure_config(monkeypatch) -> None:
+    calls = {}
+    inference_module = types.ModuleType("evqa.inference")
+
+    def fake_infer_progress_from_video(**kwargs):
+        calls.update(kwargs)
+        return [{"progress": 10.0}]
+
+    inference_module.infer_progress_from_video = fake_infer_progress_from_video
+    evqa_module = types.ModuleType("evqa")
+    evqa_module.__path__ = []
+    evqa_module.inference = inference_module
+    monkeypatch.setitem(sys.modules, "evqa", evqa_module)
+    monkeypatch.setitem(sys.modules, "evqa.inference", inference_module)
+
+    args = argparse.Namespace(
+        procedure_mode="baseline",
+        max_sampled_frames=None,
+        model_path=Path("/tmp/model"),
+        window_size=4,
+        frame_stride=3,
+        torch_dtype="bf16",
+        max_new_tokens=128,
+        tp=1,
+        enable_value_head=False,
+        use_lora=False,
+    )
+    job = {
+        "video_path": "/tmp/video.mp4",
+        "task": "original task",
+        "output_path": "/tmp/procvlm_raw.jsonl",
+    }
+    result = infer_rollout(job, args, object(), {"gpu_memory_utilization": 0.5})
+    assert result == [{"progress": 10.0}]
+    assert calls["task"] == "original task"
+    assert calls["frame_stride"] == 3
+    assert calls["window_size"] == 4
+    assert "procedure_config" not in calls
