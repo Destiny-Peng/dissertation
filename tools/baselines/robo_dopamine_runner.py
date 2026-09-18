@@ -115,6 +115,7 @@ def build_worker_command(
         "--goal-image", str(Path(goal_image).resolve()),
         "--frame-interval", str(args.robo_frame_interval),
         "--batch-size", str(args.robo_batch_size),
+        "--tp", str(args.tensor_parallel_size),
         "--eval-mode", args.robo_eval_mode,
         "--memory-budget-json", json.dumps(memory_budget, ensure_ascii=False, separators=(",", ":")),
     ]
@@ -465,6 +466,7 @@ def resume_run(args: argparse.Namespace) -> int:
     )
     args.robo_frame_interval = int(stored_arguments.get("robo_frame_interval", 4))
     args.robo_batch_size = int(stored_arguments.get("robo_batch_size", 1))
+    args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     args.robo_eval_mode = str(stored_arguments.get("robo_eval_mode", FUSED_EVAL_MODE))
     stored_modes = stored_arguments.get("robo_eval_modes")
     args.robo_eval_modes = list(stored_modes) if stored_modes else None
