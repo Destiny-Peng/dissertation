@@ -155,6 +155,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
     def test_workspace_navigation_settings_and_analysis_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
 
@@ -188,6 +189,17 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisEnvironmentStatus",
             "analysisRunLog",
             "analysisRunJobs",
+            "analysisHopForm",
+            "analysisHopScope",
+            "analysisHopRun",
+            "analysisHopOutputLabel",
+            "analysisHopTaskCv",
+            "analysisHopRunButton",
+            "analysisHopBadge",
+            "analysisHopSelection",
+            "analysisHopLog",
+            "analysisHopResults",
+            "analysisHopArtifacts",
             "analysisSnapshotMethod",
             "analysisSnapshotOutcome",
             "analysisSnapshotTask",
@@ -254,6 +266,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         ]:
             self.assertIn('id="' + element_id + '"', html)
         self.assertIn('/static/workspace.js', html)
+        self.assertIn('/static/analysis-robo-hop.js', workspace)
         for marker in [
             "/api/settings",
             "/api/analysis",
@@ -293,8 +306,34 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             '"/api/analysis/run"', 'analysis-jobs', 'rollout-jobs', '"/api/rollouts/generate"', '"/api/jobs"', 'worker_assignments', 'parallel_workers', 'CHANGEPOINT_TABLE_FILES', 'changepoint_summary.csv', 'comparison_with_full_136_20260827', 'primary_analysis_type', 'event_triggered_available', 'EVENT_TRIGGERED_TABLE_FILES', 'event_triggered_curves.csv', 'os.replace(temp_name, self.path)'
         ]:
             self.assertIn(endpoint, server)
-        for marker in ["run_rollout_ids", "partial_compatible", "localization_event_metrics", "localization_summary"]:
+        for marker in [
+            "run_rollout_ids",
+            "partial_compatible",
+            "localization_event_metrics",
+            "localization_summary",
+            "ROBO_HOP_REQUIRED_FILES",
+            "start_robo_hop_run",
+            "robo_hop_comparison",
+            "four_signal_scope_rollout_count",
+            "sweep_summary.csv",
+            "best_configs.csv",
+        ]:
             self.assertIn(marker, server)
+        for marker in [
+            'analysis_kind: "robo_hop_comparison"',
+            "/api/analysis/run",
+            "analysisHopRunButton",
+            "event_recall_at_1",
+            "event_recall_at_3",
+            "event_recall_at_5",
+            "event_recall_at_10",
+            "event_recall_at_20",
+            "event_recall_eventual",
+            "clean_rollout_fpr",
+            "median_delay_samples",
+            "workspaceLoadAnalysis(true)",
+        ]:
+            self.assertIn(marker, hop_analysis)
         for marker in [
             "--font-scale",
             "--review-font-scale",
@@ -351,6 +390,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
         for route in [
             "#/analysis/overview",
@@ -373,6 +413,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisDetailsPrevious",
             "analysisDetailsNext",
             "analysisArchiveLinks",
+            "analysisHopForm",
+            "analysisHopResults",
+            "analysisHopArtifacts",
         ]:
             self.assertIn('id="' + element_id + '"', html)
         for marker in [
@@ -389,8 +432,13 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysis-download-grid",
             "clipPath",
             "workspaceDashboardRenderSnapshot",
+            "Four-signal failure evidence",
+            "incremental",
+            "forward",
+            "backward",
+            "fused",
         ]:
-            self.assertIn(marker, html + workspace)
+            self.assertIn(marker, html + workspace + hop_analysis)
         self.assertNotIn('transform="rotate(', workspace)
         self.assertNotIn(".analysis-chart > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)
         self.assertNotIn(".analysis-chart-scroll > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)

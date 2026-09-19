@@ -429,8 +429,8 @@
                 <option value="backward">Backward</option>
               </select></label>
             <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image
-                (optional)</span><input data-batch-option="goal_image" type="text"
-                placeholder="Project-relative image path"></label>
+                override (optional)</span><input data-batch-option="goal_image" type="text"
+                placeholder="Leave empty: LIBERO-10 uses task-specific goal"></label>
           </div>
           <div class="batch-check-grid">
             <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render
@@ -627,6 +627,51 @@
           <pre id="analysisRunLog" class="job-log" aria-label="Latest temporal analysis log"></pre>
           <div id="analysisRunJobs" class="persistent-job-list" aria-live="polite"
             aria-label="Persistent temporal analysis jobs"></div>
+        </section>
+
+        <section class="analysis-card analysis-run-card" aria-labelledby="analysisHopTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE HOP COMPARISON</p>
+              <h3 id="analysisHopTitle">Four-signal failure evidence</h3>
+            </div>
+            <span id="analysisHopBadge" class="analysis-badge">Idle</span>
+          </div>
+          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine hop from
+            <strong>incremental, forward, backward, and fused</strong> outputs. The same detector sweep is applied
+            separately to all four signals on their common rollout set. It does not run inference.</p>
+          <form id="analysisHopForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Rollout scope</span>
+                <select id="analysisHopScope">
+                  <option value="libero_10" selected>LIBERO-10 (default)</option>
+                  <option value="all">All loaded rollouts</option>
+                  <option value="libero_spatial">LIBERO-Spatial</option>
+                  <option value="controlled_analysis">Controlled</option>
+                </select>
+              </label>
+              <label><span>Robo-Dopamine run</span>
+                <select id="analysisHopRun">
+                  <option value="">Loading compatible runs...</option>
+                </select>
+                <small class="analysis-run-field-help">Choose a completed multi-perspective/fused run with a common
+                  rollout set containing saved incremental, forward, backward, and fused pred_vllm.json outputs.</small>
+              </label>
+              <label><span>Output label</span>
+                <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>Generalization</span>
+                <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
+              </label>
+            </div>
+            <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
+              Robo-Dopamine runs.</p>
+            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run four-signal hop analysis</button>
+          </form>
+          <pre id="analysisHopLog" class="job-log" aria-label="Latest four-signal hop analysis log"></pre>
+          <div id="analysisHopResults" class="analysis-table-wrap"></div>
+          <div id="analysisHopArtifacts" class="analysis-provenance"></div>
         </section>
 
         <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>

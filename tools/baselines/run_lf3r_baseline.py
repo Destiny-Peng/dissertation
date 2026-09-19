@@ -1797,8 +1797,18 @@ def run_persistent_parallel(
             )
 
         setup_error: str | None = None
-        if args.dry_run and args.baseline in VLLM_BASELINES:
+        if args.baseline == "robo_dopamine":
             memory_budget: dict[str, Any] = {
+                "scope": "free_gpu_memory",
+                "requested_free_fraction": args.vllm_free_memory_fraction,
+                "resolved_total_fraction": None,
+                "resolution": "worker_immediately_before_vllm_init",
+                "safety_buffer_mib_per_gpu": 2048,
+                "gpu_selection": str(assignment["gpu"]),
+            }
+            total_memory_fraction = None
+        elif args.dry_run and args.baseline in VLLM_BASELINES:
+            memory_budget = {
                 "scope": "free_gpu_memory",
                 "requested_free_fraction": args.vllm_free_memory_fraction,
                 "resolved_total_fraction": None,
@@ -1860,7 +1870,6 @@ def run_persistent_parallel(
                 worker_progress_path,
                 worker_state_path,
                 memory_budget,
-                total_memory_fraction,
                 resume=False,
             )
         else:
@@ -2378,6 +2387,30 @@ def parse_args() -> argparse.Namespace:
             parser.error("--robo-eval-modes must not contain duplicates")
         if len(args.robo_eval_modes) > 1 and set(args.robo_eval_modes) != {"incremental", "forward", "backward"}:
             parser.error("multi-perspective Robo-Dopamine requires incremental, forward, and backward")
+    if (
+        args.resume_run is None
+        and args.baseline == "robo_dopamine"
+        and args.tensor_parallel_size > 1
+    ):
+        if args.worker_spec or args.parallel_workers != 1:
+            parser.error(
+                "Robo-Dopamine tensor parallelism cannot be combined with "
+                "--worker-spec or --parallel-workers > 1; use one persistent "
+                "worker that sees all TP GPUs"
+            )
+        try:
+            tp_gpus = selected_gpu_ids(args.gpu or "0")
+        except ValueError as error:
+            parser.error(str(error))
+        if (
+            len(tp_gpus) != args.tensor_parallel_size
+            or len(set(tp_gpus)) != args.tensor_parallel_size
+        ):
+            parser.error(
+                "Robo-Dopamine tensor parallelism requires exactly "
+                "--tensor-parallel-size distinct GPU IDs in --gpu; "
+                "for TP=2 use --gpu 0,1 --tensor-parallel-size 2"
+            )
     if args.baseline == "rynnvalue":
         if args.rynn_num_frames < 1:
             parser.error("--rynn-num-frames must be positive; zero/all-frame mode is not supported")

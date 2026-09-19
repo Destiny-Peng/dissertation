@@ -192,6 +192,21 @@ EVENT_TRIGGERED_TABLE_FILES = {
     "controls": "event_triggered_controls.csv",
     "method_coverage": "method_coverage.csv",
 }
+ROBO_HOP_TABLE_FILES = {
+    "sweep_summary": "sweep_summary.csv",
+    "best_configs": "best_configs.csv",
+    "recovery_results": "recovery_results.csv",
+    "breakdown_summary": "breakdown_summary.csv",
+}
+ROBO_HOP_REQUIRED_FILES = (
+    "metadata.json",
+    "sweep_summary.csv",
+    "event_results.csv",
+    "clean_rollout_results.csv",
+    "best_configs.csv",
+    "recovery_results.csv",
+    "breakdown_summary.csv",
+)
 
 # These allowlists are deliberately kept server-side. The Analysis page can
 # browse high-cardinality CSV/JSONL artifacts without turning the generic file
@@ -244,6 +259,13 @@ ANALYSIS_ARTIFACT_NAMES = {
     "event_triggered_summary.csv",
     "event_triggered_peak_events.csv",
     "event_triggered_controls.csv",
+    "sweep_summary.csv",
+    "event_results.csv",
+    "clean_rollout_results.csv",
+    "best_configs.csv",
+    "recovery_results.csv",
+    "breakdown_summary.csv",
+    "task_cv_results.csv",
 }
 CHANGEPOINT_EVENT_FIELDS = (
     "method",
@@ -649,6 +671,9 @@ class AnalysisService:
         self.manifest_path = manifest_path.resolve()
         self.annotation_root = annotation_root.resolve()
         self.analysis_root = self.project_root / "outputs" / "baseline_signal_analysis"
+        self.robo_hop_root = (
+            self.project_root / "outputs" / "robo_dopamine_incremental_hop"
+        )
 
     def _relative(self, path: Path) -> str:
         try:
@@ -897,6 +922,127 @@ class AnalysisService:
             "summary": tables["summary"],
             "peak_events": tables["peak_events"],
             "controls": tables["controls"],
+        }
+
+    def _latest_robo_hop_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
+        if not self.robo_hop_root.is_dir():
+            return None
+        candidates = []
+        for metadata_path in self.robo_hop_root.glob("*/metadata.json"):
+            directory = metadata_path.parent
+            if not all((directory / name).is_file() for name in ROBO_HOP_REQUIRED_FILES):
+                continue
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            signal = metadata.get("signal") or {}
+            if signal.get("name") not in {
+                "Robo-Dopamine incremental hop",
+                "Robo-Dopamine four-mode hop comparison",
+            }:
+                continue
+            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+        if not candidates:
+            return None
+        _, directory, metadata = max(candidates, key=lambda item: item[0])
+        return directory, metadata
+
+    def _robo_hop_response(self) -> dict[str, Any]:
+        selected = self._latest_robo_hop_snapshot()
+        if selected is None:
+            return {
+                "available": False,
+                "message": (
+                    "No complete Robo-Dopamine four-signal hop analysis found under "
+                    "outputs/robo_dopamine_incremental_hop."
+                ),
+            }
+        directory, metadata = selected
+        metadata_path = directory / "metadata.json"
+        generated_at = str(
+            metadata.get("generated_at")
+            or self._iso_mtime(metadata_path)
+        )
+        current_manifest_hash = self._sha256(self.manifest_path)
+        input_metadata = metadata.get("input") or {}
+        snapshot_manifest_hash = input_metadata.get("manifest_sha256")
+        latest_annotation_update = self._latest_annotation_update()
+        stale = bool(
+            snapshot_manifest_hash
+            and snapshot_manifest_hash != current_manifest_hash
+        )
+        if latest_annotation_update and latest_annotation_update > generated_at:
+            stale = True
+        best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
+        sweep_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["sweep_summary"])
+        recovery_results = self._read_csv(directory / ROBO_HOP_TABLE_FILES["recovery_results"])
+        task_cv_path = directory / "task_cv_results.csv"
+        selected_configs = [
+            row for row in best_configs
+            if row.get("selection_status") == "selected"
+        ]
+        families = sorted({
+            str(row.get("detector_family"))
+            for row in best_configs
+            if row.get("detector_family")
+        })
+        signal_modes = sorted({
+            str(row.get("signal_mode"))
+            for row in best_configs
+            if row.get("signal_mode")
+        })
+        return {
+            "available": True,
+            "source": {
+                "directory": self._relative(directory),
+                "metadata": self._relative(metadata_path),
+                "generated_at": generated_at,
+                "run_root": input_metadata.get("run_root"),
+                "selection": input_metadata.get("selection"),
+            },
+            "freshness": {
+                "stale": stale,
+                "manifest_matches": snapshot_manifest_hash == current_manifest_hash,
+                "snapshot_manifest_sha256": snapshot_manifest_hash,
+                "current_manifest_sha256": current_manifest_hash,
+                "latest_annotation_update": latest_annotation_update,
+            },
+            "signal": metadata.get("signal") or {},
+            "counts": metadata.get("counts") or {},
+            "counts_by_signal_mode": metadata.get("counts_by_signal_mode") or {},
+            "generalization": metadata.get("generalization") or {},
+            "detector_config_n": (
+                metadata.get("detector_config_n_total")
+                or metadata.get("detector_config_n")
+            ),
+            "detector_config_n_per_signal": metadata.get(
+                "detector_config_n_per_signal"
+            ),
+            "selected_config_n": metadata.get("selected_config_n"),
+            "families": families,
+            "signal_modes": signal_modes,
+            "best_configs": best_configs,
+            "selected_configs": selected_configs,
+            "sweep_summary": sweep_summary,
+            "recovery_results": recovery_results,
+            "task_cv_available": task_cv_path.is_file(),
+            "artifacts": [
+                {
+                    "name": name,
+                    "url": "/api/analysis/artifacts/" + name,
+                }
+                for name in (
+                    "sweep_summary.csv",
+                    "event_results.csv",
+                    "clean_rollout_results.csv",
+                    "best_configs.csv",
+                    "recovery_results.csv",
+                    "breakdown_summary.csv",
+                    "task_cv_results.csv",
+                )
+                if (directory / name).is_file()
+            ],
         }
 
     def _latest_change_point_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
@@ -1285,6 +1431,7 @@ class AnalysisService:
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
         ]
         links: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -1464,6 +1611,7 @@ class AnalysisService:
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
+            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
         ):
             if result is None:
                 continue
@@ -1480,10 +1628,13 @@ class AnalysisService:
     def _full_response(self) -> dict[str, Any]:
         change_point = self._change_point_response()
         event_triggered = self._event_triggered_response()
+        robo_hop = self._robo_hop_response()
         selected = self._latest_snapshot()
         if selected is None:
             has_analysis_artifact = bool(
-                change_point.get("available") or event_triggered.get("available")
+                change_point.get("available")
+                or event_triggered.get("available")
+                or robo_hop.get("available")
             )
             return {
                 "available": has_analysis_artifact,
@@ -1521,6 +1672,10 @@ class AnalysisService:
                 "change_point": change_point,
                 "event_triggered_available": bool(event_triggered.get("available")),
                 "event_triggered": event_triggered,
+                "robo_hop_available": bool(robo_hop.get("available")),
+                "robo_hop": robo_hop,
+                "robo_incremental_hop_available": bool(robo_hop.get("available")),
+                "robo_incremental_hop": robo_hop,
                 "primary_analysis_type": (
                     "change_point"
                     if change_point.get("available")
@@ -1627,6 +1782,10 @@ class AnalysisService:
             "change_point": change_point,
             "event_triggered_available": bool(event_triggered.get("available")),
             "event_triggered": event_triggered,
+            "robo_hop_available": bool(robo_hop.get("available")),
+            "robo_hop": robo_hop,
+            "robo_incremental_hop_available": bool(robo_hop.get("available")),
+            "robo_incremental_hop": robo_hop,
             "primary_analysis_type": (
                 "change_point"
                 if change_point.get("available")
@@ -2762,6 +2921,155 @@ class BaselineService:
             f"for rollout {source_rollout_id}"
         )
 
+    ROBO_HOP_SIGNAL_MODES = ("incremental", "forward", "backward", "fused")
+
+    def _resolve_robo_signal_prediction(
+        self,
+        run_path: Path,
+        rollout_id: str,
+        signal_mode: str,
+    ) -> Path | None:
+        """Resolve one saved Robo-Dopamine hop source without changing its semantics."""
+        if signal_mode not in self.ROBO_HOP_SIGNAL_MODES:
+            return None
+        worker_dir = run_path / "raw" / rollout_id
+        result_path = worker_dir / "worker_result.json"
+        if not result_path.is_file():
+            return None
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(result, dict):
+            return None
+
+        recorded: Any = None
+        perspectives = result.get("perspective_outputs")
+        if signal_mode != "fused" and isinstance(perspectives, dict):
+            mode_output = perspectives.get(signal_mode)
+            if isinstance(mode_output, dict):
+                recorded = mode_output.get("raw_model_output")
+
+        fusion = result.get("fusion")
+        if (
+            recorded in (None, "")
+            and signal_mode != "fused"
+            and isinstance(fusion, dict)
+        ):
+            source_paths = fusion.get("source_prediction_paths")
+            if isinstance(source_paths, dict):
+                recorded = source_paths.get(signal_mode)
+
+        eval_mode = str(result.get("eval_mode") or "").lower()
+        eval_modes = [
+            str(value).lower()
+            for value in (result.get("eval_modes") or [])
+        ]
+        if (
+            recorded in (None, "")
+            and signal_mode != "fused"
+            and (eval_mode == signal_mode or eval_modes == [signal_mode])
+        ):
+            recorded = result.get("raw_model_output")
+
+        if signal_mode == "fused" and recorded in (None, ""):
+            if result.get("fused_model_output"):
+                recorded = result["fused_model_output"]
+            elif isinstance(fusion, dict) and fusion.get("output_path"):
+                recorded = fusion["output_path"]
+            elif (
+                result.get("multi_perspective")
+                or eval_mode == "fused"
+                or set(eval_modes) >= {"incremental", "forward", "backward"}
+            ) and result.get("raw_model_output"):
+                recorded = result["raw_model_output"]
+
+        if recorded in (None, ""):
+            metadata_path = worker_dir / "multi_perspective" / "metadata.json"
+            if metadata_path.is_file():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    metadata = None
+                if isinstance(metadata, dict):
+                    if signal_mode == "fused":
+                        recorded = metadata.get("fused_path")
+                    else:
+                        prediction_paths = metadata.get("prediction_paths")
+                        if isinstance(prediction_paths, dict):
+                            recorded = prediction_paths.get(signal_mode)
+
+        candidates: list[Path] = []
+        if recorded not in (None, ""):
+            path = Path(str(recorded)).expanduser()
+            if path.is_absolute():
+                candidates.append(path)
+                parts = path.parts
+                for anchor in ("outputs", "datasets", "annotations", "tools", "repos"):
+                    if anchor in parts:
+                        index = parts.index(anchor)
+                        candidates.append(self.project_root.joinpath(*parts[index:]))
+                        break
+            else:
+                candidates.extend(
+                    (
+                        worker_dir / path,
+                        run_path / path,
+                        self.project_root / path,
+                    )
+                )
+
+        candidates.extend(
+            path
+            for path in worker_dir.rglob("pred_vllm.json")
+            if signal_mode in path.parts
+        )
+
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                resolved.relative_to(self.project_root)
+            except (OSError, ValueError):
+                continue
+            if resolved.is_file():
+                return resolved
+        return None
+
+    def _robo_run_signal_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+        signal_mode: str,
+    ) -> set[str]:
+        return {
+            rollout_id
+            for rollout_id in run_ids
+            if self._resolve_robo_signal_prediction(
+                run_path, rollout_id, signal_mode
+            ) is not None
+        }
+
+    def _robo_run_four_signal_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+    ) -> tuple[set[str], dict[str, set[str]]]:
+        by_mode = {
+            mode: self._robo_run_signal_ids(run_path, run_ids, mode)
+            for mode in self.ROBO_HOP_SIGNAL_MODES
+        }
+        common = set(run_ids)
+        for mode in self.ROBO_HOP_SIGNAL_MODES:
+            common.intersection_update(by_mode[mode])
+        return common, by_mode
+
+    def _robo_run_incremental_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+    ) -> set[str]:
+        return self._robo_run_signal_ids(run_path, run_ids, "incremental")
+
     def list_runs(
         self,
         scope: Any = "libero_10",
@@ -2801,6 +3109,14 @@ class BaselineService:
                 if condition == "full_instruction":
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
+                incremental_ids: set[str] = set()
+                four_signal_ids: set[str] = set()
+                signal_ids_by_mode: dict[str, set[str]] = {}
+                if method == "robo_dopamine":
+                    four_signal_ids, signal_ids_by_mode = (
+                        self._robo_run_four_signal_ids(run_path, run_ids)
+                    )
+                    incremental_ids = signal_ids_by_mode["incremental"]
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
@@ -2815,6 +3131,70 @@ class BaselineService:
                     "missing_rollouts": len(missing),
                     "scope": scope,
                     "instruction_condition": run_condition,
+                    "incremental_rollout_count": (
+                        len(incremental_ids) if method == "robo_dopamine" else None
+                    ),
+                    "incremental_scope_rollout_count": (
+                        len(selected_ids.intersection(incremental_ids))
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "incremental_missing_rollouts": (
+                        len(selected_ids - incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "incremental_scope_coverage": (
+                        (
+                            len(selected_ids.intersection(incremental_ids))
+                            / len(selected_ids)
+                        )
+                        if method == "robo_dopamine" and selected_ids
+                        else None
+                    ),
+                    "incremental_compatible": (
+                        bool(selected_ids)
+                        and selected_ids.issubset(incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "hop_signal_rollout_counts": (
+                        {
+                            mode: len(ids)
+                            for mode, ids in signal_ids_by_mode.items()
+                        }
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_rollout_count": (
+                        len(four_signal_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_scope_rollout_count": (
+                        len(selected_ids.intersection(four_signal_ids))
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_missing_rollouts": (
+                        len(selected_ids - four_signal_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "four_signal_scope_coverage": (
+                        (
+                            len(selected_ids.intersection(four_signal_ids))
+                            / len(selected_ids)
+                        )
+                        if method == "robo_dopamine" and selected_ids
+                        else None
+                    ),
+                    "four_signal_compatible": (
+                        bool(selected_ids)
+                        and selected_ids.issubset(four_signal_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
                 })
                 summaries.append(summary)
         summaries.sort(
@@ -3622,6 +4002,9 @@ class AnalysisJobService:
         self.coordinator = coordinator
         self.tmux = tmux
         self.analysis_root = self.project_root / "outputs" / "baseline_signal_analysis"
+        self.robo_hop_root = (
+            self.project_root / "outputs" / "robo_dopamine_incremental_hop"
+        )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
             analysis_python
@@ -3778,10 +4161,172 @@ class AnalysisJobService:
             validated[method] = method_runs
         return validated
 
-    def start_run(self, payload: Any) -> dict[str, Any]:
+    def _validate_robo_hop_run(
+        self,
+        raw_run: Any,
+        selected_ids: set[str],
+    ) -> tuple[Path, dict[str, Any], set[str]]:
+        run_path, metadata = self.baselines._explicit_run_candidate(
+            "robo_dopamine",
+            raw_run,
+            {"full_instruction", "unknown"},
+        )
+        if metadata.get("status") not in BASELINE_RUN_STATUSES:
+            raise ValidationError(
+                "Four-signal hop analysis requires a completed Robo-Dopamine run"
+            )
+        run_ids = run_rollout_ids(run_path)
+        overlap = selected_ids.intersection(run_ids)
+        four_signal_ids, _signal_ids_by_mode = (
+            self.baselines._robo_run_four_signal_ids(
+                run_path,
+                overlap,
+            )
+        )
+        if not four_signal_ids:
+            raise ValidationError(
+                "Selected Robo-Dopamine run has no rollout in this scope with all "
+                "four saved hop signals: incremental, forward, backward, and fused."
+            )
+        return run_path, metadata, four_signal_ids
+
+    def start_robo_hop_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
+        allowed_fields = {
+            "analysis_kind", "scope", "runs", "task_cv", "output_label",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise ValidationError(
+                "Unknown Robo-Dopamine hop-analysis field(s): "
+                + ", ".join(sorted(unknown_fields))
+            )
+        scope = validate_run_scope(payload.get("scope"))
+        records = select_scope_records(self._manifest_records(), scope)
+        if not records:
+            raise ValidationError(f"No rollouts matched scope {scope}")
+        selected_ids = {record["id"] for record in records}
+        raw_runs = payload.get("runs")
+        if not isinstance(raw_runs, dict):
+            raise ValidationError("runs must be an object")
+        run_path, _metadata, available_ids = self._validate_robo_hop_run(
+            raw_runs.get("robo_dopamine"),
+            selected_ids,
+        )
+        available_records = [
+            record for record in records if record["id"] in available_ids
+        ]
+        task_cv = payload.get("task_cv", False)
+        if not isinstance(task_cv, bool):
+            raise ValidationError("task_cv must be boolean")
+        label = str(payload.get("output_label") or "web_robo_hop").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
+            raise ValidationError(
+                "output_label must contain only letters, numbers, dot, underscore, or hyphen"
+            )
+        script = (
+            self.project_root / "tools" / "analyze_robo_dopamine_incremental_hop.py"
+        )
+        if not script.is_file():
+            raise ValidationError(
+                "Robo-Dopamine hop-comparison analysis script is not installed"
+            )
+
+        job_id = "analysis-hop-" + uuid.uuid4().hex[:12]
+        workspace = self.robo_hop_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.robo_hop_root / (
+            "web_"
+            + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_"
+            + label
+            + "_"
+            + job_id[-8:]
+        )
+        selection_path = workspace / "selection.json"
+        selection_doc = {
+            "schema_version": 1,
+            "scope": scope,
+            "requested_rollouts": len(records),
+            "available_four_signal_rollouts": len(available_records),
+            "selection": [{"id": record["id"]} for record in available_records],
+        }
+        command = [
+            str(self.analysis_python),
+            str(script),
+            "--run-root",
+            str(run_path),
+            "--selection",
+            str(selection_path),
+            "--manifest",
+            str(self.manifest_path),
+            "--annotations",
+            str(self.annotation_root / "records"),
+            "--output-dir",
+            str(output_temp),
+        ]
+        if task_cv:
+            command.append("--task-cv")
+
+        self.robo_hop_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        (self.robo_hop_root / ".web_jobs").mkdir(parents=True, exist_ok=True)
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            workspace.mkdir(parents=True, exist_ok=False)
+            atomic_json_write(selection_path, selection_doc)
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "robo_hop_comparison",
+                "status": "queued",
+                "scope": scope,
+                "requested_rollouts": len(records),
+                "selected_rollouts": len(available_records),
+                "four_signal_coverage": (
+                    len(available_records) / len(records) if records else 0.0
+                ),
+                "runs": {"robo_dopamine": self._relative(run_path)},
+                "parameters": {"task_cv": task_cv},
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "selection_path": self._relative(selection_path),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.analysis_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job,
+                command,
+                self.log_root / f"{job_id}.log",
+                interpreter=str(self.analysis_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
+    def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
+        if payload.get("analysis_kind") in {
+            "robo_incremental_hop",
+            "robo_hop_comparison",
+        }:
+            return self.start_robo_hop_run(payload)
+        self.require_environment()
         allowed_fields = {
             "scope", "runs", "pre_window_frames", "post_window_frames",
             "background_stride_frames", "output_label", "allow_partial_coverage",
@@ -3923,16 +4468,40 @@ class AnalysisJobService:
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                required = ("metadata.json", "event_metrics.jsonl", *ANALYSIS_TABLE_FILES.values())
+                if job.get("analysis_kind") in {
+                    "robo_incremental_hop",
+                    "robo_hop_comparison",
+                }:
+                    required = ROBO_HOP_REQUIRED_FILES
+                    missing_message = (
+                        "Robo-Dopamine hop comparison completed without all required artifacts"
+                    )
+                else:
+                    required = (
+                        "metadata.json",
+                        "event_metrics.jsonl",
+                        *ANALYSIS_TABLE_FILES.values(),
+                    )
+                    missing_message = (
+                        "Temporal analysis completed without all required artifacts"
+                    )
                 if not all((output_temp / name).is_file() for name in required):
-                    raise OSError("Temporal analysis completed without all required artifacts")
+                    raise OSError(missing_message)
                 if output_final.exists():
                     raise OSError(f"Analysis output already exists: {output_final}")
                 os.replace(output_temp, output_final)
                 job["status"] = "complete"
             else:
                 job["status"] = "failed"
-                error = error or f"Temporal analysis exited with code {return_code}"
+                label = (
+                    "Robo-Dopamine hop comparison"
+                    if job.get("analysis_kind") in {
+                        "robo_incremental_hop",
+                        "robo_hop_comparison",
+                    }
+                    else "Temporal analysis"
+                )
+                error = error or f"{label} exited with code {return_code}"
         except Exception as exc:
             job["status"] = "failed"
             error = str(exc)

@@ -22,7 +22,7 @@ from run_lf3r_baseline import (
     log_line,
     make_execution_environment,
     resolve_record_path,
-    resolve_vllm_memory_budget,
+    selected_gpu_ids,
     run_streamed,
     timestamp,
     validate_static,
@@ -35,6 +35,59 @@ from robo_dopamine_multi_perspective import (
 )
 
 
+ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "outputs" / "robodopamine_goal"
+
+
+def resolve_goal_image(
+    record: dict[str, Any],
+    args: argparse.Namespace,
+    config: dict[str, Any],
+) -> Path:
+    """Resolve one Robo-Dopamine goal image with per-task LIBERO-10 defaults."""
+    explicit = record.get("goal_image")
+    if explicit in (None, ""):
+        explicit = args.goal_image
+    if explicit not in (None, ""):
+        goal = Path(explicit).expanduser()
+        if not goal.is_absolute():
+            goal = resolve_record_path(str(goal), args.data_root)
+        goal = goal.resolve()
+        if not goal.is_file():
+            raise FileNotFoundError(f"Explicit Robo-Dopamine goal image does not exist: {goal}")
+        return goal
+
+    task_suite = str(
+        record.get("task_suite")
+        or record.get("dataset_role")
+        or ""
+    ).strip().lower()
+    if task_suite == "libero_10":
+        raw_task_id = record.get("task_id")
+        try:
+            task_id = int(raw_task_id)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "LIBERO-10 Robo-Dopamine rollout is missing a valid task_id "
+                f"for automatic goal-image selection: {record.get('id') or record.get('rollout_id')}"
+            ) from error
+        if not 0 <= task_id <= 9:
+            raise ValueError(
+                f"LIBERO-10 task_id must be in [0, 9] for goal-image selection; got {task_id}"
+            )
+        goal = (ROBO_LIBERO10_GOAL_ROOT / f"libero-10-task{task_id}.jpg").resolve()
+        if not goal.is_file():
+            raise FileNotFoundError(
+                "Missing task-specific Robo-Dopamine goal image for "
+                f"LIBERO-10 task {task_id}: {goal}"
+            )
+        return goal
+
+    default_goal = (config["repo"] / "examples/blank_goal.png").resolve()
+    if not default_goal.is_file():
+        raise FileNotFoundError(f"Default Robo-Dopamine goal image does not exist: {default_goal}")
+    return default_goal
+
+
 def build_job_specs(
     records: list[dict[str, Any]],
     args: argparse.Namespace,
@@ -42,7 +95,6 @@ def build_job_specs(
     raw_root: Path,
 ) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
-    default_goal = config["repo"] / "examples/blank_goal.png"
     for index, record in enumerate(records):
         rollout_id = str(record.get("rollout_id", record.get("id", "")))
         if not rollout_id:
@@ -57,13 +109,7 @@ def build_job_specs(
         if task is None:
             raise ValueError(f"Robo-Dopamine job {rollout_id} is missing task description")
 
-        goal_value = record.get("goal_image")
-        if goal_value is None:
-            goal_value = args.goal_image or default_goal
-        goal = Path(goal_value).expanduser()
-        goal = goal.resolve() if goal.is_absolute() else resolve_record_path(str(goal), args.data_root)
-        if not goal.is_file():
-            raise FileNotFoundError(f"Goal image for {rollout_id} does not exist: {goal}")
+        goal = resolve_goal_image(record, args, config)
 
         output_value = record.get("raw_output_dir", raw_root / rollout_id)
         output_dir = Path(output_value).expanduser()
@@ -98,7 +144,6 @@ def build_worker_command(
     progress_path: Path,
     state_path: Path,
     memory_budget: dict[str, Any],
-    vllm_total_memory_fraction: float | None,
     *,
     resume: bool,
 ) -> list[str]:
@@ -115,6 +160,7 @@ def build_worker_command(
         "--goal-image", str(Path(goal_image).resolve()),
         "--frame-interval", str(args.robo_frame_interval),
         "--batch-size", str(args.robo_batch_size),
+        "--tp", str(args.tensor_parallel_size),
         "--eval-mode", args.robo_eval_mode,
         "--memory-budget-json", json.dumps(memory_budget, ensure_ascii=False, separators=(",", ":")),
     ]
@@ -123,17 +169,14 @@ def build_worker_command(
         command.extend(["--eval-modes", *requested_modes])
     elif args.robo_eval_mode == FUSED_EVAL_MODE:
         command.extend(["--eval-modes", *PERSPECTIVE_MODES])
-    if vllm_total_memory_fraction is None:
-        command.extend([
-            "--dry-run",
-            "--vllm-free-memory-fraction",
-            str(args.vllm_free_memory_fraction),
-        ])
-    else:
-        command.extend([
-            "--vllm-total-memory-fraction",
-            str(vllm_total_memory_fraction),
-        ])
+    command.extend([
+        "--vllm-free-memory-fraction",
+        str(args.vllm_free_memory_fraction),
+        "--vllm-memory-safety-buffer-mib",
+        "2048",
+    ])
+    if args.dry_run:
+        command.append("--dry-run")
     if args.render_video:
         command.append("--render-video")
     if resume:
@@ -181,9 +224,19 @@ def finalize_run(
             "initialization_seconds"
         )
         metadata["robo_dopamine_engine_status"] = "initialized"
+        if latest.get("memory_budget"):
+            metadata["robo_dopamine_engine_memory_budget"] = latest["memory_budget"]
+            history = list(metadata.get("robo_dopamine_memory_budgets", []))
+            if not history or history[-1] != latest["memory_budget"]:
+                history.append(latest["memory_budget"])
+            metadata["robo_dopamine_memory_budgets"] = history
     if fatal_events:
         metadata["robo_dopamine_engine_status"] = "fatal_engine_failure"
         metadata["robo_dopamine_fatal_error"] = fatal_events[-1]
+        if fatal_events[-1].get("memory_budget"):
+            metadata["robo_dopamine_engine_memory_budget"] = fatal_events[-1][
+                "memory_budget"
+            ]
     metadata.update(counts)
     metadata["pending_jobs"] = total_jobs - counts["completed_jobs"] - counts["failed_jobs"]
     metadata["robo_dopamine_inference_seconds"] = {
@@ -302,25 +355,18 @@ def run_persistent(
                 worker_return_code=0,
             )
 
-    if args.dry_run:
-        memory_budget = {
-            "scope": "free_gpu_memory",
-            "requested_free_fraction": args.vllm_free_memory_fraction,
-            "resolved_total_fraction": None,
-            "resolution": "deferred_until_execution",
-        }
-        vllm_total_memory_fraction = None
-    else:
-        try:
-            vllm_total_memory_fraction, memory_budget = resolve_vllm_memory_budget(
-                args.gpu, args.vllm_free_memory_fraction
-            )
-        except ValueError as error:
-            metadata.update(status="memory_check_failed", error=str(error), completed_at=iso_now())
-            atomic_json(metadata_path, metadata)
-            log_line(log_path, f"MEMORY_CHECK_FAILED {error}")
-            return 2
-        log_line(log_path, "VLLM_MEMORY " + json.dumps(memory_budget, ensure_ascii=False))
+    memory_budget = {
+        "scope": "free_gpu_memory",
+        "requested_free_fraction": args.vllm_free_memory_fraction,
+        "resolved_total_fraction": None,
+        "resolution": "worker_immediately_before_vllm_init",
+        "safety_buffer_mib_per_gpu": 2048,
+        "gpu_selection": args.gpu,
+    }
+    log_line(
+        log_path,
+        "VLLM_MEMORY_DEFERRED " + json.dumps(memory_budget, ensure_ascii=False),
+    )
 
     command = build_worker_command(
         args,
@@ -331,7 +377,6 @@ def run_persistent(
         progress_path,
         state_path,
         memory_budget,
-        vllm_total_memory_fraction,
         resume=resume,
     )
     existing_jobs = job_statuses(jobs_path)
@@ -465,6 +510,17 @@ def resume_run(args: argparse.Namespace) -> int:
     )
     args.robo_frame_interval = int(stored_arguments.get("robo_frame_interval", 4))
     args.robo_batch_size = int(stored_arguments.get("robo_batch_size", 1))
+    args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
+    if args.tensor_parallel_size > 1:
+        tp_gpus = selected_gpu_ids(args.gpu)
+        if (
+            len(tp_gpus) != args.tensor_parallel_size
+            or len(set(tp_gpus)) != args.tensor_parallel_size
+        ):
+            raise ValueError(
+                "Resumed Robo-Dopamine tensor-parallel run requires exactly "
+                f"{args.tensor_parallel_size} distinct GPUs in --gpu; got {args.gpu!r}"
+            )
     args.robo_eval_mode = str(stored_arguments.get("robo_eval_mode", FUSED_EVAL_MODE))
     stored_modes = stored_arguments.get("robo_eval_modes")
     args.robo_eval_modes = list(stored_modes) if stored_modes else None

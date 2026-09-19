@@ -129,6 +129,8 @@ class LLM:
 class GRMInference:
     def __init__(self, model_path):
         self.model_path = model_path
+        self.llm = LLM(model=model_path)
+        (Path(model_path) / "llm_kwargs.json").write_text(json.dumps(self.llm.kwargs))
     def run_pipeline(self, *, out_root, **kwargs):
         result = Path(out_root) / "fake_official_run"
         result.mkdir(parents=True, exist_ok=True)
@@ -160,6 +162,7 @@ class GRMInference:
             "--progress-file", str(robo_output / "progress.jsonl"),
             "--state-file", str(robo_output / "state.json"),
             "--goal-image", str(goal),
+            "--tp", "2",
             "--memory-budget-json", json.dumps({
                 "scope": "free_gpu_memory",
                 "requested_free_fraction": 0.8,
@@ -172,6 +175,9 @@ class GRMInference:
         )
         raw_prediction = json.loads(Path(robo_result["raw_model_output"]).read_text())
         assert raw_prediction == [{"pred": "<score>+25%</score>"}]
+        llm_kwargs = json.loads((robo_model / "llm_kwargs.json").read_text())
+        assert llm_kwargs["tensor_parallel_size"] == 2
+        assert llm_kwargs["gpu_memory_utilization"] == 0.55
 
     print("BASELINE_WORKER_CONTRACTS_OK")
 

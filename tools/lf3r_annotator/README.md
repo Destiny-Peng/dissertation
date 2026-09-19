@@ -236,6 +236,37 @@ All baseline and rollout-generation fields with a help marker show a body-mounte
 
 ### Running temporal analysis from Analysis
 
+### Robo-Dopamine four-signal hop analysis
+
+Analysis Overview includes a separate **Four-signal failure evidence** runner for saved Robo-Dopamine multi-perspective outputs. It applies the same detector families and parameter sweep independently to four saved hop signals: `incremental`, `forward`, `backward`, and `fused`.
+
+The runner is CPU-only and reuses the persistent Analysis tmux/job/log infrastructure. It never starts Robo-Dopamine inference. For a fair comparison it analyzes only the rollout intersection that has all four signals, so event N, clean-rollout N, recall, FPR, and delay are directly comparable across modes.
+
+Signal semantics are preserved rather than redefined:
+
+- `incremental.hop`: official raw incremental model score. Legacy percentage-point storage is normalized to `[-1,1]` only when confirmed.
+- `forward.hop`: saved difference of consecutive forward progress predictions.
+- `backward.hop`: saved difference of consecutive backward-derived progress values.
+- `fused.hop`: saved difference of consecutive arithmetic-mean fused progress values.
+
+Forward/backward/fused hop are used on their saved native scale and are not rescaled from `<score>` text.
+
+The WebUI payload uses the existing `POST /api/analysis/run` endpoint:
+
+    {
+      "analysis_kind": "robo_hop_comparison",
+      "scope": "libero_10",
+      "runs": {
+        "robo_dopamine": "outputs/baselines/..."
+      },
+      "task_cv": false,
+      "output_label": "web_robo_hop"
+    }
+
+Run discovery reports per-mode coverage plus the common four-signal coverage. A run is selectable when the requested scope contains at least one rollout with all four signals; partial scope coverage is allowed, but the four signals are always evaluated on the same common rollout subset.
+
+The output remains under `outputs/robo_dopamine_incremental_hop/web_<timestamp>_<label>_<suffix>/` for compatibility. Every CSV row includes `signal_mode`. The Analysis page renders separate Incremental, Forward, Backward, and Fused sections, while the full sweep, event, clean-rollout, recovery, breakdown, and optional task-CV tables remain downloadable artifacts.
+
 ### Robo-Dopamine multi-perspective outputs
 
 The Review baseline UI defaults to `fused` for Robo-Dopamine, for both the single-rollout button and the Batch baseline panel. `fused` runs `incremental`, `forward`, and `backward` with one persistent GRM/vLLM engine and averages their native progress outputs. Explicit CLI or batch-API selection of `forward`, `incremental`, or `backward` remains available for compatibility. The same native sampled frame grid is required for fusion. The aggregate raw directory keeps the three official `pred_vllm.json` files separately and adds `multi_perspective/fused_progress.json`, `progress_curves.csv`, `progress_curves.png`, and `metadata.json`. The annotator reads fused progress as the primary curve and exposes component progress/hop signals when present. The arithmetic mean follows the official Robo-Dopamine README recommendation; it is descriptive and does not rerun inference from Analysis.

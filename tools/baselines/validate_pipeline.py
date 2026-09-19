@@ -99,12 +99,14 @@ def main() -> None:
             elif baseline == "robo_dopamine":
                 assert Path(argv[1]).name == "robo_dopamine_persistent_worker.py"
                 assert argv[argv.index("--frame-interval") + 1] == "4"
+                assert argv[argv.index("--tp") + 1] == "1"
                 assert argv[argv.index("--vllm-free-memory-fraction") + 1] == "0.8"
                 assert "--gpu-memory-utilization" not in argv
                 assert commands[0]["execution_scope"] == "persistent_robo_dopamine_worker"
                 assert metadata["vllm_memory_scope"] == "free_gpu_memory"
                 assert metadata["vllm_requested_free_fraction"] == 0.8
-                assert commands[0]["vllm_memory_budget"]["resolution"] == "deferred_until_execution"
+                assert commands[0]["vllm_memory_budget"]["resolution"] == "worker_immediately_before_vllm_init"
+                assert argv[argv.index("--vllm-memory-safety-buffer-mib") + 1] == "2048"
 
         if args.execute_safe_smoke:
             output = temp / "safe-smoke"

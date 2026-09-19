@@ -32,7 +32,8 @@
       /* Install the queue cap before the large legacy workspace script. */
       loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v3-20260916");
       loadScript("/static/manifest-support-v2.js?v=manual-transcode-v1-20260916", function () {
-        loadScript("/static/workspace-legacy.js?v=results-split-20260915", function () {
+        loadScript("/static/workspace-legacy.js?v=robo-hop-analysis-20260918", function () {
+          loadScript("/static/analysis-robo-hop.js?v=robo-hop-analysis-20260918");
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
             loadScript("/static/results-axis-scale.js?v=procvlm-progress-0-100-v2-20260916");
             loadScript("/static/results-current-values.js?v=current-numeric-values-v2-20260916");
@@ -40,7 +41,7 @@
             loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
             loadStyle("lf3rRunsLogStyles", "/static/styles-runs-log.css?v=runs-log-v2-20260916");
             loadStyle("lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css?v=baseline-job-filter-v1-20260916");
-            loadScript("/static/results-run-config-v3.js?v=procvlm-stateful-config-float-span-20260918", function () {
+            loadScript("/static/results-run-config-v3.js?v=robo-task-goal-v1-20260918", function () {
               loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
                 loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
                   loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
