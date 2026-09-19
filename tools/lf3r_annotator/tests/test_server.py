@@ -747,7 +747,9 @@ metadata = {
 with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=[
         'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
-        'config_id', 'epsilon', 'n', 'event_n', 'event_recall_at_3',
+        'config_id', 'epsilon', 'n', 'event_n',
+        'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+        'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
         'median_delay_samples', 'median_delay_frames', 'clean_rollout_fpr'
     ])
     writer.writeheader()
@@ -756,21 +758,29 @@ with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
             'signal_mode': mode, 'detector_family': 'consecutive',
             'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
             'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3,
-            'event_n': 1, 'event_recall_at_3': 1.0,
+            'event_n': 1,
+            'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
+            'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
+            'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
             'median_delay_samples': 2, 'median_delay_frames': 4,
             'clean_rollout_fpr': 0.0,
         })
 with (args.output_dir / 'sweep_summary.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=[
         'signal_mode', 'config_id', 'detector_family', 'clean_rollout_fpr',
-        'event_recall_at_3', 'median_delay_samples'
+        'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+        'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+        'median_delay_samples'
     ])
     writer.writeheader()
     for mode in modes:
         writer.writerow({
             'signal_mode': mode, 'config_id': 'cfg0001',
             'detector_family': 'consecutive', 'clean_rollout_fpr': 0.0,
-            'event_recall_at_3': 1.0, 'median_delay_samples': 2,
+            'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
+            'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
+            'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
+            'median_delay_samples': 2,
         })
 for name in (
     'event_results.csv', 'clean_rollout_results.csv',
@@ -1187,9 +1197,15 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             all(row["detector_family"] == "consecutive" for row in hop["selected_configs"])
         )
         self.assertTrue(
-            all(row["event_recall_at_3"] == 1 for row in hop["selected_configs"])
+            all(row["event_recall_at_3"] == 0.5 for row in hop["selected_configs"])
+        )
+        self.assertTrue(
+            all(row["event_recall_eventual"] == 1 for row in hop["selected_configs"])
         )
         self.assertEqual(len(hop["sweep_summary"]), 4)
+        self.assertTrue(
+            all(row["event_recall_at_20"] == 1 for row in hop["sweep_summary"])
+        )
         self.assertEqual(
             {row["signal_mode"] for row in hop["sweep_summary"]},
             {"incremental", "forward", "backward", "fused"},
