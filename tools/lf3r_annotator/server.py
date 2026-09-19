@@ -4074,6 +4074,15 @@ class RolloutGenerationService:
         return suite
 
     @staticmethod
+    def _video_view_mode(value: Any) -> str:
+        mode = str(value or "single_view").strip()
+        if mode not in {"single_view", "libero_three_view"}:
+            raise ValidationError(
+                "video_view_mode must be single_view or libero_three_view"
+            )
+        return mode
+
+    @staticmethod
     def _run_label(value: Any) -> str:
         if value is None:
             return ""
@@ -4127,6 +4136,7 @@ class RolloutGenerationService:
         allowed = {
             "task_suite", "gpu", "task_start", "task_end", "trials", "seed",
             "run_label", "log_safe_features", "render_resolution", "record_resolution",
+            "video_view_mode",
         }
         unknown = set(payload) - allowed
         if unknown:
@@ -4145,6 +4155,7 @@ class RolloutGenerationService:
         record_resolution = self._resolution(
             payload.get("record_resolution"), "record_resolution", int(config["record_resolution"])
         )
+        video_view_mode = self._video_view_mode(payload.get("video_view_mode"))
         max_task = int(config["max_task"])
         task_start = self._integer(payload.get("task_start", 0), "task_start", 0, max_task)
         task_end = self._integer(payload.get("task_end", 3), "task_end", 0, max_task)
@@ -4178,6 +4189,7 @@ class RolloutGenerationService:
         ]
         if log_safe_features:
             command.append("--log-safe-features")
+        command.extend(["--video-view-mode", video_view_mode])
         command.extend(
             [
                 "--render-resolution",
@@ -4207,6 +4219,17 @@ class RolloutGenerationService:
             "render_resolution": render_resolution,
             "policy_resolution": config["policy_resolution"],
             "record_resolution": record_resolution,
+            "video_view_mode": video_view_mode,
+            "multiview_layout": (
+                "horizontal_triptych"
+                if video_view_mode == "libero_three_view"
+                else None
+            ),
+            "multiview_cameras": (
+                ["agentview", "sideview", "robot0_eye_in_hand"]
+                if video_view_mode == "libero_three_view"
+                else None
+            ),
             "generator_script": self._relative(script),
             "output_root": self._relative(output_root),
             "run_root": self._relative(output_dir),
@@ -4752,7 +4775,16 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if not rollout:
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
-                video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
+                review_video = rollout.get("multiview_video_path")
+                if isinstance(review_video, str) and review_video:
+                    candidate = self.app.resolve_project_file(review_video, ".mp4")
+                    video = (
+                        candidate
+                        if candidate.is_file()
+                        else self.app.resolve_project_file(rollout["video_path"], ".mp4")
+                    )
+                else:
+                    video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
                 self.serve_video(video)
                 return
             if path == "/":
