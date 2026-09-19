@@ -70,6 +70,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "rolloutGenerationSuite",
             "rolloutGenerationRenderResolution",
             "rolloutGenerationRecordResolution",
+            "rolloutGenerationVideoViewMode",
             "rolloutGenerationGpu",
             "rolloutGenerationTaskStart",
             "rolloutGenerationTaskEnd",
@@ -93,7 +94,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("sessionStorage", javascript)
         for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
             self.assertIn(endpoint, frontend_javascript)
-        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "render_resolution", "record_resolution", "task_suite", "libero_spatial", "renderResolution", "recordResolution", "instruction_variants", "instructionCondition", "baselineBatchCondition", "instruction_condition", "run_source_rollout_ids", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_", "relative_value", "relative temporal displacement"]:
+        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "rolloutGenerationVideoViewMode", "render_resolution", "record_resolution", "video_view_mode", "libero_three_view", "task_suite", "libero_spatial", "renderResolution", "recordResolution", "instruction_variants", "instructionCondition", "baselineBatchCondition", "instruction_condition", "run_source_rollout_ids", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_", "relative_value", "relative temporal displacement"]:
             self.assertIn(marker, javascript)
 
         for marker in [
@@ -324,7 +325,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         help_data = json.loads(help_path.read_text(encoding="utf-8"))
         for section, keys in {
             "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
-            "rollout": ["task_suite", "gpu", "task_start", "task_end", "trials", "seed", "run_note", "log_safe_features", "render_resolution", "record_resolution"],
+            "rollout": ["task_suite", "gpu", "task_start", "task_end", "trials", "seed", "run_note", "log_safe_features", "render_resolution", "record_resolution", "video_view_mode"],
             "settings": ["font_scale", "review_font_scale", "analysis_font_scale", "control_font_scale"],
         }.items():
             for key in keys:
@@ -337,6 +338,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertEqual(help_data["rollout"]["task_suite"]["cli"], "--task-suite {libero_10,libero_spatial}")
         self.assertEqual(help_data["rollout"]["render_resolution"]["cli"], "--render-resolution N")
         self.assertEqual(help_data["rollout"]["record_resolution"]["cli"], "--record-resolution N")
+        self.assertEqual(help_data["rollout"]["video_view_mode"]["cli"], "--video-view-mode MODE")
         self.assertEqual(help_data["baseline"]["robo_eval_mode"]["default"], "fused")
         self.assertEqual(help_data["baseline"]["densereward_frame_interval"]["default"], "1")
         self.assertIn('value="fused" selected', html)
@@ -419,6 +421,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("--log-safe-features", wrapper)
         self.assertIn("--render-resolution", wrapper)
         self.assertIn("--record-resolution", wrapper)
+        self.assertIn("--video-view-mode", wrapper)
+        self.assertIn("generate_libero_multiview.py", wrapper)
         self.assertIn("output_hidden_states=", wrapper)
         self.assertIn("postprocess_run(", wrapper)
         self.assertIn('generated_outputs["hidden_states"][token][-1][0, -1, :]', helper)
@@ -428,8 +432,15 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("--log-safe-features", shell)
         self.assertIn("--render-resolution", shell)
         self.assertIn("--record-resolution", shell)
+        self.assertIn("--video-view-mode", shell)
         spatial_shell = (TOOL_ROOT / "generate_libero_spatial_native.sh").read_text(encoding="utf-8")
         self.assertIn("--log-safe-features", spatial_shell)
+        self.assertIn("--video-view-mode", spatial_shell)
+        multiview = (TOOL_ROOT / "generate_libero_multiview.py").read_text(encoding="utf-8")
+        self.assertIn('CAMERAS = ("agentview", "sideview", "robot0_eye_in_hand")', multiview)
+        self.assertIn("ACTION_FIELDS", multiview)
+        self.assertIn("horizontal_triptych", multiview)
+        self.assertIn(".multiview.mp4", multiview)
         self.assertNotIn("save_safe_features=True", readme)
         self.assertIn("official .pkl", readme)
 
