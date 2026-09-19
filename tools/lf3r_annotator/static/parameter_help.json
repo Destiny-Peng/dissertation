@@ -59,7 +59,7 @@
       "cli": "--vllm-free-memory-fraction VALUE",
       "default": "0.80",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Targets the requested fraction of currently free GPU memory. The runner reads free and total memory immediately before the persistent vLLM worker and converts it to the total-memory value expected downstream. It is not a fraction of total memory, and utilization percentage is not a gate.",
+      "description": "Targets a fraction of currently free GPU memory, not total GPU memory. Robo-Dopamine now measures free/total memory inside its persistent worker immediately before vLLM LLM() construction and reserves an additional 2048 MiB per selected GPU; ProcVLM retains its existing runner-side conversion. GPU utilization percentage is not a gate.",
       "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
       "aliases": [
         "--vllm-gpu-memory-utilization VALUE"
@@ -69,7 +69,7 @@
       "cli": "--vllm-free-memory-fraction VALUE",
       "default": "0.80",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Targets the requested fraction of currently free GPU memory. The runner converts this free-memory target to a vLLM total-memory fraction after measuring nvidia-smi free/total memory; GPU utilization is recorded only.",
+      "description": "Targets the requested fraction of currently free GPU memory. For Robo-Dopamine, the persistent worker performs the nvidia-smi measurement immediately before vLLM initialization and records the actual snapshot/resolved total-memory fraction; a 2048 MiB per-GPU reserve protects startup headroom. ProcVLM keeps the existing runner-side conversion.",
       "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
       "aliases": [
         "--vllm-gpu-memory-utilization VALUE"
