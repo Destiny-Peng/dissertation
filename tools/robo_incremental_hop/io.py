@@ -632,15 +632,28 @@ def build_base_records(
                 else None
             )
 
+            end_candidates: list[tuple[int, str]] = []
             if recovery_frame is not None and int(recovery_frame) > onset_frame:
-                episode_end_frame = int(recovery_frame)
-                episode_end_source = "recovery_frame"
-            elif terminal_frame is not None and int(terminal_frame) > onset_frame:
-                episode_end_frame = int(terminal_frame)
-                episode_end_source = "terminal_failure_frame"
-            elif next_onset is not None and next_onset > onset_frame:
-                episode_end_frame = next_onset
-                episode_end_source = "next_observable_onset"
+                end_candidates.append((int(recovery_frame), "recovery_frame"))
+            if terminal_frame is not None and int(terminal_frame) > onset_frame:
+                end_candidates.append(
+                    (int(terminal_frame), "terminal_failure_frame")
+                )
+            if next_onset is not None and next_onset > onset_frame:
+                end_candidates.append((next_onset, "next_observable_onset"))
+
+            if end_candidates:
+                episode_end_frame, episode_end_source = min(
+                    end_candidates,
+                    key=lambda item: (
+                        item[0],
+                        {
+                            "recovery_frame": 0,
+                            "terminal_failure_frame": 1,
+                            "next_observable_onset": 2,
+                        }[item[1]],
+                    ),
+                )
             else:
                 episode_end_frame = None
                 episode_end_source = "rollout_end"
