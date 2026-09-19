@@ -374,6 +374,13 @@
       "applies_to": "OpenVLA natural rollout generator (selected task suite)",
       "description": "Square replay-video width and height. This changes saved MP4 resolution only; it does not change the checkpoint policy input, which remains 224x224. Use an even value from 64 through 2048.",
       "forwarded_as": "wrapper -> --record_resolution=N to the official evaluator"
+    },
+    "video_view_mode": {
+      "cli": "--video-view-mode MODE",
+      "default": "single_view; choices: single_view, libero_three_view",
+      "applies_to": "LIBERO rollout generation",
+      "description": "Controls the review recording only. libero_three_view preserves the canonical single-view rollout and policy input, then replays the recorded actions without model inference to create an additional horizontal agent + side + wrist video.",
+      "forwarded_as": "WebUI -> generator wrapper -> post-run generate_libero_multiview.py replay"
     }
   },
   "settings": {
