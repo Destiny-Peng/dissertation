@@ -89,7 +89,7 @@ echo "TASK_SUITE=libero_spatial" | tee -a "$LOG_FILE"
 echo "TASK_RANGE start=$TASK_START end=$TASK_END trials=$TRIALS" | tee -a "$LOG_FILE"
 echo "GPU_SELECTION=user_managed gpu=$GPU_ID" | tee -a "$LOG_FILE"
 echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
-echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224"
+echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
 echo "VIDEO_VIEW_MODE=$VIDEO_VIEW_MODE" | tee -a "$LOG_FILE"
 echo "ROBOSUITE_LOG_PATH=$ROBOSUITE_LOG_FILE" | tee -a "$LOG_FILE"
 
