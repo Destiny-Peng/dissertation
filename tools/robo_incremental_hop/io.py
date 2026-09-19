@@ -589,12 +589,9 @@ def build_base_records(
                 }
             )
 
-        for event in annotation.get(
-            "failure_events", []
-        ):
-            onset = event.get(
-                "observable_onset_frame"
-            )
+        prepared_events: list[dict[str, Any]] = []
+        for event in annotation.get("failure_events", []):
+            onset = event.get("observable_onset_frame")
             if onset is None:
                 continue
             try:
@@ -604,11 +601,49 @@ def build_base_records(
 
             def optional_int(name: str) -> int | None:
                 value = event.get(name)
-                return (
-                    int(value)
-                    if value is not None
-                    else None
-                )
+                return int(value) if value is not None else None
+
+            prepared_events.append(
+                {
+                    **event,
+                    "event_index": int(event.get("event_index", 0)),
+                    "observable_onset_frame": onset_frame,
+                    "causal_onset_frame": optional_int("causal_onset_frame"),
+                    "recovery_frame": optional_int("recovery_frame"),
+                    "terminal_failure_frame": optional_int(
+                        "terminal_failure_frame"
+                    ),
+                }
+            )
+
+        prepared_events.sort(
+            key=lambda event: (
+                int(event["observable_onset_frame"]),
+                int(event["event_index"]),
+            )
+        )
+        for position, event in enumerate(prepared_events):
+            onset_frame = int(event["observable_onset_frame"])
+            recovery_frame = event.get("recovery_frame")
+            terminal_frame = event.get("terminal_failure_frame")
+            next_onset = (
+                int(prepared_events[position + 1]["observable_onset_frame"])
+                if position + 1 < len(prepared_events)
+                else None
+            )
+
+            if recovery_frame is not None and int(recovery_frame) > onset_frame:
+                episode_end_frame = int(recovery_frame)
+                episode_end_source = "recovery_frame"
+            elif terminal_frame is not None and int(terminal_frame) > onset_frame:
+                episode_end_frame = int(terminal_frame)
+                episode_end_source = "terminal_failure_frame"
+            elif next_onset is not None and next_onset > onset_frame:
+                episode_end_frame = next_onset
+                episode_end_source = "next_observable_onset"
+            else:
+                episode_end_frame = None
+                episode_end_source = "rollout_end"
 
             events.append(
                 {
@@ -617,24 +652,18 @@ def build_base_records(
                         f"{int(event.get('event_index', 0))}"
                     ),
                     "rollout_id": rollout_id,
-                    "event_index": int(
-                        event.get("event_index", 0)
-                    ),
+                    "event_index": int(event.get("event_index", 0)),
                     "failure_type": str(
                         event.get("failure_type")
                         or annotation.get("failure_type")
                         or "other"
                     ),
                     "observable_onset_frame": onset_frame,
-                    "causal_onset_frame": optional_int(
-                        "causal_onset_frame"
-                    ),
-                    "recovery_frame": optional_int(
-                        "recovery_frame"
-                    ),
-                    "terminal_failure_frame": optional_int(
-                        "terminal_failure_frame"
-                    ),
+                    "causal_onset_frame": event.get("causal_onset_frame"),
+                    "recovery_frame": recovery_frame,
+                    "terminal_failure_frame": terminal_frame,
+                    "episode_end_frame": episode_end_frame,
+                    "episode_end_source": episode_end_source,
                     "outcome": outcome,
                     "task_key": task_key,
                     "task_suite": suite,
