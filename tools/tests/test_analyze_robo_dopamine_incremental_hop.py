@@ -301,6 +301,50 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             0,
         )
 
+    def test_delay_profile_and_eventual_recall_stop_at_recovery(self) -> None:
+        frames = [0, 4, 8, 12, 16, 20, 24]
+        mask = [False, False, False, True, False, True, True]
+
+        detected = evaluate_event(
+            frames,
+            mask,
+            observable_onset_frame=9,
+            episode_end_frame=17,
+            episode_end_source="recovery_frame",
+        )
+        self.assertTrue(detected["recall_at_1"])
+        self.assertTrue(detected["recall_at_3"])
+        self.assertTrue(detected["recall_at_5"])
+        self.assertTrue(detected["recall_at_10"])
+        self.assertTrue(detected["recall_at_20"])
+        self.assertTrue(detected["eventual_recall"])
+        self.assertEqual(detected["detection_frame"], 12)
+        self.assertEqual(detected["episode_end_source"], "recovery_frame")
+
+        late_only = evaluate_event(
+            frames,
+            [False, False, False, False, False, True, True],
+            observable_onset_frame=9,
+            episode_end_frame=17,
+            episode_end_source="recovery_frame",
+        )
+        self.assertFalse(late_only["eventual_recall"])
+        self.assertFalse(late_only["recall_at_20"])
+        self.assertIsNone(late_only["detection_frame"])
+
+    def test_recall_at_20_extends_delay_profile(self) -> None:
+        frames = list(range(0, 100, 4))
+        mask = [False] * len(frames)
+        mask[18] = True
+        event = evaluate_event(
+            frames,
+            mask,
+            observable_onset_frame=4,
+        )
+        self.assertFalse(event["recall_at_10"])
+        self.assertTrue(event["recall_at_20"])
+        self.assertTrue(event["eventual_recall"])
+
     def test_early_alarm_and_hop_scale_contracts(self) -> None:
         event = evaluate_event(
             [0, 4, 8, 12, 16],
