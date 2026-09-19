@@ -235,6 +235,13 @@ def write_metadata(
         },
         "evaluation_semantics": {
             "primary_reference": "human observable_onset_frame",
+            "recall_profile_native_samples": [1, 3, 5, 10, 20],
+            "eventual_recall": (
+                "positive at least once from observable onset until the failure "
+                "episode end; recovery_frame, terminal_failure_frame, or the next "
+                "observable event onset is an exclusive boundary, otherwise the "
+                "last available rollout sample is included"
+            ),
             "sample_delay": (
                 "1-based count from the first native sample at/after onset"
             ),
