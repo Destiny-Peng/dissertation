@@ -26,7 +26,7 @@ def make_config(root: Path) -> dict[str, Path]:
 def test_libero10_goal_image_is_selected_by_task_id() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-goals-") as temporary:
         root = Path(temporary)
-        goal_root = root / "output" / "robodopamine_goal"
+        goal_root = root / "outputs" / "robodopamine_goal"
         goal_root.mkdir(parents=True)
         task0 = goal_root / "libero-10-task0.jpg"
         task9 = goal_root / "libero-10-task9.jpg"
@@ -79,7 +79,7 @@ def test_missing_libero10_task_goal_fails_loudly() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-goals-") as temporary:
         root = Path(temporary)
         config = make_config(root)
-        goal_root = root / "output" / "robodopamine_goal"
+        goal_root = root / "outputs" / "robodopamine_goal"
         goal_root.mkdir(parents=True)
 
         with mock.patch.object(

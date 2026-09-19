@@ -195,9 +195,9 @@
     },
     "goal_image": {
       "cli": "--goal-image PATH",
-      "default": "LIBERO-10: output/robodopamine_goal/libero-10-task{task_id}.jpg; other suites: examples/blank_goal.png",
+      "default": "LIBERO-10: outputs/robodopamine_goal/libero-10-task{task_id}.jpg; other suites: examples/blank_goal.png",
       "applies_to": "Robo-Dopamine",
-      "description": "Optional global override. When omitted for LIBERO-10, each rollout automatically uses output/robodopamine_goal/libero-10-task{task_id}.jpg based on its manifest task_id. Missing task-specific files are treated as an error rather than silently falling back to blank. Non-LIBERO-10 runs retain the upstream blank goal fallback.",
+      "description": "Optional global override. When omitted for LIBERO-10, each rollout automatically uses outputs/robodopamine_goal/libero-10-task{task_id}.jpg based on its manifest task_id. Missing task-specific files are treated as an error rather than silently falling back to blank. Non-LIBERO-10 runs retain the upstream blank goal fallback.",
       "forwarded_as": "per-rollout --goal-image PATH through the persistent job plan"
     },
     "densereward_frame_interval": {

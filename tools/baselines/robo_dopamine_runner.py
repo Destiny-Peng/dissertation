@@ -36,7 +36,7 @@ from robo_dopamine_multi_perspective import (
 )
 
 
-ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "output" / "robodopamine_goal"
+ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "outputs" / "robodopamine_goal"
 
 
 def resolve_goal_image(
