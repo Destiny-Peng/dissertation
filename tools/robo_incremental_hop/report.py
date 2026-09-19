@@ -69,10 +69,10 @@ def evaluate_all_configs(
                 metrics = evaluate_event(
                     signal["frames"],
                     mask,
-                    int(
-                        event[
-                            "observable_onset_frame"
-                        ]
+                    int(event["observable_onset_frame"]),
+                    episode_end_frame=event.get("episode_end_frame"),
+                    episode_end_source=str(
+                        event.get("episode_end_source") or "rollout_end"
                     ),
                 )
                 row = {
