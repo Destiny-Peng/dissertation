@@ -369,6 +369,22 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/16")
             self.assertEqual(response.read(), b"2345")
 
+    def test_video_endpoint_prefers_multiview_and_falls_back_to_canonical(self) -> None:
+        multiview = self.root / "outputs" / "sample.multiview.mp4"
+        multiview.write_bytes(b"THREEVIEW")
+        self.rollout["multiview_video_path"] = "outputs/sample.multiview.mp4"
+        self.app.manifest_path.write_text(
+            json.dumps(self.rollout) + "\n",
+            encoding="utf-8",
+        )
+
+        with self.request("/api/videos/sample-rollout") as response:
+            self.assertEqual(response.read(), b"THREEVIEW")
+
+        multiview.unlink()
+        with self.request("/api/videos/sample-rollout") as response:
+            self.assertEqual(response.read(), b"0123456789abcdef")
+
     def test_instruction_variant_selector_is_explicit_and_does_not_reuse_full_outputs(self) -> None:
         variant_root = self.root / "tools" / "lf3r_annotator" / "instruction_variants" / "libero_10_v1"
         variant_root.mkdir(parents=True)
@@ -1512,6 +1528,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             {"run_label": "../bad"},
             {"render_resolution": 63},
             {"record_resolution": 225},
+            {"video_view_mode": "four_view"},
             {"render_resolution": "not-a-number"},
             {"unexpected": True},
         ]
@@ -1531,6 +1548,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 "run_label": "web_test",
                 "render_resolution": 320,
                 "record_resolution": 192,
+                "video_view_mode": "libero_three_view",
             },
         ) as response:
             self.assertEqual(response.status, 202)
@@ -1542,6 +1560,15 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(job["log_safe_features"])
         self.assertEqual(job["render_resolution"], 320)
         self.assertEqual(job["record_resolution"], 192)
+        self.assertEqual(job["video_view_mode"], "libero_three_view")
+        self.assertEqual(job["multiview_layout"], "horizontal_triptych")
+        self.assertEqual(
+            job["multiview_cameras"],
+            ["agentview", "sideview", "robot0_eye_in_hand"],
+        )
+        self.assertIn("--video-view-mode", job["command"])
+        mode_index = job["command"].index("--video-view-mode")
+        self.assertEqual(job["command"][mode_index + 1], "libero_three_view")
         self.assertIn("--log-safe-features", job["command"])
         self.assertIn("--render-resolution", job["command"])
         self.assertIn("--record-resolution", job["command"])
@@ -1576,6 +1603,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         ) as response:
             disabled_job = json.load(response)["job"]
         self.assertFalse(disabled_job["log_safe_features"])
+        self.assertEqual(disabled_job["video_view_mode"], "single_view")
         self.assertNotIn("--log-safe-features", disabled_job["command"])
         disabled_final = self.wait_for_job("/api/rollout-jobs", disabled_job["job_id"])
         self.assertEqual(disabled_final["status"], "complete")
