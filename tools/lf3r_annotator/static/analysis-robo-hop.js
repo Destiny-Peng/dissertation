@@ -228,8 +228,13 @@
             + tenPercent.map(function (row) {
               return '<article><span>' + esc(familyLabel(row.detector_family)) + ' · ≤10% clean FPR</span>'
                 + '<strong>' + esc(percent(row.event_recall_at_3)) + '</strong>'
-                + '<small>recall@3 · median ' + esc(number(row.median_delay_samples))
-                + ' samples · observed FPR ' + esc(percent(row.clean_rollout_fpr)) + '</small></article>';
+                + '<small>R@1 ' + esc(percent(row.event_recall_at_1))
+                + ' · R@3 ' + esc(percent(row.event_recall_at_3))
+                + ' · R@5 ' + esc(percent(row.event_recall_at_5))
+                + ' · R@10 ' + esc(percent(row.event_recall_at_10))
+                + ' · R@20 ' + esc(percent(row.event_recall_at_20))
+                + ' · eventual ' + esc(percent(row.event_recall_eventual))
+                + '</small></article>';
             }).join('')
             + '</div>'
           : '';
@@ -242,7 +247,9 @@
           + headline
           + '<table class="analysis-table"><caption>Best ' + esc(mode)
           + ' configurations under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
-          + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th><th>Recall@3</th><th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
+          + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th>'
+          + '<th>R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+          + '<th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
 
         modeRows.forEach(function (row) {
           html += '<tr>'
@@ -250,7 +257,12 @@
             + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
             + '<td>' + esc(configParameters(row)) + '</td>'
             + '<td class="numeric">' + esc(row.event_n == null ? "n/a" : row.event_n) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_at_10)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_at_20)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.event_recall_eventual)) + '</td>'
             + '<td class="numeric">' + esc(number(row.median_delay_samples)) + ' samples / '
             + esc(number(row.median_delay_frames)) + ' frames</td>'
             + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
