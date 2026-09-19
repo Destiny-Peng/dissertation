@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -35,6 +36,105 @@ from robo_dopamine_multi_perspective import (
 )
 
 
+DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB = 2048
+
+
+def _visible_physical_gpu_ids() -> list[int]:
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if not parts or any(not part.isdigit() for part in parts):
+        raise ValueError(
+            "Robo-Dopamine worker requires numeric CUDA_VISIBLE_DEVICES so "
+            f"GPU memory can be measured immediately before vLLM init; got {raw!r}"
+        )
+    return [int(part) for part in parts]
+
+
+def query_worker_gpu_memory() -> list[dict[str, int]]:
+    requested = _visible_physical_gpu_ids()
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(
+            f"Unable to query GPU memory immediately before vLLM init: {error}"
+        ) from error
+
+    rows: dict[int, dict[str, int]] = {}
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) != 3 or not all(field.isdigit() for field in fields):
+            continue
+        index, total, free = (int(field) for field in fields)
+        rows[index] = {"gpu": index, "total_mib": total, "free_mib": free}
+    missing = [str(index) for index in requested if index not in rows]
+    if missing:
+        raise ValueError(
+            f"nvidia-smi did not report worker GPU indices: {missing}"
+        )
+    return [rows[index] for index in requested]
+
+
+def resolve_worker_vllm_memory_budget(
+    requested_free_fraction: float,
+    safety_buffer_mib: int,
+) -> tuple[float, dict[str, Any]]:
+    if not 0.0 < requested_free_fraction <= 1.0:
+        raise ValueError("requested_free_fraction must be in (0, 1]")
+    if safety_buffer_mib < 0:
+        raise ValueError("safety_buffer_mib must be non-negative")
+
+    snapshots = query_worker_gpu_memory()
+    per_gpu: list[dict[str, Any]] = []
+    effective_limits: list[float] = []
+    for row in snapshots:
+        total = int(row["total_mib"])
+        free = int(row["free_mib"])
+        if total <= 0 or free < 0 or free > total:
+            raise ValueError(f"Invalid GPU memory snapshot: {row}")
+        requested_target_mib = requested_free_fraction * free
+        buffered_target_mib = max(0.0, free - safety_buffer_mib)
+        target_mib = min(requested_target_mib, buffered_target_mib)
+        total_fraction = target_mib / total
+        effective_limits.append(total_fraction)
+        per_gpu.append(
+            {
+                **row,
+                "requested_target_mib": requested_target_mib,
+                "buffered_target_mib": buffered_target_mib,
+                "effective_target_mib": target_mib,
+                "effective_total_fraction": total_fraction,
+            }
+        )
+
+    effective = math.floor(min(effective_limits) * 1_000_000) / 1_000_000
+    if effective <= 0.0:
+        raise ValueError(
+            "Resolved vLLM memory fraction is non-positive after applying "
+            f"{safety_buffer_mib} MiB safety buffer"
+        )
+    budget = {
+        "scope": "free_gpu_memory",
+        "requested_free_fraction": requested_free_fraction,
+        "resolved_total_fraction": effective,
+        "resolution": "worker_immediately_before_vllm_init",
+        "resolution_stage": "bounded_llm_pre_init",
+        "safety_buffer_mib_per_gpu": safety_buffer_mib,
+        "selected_gpus": snapshots,
+        "per_gpu_limits": per_gpu,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
+    return effective, budget
+
+
 def initialize_robo_model(args: argparse.Namespace) -> Any:
     """Import the official module and construct GRMInference exactly once."""
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -58,13 +158,29 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
             os.environ["LOCAL_RANK"] = requested_local_rank
 
     # The official constructor hard-codes 0.9. Patch only its module-local LLM
-    # symbol so the runner's free-memory-derived budget remains authoritative.
+    # symbol; the normal LF3R path resolves the free-memory budget here, inside
+    # the persistent worker, immediately before the official vLLM constructor.
     official_llm = getattr(official, "LLM", None)
     if official_llm is None:
         raise RuntimeError("Robo-Dopamine examples.inference has no LLM symbol")
 
     def bounded_llm(*model_args: Any, **model_kwargs: Any) -> Any:
-        model_kwargs["gpu_memory_utilization"] = args.vllm_total_memory_fraction
+        if args.vllm_total_memory_fraction is not None:
+            resolved_fraction = float(args.vllm_total_memory_fraction)
+            resolved_budget = {
+                **dict(getattr(args, "memory_budget", {}) or {}),
+                "resolved_total_fraction": resolved_fraction,
+                "resolution": "fixed_total_fraction_override",
+                "resolution_stage": "bounded_llm_pre_init",
+                "safety_buffer_mib_per_gpu": args.vllm_memory_safety_buffer_mib,
+            }
+        else:
+            resolved_fraction, resolved_budget = resolve_worker_vllm_memory_budget(
+                float(args.vllm_free_memory_fraction),
+                int(args.vllm_memory_safety_buffer_mib),
+            )
+        args.resolved_memory_budget = resolved_budget
+        model_kwargs["gpu_memory_utilization"] = resolved_fraction
         model_kwargs["tensor_parallel_size"] = args.tp
         return official_llm(*model_args, **model_kwargs)
 
@@ -380,6 +496,9 @@ def run_persistent_jobs(
         model = initialize_model(args)
     except BaseException as error:
         init_seconds = time.perf_counter() - init_started
+        engine_memory_budget = dict(
+            getattr(args, "resolved_memory_budget", engine_memory_budget)
+        )
         fatal = {
             "error_type": type(error).__name__,
             "error": str(error),
@@ -408,6 +527,9 @@ def run_persistent_jobs(
         return FATAL_EXIT_CODE
 
     init_seconds = time.perf_counter() - init_started
+    engine_memory_budget = dict(
+        getattr(args, "resolved_memory_budget", engine_memory_budget)
+    )
     append_jsonl(
         progress_path,
         {
@@ -580,6 +702,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--vllm-total-memory-fraction", type=float, default=None)
     parser.add_argument("--vllm-free-memory-fraction", type=float, default=None)
+    parser.add_argument(
+        "--vllm-memory-safety-buffer-mib",
+        type=int,
+        default=DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB,
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--memory-budget-json", required=True)
     parser.add_argument("--render-video", action="store_true")
@@ -596,14 +723,27 @@ def parse_args() -> argparse.Namespace:
             parser.error("--eval-modes must not contain duplicates")
         if len(args.eval_modes) > 1 and set(args.eval_modes) != set(PERSPECTIVE_MODES):
             parser.error("multi-perspective mode requires incremental, forward, and backward")
-    if args.dry_run:
-        if args.vllm_free_memory_fraction is not None and not 0.0 < args.vllm_free_memory_fraction <= 1.0:
-            parser.error("--vllm-free-memory-fraction must be in (0, 1]")
-    else:
-        if args.vllm_total_memory_fraction is None:
-            parser.error("--vllm-total-memory-fraction is required unless --dry-run is used")
-        if not 0.0 < args.vllm_total_memory_fraction <= 1.0:
-            parser.error("--vllm-total-memory-fraction must be in (0, 1]")
+    if args.vllm_memory_safety_buffer_mib < 0:
+        parser.error("--vllm-memory-safety-buffer-mib must be non-negative")
+    if (
+        args.vllm_free_memory_fraction is not None
+        and not 0.0 < args.vllm_free_memory_fraction <= 1.0
+    ):
+        parser.error("--vllm-free-memory-fraction must be in (0, 1]")
+    if (
+        args.vllm_total_memory_fraction is not None
+        and not 0.0 < args.vllm_total_memory_fraction <= 1.0
+    ):
+        parser.error("--vllm-total-memory-fraction must be in (0, 1]")
+    if (
+        not args.dry_run
+        and args.vllm_total_memory_fraction is None
+        and args.vllm_free_memory_fraction is None
+    ):
+        parser.error(
+            "--vllm-free-memory-fraction is required unless a legacy "
+            "--vllm-total-memory-fraction override is supplied"
+        )
     try:
         args.memory_budget = json.loads(args.memory_budget_json)
     except json.JSONDecodeError as error:
@@ -631,6 +771,8 @@ def main() -> int:
                     "jobs_file": str(args.jobs_file),
                     "jobs": len(jobs),
                     "requested_free_memory_fraction": args.vllm_free_memory_fraction,
+                    "memory_safety_buffer_mib": args.vllm_memory_safety_buffer_mib,
+                    "memory_resolution": "worker_immediately_before_vllm_init",
                     "tensor_parallel_size": args.tp,
                 },
                 ensure_ascii=False,

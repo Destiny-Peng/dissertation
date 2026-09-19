@@ -105,7 +105,8 @@ def main() -> None:
                 assert commands[0]["execution_scope"] == "persistent_robo_dopamine_worker"
                 assert metadata["vllm_memory_scope"] == "free_gpu_memory"
                 assert metadata["vllm_requested_free_fraction"] == 0.8
-                assert commands[0]["vllm_memory_budget"]["resolution"] == "deferred_until_execution"
+                assert commands[0]["vllm_memory_budget"]["resolution"] == "worker_immediately_before_vllm_init"
+                assert argv[argv.index("--vllm-memory-safety-buffer-mib") + 1] == "2048"
 
         if args.execute_safe_smoke:
             output = temp / "safe-smoke"
