@@ -83,7 +83,7 @@ def main() -> None:
                 assert commands[0]["execution_scope"] == "persistent_procvlm_worker"
                 assert metadata["vllm_memory_scope"] == "free_gpu_memory"
                 assert metadata["vllm_requested_free_fraction"] == 0.8
-                assert commands[0]["vllm_memory_budget"]["resolution"] == "deferred_until_execution"
+                assert commands[0]["vllm_memory_budget"]["resolution"] == "worker_immediately_before_vllm_init"
             elif baseline == "rynnvalue":
                 assert Path(argv[1]).name == "rynnvalue_worker.py"
                 assert argv[argv.index("--num-frames") + 1] == "16"
