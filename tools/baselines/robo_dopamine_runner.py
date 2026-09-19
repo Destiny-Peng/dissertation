@@ -23,7 +23,6 @@ from run_lf3r_baseline import (
     make_execution_environment,
     resolve_record_path,
     selected_gpu_ids,
-    resolve_vllm_memory_budget,
     run_streamed,
     timestamp,
     validate_static,
@@ -145,7 +144,6 @@ def build_worker_command(
     progress_path: Path,
     state_path: Path,
     memory_budget: dict[str, Any],
-    vllm_total_memory_fraction: float | None,
     *,
     resume: bool,
 ) -> list[str]:
@@ -171,17 +169,14 @@ def build_worker_command(
         command.extend(["--eval-modes", *requested_modes])
     elif args.robo_eval_mode == FUSED_EVAL_MODE:
         command.extend(["--eval-modes", *PERSPECTIVE_MODES])
-    if vllm_total_memory_fraction is None:
-        command.extend([
-            "--dry-run",
-            "--vllm-free-memory-fraction",
-            str(args.vllm_free_memory_fraction),
-        ])
-    else:
-        command.extend([
-            "--vllm-total-memory-fraction",
-            str(vllm_total_memory_fraction),
-        ])
+    command.extend([
+        "--vllm-free-memory-fraction",
+        str(args.vllm_free_memory_fraction),
+        "--vllm-memory-safety-buffer-mib",
+        "2048",
+    ])
+    if args.dry_run:
+        command.append("--dry-run")
     if args.render_video:
         command.append("--render-video")
     if resume:
@@ -350,25 +345,18 @@ def run_persistent(
                 worker_return_code=0,
             )
 
-    if args.dry_run:
-        memory_budget = {
-            "scope": "free_gpu_memory",
-            "requested_free_fraction": args.vllm_free_memory_fraction,
-            "resolved_total_fraction": None,
-            "resolution": "deferred_until_execution",
-        }
-        vllm_total_memory_fraction = None
-    else:
-        try:
-            vllm_total_memory_fraction, memory_budget = resolve_vllm_memory_budget(
-                args.gpu, args.vllm_free_memory_fraction
-            )
-        except ValueError as error:
-            metadata.update(status="memory_check_failed", error=str(error), completed_at=iso_now())
-            atomic_json(metadata_path, metadata)
-            log_line(log_path, f"MEMORY_CHECK_FAILED {error}")
-            return 2
-        log_line(log_path, "VLLM_MEMORY " + json.dumps(memory_budget, ensure_ascii=False))
+    memory_budget = {
+        "scope": "free_gpu_memory",
+        "requested_free_fraction": args.vllm_free_memory_fraction,
+        "resolved_total_fraction": None,
+        "resolution": "worker_immediately_before_vllm_init",
+        "safety_buffer_mib_per_gpu": 2048,
+        "gpu_selection": args.gpu,
+    }
+    log_line(
+        log_path,
+        "VLLM_MEMORY_DEFERRED " + json.dumps(memory_budget, ensure_ascii=False),
+    )
 
     command = build_worker_command(
         args,
@@ -379,7 +367,6 @@ def run_persistent(
         progress_path,
         state_path,
         memory_budget,
-        vllm_total_memory_fraction,
         resume=resume,
     )
     existing_jobs = job_statuses(jobs_path)
