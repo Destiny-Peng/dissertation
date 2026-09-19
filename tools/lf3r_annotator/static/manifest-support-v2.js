@@ -127,6 +127,7 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
+        + (record.multiview_video_path ? badge("3-view", "natural") : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
@@ -174,7 +175,8 @@
         originClass
       )
         + badge(record.analysis_partition, originClass)
-        + badge(effectiveOutcome(record), effectiveOutcome(record));
+        + badge(effectiveOutcome(record), effectiveOutcome(record))
+        + (record.multiview_video_path ? badge("3-view", "natural") : "");
     };
     window.selectRollout = wrappedSelectRollout;
     try { selectRollout = wrappedSelectRollout; } catch (_) {}
@@ -304,7 +306,8 @@
     if (transcodeJobId) return;
     var record = selectedRecord();
     if (!record || !record.video_path) return;
-    var backup = transcodeBackupName(record.video_path);
+    var playbackPath = record.multiview_video_path || record.video_path;
+    var backup = transcodeBackupName(playbackPath);
     var confirmed = window.confirm(
       "Convert this selected video to browser-compatible H.264?\n\n"
       + "The current file will be renamed to:\n" + backup + "\n\n"
@@ -327,7 +330,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "transcode_video",
-          options: { video_path: record.video_path }
+          options: { video_path: playbackPath }
         })
       });
       var payload = await response.json();
