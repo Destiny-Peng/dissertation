@@ -134,6 +134,28 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     first_timestep, last_timestep = csv_timesteps(csv_path)
     dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
+    multiview_video = video.with_name(video.stem + ".multiview.mp4")
+    multiview_metadata_path = video.with_name(video.stem + ".multiview.json")
+    multiview_metadata: dict[str, Any] = {}
+    if multiview_metadata_path.is_file():
+        try:
+            value = json.loads(multiview_metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"Invalid multiview metadata: {multiview_metadata_path}") from error
+        if isinstance(value, dict):
+            multiview_metadata = value
+    if multiview_video.is_file():
+        multiview_frames, multiview_fps, _ = probe_video(multiview_video)
+        if multiview_frames != frames:
+            raise RuntimeError(
+                f"Multiview frame count mismatch for {video}: "
+                f"single={frames}, multiview={multiview_frames}"
+            )
+        if abs(multiview_fps - fps) > 1e-3:
+            raise RuntimeError(
+                f"Multiview FPS mismatch for {video}: single={fps}, multiview={multiview_fps}"
+            )
+
     record = {
         "schema_version": 1,
         "id": stable_id(str(relative), suite, task, episode, source_kind),
@@ -146,6 +168,26 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         "analysis_partition": partition,
         "dataset_role": dataset_role,
         "video_path": str(relative),
+        "multiview_video_path": (
+            str(multiview_video.resolve().relative_to(project_root.resolve()))
+            if multiview_video.is_file()
+            else None
+        ),
+        "video_view_mode": (
+            str(multiview_metadata.get("video_view_mode") or "libero_three_view")
+            if multiview_video.is_file()
+            else "single_view"
+        ),
+        "multiview_layout": (
+            multiview_metadata.get("multiview_layout")
+            if multiview_video.is_file()
+            else None
+        ),
+        "multiview_cameras": (
+            multiview_metadata.get("multiview_cameras")
+            if multiview_video.is_file()
+            else None
+        ),
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
         "total_frames": frames,
         "fps": round(fps, 6),
