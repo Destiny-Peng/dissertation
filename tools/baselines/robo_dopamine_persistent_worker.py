@@ -158,7 +158,8 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
             os.environ["LOCAL_RANK"] = requested_local_rank
 
     # The official constructor hard-codes 0.9. Patch only its module-local LLM
-    # symbol so the runner's free-memory-derived budget remains authoritative.
+    # symbol; the normal LF3R path resolves the free-memory budget here, inside
+    # the persistent worker, immediately before the official vLLM constructor.
     official_llm = getattr(official, "LLM", None)
     if official_llm is None:
         raise RuntimeError("Robo-Dopamine examples.inference has no LLM symbol")
