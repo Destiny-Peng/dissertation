@@ -224,9 +224,19 @@ def finalize_run(
             "initialization_seconds"
         )
         metadata["robo_dopamine_engine_status"] = "initialized"
+        if latest.get("memory_budget"):
+            metadata["robo_dopamine_engine_memory_budget"] = latest["memory_budget"]
+            history = list(metadata.get("robo_dopamine_memory_budgets", []))
+            if not history or history[-1] != latest["memory_budget"]:
+                history.append(latest["memory_budget"])
+            metadata["robo_dopamine_memory_budgets"] = history
     if fatal_events:
         metadata["robo_dopamine_engine_status"] = "fatal_engine_failure"
         metadata["robo_dopamine_fatal_error"] = fatal_events[-1]
+        if fatal_events[-1].get("memory_budget"):
+            metadata["robo_dopamine_engine_memory_budget"] = fatal_events[-1][
+                "memory_budget"
+            ]
     metadata.update(counts)
     metadata["pending_jobs"] = total_jobs - counts["completed_jobs"] - counts["failed_jobs"]
     metadata["robo_dopamine_inference_seconds"] = {
