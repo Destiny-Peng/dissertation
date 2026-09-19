@@ -16,7 +16,7 @@ REGRESSION_MS = (2, 3, 4, 5, 6, 8)
 REGRESSION_THRESHOLDS = (0.05, 0.10, 0.20, 0.30, 0.50, 0.75, 1.00)
 STAGNATION_DELTAS = (0.01, 0.02, 0.05, 0.10)
 CLEAN_FPR_CONSTRAINTS = (0.05, 0.10, 0.20)
-RECALL_SAMPLE_WINDOWS = (1, 2, 3, 5, 10)
+RECALL_SAMPLE_WINDOWS = (1, 3, 5, 10, 20)
 PRE_ONSET_LOOKBACK_SAMPLES = 10
 
 CONFIG_FIELDS = (
@@ -244,13 +244,31 @@ def evaluate_event(
     mask: Sequence[bool],
     observable_onset_frame: int,
     *,
+    episode_end_frame: int | None = None,
+    episode_end_source: str | None = None,
     lookback_samples: int = PRE_ONSET_LOOKBACK_SAMPLES,
 ) -> dict[str, Any]:
-    """Evaluate one human event without converting early alarms to zero delay."""
+    """Evaluate one human failure episode on the native sample grid.
+
+    The event window starts at the first native sample at/after observable onset.
+    An annotated recovery/terminal boundary or the next event onset is exclusive:
+    detections at or after that boundary do not count for this episode. If no
+    explicit boundary exists, the last available native sample is included.
+    """
     if len(frames) != len(mask):
         raise ValueError("frames/mask length mismatch")
     onset = int(observable_onset_frame)
-    post = [index for index, frame in enumerate(frames) if frame >= onset]
+    end = int(episode_end_frame) if episode_end_frame is not None else None
+    if end is not None and end <= onset:
+        raise ValueError(
+            f"episode_end_frame must be after observable onset: onset={onset}, end={end}"
+        )
+
+    post = [
+        index
+        for index, frame in enumerate(frames)
+        if frame >= onset and (end is None or frame < end)
+    ]
     anchor = post[0] if post else None
     detection = next((index for index in post if mask[index]), None)
 
@@ -260,8 +278,12 @@ def evaluate_event(
     lookback_positive = sum(bool(mask[index]) for index in lookback)
 
     result: dict[str, Any] = {
+        "episode_end_frame": end,
+        "episode_end_source": episode_end_source or ("rollout_end" if end is None else "explicit"),
+        "episode_end_exclusive": end is not None,
         "onset_anchor_frame": frames[anchor] if anchor is not None else None,
         "eligible_post_onset_samples": len(post),
+        "eventual_recall": detection is not None,
         "detected": detection is not None,
         "detection_frame": frames[detection] if detection is not None else None,
         "delay_samples": None,
@@ -287,7 +309,6 @@ def evaluate_event(
             delay is not None and delay <= window
         )
     return result
-
 
 def describe(values: Iterable[float | int | None]) -> dict[str, float | int | None]:
     data = sorted(
@@ -338,6 +359,11 @@ def aggregate_event_metrics(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]
         "event_n": n,
         "detected_event_n": len(detected),
         "detected_event_fraction": len(detected) / n if n else None,
+        "event_recall_eventual": (
+            sum(bool(row.get("eventual_recall")) for row in rows) / n
+            if n
+            else None
+        ),
         "median_delay_samples": sample_delay["median"],
         "mean_delay_samples": sample_delay["mean"],
         "p90_delay_samples": sample_delay["p90"],
