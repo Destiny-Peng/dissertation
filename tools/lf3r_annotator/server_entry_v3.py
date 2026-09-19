@@ -389,7 +389,16 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
         if not rollout:
             self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
             return
-        video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
+        review_video = rollout.get("multiview_video_path")
+        if isinstance(review_video, str) and review_video:
+            candidate = self.app.resolve_project_file(review_video, ".mp4")
+            video = (
+                candidate
+                if candidate.is_file()
+                else self.app.resolve_project_file(rollout["video_path"], ".mp4")
+            )
+        else:
+            video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
         self.serve_video(video)
         return
 
