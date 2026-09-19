@@ -13,6 +13,15 @@ The same detector families, parameter grids, onset reference, clean false-positi
 metrics, delay metrics, recovery diagnostics, and optional task-level CV are run
 separately for each signal mode.
 
+Event evaluation reports the complete native-sample delay profile
+`Recall@1/@3/@5/@10/@20` plus `eventual recall`. Eventual recall means at
+least one detector-positive native sample from `observable_onset_frame` until
+the end of that failure episode. The earliest available boundary among
+`recovery_frame`, `terminal_failure_frame`, and the next annotated observable
+onset is treated as exclusive; if none exists, the final native sample in the
+rollout is included. Detector grids and the existing best-config selection rule
+remain unchanged; this is an evaluation expansion, not another threshold search.
+
 For direct comparison, only rollouts with all four saved signals are included.
 Native Robo-Dopamine sample frame indices are preserved and no interpolation is
 performed.
