@@ -1971,6 +1971,7 @@ function updateRolloutGenerationSelection() {
   var trials = Number(byId("rolloutGenerationTrials").value);
   var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
   var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
+  var videoViewMode = byId("rolloutGenerationVideoViewMode").value;
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var note = byId("rolloutGenerationSelection");
   var button = byId("rolloutGenerationRun");
@@ -1982,11 +1983,16 @@ function updateRolloutGenerationSelection() {
       : "Generate natural LIBERO-10 rollouts";
   }
   if (description) {
-    description.textContent = isSpatial
-      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory."
-      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224. GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory.";
+    var viewText = videoViewMode === "libero_three_view"
+      ? " A three-view review video (agent + side + wrist) is generated afterward by replaying the recorded actions; canonical policy video and baseline input remain unchanged."
+      : " Only the canonical single-view replay video is generated.";
+    description.textContent = (isSpatial
+      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
+      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224.")
+      + viewText + " GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory.";
   }
   var valid = (suite === "libero_10" || suite === "libero_spatial")
+    && (videoViewMode === "single_view" || videoViewMode === "libero_three_view")
     && Number.isInteger(start) && Number.isInteger(end) && Number.isInteger(trials)
     && Number.isInteger(renderResolution) && Number.isInteger(recordResolution)
     && renderResolution >= 64 && renderResolution <= 2048 && renderResolution % 2 === 0
@@ -2000,7 +2006,9 @@ function updateRolloutGenerationSelection() {
   var expected = (end - start + 1) * trials;
   note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
     + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
-    + ", record " + recordResolution + "x" + recordResolution + "; run note is generated automatically. "
+    + ", record " + recordResolution + "x" + recordResolution
+    + ", review " + (videoViewMode === "libero_three_view" ? "3-view" : "single-view")
+    + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
 }
@@ -2021,7 +2029,8 @@ function rolloutGenerationJobMessage(job) {
   var progress = (job.completed_rollouts || 0) + "/" + (job.expected_rollouts || 0);
   var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
   var resolution = "render " + (job.render_resolution || "?") + "x" + (job.render_resolution || "?")
-    + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?");
+    + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?")
+    + ", review " + (job.video_view_mode === "libero_three_view" ? "3-view" : "single-view");
   if (job.status === "queued") return suite + " generation queued (" + resolution + ") - " + progress + " rollout(s) complete...";
   if (job.status === "running") return "Generating " + suite + " rollouts (" + resolution + ") - " + progress + " complete...";
   if (job.status === "complete") {
@@ -2052,6 +2061,7 @@ async function startRolloutGeneration(event) {
   var seed = Number(byId("rolloutGenerationSeed").value);
   var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
   var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
+  var videoViewMode = byId("rolloutGenerationVideoViewMode").value;
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var label = byId("rolloutGenerationLabel").value.trim();
   if (!/^\d+$/.test(gpu)) {
@@ -2089,8 +2099,16 @@ async function startRolloutGeneration(event) {
     byId("rolloutGenerationLabel").focus();
     return;
   }
+  if (videoViewMode !== "single_view" && videoViewMode !== "libero_three_view") {
+    setRolloutGenerationStatus("Choose a supported review-video mode.", "error");
+    byId("rolloutGenerationVideoViewMode").focus();
+    return;
+  }
   var expected = (taskEnd - taskStart + 1) * trials;
-  if (!window.confirm("Generate " + expected + " OpenVLA " + suiteLabel + " rollout(s)? This launches GPU inference.")) return;
+  var multiviewNote = videoViewMode === "libero_three_view"
+    ? " A no-model LIBERO replay will then record agent + side + wrist views."
+    : "";
+  if (!window.confirm("Generate " + expected + " OpenVLA " + suiteLabel + " rollout(s)? This launches GPU inference." + multiviewNote)) return;
   var button = byId("rolloutGenerationRun");
   state.rolloutGenerationSubmitting = true;
   updateRolloutGenerationSelection();
@@ -2110,7 +2128,8 @@ async function startRolloutGeneration(event) {
         run_label: label,
         log_safe_features: saveLatent,
         render_resolution: renderResolution,
-        record_resolution: recordResolution
+        record_resolution: recordResolution,
+        video_view_mode: videoViewMode
       })
     });
     var payload = await response.json();
@@ -2322,6 +2341,7 @@ function installEvents() {
   ["rolloutGenerationTaskStart", "rolloutGenerationTaskEnd", "rolloutGenerationTrials", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution"].forEach(function (id) {
     byId(id).addEventListener("input", updateRolloutGenerationSelection);
   });
+  byId("rolloutGenerationVideoViewMode").addEventListener("change", updateRolloutGenerationSelection);
   byId("rolloutGenerationLogSafeFeatures").addEventListener("change", updateRolloutGenerationSelection);
   byId("rolloutGenerationSuite").addEventListener("change", function () {
     var isSpatial = byId("rolloutGenerationSuite").value === "libero_spatial";
