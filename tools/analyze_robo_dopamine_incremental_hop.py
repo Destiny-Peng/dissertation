@@ -492,7 +492,7 @@ def analyse(
         plot_dir = output_dir / "plots" / ANALYSIS_SIGNAL_MODE
         plot_tradeoff(
             summary_rows,
-            plot_dir / "recall_at_3_vs_clean_fpr.png",
+            plot_dir / "grasp_eventual_vs_clean_fpr.png",
         )
         plot_delay_distributions(
             best_rows,
