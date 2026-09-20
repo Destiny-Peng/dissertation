@@ -474,11 +474,21 @@ def build_pairwise_overlap_rows(
             config_b = str(detector_b["config_id"])
             event_map_a = events_by_config.get((signal_mode, config_a), {})
             event_map_b = events_by_config.get((signal_mode, config_b), {})
-            event_ids = sorted(set(event_map_a).intersection(event_map_b))
+            if set(event_map_a) != set(event_map_b):
+                raise ValueError(
+                    "Pairwise detector comparison requires identical event sets: "
+                    f"{signal_mode} {family_a} vs {family_b}"
+                )
+            event_ids = sorted(event_map_a)
 
             clean_map_a = clean_by_config.get((signal_mode, config_a), {})
             clean_map_b = clean_by_config.get((signal_mode, config_b), {})
-            clean_ids = sorted(set(clean_map_a).intersection(clean_map_b))
+            if set(clean_map_a) != set(clean_map_b):
+                raise ValueError(
+                    "Pairwise detector comparison requires identical clean-rollout sets: "
+                    f"{signal_mode} {family_a} vs {family_b}"
+                )
+            clean_ids = sorted(clean_map_a)
             clean_fp_a = {
                 rollout_id
                 for rollout_id in clean_ids
