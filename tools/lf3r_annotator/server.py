@@ -3343,8 +3343,10 @@ class BaselineService:
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
                 incremental_ids: set[str] = set()
+                fused_ids: set[str] = set()
                 if method == "robo_dopamine":
                     incremental_ids = signal_ids_by_mode["incremental"]
+                    fused_ids = signal_ids_by_mode["fused"]
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
@@ -3383,6 +3385,33 @@ class BaselineService:
                     "incremental_compatible": (
                         bool(selected_ids)
                         and selected_ids.issubset(incremental_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "fused_rollout_count": (
+                        len(fused_ids) if method == "robo_dopamine" else None
+                    ),
+                    "fused_scope_rollout_count": (
+                        len(selected_ids.intersection(fused_ids))
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "fused_missing_rollouts": (
+                        len(selected_ids - fused_ids)
+                        if method == "robo_dopamine"
+                        else None
+                    ),
+                    "fused_scope_coverage": (
+                        (
+                            len(selected_ids.intersection(fused_ids))
+                            / len(selected_ids)
+                        )
+                        if method == "robo_dopamine" and selected_ids
+                        else None
+                    ),
+                    "fused_compatible": (
+                        bool(selected_ids)
+                        and selected_ids.issubset(fused_ids)
                         if method == "robo_dopamine"
                         else None
                     ),
