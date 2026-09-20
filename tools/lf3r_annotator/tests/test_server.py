@@ -837,7 +837,10 @@ with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as
     })
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
-    'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv'
+    'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
+    'grasp_event_features.csv', 'grasp_detected_vs_missed.csv',
+    'grasp_matched_control.csv', 'grasp_matched_control_summary.csv',
+    'grasp_failure_categories.csv', 'grasp_failure_category_summary.csv'
 ):
     (args.output_dir / name).write_text('signal_mode,config_id\\n')
 print('fake fused-hop failure analysis complete')
@@ -1242,6 +1245,12 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(
             any(
                 item["name"] == "ensemble_selected.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "grasp_event_features.csv"
                 for item in hop["artifacts"]
             )
         )
