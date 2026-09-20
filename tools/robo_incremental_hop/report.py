@@ -278,27 +278,28 @@ def select_best_configs(
         str, list[Mapping[str, Any]]
     ] = defaultdict(list)
     for row in summary_rows:
-        by_family[
-            str(row["detector_family"])
-        ].append(row)
+        by_family[str(row["detector_family"])].append(row)
 
     result: list[dict[str, Any]] = []
     for family in sorted(by_family):
+        family_rows = by_family[family]
+        grasp_mode = any(
+            row.get("grasp_recall_eventual") is not None
+            for row in family_rows
+        )
         for constraint in CLEAN_FPR_CONSTRAINTS:
             eligible = [
                 row
-                for row in by_family[family]
+                for row in family_rows
                 if (
-                    row.get("clean_rollout_fpr")
-                    is not None
-                    and float(
-                        row["clean_rollout_fpr"]
-                    )
+                    row.get("clean_rollout_fpr") is not None
+                    and float(row["clean_rollout_fpr"])
                     <= constraint + 1e-12
-                    and row.get(
-                        "event_recall_at_3"
+                    and (
+                        row.get("grasp_recall_eventual") is not None
+                        if grasp_mode
+                        else row.get("event_recall_at_3") is not None
                     )
-                    is not None
                 )
             ]
             if not eligible:
@@ -306,41 +307,44 @@ def select_best_configs(
                     {
                         "detector_family": family,
                         "clean_fpr_constraint": constraint,
-                        "selection_status": (
-                            "no_eligible_config"
+                        "selection_status": "no_eligible_config",
+                        "selection_target": (
+                            "grasp_recall_eventual"
+                            if grasp_mode
+                            else "event_recall_at_3"
                         ),
                     }
                 )
                 continue
 
-            def rank(
-                row: Mapping[str, Any],
-            ) -> tuple[
-                float, float, float, str
-            ]:
-                recall = float(
-                    row.get(
-                        "event_recall_at_3"
+            def rank(row: Mapping[str, Any]) -> tuple[Any, ...]:
+                fpr = float(row.get("clean_rollout_fpr") or 0.0)
+                if grasp_mode:
+                    delay = row.get("grasp_median_delay_samples")
+                    return (
+                        -float(row.get("grasp_recall_eventual") or 0.0),
+                        -float(row.get("grasp_recall_at_10") or 0.0),
+                        -float(
+                            row.get("overall_failed_rollout_coverage")
+                            or 0.0
+                        ),
+                        (
+                            float(delay)
+                            if delay is not None
+                            else math.inf
+                        ),
+                        fpr,
+                        str(row["config_id"]),
                     )
-                    or 0.0
-                )
-                delay = row.get(
-                    "median_delay_samples"
-                )
-                delay_key = (
-                    float(delay)
-                    if delay is not None
-                    else math.inf
-                )
-                fpr = float(
-                    row.get(
-                        "clean_rollout_fpr"
-                    )
-                    or 0.0
-                )
+
+                delay = row.get("median_delay_samples")
                 return (
-                    -recall,
-                    delay_key,
+                    -float(row.get("event_recall_at_3") or 0.0),
+                    (
+                        float(delay)
+                        if delay is not None
+                        else math.inf
+                    ),
                     fpr,
                     str(row["config_id"]),
                 )
@@ -350,6 +354,11 @@ def select_best_configs(
                 {
                     "clean_fpr_constraint": constraint,
                     "selection_status": "selected",
+                    "selection_target": (
+                        "grasp_recall_eventual"
+                        if grasp_mode
+                        else "event_recall_at_3"
+                    ),
                     **dict(best),
                 }
             )
