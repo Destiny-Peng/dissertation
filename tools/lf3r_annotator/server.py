@@ -1099,6 +1099,7 @@ class AnalysisService:
             "oracle_global_best": oracle_global_best,
             "oracle_summary": oracle_summary,
             "oracle_analysis": metadata.get("oracle_analysis") or {},
+            "search_cache": metadata.get("search_cache") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
             "grasp_failure_diagnosis": metadata.get(
                 "grasp_failure_diagnosis"
