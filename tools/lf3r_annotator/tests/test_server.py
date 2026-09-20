@@ -796,6 +796,7 @@ ensemble_fields = [
     'clean_fpr_constraint', 'selection_target', 'selection_status',
     'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
     'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'grasp_recall_at_10', 'grasp_recall_eventual',
     'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
     'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
     'overall_failed_rollout_coverage', 'clean_rollout_fpr',
