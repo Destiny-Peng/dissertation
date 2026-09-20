@@ -416,6 +416,12 @@ def build_oracle_analysis(
                                 if ids
                                 else None
                             ),
+                            "rmax_recall": (
+                                best_bits.bit_count() / len(ids)
+                                if ids
+                                else None
+                            ),
+                            "clean_fpr_constraint_applied": False,
                             **config_row(best_config),
                             **profile,
                             "clean_rollout_fpr_ignored": (
@@ -508,6 +514,12 @@ def build_oracle_analysis(
                             if ids
                             else None
                         ),
+                        "rmax_recall": (
+                            chosen_bits.bit_count() / len(ids)
+                            if ids
+                            else None
+                        ),
+                        "clean_fpr_constraint_applied": False,
                         "stagnation_config_id": a_id,
                         "stagnation_family": chosen_a["detector_family"],
                         "stagnation_parameters_json": chosen_a["parameters_json"],
@@ -719,6 +731,14 @@ def build_oracle_analysis(
             for window in RECALL_SAMPLE_WINDOWS:
                 summary[f"oracle_recall_at_{window}"] = (
                     sum(bool(row.get(f"recall_at_{window}")) for row in rows)
+                    / len(rows)
+                )
+                summary[f"oracle_offset_le_{window}_fraction"] = (
+                    sum(
+                        row.get("best_start_offset_samples") is not None
+                        and float(row["best_start_offset_samples"]) <= window
+                        for row in rows
+                    )
                     / len(rows)
                 )
             summary_rows.append(summary)
