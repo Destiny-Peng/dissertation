@@ -471,6 +471,7 @@ def build_base_records(
     dict[str, dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
+    list[dict[str, Any]],
     dict[str, Any],
 ]:
     completed_ids, jobs_sources = completed_rollout_ids(
@@ -497,6 +498,7 @@ def build_base_records(
 
     signals: dict[str, dict[str, Any]] = {}
     events: list[dict[str, Any]] = []
+    no_event_failures: list[dict[str, Any]] = []
     clean_rollouts: list[dict[str, Any]] = []
     exclusions: list[dict[str, str]] = []
 
@@ -589,8 +591,21 @@ def build_base_records(
                 }
             )
 
+        annotated_events = list(annotation.get("failure_events") or [])
+        if outcome == "terminal_failure" and not annotated_events:
+            no_event_failures.append(
+                {
+                    "rollout_id": rollout_id,
+                    "task_key": task_key,
+                    "task_suite": suite,
+                    "task_id": task_id,
+                    "task_description": description,
+                    "outcome": outcome,
+                }
+            )
+
         prepared_events: list[dict[str, Any]] = []
-        for event in annotation.get("failure_events", []):
+        for event in annotated_events:
             onset = event.get("observable_onset_frame")
             if onset is None:
                 continue
@@ -707,6 +722,7 @@ def build_base_records(
         ),
         "usable_rollout_n": len(signals),
         "event_n": len(events),
+        "no_event_failure_rollout_n": len(no_event_failures),
         "clean_rollout_n": len(clean_rollouts),
         "excluded_rollouts": exclusions,
         "jobs_sources": jobs_sources,
@@ -715,4 +731,4 @@ def build_base_records(
         "robo_source_commits": dict(source_commits),
         "checkpoints": dict(checkpoints),
     }
-    return signals, events, clean_rollouts, provenance
+    return signals, events, no_event_failures, clean_rollouts, provenance
