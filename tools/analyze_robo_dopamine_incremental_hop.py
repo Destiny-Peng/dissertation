@@ -97,6 +97,7 @@ from robo_incremental_hop.io import (
 )
 from robo_incremental_hop.report import (
     build_pairwise_ensemble_rows,
+    select_pairwise_ensemble_rows,
     build_recovery_rows,
     choose_representative_rollouts,
     evaluate_all_configs,
@@ -531,6 +532,7 @@ def analyse(
         event_rows = list(cached_search["event_rows"])
         no_event_rows = list(cached_search["no_event_rows"])
         clean_rows = list(cached_search["clean_rows"])
+        ensemble_sweep = list(cached_search["ensemble_sweep"])
         oracle_global_best = list(cached_search["oracle_global_best"])
         oracle_event_detectability = list(
             cached_search["oracle_event_detectability"]
@@ -568,6 +570,14 @@ def analyse(
                 early_tolerance_samples=1,
             )
         )
+        ensemble_sweep, _unused_selected, _unused_failure_types = (
+            build_pairwise_ensemble_rows(
+                configs,
+                event_rows,
+                no_event_rows,
+                clean_rows,
+            )
+        )
         cache_file = write_search_cache(
             fingerprint,
             configs=configs,
@@ -577,6 +587,7 @@ def analyse(
             event_rows=event_rows,
             no_event_rows=no_event_rows,
             clean_rows=clean_rows,
+            ensemble_sweep=ensemble_sweep,
             oracle_global_best=oracle_global_best,
             oracle_event_detectability=oracle_event_detectability,
             oracle_summary=oracle_summary,
@@ -610,12 +621,10 @@ def analyse(
     tagged_breakdown = tag(breakdown_rows)
     tagged_recovery = tag(recovery_rows)
 
-    ensemble_sweep, ensemble_selected, ensemble_failure_types = (
-        build_pairwise_ensemble_rows(
-            configs,
+    ensemble_selected, ensemble_failure_types = (
+        select_pairwise_ensemble_rows(
+            ensemble_sweep,
             event_rows,
-            no_event_rows,
-            clean_rows,
         )
     )
     reference_ensemble = choose_reference_ensemble(
