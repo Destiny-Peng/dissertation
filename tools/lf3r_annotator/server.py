@@ -1076,6 +1076,9 @@ class AnalysisService:
             "ensemble_sweep": ensemble_sweep,
             "ensemble_selected": ensemble_selected,
             "ensemble_by_failure_type": ensemble_by_failure_type,
+            "grasp_failure_diagnosis": metadata.get(
+                "grasp_failure_diagnosis"
+            ) or {},
             "task_cv_available": task_cv_path.is_file(),
             "artifacts": [
                 {
