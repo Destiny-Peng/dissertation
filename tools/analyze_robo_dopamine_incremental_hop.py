@@ -85,9 +85,8 @@ from robo_incremental_hop.progress_peak import (
     evaluate_progress_peak_localization,
     summarize_progress_peak_localization,
 )
-from robo_incremental_hop.global_localization import (
-    GLOBAL_LOCALIZATION_SEMANTICS_VERSION,
-    load_or_compute_global_localization,
+from robo_incremental_hop.localization_ranking import (
+    rank_existing_sweep_localization,
 )
 from robo_incremental_hop.search_cache import (
     SEARCH_SEMANTICS_VERSION,
@@ -284,9 +283,7 @@ def write_metadata(
     oracle_summary: Sequence[Mapping[str, Any]],
     search_cache_info: Mapping[str, Any],
     progress_peak_summary: Sequence[Mapping[str, Any]],
-    global_localization_metadata: Mapping[str, Any],
-    global_localization_envelope: Sequence[Mapping[str, Any]],
-    global_localization_single_best: Sequence[Mapping[str, Any]],
+    unconstrained_localization_rows: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -348,42 +345,33 @@ def write_metadata(
             **dict(phenotype_grid),
             "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
         },
-        "global_config_localization": {
+        "unconstrained_localization_ranking": {
             "enabled": True,
             "clean_fpr_constraint": None,
-            "search_semantics_version": GLOBAL_LOCALIZATION_SEMANTICS_VERSION,
-            "config_space": dict(global_localization_metadata),
+            "source": "existing event_results.csv and ensemble_sweep.csv only",
+            "first_trigger_rule": (
+                "per config and rollout, use the earliest saved trigger already "
+                "represented by earliest_early_positive_frame or detection_frame; "
+                "OR combinations use the earlier first trigger of their two "
+                "already-searched component configs"
+            ),
             "populations": [
-                "all_annotated_failure_events",
+                "all_failure_events",
                 "first_event_per_failed_rollout",
                 "grasp_failure",
             ],
-            "capacity_view": (
-                "A fixed config may emit multiple positive episodes. Recall within "
-                "±d asks whether ANY positive-episode start is within ±d native "
-                "samples of observable onset. Eventual asks whether an episode "
-                "starts at/after onset and before the event boundary."
-            ),
-            "true_localization_view": (
-                "A fixed config must choose one GT-independent location per rollout: "
-                "the earliest positive-episode start on the full native grid. The "
-                "same location is reused for every annotated event in that rollout."
-            ),
-            "window_timestamp_semantics": (
-                "For windowed detectors the alarm timestamp is the window END, "
-                "exactly matching detector_mask output indexing."
-            ),
-            "single_config_selection": (
-                "minimum median absolute error and minimum MAE are selected among "
-                "100%-localization-output configs when available; otherwise first "
-                "maximize localization-output coverage, then minimize error."
-            ),
-            "metric_specific_upper_envelope": [
-                dict(row) for row in global_localization_envelope
+            "metrics": [
+                "within_1",
+                "within_3",
+                "within_5",
+                "within_10",
+                "median_signed_offset_samples",
+                "median_absolute_error_samples",
+                "mae_samples",
+                "trigger_coverage",
             ],
-            "single_global_best": [
-                dict(row) for row in global_localization_single_best
-            ],
+            "candidate_row_n": len(unconstrained_localization_rows),
+            "reruns_detector_search": False,
         },
         "progress_peak_localization": {
             "enabled": True,
@@ -500,9 +488,7 @@ def write_metadata(
             "oracle_summary.csv",
             "progress_peak_localization.csv",
             "progress_peak_localization_summary.csv",
-            "global_config_localization_ranking.csv",
-            "global_config_localization_best_by_tolerance.csv",
-            "global_config_localization_single_best.csv",
+            "unconstrained_localization_ranking.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
             "grasp_matched_control.csv",
@@ -701,22 +687,10 @@ def analyse(
         )
         print(f"Search cache written: {project_relative(cache_file)}")
 
-    (
-        global_localization_ranking,
-        global_localization_envelope,
-        global_localization_single_best,
-        global_localization_metadata,
-    ) = load_or_compute_global_localization(
+    unconstrained_localization_rows = rank_existing_sweep_localization(
+        event_rows=event_rows,
+        ensemble_sweep=ensemble_sweep,
         signals=signals,
-        events=events,
-        existing_phenotype_configs=configs,
-        existing_ensemble_sweep=ensemble_sweep,
-        refresh=bool(args.refresh_search_cache),
-    )
-    print(
-        "Global-config localization: "
-        f"configs={global_localization_metadata['total_config_n']}, "
-        f"cache_hit={global_localization_metadata['cache_hit']}"
     )
 
     progress_peak_rows = evaluate_progress_peak_localization(
@@ -868,16 +842,8 @@ def analyse(
         progress_peak_summary,
     )
     write_csv(
-        output_dir / "global_config_localization_ranking.csv",
-        global_localization_ranking,
-    )
-    write_csv(
-        output_dir / "global_config_localization_best_by_tolerance.csv",
-        global_localization_envelope,
-    )
-    write_csv(
-        output_dir / "global_config_localization_single_best.csv",
-        global_localization_single_best,
+        output_dir / "unconstrained_localization_ranking.csv",
+        unconstrained_localization_rows,
     )
     write_csv(
         output_dir / "grasp_event_features.csv",
@@ -933,9 +899,7 @@ def analyse(
             "refresh_requested": bool(args.refresh_search_cache),
         },
         progress_peak_summary=progress_peak_summary,
-        global_localization_metadata=global_localization_metadata,
-        global_localization_envelope=global_localization_envelope,
-        global_localization_single_best=global_localization_single_best,
+        unconstrained_localization_rows=unconstrained_localization_rows,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
