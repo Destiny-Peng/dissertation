@@ -377,6 +377,50 @@
       html += '</section>';
     }
 
+    var intervalTop = hop.interval_localization_top || [];
+    if (intervalTop.length) {
+      html += '<section class="analysis-subsection">'
+        + '<h4>Failed-rollout interval localization · [causal, observable]</h4>'
+        + '<p class="analysis-card-note">Pure post-processing of existing sweep artifacts. Each config uses its first trigger on the native fused-hop grid. Ground truth is the annotated interval [causal onset, observable onset]; predictions inside the interval have zero error. No clean-FPR filtering and no detector rerun.</p>';
+
+      ["all_eligible_failure_events", "first_eligible_event_per_failed_rollout", "grasp_failure"].forEach(function (population) {
+        var rowsForPopulation = intervalTop.filter(function (row) {
+          return String(row.population) === population;
+        }).sort(function (left, right) {
+          return Number(left.rank_mse) - Number(right.rank_mse);
+        });
+        if (!rowsForPopulation.length) return;
+        html += '<table class="analysis-table"><caption>'
+          + esc(population.replace(/_/g, " "))
+          + ' · top 10 by MSE</caption>'
+          + '<thead><tr><th>Rank</th><th>N</th><th>Family</th><th>Config</th><th>Parameters</th>'
+          + '<th>Trigger coverage</th><th>In interval</th><th>Within 1</th><th>Within 3</th><th>Within 5</th>'
+          + '<th>MSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
+          + '<th>Before / After</th></tr></thead><tbody>';
+        rowsForPopulation.forEach(function (row) {
+          html += '<tr>'
+            + '<td class="numeric"><strong>' + esc(row.rank_mse) + '</strong></td>'
+            + '<td class="numeric">' + esc(row.eligible_event_n) + '</td>'
+            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
+            + '<td><code>' + esc(row.config_id) + '</code></td>'
+            + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
+            + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
+            + '<td class="numeric"><strong>' + esc(percent(row.in_interval_rate)) + '</strong></td>'
+            + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
+            + '<td class="numeric"><strong>' + esc(number(row.mse_samples)) + '</strong></td>'
+            + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_absolute_interval_error_samples)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_signed_interval_error_samples)) + '</td>'
+            + '<td class="numeric">' + esc(row.before_interval_n) + ' / ' + esc(row.after_interval_n) + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+      });
+      html += '</section>';
+    }
+
     var progressPeak = hop.progress_peak_localization_summary || [];
     var progressPeakOverall = progressPeak.find(function (row) {
       return String(row.group) === "overall" && String(row.value) === "all";
