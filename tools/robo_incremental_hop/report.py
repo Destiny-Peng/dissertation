@@ -901,78 +901,66 @@ def build_pairwise_ensemble_rows(
                 sweep_rows.append(row)
 
     selected_rows: list[dict[str, Any]] = []
-    by_pair: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
-    for row in sweep_rows:
-        by_pair[
-            (
-                str(row["detector_a_family"]),
-                str(row["detector_b_family"]),
-            )
-        ].append(row)
-
-    for family_a, family_b in ENSEMBLE_FAMILY_PAIRS:
-        pair_rows = by_pair.get((family_a, family_b), [])
-        for constraint in CLEAN_FPR_CONSTRAINTS:
-            eligible = [
+    for constraint in CLEAN_FPR_CONSTRAINTS:
+        eligible = [
+            row
+            for row in sweep_rows
+            if row.get("clean_rollout_fpr") is not None
+            and float(row["clean_rollout_fpr"]) <= constraint + 1e-12
+        ]
+        for target in ENSEMBLE_SELECTION_TARGETS:
+            target_eligible = [
                 row
-                for row in pair_rows
-                if row.get("clean_rollout_fpr") is not None
-                and float(row["clean_rollout_fpr"]) <= constraint + 1e-12
+                for row in eligible
+                if row.get(target) is not None
             ]
-            for target in ENSEMBLE_SELECTION_TARGETS:
-                target_eligible = [
-                    row
-                    for row in eligible
-                    if row.get(target) is not None
-                ]
-                if not target_eligible:
-                    selected_rows.append(
-                        {
-                            "signal_mode": "fused",
-                            "ensemble_logic": "OR",
-                            "detector_a_family": family_a,
-                            "detector_b_family": family_b,
-                            "clean_fpr_constraint": constraint,
-                            "selection_target": target,
-                            "selection_status": "no_eligible_config",
-                        }
-                    )
-                    continue
-
-                def rank(row: Mapping[str, Any]) -> tuple[Any, ...]:
-                    secondary_target = (
-                        "grasp_recall_at_10"
-                        if target == "grasp_recall_eventual"
-                        else "grasp_recall_eventual"
-                    )
-                    delay = row.get("grasp_median_delay_samples")
-                    return (
-                        -float(row[target]),
-                        -float(row.get(secondary_target) or 0.0),
-                        -float(
-                            row.get("overall_failed_rollout_coverage")
-                            or 0.0
-                        ),
-                        (
-                            float(delay)
-                            if delay is not None
-                            else math.inf
-                        ),
-                        float(row.get("clean_rollout_fpr") or 0.0),
-                        str(row["a_config_id"]),
-                        str(row["b_config_id"]),
-                    )
-
-                best = min(target_eligible, key=rank)
+            if not target_eligible:
                 selected_rows.append(
                     {
+                        "signal_mode": "fused",
+                        "ensemble_logic": "OR",
                         "clean_fpr_constraint": constraint,
                         "selection_target": target,
-                        "selection_value": best.get(target),
-                        "selection_status": "selected",
-                        **dict(best),
+                        "selection_status": "no_eligible_config",
                     }
                 )
+                continue
+
+            def rank(row: Mapping[str, Any]) -> tuple[Any, ...]:
+                secondary_target = (
+                    "grasp_recall_at_10"
+                    if target == "grasp_recall_eventual"
+                    else "grasp_recall_eventual"
+                )
+                delay = row.get("grasp_median_delay_samples")
+                return (
+                    -float(row[target]),
+                    -float(row.get(secondary_target) or 0.0),
+                    -float(
+                        row.get("overall_failed_rollout_coverage")
+                        or 0.0
+                    ),
+                    (
+                        float(delay)
+                        if delay is not None
+                        else math.inf
+                    ),
+                    float(row.get("clean_rollout_fpr") or 0.0),
+                    int(row.get("pair_priority") or 999),
+                    str(row["a_config_id"]),
+                    str(row["b_config_id"]),
+                )
+
+            best = min(target_eligible, key=rank)
+            selected_rows.append(
+                {
+                    "clean_fpr_constraint": constraint,
+                    "selection_target": target,
+                    "selection_value": best.get(target),
+                    "selection_status": "selected",
+                    **dict(best),
+                }
+            )
 
     selected_failure_rows: list[dict[str, Any]] = []
     unique_selected: dict[
