@@ -316,6 +316,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "four_signal_scope_rollout_count",
             "sweep_summary.csv",
             "best_configs.csv",
+            "pairwise_overlap.csv",
+            "pairwise_overlap_by_failure_type.csv",
         ]:
             self.assertIn(marker, server)
         self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
@@ -332,6 +334,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "event_recall_eventual",
             "clean_rollout_fpr",
             "median_delay_samples",
+            "pairwise_overlap",
+            "tp_jaccard",
+            "or_fpr",
             "workspaceLoadAnalysis(true)",
         ]:
             self.assertIn(marker, hop_analysis)
