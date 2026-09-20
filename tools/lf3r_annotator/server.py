@@ -209,6 +209,10 @@ ROBO_HOP_REQUIRED_FILES = (
     "recovery_results.csv",
     "breakdown_summary.csv",
 )
+ROBO_HOP_COMPLEMENTARITY_FILES = (
+    "pairwise_overlap.csv",
+    "pairwise_overlap_by_failure_type.csv",
+)
 
 # These allowlists are deliberately kept server-side. The Analysis page can
 # browse high-cardinality CSV/JSONL artifacts without turning the generic file
@@ -4692,6 +4696,11 @@ class AnalysisJobService:
                     "robo_hop_comparison",
                 }:
                     required = ROBO_HOP_REQUIRED_FILES
+                    if job.get("analysis_kind") == "robo_hop_comparison":
+                        required = (
+                            *required,
+                            *ROBO_HOP_COMPLEMENTARITY_FILES,
+                        )
                     missing_message = (
                         "Robo-Dopamine hop comparison completed without all required artifacts"
                     )
