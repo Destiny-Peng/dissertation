@@ -95,13 +95,7 @@ def build_global_config_space(
     regression = [
         config
         for config in singles
-        if str(config["detector_family"]) in {
-            "consecutive",
-            "k_of_m",
-            "window_mean",
-            "cumulative_regression",
-            "regression_window_min",
-        }
+        if str(config["detector_family"]) == "regression_window_min"
     ]
 
     pairs: list[dict[str, Any]] = []
@@ -151,8 +145,8 @@ def build_global_config_space(
         "single_family_counts": dict(sorted(family_counts.items())),
         "or_definition": (
             "every stagnation_consecutive/stagnation_k_of_m single config OR "
-            "every regression-like single config (consecutive, k_of_m, "
-            "window_mean, cumulative_regression, regression_window_min)"
+            "every regression_window_min config from the existing two-phenotype "
+            "branch; legacy detector families remain standalone candidates"
         ),
     }
 
@@ -468,10 +462,6 @@ def evaluate_global_config_space(
         details.extend(config_details)
         summaries.extend(config_summaries)
 
-    single_by_id = {
-        str(config["config_id"]): config
-        for config in single_configs
-    }
     for pair in or_configs:
         a_id = str(pair["stagnation_config_id"])
         b_id = str(pair["regression_config_id"])
@@ -550,18 +540,42 @@ def select_global_config_results(
                 }
             )
 
-        localized = [
+        full_coverage = [
             row
             for row in rows
-            if row.get("median_absolute_error_samples") is not None
+            if float(row.get("localization_output_coverage") or 0.0) >= 1.0 - 1e-12
+            and row.get("median_absolute_error_samples") is not None
+            and row.get("mae_samples") is not None
         ]
-        if localized:
+        if full_coverage:
+            selection_pool = full_coverage
+            coverage_status = "full_coverage"
+        else:
+            max_coverage = max(
+                (
+                    float(row.get("localization_output_coverage") or 0.0)
+                    for row in rows
+                ),
+                default=0.0,
+            )
+            selection_pool = [
+                row
+                for row in rows
+                if abs(
+                    float(row.get("localization_output_coverage") or 0.0)
+                    - max_coverage
+                ) <= 1e-12
+                and row.get("median_absolute_error_samples") is not None
+                and row.get("mae_samples") is not None
+            ]
+            coverage_status = "max_coverage_fallback"
+
+        if selection_pool:
             median_best = min(
-                localized,
+                selection_pool,
                 key=lambda row: (
                     float(row["median_absolute_error_samples"]),
-                    float(row.get("mae_samples") or math.inf),
-                    -float(row.get("localization_output_coverage") or 0.0),
+                    float(row["mae_samples"]),
                     str(row["config_id"]),
                 ),
             )
@@ -570,21 +584,16 @@ def select_global_config_results(
                     "population": population,
                     "selection_kind": "single_global_config",
                     "selection_target": "minimum_median_absolute_error",
+                    "coverage_requirement_status": coverage_status,
                     **dict(median_best),
                 }
             )
-        mae_eligible = [
-            row
-            for row in rows
-            if row.get("mae_samples") is not None
-        ]
-        if mae_eligible:
+
             mae_best = min(
-                mae_eligible,
+                selection_pool,
                 key=lambda row: (
                     float(row["mae_samples"]),
-                    float(row.get("median_absolute_error_samples") or math.inf),
-                    -float(row.get("localization_output_coverage") or 0.0),
+                    float(row["median_absolute_error_samples"]),
                     str(row["config_id"]),
                 ),
             )
@@ -593,6 +602,7 @@ def select_global_config_results(
                     "population": population,
                     "selection_kind": "single_global_config",
                     "selection_target": "minimum_mae",
+                    "coverage_requirement_status": coverage_status,
                     **dict(mae_best),
                 }
             )
