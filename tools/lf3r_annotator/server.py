@@ -4432,6 +4432,7 @@ class AnalysisJobService:
         self.require_environment()
         allowed_fields = {
             "analysis_kind", "scope", "runs", "task_cv", "output_label",
+            "cpu_limit",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -4457,6 +4458,12 @@ class AnalysisJobService:
         task_cv = payload.get("task_cv", False)
         if not isinstance(task_cv, bool):
             raise ValidationError("task_cv must be boolean")
+        cpu_limit = self._integer(
+            payload.get("cpu_limit", 4),
+            "cpu_limit",
+            1,
+            16,
+        )
         label = str(payload.get("output_label") or "web_robo_hop").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
             raise ValidationError(
@@ -4502,6 +4509,8 @@ class AnalysisJobService:
             str(self.annotation_root / "records"),
             "--output-dir",
             str(output_temp),
+            "--cpu-limit",
+            str(cpu_limit),
         ]
         if task_cv:
             command.append("--task-cv")
@@ -4525,7 +4534,11 @@ class AnalysisJobService:
                     len(available_records) / len(records) if records else 0.0
                 ),
                 "runs": {"robo_dopamine": self._relative(run_path)},
-                "parameters": {"task_cv": task_cv},
+                "parameters": {
+                    "task_cv": task_cv,
+                    "cpu_limit": cpu_limit,
+                    "nice_target": 10,
+                },
                 "command": command,
                 "output_dir": self._relative(output_final),
                 "output_temp": self._relative(output_temp),
@@ -4545,7 +4558,16 @@ class AnalysisJobService:
                 command,
                 self.log_root / f"{job_id}.log",
                 interpreter=str(self.analysis_python),
-                environment={"MPLBACKEND": "Agg"},
+                environment={
+                    "MPLBACKEND": "Agg",
+                    "OMP_NUM_THREADS": str(cpu_limit),
+                    "OMP_THREAD_LIMIT": str(cpu_limit),
+                    "OPENBLAS_NUM_THREADS": str(cpu_limit),
+                    "MKL_NUM_THREADS": str(cpu_limit),
+                    "NUMEXPR_NUM_THREADS": str(cpu_limit),
+                    "BLIS_NUM_THREADS": str(cpu_limit),
+                    "VECLIB_MAXIMUM_THREADS": str(cpu_limit),
+                },
                 on_poll=self._on_job_poll,
                 on_finished=self._on_job_finished,
             )
