@@ -24,18 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from robo_incremental_hop.core import (
-    CLEAN_FPR_CONSTRAINTS,
-    CONSECUTIVE_NS,
-    EPSILONS,
-    KOFM_MS,
-    MEAN_MS,
-    MEAN_THRESHOLDS,
-    REGRESSION_MS,
-    REGRESSION_THRESHOLDS,
-    STAGNATION_DELTAS,
-    build_detector_configs,
-)
+from robo_incremental_hop.core import CLEAN_FPR_CONSTRAINTS
 from robo_incremental_hop.diagnosis import (
     build_grasp_event_features,
     build_matched_clean_pairs,
@@ -47,6 +36,7 @@ from robo_incremental_hop.diagnosis import (
     summarize_detected_vs_missed,
     summarize_matched_controls,
 )
+from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -164,6 +154,7 @@ def write_metadata(
     provenance_by_mode: Mapping[str, Mapping[str, Any]],
     common_rollout_ids: set[str],
     best_rows: Sequence[Mapping[str, Any]],
+    phenotype_grid: Mapping[str, Any],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -217,25 +208,20 @@ def write_metadata(
             },
             "scale_detection_examples": scale_examples,
         },
-        "parameter_grids": {
-            "epsilon": list(EPSILONS),
-            "consecutive_n": list(CONSECUTIVE_NS),
-            "k_of_m_m": list(KOFM_MS),
-            "k_rule": "ceil(0.6*m) ... m",
-            "window_mean_m": list(MEAN_MS),
-            "window_mean_theta": list(MEAN_THRESHOLDS),
-            "cumulative_regression_m": list(REGRESSION_MS),
-            "cumulative_regression_A": list(REGRESSION_THRESHOLDS),
-            "stagnation_delta": list(STAGNATION_DELTAS),
+        "phenotype_detector": {
+            **dict(phenotype_grid),
             "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
         },
         "detector_semantics": {
-            "consecutive": "h_t <= epsilon for n consecutive native samples",
-            "k_of_m": "at least k of latest m native hops satisfy h_i <= epsilon",
-            "window_mean": "mean of latest m native hops <= theta",
-            "cumulative_regression": "sum(max(0,-h_i)) over latest m native hops >= A",
-            "stagnation": (
-                "abs(h_t) <= delta, aggregated with consecutive-n or k-of-m"
+            "stagnation_consecutive": (
+                "abs(h_t) <= delta for n consecutive native samples"
+            ),
+            "stagnation_k_of_m": (
+                "at least k of latest m native hops satisfy abs(h_i) <= delta"
+            ),
+            "regression_window_min": (
+                "min(h[t-m+1:t]) <= empirical theta_r; theta_r values come "
+                "from observed fused-hop failure evidence, not a hand-written grid"
             ),
         },
         "evaluation_semantics": {
@@ -258,9 +244,12 @@ def write_metadata(
             ),
             "pre_onset_lookback_samples": 10,
             "parameter_selection": (
-                "Single-detector representatives keep the existing event Recall@3 "
-                "selection rule. Pairwise OR ensembles jointly sweep both detector "
-                "parameter grids under total clean-rollout FPR caps."
+                "The detector has two phenotypes: stagnation and short/strong "
+                "regression. OR ensembles jointly sweep stagnation parameters and "
+                "empirical regression-window-min parameters under total clean FPR "
+                "caps. Primary selection targets are grasp-failure eventual recall "
+                "and grasp-failure Recall@10; overall failure coverage is reported "
+                "as a secondary outcome."
             ),
             "no_event_failure": (
                 "For terminal-failure rollouts with no failure-event annotation, "
@@ -275,9 +264,11 @@ def write_metadata(
             ),
             "recovery_hop_window_samples": args.recovery_window_samples,
             "pairwise_ensemble": (
-                "Fused-only OR ensemble search for three prioritized family pairs. "
-                "Each selection target is optimized separately under total clean "
-                "FPR caps 5%, 10%, and 20%; inference outputs are reused."
+                "Fused-only stagnation OR regression search. Stagnation is swept "
+                "as consecutive or k-of-m near-zero evidence; regression uses "
+                "rolling-window minimum <= empirical theta_r. Grasp eventual and "
+                "grasp Recall@10 are optimized separately under total clean FPR "
+                "caps 5%, 10%, and 20%; inference outputs are reused."
             ),
         },
         "generalization": {
@@ -380,7 +371,12 @@ def analyse(
             "No rollout has a usable saved Robo-Dopamine fused hop signal"
         )
 
-    configs = build_detector_configs()
+    configs, phenotype_grid = build_phenotype_detector_configs(
+        signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
     summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
         configs,
         signals,
@@ -550,6 +546,7 @@ def analyse(
         provenance_by_mode={ANALYSIS_SIGNAL_MODE: provenance},
         common_rollout_ids=analysis_rollout_ids,
         best_rows=tagged_best,
+        phenotype_grid=phenotype_grid,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
