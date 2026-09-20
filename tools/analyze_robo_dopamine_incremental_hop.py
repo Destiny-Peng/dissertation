@@ -36,6 +36,17 @@ from robo_incremental_hop.core import (
     STAGNATION_DELTAS,
     build_detector_configs,
 )
+from robo_incremental_hop.diagnosis import (
+    build_grasp_event_features,
+    build_matched_clean_pairs,
+    category_rows,
+    category_summary,
+    choose_reference_ensemble,
+    diagnosis_metadata,
+    plot_grasp_event_heatmap,
+    summarize_detected_vs_missed,
+    summarize_matched_controls,
+)
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -153,6 +164,7 @@ def write_metadata(
     provenance_by_mode: Mapping[str, Mapping[str, Any]],
     common_rollout_ids: set[str],
     best_rows: Sequence[Mapping[str, Any]],
+    grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
     jobs_jsonl = run_root / "jobs.jsonl"
@@ -273,6 +285,7 @@ def write_metadata(
             "method": "optional leave-one-task-out tuning/evaluation on fused hop",
             "full_dataset_sweep_separate": True,
         },
+        "grasp_failure_diagnosis": dict(grasp_diagnosis or {}),
         "counts_by_signal_mode": {
             mode: dict(provenance_by_mode.get(mode, {}))
             for mode in (ANALYSIS_SIGNAL_MODE,)
@@ -291,6 +304,13 @@ def write_metadata(
             "ensemble_sweep.csv",
             "ensemble_selected.csv",
             "ensemble_by_failure_type.csv",
+            "grasp_event_features.csv",
+            "grasp_detected_vs_missed.csv",
+            "grasp_matched_control.csv",
+            "grasp_matched_control_summary.csv",
+            "grasp_failure_categories.csv",
+            "grasp_failure_category_summary.csv",
+            "grasp_event_heatmap.png (unless --no-plots)",
             "metadata.json",
             "task_cv_results.csv (only with --task-cv)",
             "plots/<signal_mode>/ (unless --no-plots)",
@@ -405,6 +425,34 @@ def analyse(
         )
     )
 
+    reference_ensemble = choose_reference_ensemble(
+        ensemble_selected
+    )
+    grasp_features = build_grasp_event_features(
+        signals,
+        events,
+        configs,
+        reference_ensemble,
+    )
+    grasp_detected_vs_missed = summarize_detected_vs_missed(
+        grasp_features
+    )
+    grasp_matched_pairs = build_matched_clean_pairs(
+        grasp_features,
+        signals,
+        clean_rollouts,
+    )
+    grasp_matched_summary = summarize_matched_controls(
+        grasp_matched_pairs
+    )
+    grasp_categories = category_rows(grasp_features)
+    grasp_category_summary = category_summary(grasp_features)
+    grasp_diagnosis = diagnosis_metadata(
+        grasp_features,
+        grasp_matched_pairs,
+        reference_ensemble,
+    )
+
     cv_rows: list[dict[str, Any]] = []
     if args.task_cv:
         cv_rows = tag(
@@ -441,6 +489,12 @@ def analyse(
             plot_dir,
             signal_mode=ANALYSIS_SIGNAL_MODE,
         )
+        plot_grasp_event_heatmap(
+            output_dir / "grasp_event_heatmap.png",
+            grasp_features,
+            signals,
+            events,
+        )
 
     write_csv(output_dir / "sweep_summary.csv", tagged_summary)
     write_csv(output_dir / "event_results.csv", tagged_events)
@@ -458,6 +512,30 @@ def analyse(
         output_dir / "ensemble_by_failure_type.csv",
         ensemble_failure_types,
     )
+    write_csv(
+        output_dir / "grasp_event_features.csv",
+        grasp_features,
+    )
+    write_csv(
+        output_dir / "grasp_detected_vs_missed.csv",
+        grasp_detected_vs_missed,
+    )
+    write_csv(
+        output_dir / "grasp_matched_control.csv",
+        grasp_matched_pairs,
+    )
+    write_csv(
+        output_dir / "grasp_matched_control_summary.csv",
+        grasp_matched_summary,
+    )
+    write_csv(
+        output_dir / "grasp_failure_categories.csv",
+        grasp_categories,
+    )
+    write_csv(
+        output_dir / "grasp_failure_category_summary.csv",
+        grasp_category_summary,
+    )
     if args.task_cv:
         write_csv(output_dir / "task_cv_results.csv", cv_rows)
 
@@ -472,6 +550,7 @@ def analyse(
         provenance_by_mode={ANALYSIS_SIGNAL_MODE: provenance},
         common_rollout_ids=analysis_rollout_ids,
         best_rows=tagged_best,
+        grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
 
