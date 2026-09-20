@@ -382,6 +382,7 @@ def write_metadata(
                 "median_signed_offset_samples",
                 "median_absolute_error_samples",
                 "mae_samples",
+                "rmse_samples",
                 "trigger_coverage",
             ],
             "candidate_row_n": len(unconstrained_localization_rows),
