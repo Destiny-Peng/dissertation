@@ -203,8 +203,6 @@ ROBO_HOP_TABLE_FILES = {
     "oracle_global_best": "oracle_global_best.csv",
     "oracle_summary": "oracle_summary.csv",
     "progress_peak_summary": "progress_peak_localization_summary.csv",
-    "global_localization_best": "global_config_localization_best_by_tolerance.csv",
-    "global_localization_single": "global_config_localization_single_best.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -225,9 +223,7 @@ ROBO_HOP_EXTENDED_FILES = (
     "oracle_summary.csv",
     "progress_peak_localization.csv",
     "progress_peak_localization_summary.csv",
-    "global_config_localization_ranking.csv",
-    "global_config_localization_best_by_tolerance.csv",
-    "global_config_localization_single_best.csv",
+    "unconstrained_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -302,9 +298,7 @@ ANALYSIS_ARTIFACT_NAMES = {
     "oracle_summary.csv",
     "progress_peak_localization.csv",
     "progress_peak_localization_summary.csv",
-    "global_config_localization_ranking.csv",
-    "global_config_localization_best_by_tolerance.csv",
-    "global_config_localization_single_best.csv",
+    "unconstrained_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -1065,22 +1059,6 @@ class AnalysisService:
             if progress_peak_summary_path.is_file()
             else []
         )
-        global_localization_best_path = (
-            directory / ROBO_HOP_TABLE_FILES["global_localization_best"]
-        )
-        global_localization_single_path = (
-            directory / ROBO_HOP_TABLE_FILES["global_localization_single"]
-        )
-        global_localization_best = (
-            self._read_csv(global_localization_best_path)
-            if global_localization_best_path.is_file()
-            else []
-        )
-        global_localization_single = (
-            self._read_csv(global_localization_single_path)
-            if global_localization_single_path.is_file()
-            else []
-        )
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1139,10 +1117,8 @@ class AnalysisService:
             "progress_peak_localization": metadata.get(
                 "progress_peak_localization"
             ) or {},
-            "global_config_localization_best_by_tolerance": global_localization_best,
-            "global_config_localization_single_best": global_localization_single,
-            "global_config_localization": metadata.get(
-                "global_config_localization"
+            "unconstrained_localization_ranking": metadata.get(
+                "unconstrained_localization_ranking"
             ) or {},
             "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
@@ -1172,9 +1148,7 @@ class AnalysisService:
                     "oracle_summary.csv",
                     "progress_peak_localization.csv",
                     "progress_peak_localization_summary.csv",
-                    "global_config_localization_ranking.csv",
-                    "global_config_localization_best_by_tolerance.csv",
-                    "global_config_localization_single_best.csv",
+                    "unconstrained_localization_ranking.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
