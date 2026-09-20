@@ -96,7 +96,8 @@ def _empirical_thresholds(
     by clean false-positive set because its standard post-onset recall metric is
     monotone, and it only needs branch states feasible under the loosest FPR cap.
     """
-    raw_candidates: set[float] = set()
+    operational_candidates: set[float] = set()
+    oracle_candidates: set[float] = set()
 
     for event in events:
         rollout_id = str(event["rollout_id"])
@@ -105,11 +106,15 @@ def _empirical_thresholds(
         if signal is None or scores is None:
             continue
         post = _event_post_indices(signal["frames"], event)
+        for index in post:
+            value = scores[index]
+            if value is not None:
+                oracle_candidates.add(float(value))
         for window in (*RECALL_SAMPLE_WINDOWS, None):
             indices = post if window is None else post[:window]
             value = _critical_value(scores, indices)
             if value is not None:
-                raw_candidates.add(value)
+                operational_candidates.add(value)
 
     for failure in no_event_failures:
         rollout_id = str(failure["rollout_id"])
@@ -118,11 +123,15 @@ def _empirical_thresholds(
         if signal is None or scores is None:
             continue
         indices = list(range(len(signal["hops"])))
+        for index in indices:
+            value = scores[index]
+            if value is not None:
+                oracle_candidates.add(float(value))
         for window in (*RECALL_SAMPLE_WINDOWS, None):
             selected = indices if window is None else indices[:window]
             value = _critical_value(scores, selected)
             if value is not None:
-                raw_candidates.add(value)
+                operational_candidates.add(value)
 
     clean_ids = [
         str(clean["rollout_id"])
@@ -135,18 +144,23 @@ def _empirical_thresholds(
         value = _critical_value(scores, list(range(len(scores))))
         if value is not None:
             clean_critical[rollout_id] = value
-            raw_candidates.add(value)
+            operational_candidates.add(value)
 
     oracle_thresholds = sorted(
         value
-        for value in raw_candidates
+        for value in oracle_candidates
+        if not require_negative or value < 0.0
+    )
+    operational_raw = sorted(
+        value
+        for value in operational_candidates
         if not require_negative or value < 0.0
     )
     signature_best: dict[tuple[str, ...], float] = {}
     fpr_by_signature: dict[tuple[str, ...], float] = {}
     clean_n = len(clean_ids)
 
-    for threshold in oracle_thresholds:
+    for threshold in operational_raw:
         signature = tuple(
             sorted(
                 rollout_id
@@ -173,7 +187,7 @@ def _empirical_thresholds(
         operational_fprs.append(fpr_by_signature[signature])
 
     return operational_thresholds, oracle_thresholds, {
-        "raw_empirical_candidate_n": len(oracle_thresholds),
+        "raw_empirical_candidate_n": len(operational_raw),
         "oracle_candidate_n": len(oracle_thresholds),
         "operational_candidate_n": len(operational_thresholds),
         "max_clean_fpr_filter": max_clean_fpr,
@@ -340,9 +354,10 @@ def build_phenotype_detector_configs(
         "regression_semantics": "min(h[t-m+1:t]) <= empirical theta_r",
         "regression_window_ms": list(REGRESSION_MIN_MS),
         "threshold_source": (
-            "empirical rule-specific critical values from saved fused-hop failure "
-            "and clean rollouts; failure values are sampled at "
-            "Recall@1/@3/@5/@10/@20/eventual horizons"
+            "operational thresholds use rule-specific failure critical values at "
+            "Recall@1/@3/@5/@10/@20/eventual plus clean critical values; oracle "
+            "thresholds use every distinct rule-critical value inside annotated "
+            "failure episodes and no-event failure rollouts"
         ),
         "threshold_compression": (
             "operational grid only: keep the largest threshold for each distinct "
