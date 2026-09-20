@@ -9,6 +9,9 @@
     polling: false,
     intervalRanking: {
       population: "first_eligible_event_per_failed_rollout",
+      selector: "offline_max_change_score",
+      leftWindow: "all",
+      rightWindow: "all",
       sortKey: "mse_samples",
       direction: "asc",
       limit: "25"
@@ -250,7 +253,14 @@
 
   function sortedRankingRows(rows, state) {
     var filtered = (rows || []).filter(function (row) {
-      return String(row.population) === String(state.population);
+      if (String(row.population) !== String(state.population)) return false;
+      if (state.selector && state.selector !== "all"
+          && String(row.selector) !== String(state.selector)) return false;
+      if (state.leftWindow && state.leftWindow !== "all"
+          && String(row.L) !== String(state.leftWindow)) return false;
+      if (state.rightWindow && state.rightWindow !== "all"
+          && String(row.R) !== String(state.rightWindow)) return false;
+      return true;
     });
     filtered.sort(function (left, right) {
       var a = rankingSortValue(left, state.sortKey);
@@ -289,8 +299,29 @@
         + (String(state.limit) === value ? ' selected' : '')
         + '>' + (value === "all" ? "All" : value) + '</option>';
     }).join("");
+    var selectorOptions = [
+      ["offline_max_change_score", "Offline max change score"],
+      ["first_trigger", "Original first trigger"],
+      ["global_fused_progress_argmax", "Global fused-progress argmax"],
+      ["all", "All selectors"]
+    ].map(function (item) {
+      return '<option value="' + item[0] + '"'
+        + (String(state.selector) === item[0] ? ' selected' : '')
+        + '>' + item[1] + '</option>';
+    }).join("");
+    var windowOptions = ["all", "2", "3", "5"].map(function (value) {
+      return '<option value="' + value + '">'
+        + (value === "all" ? "All" : value)
+        + '</option>';
+    }).join("");
+    function selectedWindows(raw, selected) {
+      return raw.replace('value="' + selected + '"', 'value="' + selected + '" selected');
+    }
     return '<div class="analysis-run-grid">'
       + '<label><span>Population</span><select id="' + prefix + 'Population">' + populationOptions + '</select></label>'
+      + '<label><span>Selector</span><select id="' + prefix + 'Selector">' + selectorOptions + '</select></label>'
+      + '<label><span>L</span><select id="' + prefix + 'Left">' + selectedWindows(windowOptions, String(state.leftWindow)) + '</select></label>'
+      + '<label><span>R</span><select id="' + prefix + 'Right">' + selectedWindows(windowOptions, String(state.rightWindow)) + '</select></label>'
       + '<label><span>Sort by</span><select id="' + prefix + 'Sort">' + sortHtml + '</select></label>'
       + '<label><span>Direction</span><select id="' + prefix + 'Direction">'
       + '<option value="asc"' + (state.direction === "asc" ? ' selected' : '') + '>Ascending</option>'
@@ -302,11 +333,26 @@
 
   function bindRankingControls(prefix, state) {
     var population = node(prefix + "Population");
+    var selector = node(prefix + "Selector");
+    var left = node(prefix + "Left");
+    var right = node(prefix + "Right");
     var sort = node(prefix + "Sort");
     var direction = node(prefix + "Direction");
     var limit = node(prefix + "Limit");
     if (population) population.addEventListener("change", function () {
       state.population = population.value;
+      renderSnapshot();
+    });
+    if (selector) selector.addEventListener("change", function () {
+      state.selector = selector.value;
+      renderSnapshot();
+    });
+    if (left) left.addEventListener("change", function () {
+      state.leftWindow = left.value;
+      renderSnapshot();
+    });
+    if (right) right.addEventListener("change", function () {
+      state.rightWindow = right.value;
       renderSnapshot();
     });
     if (sort) sort.addEventListener("change", function () {
@@ -362,13 +408,13 @@
       var intervalViewRows = sortedRankingRows(intervalRows, hopState.intervalRanking);
       html += '<section class="analysis-subsection">'
         + '<h4>Failed-rollout interval localization · [causal, observable]</h4>'
-        + '<p class="analysis-card-note">Interactive view of the full interval-localization CSV. Predictions inside [causal onset, observable onset] have zero error. Sorting/filtering is browser-side only.</p>'
+        + '<p class="analysis-card-note">Offline selector keeps every positive episode start, scores s by median(hop[s-L:s]) − median(hop[s:s+R]), and chooses the maximum. Compare it directly with the original first trigger and earliest global fused-progress argmax. Predictions inside [causal onset, observable onset] have zero error.</p>'
         + rankingControlsHtml("analysisHopIntervalRank", hopState.intervalRanking, intervalPopulations, intervalSortOptions)
         + '<table class="analysis-table"><caption>'
         + esc(intervalViewRows.length) + ' row(s) shown · sorted by ' + esc(hopState.intervalRanking.sortKey)
         + ' ' + esc(hopState.intervalRanking.direction)
         + '</caption>'
-        + '<thead><tr><th>#</th><th>N</th><th>Family</th><th>Config</th><th>Parameters</th>'
+        + '<thead><tr><th>#</th><th>N</th><th>Selector</th><th>L / R</th><th>Family</th><th>Config</th><th>Parameters</th>'
         + '<th>Trigger coverage</th><th>In interval</th><th>Within 1</th><th>Within 3</th><th>Within 5</th>'
         + '<th>MSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
         + '<th>Before / After</th></tr></thead><tbody>';
@@ -376,6 +422,8 @@
         html += '<tr>'
           + '<td class="numeric"><strong>' + esc(index + 1) + '</strong></td>'
           + '<td class="numeric">' + esc(row.eligible_event_n) + '</td>'
+          + '<td>' + esc(String(row.selector || "").replace(/_/g, " ")) + '</td>'
+          + '<td class="numeric">' + esc(row.L == null ? "—" : row.L) + ' / ' + esc(row.R == null ? "—" : row.R) + '</td>'
           + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
           + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
           + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
