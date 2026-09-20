@@ -3238,68 +3238,51 @@ class BaselineService:
         run_path: Path,
         method: str,
     ) -> tuple[set[str], dict[str, set[str]], set[str]]:
-        """Read run membership from persistent cache; probe Robo outputs at most once."""
+        """Read run membership from cache; probe only fused Robo output once."""
         cached = self.run_index.cached_rollout_details(run_path)
         if cached is not None:
             run_ids = set(cached["rollout_ids"])
             if method != "robo_dopamine":
                 return run_ids, {}, set()
             raw_signal_ids = cached.get("robo_signal_ids")
-            if isinstance(raw_signal_ids, dict) and all(
-                mode in raw_signal_ids for mode in self.ROBO_HOP_SIGNAL_MODES
-            ):
-                by_mode = {
-                    mode: {
-                        str(value)
-                        for value in raw_signal_ids.get(mode, [])
-                        if isinstance(value, str)
-                    }
-                    for mode in self.ROBO_HOP_SIGNAL_MODES
+            if isinstance(raw_signal_ids, dict) and "fused" in raw_signal_ids:
+                fused_ids = {
+                    str(value)
+                    for value in raw_signal_ids.get("fused", [])
+                    if isinstance(value, str)
                 }
-                common = set(run_ids)
-                for mode in self.ROBO_HOP_SIGNAL_MODES:
-                    common.intersection_update(by_mode[mode])
-                return run_ids, by_mode, common
+                return run_ids, {"fused": fused_ids}, fused_ids
 
         run_ids = run_rollout_ids(run_path)
         by_mode: dict[str, set[str]] = {}
-        common: set[str] = set()
+        fused_ids: set[str] = set()
         if method == "robo_dopamine":
-            common, by_mode = self._scan_robo_run_four_signal_ids(
-                run_path, run_ids
+            fused_ids = self._robo_run_signal_ids(
+                run_path, run_ids, "fused"
             )
+            by_mode = {"fused": fused_ids}
         self.run_index.store_rollout_details(
             run_path,
             run_ids,
             by_mode if method == "robo_dopamine" else None,
         )
-        return run_ids, by_mode, common
+        return run_ids, by_mode, fused_ids
 
     def _robo_run_four_signal_ids(
         self,
         run_path: Path,
         run_ids: set[str],
     ) -> tuple[set[str], dict[str, set[str]]]:
-        cached_run_ids, cached_by_mode, _cached_common = self._run_inventory(
-            run_path, "robo_dopamine"
-        )
-        requested = set(run_ids).intersection(cached_run_ids)
-        by_mode = {
-            mode: requested.intersection(cached_by_mode.get(mode, set()))
-            for mode in self.ROBO_HOP_SIGNAL_MODES
-        }
-        common = set(requested)
-        for mode in self.ROBO_HOP_SIGNAL_MODES:
-            common.intersection_update(by_mode[mode])
-        return common, by_mode
+        """Legacy explicit four-signal probe; not used by fused-only catalog."""
+        return self._scan_robo_run_four_signal_ids(run_path, run_ids)
 
     def _robo_run_incremental_ids(
         self,
         run_path: Path,
         run_ids: set[str],
     ) -> set[str]:
-        _common, by_mode = self._robo_run_four_signal_ids(run_path, run_ids)
-        return by_mode["incremental"]
+        """Legacy explicit incremental probe; not used by fused-only catalog."""
+        return self._robo_run_signal_ids(run_path, run_ids, "incremental")
 
     def list_runs(
         self,
@@ -3326,7 +3309,7 @@ class BaselineService:
                         continue
                 elif run_condition != condition:
                     continue
-                run_ids, signal_ids_by_mode, four_signal_ids = self._run_inventory(
+                run_ids, signal_ids_by_mode, fused_inventory_ids = self._run_inventory(
                     run_path, method
                 )
                 missing = selected_ids - run_ids if run_ids else selected_ids
@@ -3342,11 +3325,11 @@ class BaselineService:
                 if condition == "full_instruction":
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
-                incremental_ids: set[str] = set()
                 fused_ids: set[str] = set()
                 if method == "robo_dopamine":
-                    incremental_ids = signal_ids_by_mode["incremental"]
-                    fused_ids = signal_ids_by_mode["fused"]
+                    fused_ids = signal_ids_by_mode.get(
+                        "fused", fused_inventory_ids
+                    )
                 summary.update({
                     "created_at": metadata.get("created_at"),
                     "manifest_sha256": metadata.get("manifest_sha256"),
@@ -3361,33 +3344,6 @@ class BaselineService:
                     "missing_rollouts": len(missing),
                     "scope": scope,
                     "instruction_condition": run_condition,
-                    "incremental_rollout_count": (
-                        len(incremental_ids) if method == "robo_dopamine" else None
-                    ),
-                    "incremental_scope_rollout_count": (
-                        len(selected_ids.intersection(incremental_ids))
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "incremental_missing_rollouts": (
-                        len(selected_ids - incremental_ids)
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "incremental_scope_coverage": (
-                        (
-                            len(selected_ids.intersection(incremental_ids))
-                            / len(selected_ids)
-                        )
-                        if method == "robo_dopamine" and selected_ids
-                        else None
-                    ),
-                    "incremental_compatible": (
-                        bool(selected_ids)
-                        and selected_ids.issubset(incremental_ids)
-                        if method == "robo_dopamine"
-                        else None
-                    ),
                     "fused_rollout_count": (
                         len(fused_ids) if method == "robo_dopamine" else None
                     ),
@@ -3416,39 +3372,7 @@ class BaselineService:
                         else None
                     ),
                     "hop_signal_rollout_counts": (
-                        {
-                            mode: len(ids)
-                            for mode, ids in signal_ids_by_mode.items()
-                        }
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "four_signal_rollout_count": (
-                        len(four_signal_ids)
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "four_signal_scope_rollout_count": (
-                        len(selected_ids.intersection(four_signal_ids))
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "four_signal_missing_rollouts": (
-                        len(selected_ids - four_signal_ids)
-                        if method == "robo_dopamine"
-                        else None
-                    ),
-                    "four_signal_scope_coverage": (
-                        (
-                            len(selected_ids.intersection(four_signal_ids))
-                            / len(selected_ids)
-                        )
-                        if method == "robo_dopamine" and selected_ids
-                        else None
-                    ),
-                    "four_signal_compatible": (
-                        bool(selected_ids)
-                        and selected_ids.issubset(four_signal_ids)
+                        {"fused": len(fused_ids)}
                         if method == "robo_dopamine"
                         else None
                     ),
