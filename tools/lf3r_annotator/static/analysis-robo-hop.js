@@ -344,19 +344,19 @@
         var rowsForPopulation = unconstrainedTop.filter(function (row) {
           return String(row.population) === population;
         }).sort(function (left, right) {
-          return Number(left.rank_median_abs_error) - Number(right.rank_median_abs_error);
+          return Number(left.rank_rmse) - Number(right.rank_rmse);
         });
         if (!rowsForPopulation.length) return;
         html += '<table class="analysis-table"><caption>'
           + esc(population.replace(/_/g, " "))
-          + ' · top 10 by median |error| (coverage prioritized)</caption>'
+          + ' · top 10 by RMSE</caption>'
           + '<thead><tr><th>Rank</th><th>Family</th><th>Config</th><th>Parameters</th>'
           + '<th>Trigger coverage</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th>'
-          + '<th>Median signed</th><th>Median |error|</th><th>MAE</th>'
+          + '<th>RMSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
           + '<th>Before / At / After</th></tr></thead><tbody>';
         rowsForPopulation.forEach(function (row) {
           html += '<tr>'
-            + '<td class="numeric"><strong>' + esc(row.rank_median_abs_error) + '</strong></td>'
+            + '<td class="numeric"><strong>' + esc(row.rank_rmse) + '</strong></td>'
             + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
             + '<td><code>' + esc(row.config_id) + '</code></td>'
             + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
@@ -365,9 +365,10 @@
             + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.within_10)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
-            + '<td class="numeric"><strong>' + esc(number(row.median_absolute_error_samples)) + '</strong></td>'
+            + '<td class="numeric"><strong>' + esc(number(row.rmse_samples)) + '</strong></td>'
             + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
             + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
             + '</tr>';
         });
