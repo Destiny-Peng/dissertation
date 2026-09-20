@@ -83,6 +83,7 @@ from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.oracle import build_oracle_analysis
 from robo_incremental_hop.search_cache import (
     SEARCH_SEMANTICS_VERSION,
+    load_legacy_search_seed,
     load_search_cache,
     search_fingerprint,
     write_search_cache,
@@ -524,6 +525,9 @@ def analyse(
         else load_search_cache(fingerprint)
     )
     search_cache_hit = cached_search is not None
+    legacy_seed_dir: Path | None = None
+    search_reuse_source = "cache" if search_cache_hit else "computed"
+
     if cached_search is not None:
         configs = list(cached_search["configs"])
         oracle_configs = list(cached_search["oracle_configs"])
@@ -540,44 +544,81 @@ def analyse(
         oracle_summary = list(cached_search["oracle_summary"])
         print(
             "Search cache hit: "
-            f"{fingerprint[:12]} · reusing detector/oracle search results"
+            f"{fingerprint[:12]} · reusing detector/oracle/pair-sweep results"
         )
     else:
-        print(
-            "Search cache miss: "
-            f"{fingerprint[:12]} · running detector/oracle search once"
-        )
         configs, oracle_configs, phenotype_grid = build_phenotype_detector_configs(
             signals,
             events,
             no_event_failures,
             clean_rollouts,
         )
-        summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
-            configs,
-            signals,
-            events,
-            no_event_failures,
-            clean_rollouts,
-        )
-        oracle_global_best, oracle_event_detectability, oracle_summary = (
-            build_oracle_analysis(
-                oracle_configs,
+
+        legacy_seed = None
+        if not args.refresh_search_cache:
+            legacy_seed, legacy_seed_dir = load_legacy_search_seed(
+                DEFAULT_OUTPUT_ROOT,
+                current_output_dir=output_dir,
+                run_root_relative=project_relative(run_root),
+                manifest_sha256=sha256(manifest_path),
+                annotation_dir=annotation_dir,
+                signals=signals,
+                events=events,
+                no_event_failures=no_event_failures,
+                clean_rollouts=clean_rollouts,
+                configs=configs,
+                oracle_configs=oracle_configs,
+                phenotype_grid=phenotype_grid,
+            )
+
+        if legacy_seed is not None:
+            search_reuse_source = "legacy_analysis"
+            summary_rows = list(legacy_seed["summary_rows"])
+            event_rows = list(legacy_seed["event_rows"])
+            no_event_rows = list(legacy_seed["no_event_rows"])
+            clean_rows = list(legacy_seed["clean_rows"])
+            ensemble_sweep = list(legacy_seed["ensemble_sweep"])
+            oracle_global_best = list(legacy_seed["oracle_global_best"])
+            oracle_event_detectability = list(
+                legacy_seed["oracle_event_detectability"]
+            )
+            oracle_summary = list(legacy_seed["oracle_summary"])
+            print(
+                "Compatible prior analysis found: "
+                f"{project_relative(legacy_seed_dir)} · importing search results"
+            )
+        else:
+            print(
+                "Search cache miss: "
+                f"{fingerprint[:12]} · no compatible prior analysis; "
+                "running detector/oracle/pair search once"
+            )
+            summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
+                configs,
                 signals,
                 events,
                 no_event_failures,
                 clean_rollouts,
-                early_tolerance_samples=1,
             )
-        )
-        ensemble_sweep, _unused_selected, _unused_failure_types = (
-            build_pairwise_ensemble_rows(
-                configs,
-                event_rows,
-                no_event_rows,
-                clean_rows,
+            oracle_global_best, oracle_event_detectability, oracle_summary = (
+                build_oracle_analysis(
+                    oracle_configs,
+                    signals,
+                    events,
+                    no_event_failures,
+                    clean_rollouts,
+                    early_tolerance_samples=1,
+                )
             )
-        )
+            ensemble_sweep, _unused_selected, _unused_failure_types = (
+                build_pairwise_ensemble_rows(
+                    configs,
+                    event_rows,
+                    no_event_rows,
+                    clean_rows,
+                )
+            )
+
         cache_file = write_search_cache(
             fingerprint,
             configs=configs,
@@ -593,6 +634,7 @@ def analyse(
             oracle_summary=oracle_summary,
         )
         print(f"Search cache written: {project_relative(cache_file)}")
+
     best_rows = select_best_configs(summary_rows)
     breakdown_rows = summarize_breakdowns(
         configs,
@@ -768,6 +810,12 @@ def analyse(
         search_cache_info={
             "enabled": True,
             "hit": search_cache_hit,
+            "reuse_source": search_reuse_source,
+            "legacy_seed_dir": (
+                project_relative(legacy_seed_dir)
+                if legacy_seed_dir is not None
+                else None
+            ),
             "fingerprint": fingerprint,
             "search_semantics_version": SEARCH_SEMANTICS_VERSION,
             "refresh_requested": bool(args.refresh_search_cache),
