@@ -353,15 +353,14 @@ def build_oracle_analysis(
     global_rows: list[dict[str, Any]] = []
     for signal_family in ("stagnation", "regression", "combined"):
         configs_group = groups[signal_family]
+        if not configs_group:
+            continue
+        first_config_id = str(configs_group[0]["config_id"])
+        first_details = detail_map(first_config_id, "event")
+        first_no_event = detail_map(first_config_id, "no_event")
         for spec in populations:
-            ids = [
-                item_id
-                for item_id in spec["ids"]
-                if all(
-                    item_id in detail_map(str(config["config_id"]), spec["kind"])
-                    for config in configs_group
-                )
-            ]
+            available = first_details if spec["kind"] == "event" else first_no_event
+            ids = [item_id for item_id in spec["ids"] if item_id in available]
             if not ids:
                 continue
             event_population = spec["kind"] == "event"
