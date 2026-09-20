@@ -176,33 +176,52 @@ def _pair_candidates(
     ensemble_sweep: Sequence[Mapping[str, Any]],
     config_meta: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str]] = set()
-    rows: list[dict[str, Any]] = []
+    """Expand existing OR family rules across all existing detector configs.
+
+    The historical ensemble_sweep was produced after a clean-FPR feasibility
+    filter. Reusing its rows verbatim would silently retain that constraint.
+    Instead, use it only to recover the already-existing family-combination
+    rules, then form the Cartesian product of the already-existing configs in
+    those families. No threshold/config/family is created here.
+    """
+    family_pairs: set[tuple[str, str]] = set()
     for row in ensemble_sweep:
-        a_id = str(row.get("a_config_id") or "")
-        b_id = str(row.get("b_config_id") or "")
-        if not a_id or not b_id or a_id not in config_meta or b_id not in config_meta:
-            continue
-        key = (a_id, b_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        a = config_meta[a_id]
-        b = config_meta[b_id]
-        rows.append(
-            {
-                "config_id": f"OR:{a_id}|{b_id}",
-                "detector_family": "phenotype_or",
-                "parameters_json": None,
-                "a_config_id": a_id,
-                "b_config_id": b_id,
-                "a_detector_family": a.get("detector_family"),
-                "b_detector_family": b.get("detector_family"),
-                "a_parameters_json": a.get("parameters_json"),
-                "b_parameters_json": b.get("parameters_json"),
-            }
-        )
-    return rows
+        family_a = str(row.get("detector_a_family") or "")
+        family_b = str(row.get("detector_b_family") or "")
+        if not family_a or not family_b:
+            a = config_meta.get(str(row.get("a_config_id") or ""), {})
+            b = config_meta.get(str(row.get("b_config_id") or ""), {})
+            family_a = str(a.get("detector_family") or "")
+            family_b = str(b.get("detector_family") or "")
+        if family_a and family_b:
+            family_pairs.add((family_a, family_b))
+
+    by_family: dict[str, list[tuple[str, Mapping[str, Any]]]] = defaultdict(list)
+    for config_id, meta in config_meta.items():
+        family = str(meta.get("detector_family") or "")
+        if family:
+            by_family[family].append((config_id, meta))
+    for rows in by_family.values():
+        rows.sort(key=lambda item: item[0])
+
+    result: list[dict[str, Any]] = []
+    for family_a, family_b in sorted(family_pairs):
+        for a_id, a in by_family.get(family_a, []):
+            for b_id, b in by_family.get(family_b, []):
+                result.append(
+                    {
+                        "config_id": f"OR:{a_id}|{b_id}",
+                        "detector_family": "phenotype_or",
+                        "parameters_json": None,
+                        "a_config_id": a_id,
+                        "b_config_id": b_id,
+                        "a_detector_family": family_a,
+                        "b_detector_family": family_b,
+                        "a_parameters_json": a.get("parameters_json"),
+                        "b_parameters_json": b.get("parameters_json"),
+                    }
+                )
+    return result
 
 
 def _evaluate_predictions(
