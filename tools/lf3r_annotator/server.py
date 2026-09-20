@@ -204,6 +204,7 @@ ROBO_HOP_TABLE_FILES = {
     "oracle_summary": "oracle_summary.csv",
     "progress_peak_summary": "progress_peak_localization_summary.csv",
     "unconstrained_localization": "unconstrained_localization_ranking.csv",
+    "interval_localization": "interval_localization_ranking.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -225,6 +226,7 @@ ROBO_HOP_EXTENDED_FILES = (
     "progress_peak_localization.csv",
     "progress_peak_localization_summary.csv",
     "unconstrained_localization_ranking.csv",
+    "interval_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -300,6 +302,7 @@ ANALYSIS_ARTIFACT_NAMES = {
     "progress_peak_localization.csv",
     "progress_peak_localization_summary.csv",
     "unconstrained_localization_ranking.csv",
+    "interval_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -1074,6 +1077,20 @@ class AnalysisService:
             if row.get("rank_rmse") is not None
             and int(row["rank_rmse"]) <= 10
         ]
+        interval_localization_path = (
+            directory / ROBO_HOP_TABLE_FILES["interval_localization"]
+        )
+        interval_localization_rows = (
+            self._read_csv(interval_localization_path)
+            if interval_localization_path.is_file()
+            else []
+        )
+        interval_localization_top = [
+            row
+            for row in interval_localization_rows
+            if row.get("rank_mse") is not None
+            and int(row["rank_mse"]) <= 10
+        ]
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1136,6 +1153,10 @@ class AnalysisService:
                 "unconstrained_localization_ranking"
             ) or {},
             "unconstrained_localization_top": unconstrained_localization_top,
+            "interval_localization_ranking": metadata.get(
+                "interval_localization_ranking"
+            ) or {},
+            "interval_localization_top": interval_localization_top,
             "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
@@ -1165,6 +1186,7 @@ class AnalysisService:
                     "progress_peak_localization.csv",
                     "progress_peak_localization_summary.csv",
                     "unconstrained_localization_ranking.csv",
+                    "interval_localization_ranking.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
