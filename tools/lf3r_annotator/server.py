@@ -1152,10 +1152,12 @@ class AnalysisService:
             "unconstrained_localization_ranking": metadata.get(
                 "unconstrained_localization_ranking"
             ) or {},
+            "unconstrained_localization_rows": unconstrained_localization_rows,
             "unconstrained_localization_top": unconstrained_localization_top,
             "interval_localization_ranking": metadata.get(
                 "interval_localization_ranking"
             ) or {},
+            "interval_localization_rows": interval_localization_rows,
             "interval_localization_top": interval_localization_top,
             "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
