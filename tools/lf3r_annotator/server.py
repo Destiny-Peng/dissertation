@@ -202,6 +202,7 @@ ROBO_HOP_TABLE_FILES = {
     "ensemble_by_failure_type": "ensemble_by_failure_type.csv",
     "oracle_global_best": "oracle_global_best.csv",
     "oracle_summary": "oracle_summary.csv",
+    "progress_peak_summary": "progress_peak_localization_summary.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -220,6 +221,8 @@ ROBO_HOP_EXTENDED_FILES = (
     "oracle_global_best.csv",
     "oracle_event_detectability.csv",
     "oracle_summary.csv",
+    "progress_peak_localization.csv",
+    "progress_peak_localization_summary.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -292,6 +295,8 @@ ANALYSIS_ARTIFACT_NAMES = {
     "oracle_global_best.csv",
     "oracle_event_detectability.csv",
     "oracle_summary.csv",
+    "progress_peak_localization.csv",
+    "progress_peak_localization_summary.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -1044,6 +1049,14 @@ class AnalysisService:
             if oracle_summary_path.is_file()
             else []
         )
+        progress_peak_summary_path = (
+            directory / ROBO_HOP_TABLE_FILES["progress_peak_summary"]
+        )
+        progress_peak_summary = (
+            self._read_csv(progress_peak_summary_path)
+            if progress_peak_summary_path.is_file()
+            else []
+        )
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1098,6 +1111,10 @@ class AnalysisService:
             "ensemble_by_failure_type": ensemble_by_failure_type,
             "oracle_global_best": oracle_global_best,
             "oracle_summary": oracle_summary,
+            "progress_peak_localization_summary": progress_peak_summary,
+            "progress_peak_localization": metadata.get(
+                "progress_peak_localization"
+            ) or {},
             "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
@@ -1124,6 +1141,8 @@ class AnalysisService:
                     "oracle_global_best.csv",
                     "oracle_event_detectability.csv",
                     "oracle_summary.csv",
+                    "progress_peak_localization.csv",
+                    "progress_peak_localization_summary.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
