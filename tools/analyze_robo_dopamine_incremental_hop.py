@@ -81,6 +81,10 @@ from robo_incremental_hop.diagnosis import (
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.oracle import build_oracle_analysis
+from robo_incremental_hop.progress_peak import (
+    evaluate_progress_peak_localization,
+    summarize_progress_peak_localization,
+)
 from robo_incremental_hop.search_cache import (
     SEARCH_SEMANTICS_VERSION,
     load_legacy_search_seed,
@@ -275,6 +279,7 @@ def write_metadata(
     phenotype_grid: Mapping[str, Any],
     oracle_summary: Sequence[Mapping[str, Any]],
     search_cache_info: Mapping[str, Any],
+    progress_peak_summary: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -335,6 +340,18 @@ def write_metadata(
         "phenotype_detector": {
             **dict(phenotype_grid),
             "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
+        },
+        "progress_peak_localization": {
+            "enabled": True,
+            "definition": "t*=min argmax_t P_t on saved fused progress",
+            "population": (
+                "terminal_failure rollouts with at least one event annotation; "
+                "multiple events are collapsed to the first observable onset"
+            ),
+            "reference": "first observable_onset_frame",
+            "native_grid_only": True,
+            "interpolation": False,
+            "summary_rows": [dict(row) for row in progress_peak_summary],
         },
         "oracle_analysis": {
             "enabled": True,
@@ -437,6 +454,8 @@ def write_metadata(
             "oracle_global_best.csv",
             "oracle_event_detectability.csv",
             "oracle_summary.csv",
+            "progress_peak_localization.csv",
+            "progress_peak_localization_summary.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
             "grasp_matched_control.csv",
@@ -635,6 +654,14 @@ def analyse(
         )
         print(f"Search cache written: {project_relative(cache_file)}")
 
+    progress_peak_rows = evaluate_progress_peak_localization(
+        signals,
+        events,
+    )
+    progress_peak_summary = summarize_progress_peak_localization(
+        progress_peak_rows
+    )
+
     best_rows = select_best_configs(summary_rows)
     breakdown_rows = summarize_breakdowns(
         configs,
@@ -768,6 +795,14 @@ def analyse(
         oracle_summary,
     )
     write_csv(
+        output_dir / "progress_peak_localization.csv",
+        progress_peak_rows,
+    )
+    write_csv(
+        output_dir / "progress_peak_localization_summary.csv",
+        progress_peak_summary,
+    )
+    write_csv(
         output_dir / "grasp_event_features.csv",
         grasp_features,
     )
@@ -820,6 +855,7 @@ def analyse(
             "search_semantics_version": SEARCH_SEMANTICS_VERSION,
             "refresh_requested": bool(args.refresh_search_cache),
         },
+        progress_peak_summary=progress_peak_summary,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
