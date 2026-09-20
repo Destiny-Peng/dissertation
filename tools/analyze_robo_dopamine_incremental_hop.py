@@ -707,7 +707,6 @@ def analyse(
         global_localization_single_best,
         global_localization_metadata,
     ) = load_or_compute_global_localization(
-        base_search_fingerprint=fingerprint,
         signals=signals,
         events=events,
         existing_phenotype_configs=configs,
