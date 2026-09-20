@@ -341,6 +341,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             'analysis_kind: "robo_hop_comparison"',
             "/api/analysis/run",
             "analysisHopRunButton",
+            "analysisHopCpuLimit",
+            "cpu_limit: cpuLimit",
             "fused_scope_rollout_count",
             "event_recall_at_1",
             "event_recall_at_3",
@@ -470,6 +472,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "clipPath",
             "workspaceDashboardRenderSnapshot",
             "Failure detection and ensemble analysis",
+            "analysisHopCpuLimit",
             "fused",
         ]:
             self.assertIn(marker, html + workspace + hop_analysis)
