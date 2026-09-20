@@ -1071,8 +1071,8 @@ class AnalysisService:
         unconstrained_localization_top = [
             row
             for row in unconstrained_localization_rows
-            if row.get("rank_median_abs_error") is not None
-            and int(row["rank_median_abs_error"]) <= 10
+            if row.get("rank_rmse") is not None
+            and int(row["rank_rmse"]) <= 10
         ]
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
