@@ -125,12 +125,14 @@ def _empirical_thresholds(
             if value is not None:
                 raw_candidates.add(value)
 
+    clean_ids = [
+        str(clean["rollout_id"])
+        for clean in clean_rollouts
+        if str(clean["rollout_id"]) in score_by_rollout
+    ]
     clean_critical: dict[str, float] = {}
-    for clean in clean_rollouts:
-        rollout_id = str(clean["rollout_id"])
-        scores = score_by_rollout.get(rollout_id)
-        if scores is None:
-            continue
+    for rollout_id in clean_ids:
+        scores = score_by_rollout[rollout_id]
         value = _critical_value(scores, list(range(len(scores))))
         if value is not None:
             clean_critical[rollout_id] = value
@@ -143,7 +145,7 @@ def _empirical_thresholds(
     )
     signature_best: dict[tuple[str, ...], float] = {}
     fpr_by_signature: dict[tuple[str, ...], float] = {}
-    clean_n = len(clean_critical)
+    clean_n = len(clean_ids)
 
     for threshold in candidates:
         signature = tuple(
