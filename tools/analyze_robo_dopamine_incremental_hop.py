@@ -80,14 +80,8 @@ from robo_incremental_hop.diagnosis import (
     summarize_matched_controls,
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
-from robo_incremental_hop.oracle import build_oracle_analysis
-from robo_incremental_hop.progress_peak import (
-    evaluate_progress_peak_localization,
-    summarize_progress_peak_localization,
-)
 from robo_incremental_hop.localization_ranking import (
     rank_existing_sweep_interval_localization,
-    rank_existing_sweep_localization,
 )
 from robo_incremental_hop.search_cache import (
     SEARCH_SEMANTICS_VERSION,
@@ -281,10 +275,7 @@ def write_metadata(
     common_rollout_ids: set[str],
     best_rows: Sequence[Mapping[str, Any]],
     phenotype_grid: Mapping[str, Any],
-    oracle_summary: Sequence[Mapping[str, Any]],
     search_cache_info: Mapping[str, Any],
-    progress_peak_summary: Sequence[Mapping[str, Any]],
-    unconstrained_localization_rows: Sequence[Mapping[str, Any]],
     interval_localization_rows: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
@@ -368,85 +359,6 @@ def write_metadata(
             "candidate_row_n": len(interval_localization_rows),
             "reruns_detector_search": False,
         },
-        "unconstrained_localization_ranking": {
-            "enabled": True,
-            "clean_fpr_constraint": None,
-            "source": "existing event_results.csv and ensemble_sweep.csv only",
-            "candidate_config_n": len(
-                {
-                    str(row.get("config_id"))
-                    for row in unconstrained_localization_rows
-                    if row.get("config_id") not in (None, "")
-                }
-            ),
-            "candidate_families": sorted(
-                {
-                    str(row.get("detector_family"))
-                    for row in unconstrained_localization_rows
-                    if row.get("detector_family") not in (None, "")
-                }
-            ),
-            "first_trigger_rule": (
-                "per config and rollout, use the earliest saved trigger already "
-                "represented by earliest_early_positive_frame or detection_frame; "
-                "OR combinations use the earlier first trigger of their two "
-                "already-searched component configs"
-            ),
-            "populations": [
-                "all_failure_events",
-                "first_event_per_failed_rollout",
-                "grasp_failure",
-            ],
-            "metrics": [
-                "within_1",
-                "within_3",
-                "within_5",
-                "within_10",
-                "median_signed_offset_samples",
-                "median_absolute_error_samples",
-                "mae_samples",
-                "rmse_samples",
-                "trigger_coverage",
-            ],
-            "primary_ranking": (
-                "RMSE ascending; if any config has 100% trigger coverage, rank "
-                "only full-coverage configs. Otherwise rank only the maximum-"
-                "coverage configs. MAE then median absolute error are tie-breakers."
-            ),
-            "signed_offset_role": (
-                "diagnostic direction only; signed offset never determines "
-                "localization quality rank"
-            ),
-            "candidate_row_n": len(unconstrained_localization_rows),
-            "reruns_detector_search": False,
-        },
-        "progress_peak_localization": {
-            "enabled": True,
-            "definition": "t*=min argmax_t P_t on saved fused progress",
-            "population": (
-                "terminal_failure rollouts with at least one event annotation; "
-                "multiple events are collapsed to the first observable onset"
-            ),
-            "reference": "first observable_onset_frame",
-            "native_grid_only": True,
-            "interpolation": False,
-            "summary_rows": [dict(row) for row in progress_peak_summary],
-        },
-        "oracle_analysis": {
-            "enabled": True,
-            "clean_fpr_constraint": None,
-            "early_tolerance_native_samples": 1,
-            "localization_rule": (
-                "a positive episode counts only if its start is at/after the "
-                "observable-onset anchor, or at most one native sample early"
-            ),
-            "delay_semantics": (
-                "best_start_offset_samples is 0-based relative to the onset "
-                "anchor; best_delay_samples preserves existing Recall@d semantics "
-                "with onset-anchor sample=1 and one-sample-early alarm=0"
-            ),
-            "summary_rows": [dict(row) for row in oracle_summary],
-        },
         "detector_semantics": {
             "stagnation_consecutive": (
                 "abs(h_t) <= delta for n consecutive native samples"
@@ -460,51 +372,21 @@ def write_metadata(
             ),
         },
         "evaluation_semantics": {
-            "primary_reference": "human observable_onset_frame",
-            "recall_profile_native_samples": [1, 3, 5, 10, 20],
-            "eventual_recall": (
-                "positive at least once from observable onset until the failure "
-                "episode end; recovery_frame, terminal_failure_frame, or the next "
-                "observable event onset is an exclusive boundary, otherwise the "
-                "last available rollout sample is included"
+            "localization_ground_truth": (
+                "[causal_onset_frame, observable_onset_frame] only"
             ),
-            "sample_delay": (
-                "1-based count from the first native sample at/after onset"
+            "localization_windows_native_samples": [1, 3, 5],
+            "localization_time": "first detector trigger; windowed rule time = window end",
+            "signed_interval_error": (
+                "prediction<causal => prediction-causal; inside interval => 0; "
+                "prediction>observable => prediction-observable"
             ),
-            "frame_delay": (
-                "detector_frame - observable_onset_frame using actual saved frame indices"
-            ),
-            "early_positives": (
-                "reported separately and never converted to zero-delay detections"
-            ),
-            "pre_onset_lookback_samples": 10,
-            "parameter_selection": (
-                "The detector has two phenotypes: stagnation and short/strong "
-                "regression. OR ensembles jointly sweep stagnation parameters and "
-                "empirical regression-window-min parameters under total clean FPR "
-                "caps. Primary selection targets are grasp-failure eventual recall "
-                "and grasp-failure Recall@10; overall failure coverage is reported "
-                "as a secondary outcome."
-            ),
-            "no_event_failure": (
-                "For terminal-failure rollouts with no failure-event annotation, "
-                "do not synthesize an onset. Treat failure as present from rollout "
-                "start and report first-alarm Recall@1/@3/@5/@10/@20/eventual plus "
-                "start-to-alarm delay on the native fused-signal grid."
-            ),
-            "overall_failed_rollout_coverage": (
-                "A terminal-failure rollout is covered when any annotated event is "
-                "eventually detected, or when a no-event terminal-failure rollout "
-                "has any alarm before rollout end."
+            "legacy_sweep_note": (
+                "Existing sweep artifacts may retain historical observable-onset "
+                "recall fields because they are reused as candidate-search outputs; "
+                "they are not used as the current localization evaluation."
             ),
             "recovery_hop_window_samples": args.recovery_window_samples,
-            "pairwise_ensemble": (
-                "Fused-only stagnation OR regression search. Stagnation is swept "
-                "as consecutive or k-of-m near-zero evidence; regression uses "
-                "rolling-window minimum <= empirical theta_r. Grasp eventual and "
-                "grasp Recall@10 are optimized separately under total clean FPR "
-                "caps 5%, 10%, and 20%; inference outputs are reused."
-            ),
         },
         "generalization": {
             "task_cv_enabled": bool(args.task_cv),
@@ -530,12 +412,6 @@ def write_metadata(
             "ensemble_sweep.csv",
             "ensemble_selected.csv",
             "ensemble_by_failure_type.csv",
-            "oracle_global_best.csv",
-            "oracle_event_detectability.csv",
-            "oracle_summary.csv",
-            "progress_peak_localization.csv",
-            "progress_peak_localization_summary.csv",
-            "unconstrained_localization_ranking.csv",
             "interval_localization_ranking.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
@@ -630,24 +506,18 @@ def analyse(
 
     if cached_search is not None:
         configs = list(cached_search["configs"])
-        oracle_configs = list(cached_search["oracle_configs"])
         phenotype_grid = dict(cached_search["phenotype_grid"])
         summary_rows = list(cached_search["summary_rows"])
         event_rows = list(cached_search["event_rows"])
         no_event_rows = list(cached_search["no_event_rows"])
         clean_rows = list(cached_search["clean_rows"])
         ensemble_sweep = list(cached_search["ensemble_sweep"])
-        oracle_global_best = list(cached_search["oracle_global_best"])
-        oracle_event_detectability = list(
-            cached_search["oracle_event_detectability"]
-        )
-        oracle_summary = list(cached_search["oracle_summary"])
         print(
             "Search cache hit: "
-            f"{fingerprint[:12]} · reusing detector/oracle/pair-sweep results"
+            f"{fingerprint[:12]} · reusing detector/pair-sweep results"
         )
     else:
-        configs, oracle_configs, phenotype_grid = build_phenotype_detector_configs(
+        configs, _unused_oracle_configs, phenotype_grid = build_phenotype_detector_configs(
             signals,
             events,
             no_event_failures,
@@ -667,7 +537,6 @@ def analyse(
                 no_event_failures=no_event_failures,
                 clean_rollouts=clean_rollouts,
                 configs=configs,
-                oracle_configs=oracle_configs,
                 phenotype_grid=phenotype_grid,
             )
 
@@ -678,11 +547,6 @@ def analyse(
             no_event_rows = list(legacy_seed["no_event_rows"])
             clean_rows = list(legacy_seed["clean_rows"])
             ensemble_sweep = list(legacy_seed["ensemble_sweep"])
-            oracle_global_best = list(legacy_seed["oracle_global_best"])
-            oracle_event_detectability = list(
-                legacy_seed["oracle_event_detectability"]
-            )
-            oracle_summary = list(legacy_seed["oracle_summary"])
             print(
                 "Compatible prior analysis found: "
                 f"{project_relative(legacy_seed_dir)} · importing search results"
@@ -691,7 +555,7 @@ def analyse(
             print(
                 "Search cache miss: "
                 f"{fingerprint[:12]} · no compatible prior analysis; "
-                "running detector/oracle/pair search once"
+                "running detector/pair search once"
             )
             summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
                 configs,
@@ -699,16 +563,6 @@ def analyse(
                 events,
                 no_event_failures,
                 clean_rollouts,
-            )
-            oracle_global_best, oracle_event_detectability, oracle_summary = (
-                build_oracle_analysis(
-                    oracle_configs,
-                    signals,
-                    events,
-                    no_event_failures,
-                    clean_rollouts,
-                    early_tolerance_samples=1,
-                )
             )
             ensemble_sweep, _unused_selected, _unused_failure_types = (
                 build_pairwise_ensemble_rows(
@@ -722,24 +576,14 @@ def analyse(
         cache_file = write_search_cache(
             fingerprint,
             configs=configs,
-            oracle_configs=oracle_configs,
             phenotype_grid=phenotype_grid,
             summary_rows=summary_rows,
             event_rows=event_rows,
             no_event_rows=no_event_rows,
             clean_rows=clean_rows,
             ensemble_sweep=ensemble_sweep,
-            oracle_global_best=oracle_global_best,
-            oracle_event_detectability=oracle_event_detectability,
-            oracle_summary=oracle_summary,
         )
         print(f"Search cache written: {project_relative(cache_file)}")
-
-    unconstrained_localization_rows = rank_existing_sweep_localization(
-        event_rows=event_rows,
-        ensemble_sweep=ensemble_sweep,
-        signals=signals,
-    )
 
     interval_localization_rows = (
         rank_existing_sweep_interval_localization(
@@ -747,14 +591,6 @@ def analyse(
             ensemble_sweep=ensemble_sweep,
             signals=signals,
         )
-    )
-
-    progress_peak_rows = evaluate_progress_peak_localization(
-        signals,
-        events,
-    )
-    progress_peak_summary = summarize_progress_peak_localization(
-        progress_peak_rows
     )
 
     best_rows = select_best_configs(summary_rows)
@@ -878,30 +714,6 @@ def analyse(
         ensemble_failure_types,
     )
     write_csv(
-        output_dir / "oracle_global_best.csv",
-        oracle_global_best,
-    )
-    write_csv(
-        output_dir / "oracle_event_detectability.csv",
-        oracle_event_detectability,
-    )
-    write_csv(
-        output_dir / "oracle_summary.csv",
-        oracle_summary,
-    )
-    write_csv(
-        output_dir / "progress_peak_localization.csv",
-        progress_peak_rows,
-    )
-    write_csv(
-        output_dir / "progress_peak_localization_summary.csv",
-        progress_peak_summary,
-    )
-    write_csv(
-        output_dir / "unconstrained_localization_ranking.csv",
-        unconstrained_localization_rows,
-    )
-    write_csv(
         output_dir / "interval_localization_ranking.csv",
         interval_localization_rows,
     )
@@ -944,7 +756,6 @@ def analyse(
         common_rollout_ids=analysis_rollout_ids,
         best_rows=tagged_best,
         phenotype_grid=phenotype_grid,
-        oracle_summary=oracle_summary,
         search_cache_info={
             "enabled": True,
             "hit": search_cache_hit,
@@ -958,8 +769,6 @@ def analyse(
             "search_semantics_version": SEARCH_SEMANTICS_VERSION,
             "refresh_requested": bool(args.refresh_search_cache),
         },
-        progress_peak_summary=progress_peak_summary,
-        unconstrained_localization_rows=unconstrained_localization_rows,
         interval_localization_rows=interval_localization_rows,
         grasp_diagnosis=grasp_diagnosis,
     )
