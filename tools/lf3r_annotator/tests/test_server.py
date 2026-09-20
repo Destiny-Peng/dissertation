@@ -919,7 +919,7 @@ global_row = {
     'selection_kind': 'metric_specific_capacity_upper_envelope',
     'selection_target': 'capacity_within_3_recall', 'selection_value': 0.75,
     'config_id': 'global_fixed_00001', 'detector_family': 'consecutive',
-    'config_source': 'historical_full_grid', 'parameters_json': '{"epsilon":0,"n":1}',
+    'config_source': 'historical_full_grid', 'parameters_json': '{{"epsilon":0,"n":1}}',
     'event_n': 4, 'capacity_within_1_recall': 0.5,
     'capacity_within_3_recall': 0.75, 'capacity_within_5_recall': 1.0,
     'capacity_within_10_recall': 1.0, 'capacity_eventual_recall': 1.0,
