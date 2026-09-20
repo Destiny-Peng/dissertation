@@ -37,6 +37,7 @@ from robo_incremental_hop.diagnosis import (
     summarize_matched_controls,
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
+from robo_incremental_hop.oracle import build_oracle_analysis
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -154,6 +155,7 @@ def write_metadata(
     common_rollout_ids: set[str],
     best_rows: Sequence[Mapping[str, Any]],
     phenotype_grid: Mapping[str, Any],
+    oracle_summary: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -210,6 +212,21 @@ def write_metadata(
         "phenotype_detector": {
             **dict(phenotype_grid),
             "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
+        },
+        "oracle_analysis": {
+            "enabled": True,
+            "clean_fpr_constraint": None,
+            "early_tolerance_native_samples": 1,
+            "localization_rule": (
+                "a positive episode counts only if its start is at/after the "
+                "observable-onset anchor, or at most one native sample early"
+            ),
+            "delay_semantics": (
+                "best_start_offset_samples is 0-based relative to the onset "
+                "anchor; best_delay_samples preserves existing Recall@d semantics "
+                "with onset-anchor sample=1 and one-sample-early alarm=0"
+            ),
+            "summary_rows": [dict(row) for row in oracle_summary],
         },
         "detector_semantics": {
             "stagnation_consecutive": (
@@ -294,6 +311,9 @@ def write_metadata(
             "ensemble_sweep.csv",
             "ensemble_selected.csv",
             "ensemble_by_failure_type.csv",
+            "oracle_global_best.csv",
+            "oracle_event_detectability.csv",
+            "oracle_summary.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
             "grasp_matched_control.csv",
@@ -419,6 +439,16 @@ def analyse(
             clean_rows,
         )
     )
+    oracle_global_best, oracle_event_detectability, oracle_summary = (
+        build_oracle_analysis(
+            configs,
+            signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+            early_tolerance_samples=1,
+        )
+    )
 
     reference_ensemble = choose_reference_ensemble(
         ensemble_selected
@@ -507,6 +537,18 @@ def analyse(
         ensemble_failure_types,
     )
     write_csv(
+        output_dir / "oracle_global_best.csv",
+        oracle_global_best,
+    )
+    write_csv(
+        output_dir / "oracle_event_detectability.csv",
+        oracle_event_detectability,
+    )
+    write_csv(
+        output_dir / "oracle_summary.csv",
+        oracle_summary,
+    )
+    write_csv(
         output_dir / "grasp_event_features.csv",
         grasp_features,
     )
@@ -545,6 +587,7 @@ def analyse(
         common_rollout_ids=analysis_rollout_ids,
         best_rows=tagged_best,
         phenotype_grid=phenotype_grid,
+        oracle_summary=oracle_summary,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
