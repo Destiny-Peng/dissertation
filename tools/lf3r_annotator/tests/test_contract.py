@@ -321,6 +321,11 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "ensemble_sweep.csv",
             "ensemble_selected.csv",
             "ensemble_by_failure_type.csv",
+            "grasp_event_features.csv",
+            "grasp_detected_vs_missed.csv",
+            "grasp_matched_control.csv",
+            "grasp_failure_categories.csv",
+            "grasp_event_heatmap.png",
         ]:
             self.assertIn(marker, server)
         self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
