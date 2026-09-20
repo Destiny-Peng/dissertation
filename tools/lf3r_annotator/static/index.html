@@ -659,6 +659,10 @@
                 <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
                   pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
               </label>
+              <label><span>CPU limit</span>
+                <input id="analysisHopCpuLimit" type="number" value="4" min="1" max="16" step="1">
+                <small class="analysis-run-field-help">Maximum logical CPUs for this analysis process. Default: 4.</small>
+              </label>
               <label><span>Generalization</span>
                 <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
               </label>
