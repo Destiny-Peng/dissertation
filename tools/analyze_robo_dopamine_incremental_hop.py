@@ -349,6 +349,20 @@ def write_metadata(
             "enabled": True,
             "clean_fpr_constraint": None,
             "source": "existing event_results.csv and ensemble_sweep.csv only",
+            "candidate_config_n": len(
+                {
+                    str(row.get("config_id"))
+                    for row in unconstrained_localization_rows
+                    if row.get("config_id") not in (None, "")
+                }
+            ),
+            "candidate_families": sorted(
+                {
+                    str(row.get("detector_family"))
+                    for row in unconstrained_localization_rows
+                    if row.get("detector_family") not in (None, "")
+                }
+            ),
             "first_trigger_rule": (
                 "per config and rollout, use the earliest saved trigger already "
                 "represented by earliest_early_positive_frame or detection_frame; "
