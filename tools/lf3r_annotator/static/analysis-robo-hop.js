@@ -412,9 +412,16 @@
     var signal = hop.signal || {};
     var searchCache = hop.search_cache || {};
     var rolloutCount = signal.common_rollout_n;
-    var cacheText = searchCache.enabled
-      ? (searchCache.hit ? " · search cache HIT" : " · search cache MISS / refreshed")
-      : "";
+    var cacheText = "";
+    if (searchCache.enabled) {
+      if (searchCache.reuse_source === "cache") {
+        cacheText = " · search cache HIT";
+      } else if (searchCache.reuse_source === "legacy_analysis") {
+        cacheText = " · reused prior search";
+      } else {
+        cacheText = " · search computed";
+      }
+    }
     var sourceText = "Latest snapshot: " + (source.directory || "unknown")
       + " · fused-hop rollouts " + (rolloutCount == null ? "n/a" : rolloutCount)
       + cacheText
