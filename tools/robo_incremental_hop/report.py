@@ -1286,43 +1286,25 @@ def plot_tradeoff(
     grouped: dict[
         str, list[Mapping[str, Any]]
     ] = defaultdict(list)
+    metric = (
+        "grasp_recall_eventual"
+        if any(
+            row.get("grasp_recall_eventual") is not None
+            for row in summary_rows
+        )
+        else "event_recall_at_3"
+    )
     for row in summary_rows:
         if (
-            row.get("clean_rollout_fpr")
-            is not None
-            and row.get(
-                "event_recall_at_3"
-            )
-            is not None
+            row.get("clean_rollout_fpr") is not None
+            and row.get(metric) is not None
         ):
-            grouped[
-                str(
-                    row[
-                        "detector_family"
-                    ]
-                )
-            ].append(row)
+            grouped[str(row["detector_family"])].append(row)
 
-    for family, rows in sorted(
-        grouped.items()
-    ):
+    for family, rows in sorted(grouped.items()):
         axis.scatter(
-            [
-                float(
-                    row[
-                        "clean_rollout_fpr"
-                    ]
-                )
-                for row in rows
-            ],
-            [
-                float(
-                    row[
-                        "event_recall_at_3"
-                    ]
-                )
-                for row in rows
-            ],
+            [float(row["clean_rollout_fpr"]) for row in rows],
+            [float(row[metric]) for row in rows],
             label=family,
             s=20,
             alpha=0.7,
@@ -1340,10 +1322,14 @@ def plot_tradeoff(
         "clean-rollout false-positive rate"
     )
     axis.set_ylabel(
-        "event recall @ 3 native samples"
+        (
+            "grasp-failure eventual recall"
+            if metric == "grasp_recall_eventual"
+            else "event recall @ 3 native samples"
+        )
     )
     axis.set_title(
-        "Robo-Dopamine hop detector trade-off"
+        "Fused-hop phenotype detector trade-off"
     )
     axis.set_ylim(0, 1.02)
     axis.grid(alpha=0.2)
