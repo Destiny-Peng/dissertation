@@ -81,6 +81,12 @@ from robo_incremental_hop.diagnosis import (
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.oracle import build_oracle_analysis
+from robo_incremental_hop.search_cache import (
+    SEARCH_SEMANTICS_VERSION,
+    load_search_cache,
+    search_fingerprint,
+    write_search_cache,
+)
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -266,6 +272,7 @@ def write_metadata(
     best_rows: Sequence[Mapping[str, Any]],
     phenotype_grid: Mapping[str, Any],
     oracle_summary: Sequence[Mapping[str, Any]],
+    search_cache_info: Mapping[str, Any],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -287,6 +294,7 @@ def write_metadata(
         "resource_limits": dict(
             getattr(args, "resource_limits", {})
         ),
+        "search_cache": dict(search_cache_info),
         "input": {
             "run_root": project_relative(run_root),
             "selection": (
@@ -503,19 +511,77 @@ def analyse(
             "No rollout has a usable saved Robo-Dopamine fused hop signal"
         )
 
-    configs, oracle_configs, phenotype_grid = build_phenotype_detector_configs(
+    fingerprint = search_fingerprint(
         signals,
         events,
         no_event_failures,
         clean_rollouts,
     )
-    summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
-        configs,
-        signals,
-        events,
-        no_event_failures,
-        clean_rollouts,
+    cached_search = (
+        None
+        if args.refresh_search_cache
+        else load_search_cache(fingerprint)
     )
+    search_cache_hit = cached_search is not None
+    if cached_search is not None:
+        configs = list(cached_search["configs"])
+        oracle_configs = list(cached_search["oracle_configs"])
+        phenotype_grid = dict(cached_search["phenotype_grid"])
+        summary_rows = list(cached_search["summary_rows"])
+        event_rows = list(cached_search["event_rows"])
+        no_event_rows = list(cached_search["no_event_rows"])
+        clean_rows = list(cached_search["clean_rows"])
+        oracle_global_best = list(cached_search["oracle_global_best"])
+        oracle_event_detectability = list(
+            cached_search["oracle_event_detectability"]
+        )
+        oracle_summary = list(cached_search["oracle_summary"])
+        print(
+            "Search cache hit: "
+            f"{fingerprint[:12]} · reusing detector/oracle search results"
+        )
+    else:
+        print(
+            "Search cache miss: "
+            f"{fingerprint[:12]} · running detector/oracle search once"
+        )
+        configs, oracle_configs, phenotype_grid = build_phenotype_detector_configs(
+            signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+        summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
+            configs,
+            signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+        oracle_global_best, oracle_event_detectability, oracle_summary = (
+            build_oracle_analysis(
+                oracle_configs,
+                signals,
+                events,
+                no_event_failures,
+                clean_rollouts,
+                early_tolerance_samples=1,
+            )
+        )
+        cache_file = write_search_cache(
+            fingerprint,
+            configs=configs,
+            oracle_configs=oracle_configs,
+            phenotype_grid=phenotype_grid,
+            summary_rows=summary_rows,
+            event_rows=event_rows,
+            no_event_rows=no_event_rows,
+            clean_rows=clean_rows,
+            oracle_global_best=oracle_global_best,
+            oracle_event_detectability=oracle_event_detectability,
+            oracle_summary=oracle_summary,
+        )
+        print(f"Search cache written: {project_relative(cache_file)}")
     best_rows = select_best_configs(summary_rows)
     breakdown_rows = summarize_breakdowns(
         configs,
@@ -552,17 +618,6 @@ def analyse(
             clean_rows,
         )
     )
-    oracle_global_best, oracle_event_detectability, oracle_summary = (
-        build_oracle_analysis(
-            oracle_configs,
-            signals,
-            events,
-            no_event_failures,
-            clean_rollouts,
-            early_tolerance_samples=1,
-        )
-    )
-
     reference_ensemble = choose_reference_ensemble(
         ensemble_selected
     )
@@ -701,6 +756,13 @@ def analyse(
         best_rows=tagged_best,
         phenotype_grid=phenotype_grid,
         oracle_summary=oracle_summary,
+        search_cache_info={
+            "enabled": True,
+            "hit": search_cache_hit,
+            "fingerprint": fingerprint,
+            "search_semantics_version": SEARCH_SEMANTICS_VERSION,
+            "refresh_requested": bool(args.refresh_search_cache),
+        },
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
@@ -785,6 +847,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Maximum logical CPUs available to this analysis process. "
             f"Default: {DEFAULT_CPU_LIMIT}. Also caps common BLAS/OpenMP thread pools."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-search-cache",
+        action="store_true",
+        help=(
+            "Force detector/oracle search to run again even if a compatible "
+            "content-addressed search cache already exists."
         ),
     )
     parser.add_argument(
