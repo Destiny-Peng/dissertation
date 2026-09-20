@@ -635,8 +635,9 @@
           </div>
           <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
             <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
-            events use rollout-start detection latency. Pairwise OR ensembles reuse the same saved outputs and do not
-            run inference.</p>
+            events use rollout-start detection latency. The detector is searched as
+            <strong>stagnation OR short/strong regression</strong>, with grasp-failure Recall@10/eventual as the
+            primary selection targets. No inference is rerun.</p>
           <form id="analysisHopForm" class="analysis-run-form">
             <div class="analysis-run-grid">
               <label><span>Rollout scope</span>
