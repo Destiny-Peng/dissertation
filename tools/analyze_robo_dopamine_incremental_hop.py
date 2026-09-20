@@ -81,7 +81,7 @@ from robo_incremental_hop.diagnosis import (
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.localization_ranking import (
-    rank_existing_sweep_interval_localization,
+    offline_change_point_localization,
 )
 from robo_incremental_hop.search_cache import (
     SEARCH_SEMANTICS_VERSION,
@@ -277,6 +277,7 @@ def write_metadata(
     phenotype_grid: Mapping[str, Any],
     search_cache_info: Mapping[str, Any],
     interval_localization_rows: Sequence[Mapping[str, Any]],
+    interval_localization_diagnostics: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -341,23 +342,47 @@ def write_metadata(
         "interval_localization_ranking": {
             "enabled": True,
             "clean_fpr_constraint": None,
-            "source": "existing event_results.csv and ensemble_sweep.csv only",
+            "source": (
+                "saved fused-hop signals + existing detector configs/pair sweep; "
+                "CPU post-processing only"
+            ),
             "ground_truth": "[causal_onset_frame, observable_onset_frame]",
             "eligible_events": (
                 "terminal_failure events with both causal and observable onset"
             ),
-            "first_trigger_rule": (
-                "scan rollout from start to end using existing detector semantics; "
-                "localization time is the first trigger; windowed detector time is "
-                "the window end"
+            "candidate_semantics": (
+                "scan full rollout with original detector logic; keep every positive "
+                "episode start as a localization candidate"
+            ),
+            "offline_score": (
+                "median(hop[s-L:s]) - median(hop[s:s+R]); complete windows only"
+            ),
+            "change_point_windows": [2, 3, 5],
+            "selection_rule": (
+                "maximum score per rollout/config/L/R; earliest candidate breaks ties"
+            ),
+            "comparison_selectors": [
+                "first_trigger",
+                "global_fused_progress_argmax",
+            ],
+            "global_argmax_rule": (
+                "earliest native sample attaining the rollout-global maximum fused progress"
             ),
             "signed_interval_error": (
                 "prediction<causal => prediction-causal; inside interval => 0; "
                 "prediction>observable => prediction-observable, in native samples"
             ),
             "reported_windows": [1, 3, 5],
-            "candidate_row_n": len(interval_localization_rows),
+            "populations": [
+                "first_eligible_event_per_failed_rollout",
+                "all_eligible_failure_events",
+                "grasp_failure",
+            ],
+            "ranking_row_n": len(interval_localization_rows),
+            "diagnostic_row_n": len(interval_localization_diagnostics),
             "reruns_detector_search": False,
+            "reruns_robo_dopamine": False,
+            "clean_fpr_analysis": False,
         },
         "detector_semantics": {
             "stagnation_consecutive": (
@@ -413,6 +438,7 @@ def write_metadata(
             "ensemble_selected.csv",
             "ensemble_by_failure_type.csv",
             "interval_localization_ranking.csv",
+            "offline_localization_diagnostics.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
             "grasp_matched_control.csv",
@@ -585,11 +611,12 @@ def analyse(
         )
         print(f"Search cache written: {project_relative(cache_file)}")
 
-    interval_localization_rows = (
-        rank_existing_sweep_interval_localization(
+    interval_localization_rows, interval_localization_diagnostics = (
+        offline_change_point_localization(
             event_rows=event_rows,
             ensemble_sweep=ensemble_sweep,
             signals=signals,
+            configs=configs,
         )
     )
 
@@ -718,6 +745,10 @@ def analyse(
         interval_localization_rows,
     )
     write_csv(
+        output_dir / "offline_localization_diagnostics.csv",
+        interval_localization_diagnostics,
+    )
+    write_csv(
         output_dir / "grasp_event_features.csv",
         grasp_features,
     )
@@ -770,6 +801,7 @@ def analyse(
             "refresh_requested": bool(args.refresh_search_cache),
         },
         interval_localization_rows=interval_localization_rows,
+        interval_localization_diagnostics=interval_localization_diagnostics,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
