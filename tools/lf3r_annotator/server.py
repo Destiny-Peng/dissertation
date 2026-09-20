@@ -215,6 +215,12 @@ ROBO_HOP_EXTENDED_FILES = (
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
+    "grasp_event_features.csv",
+    "grasp_detected_vs_missed.csv",
+    "grasp_matched_control.csv",
+    "grasp_matched_control_summary.csv",
+    "grasp_failure_categories.csv",
+    "grasp_failure_category_summary.csv",
 )
 
 # These allowlists are deliberately kept server-side. The Analysis page can
@@ -278,6 +284,13 @@ ANALYSIS_ARTIFACT_NAMES = {
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
+    "grasp_event_features.csv",
+    "grasp_detected_vs_missed.csv",
+    "grasp_matched_control.csv",
+    "grasp_matched_control_summary.csv",
+    "grasp_failure_categories.csv",
+    "grasp_failure_category_summary.csv",
+    "grasp_event_heatmap.png",
     "task_cv_results.csv",
 }
 CHANGEPOINT_EVENT_FIELDS = (
@@ -1080,6 +1093,13 @@ class AnalysisService:
                     "ensemble_sweep.csv",
                     "ensemble_selected.csv",
                     "ensemble_by_failure_type.csv",
+                    "grasp_event_features.csv",
+                    "grasp_detected_vs_missed.csv",
+                    "grasp_matched_control.csv",
+                    "grasp_matched_control_summary.csv",
+                    "grasp_failure_categories.csv",
+                    "grasp_failure_category_summary.csv",
+                    "grasp_event_heatmap.png",
                     "task_cv_results.csv",
                 )
                 if (directory / name).is_file()
