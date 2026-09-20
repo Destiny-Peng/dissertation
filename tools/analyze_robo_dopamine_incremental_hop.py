@@ -343,7 +343,8 @@ def write_metadata(
             "enabled": True,
             "clean_fpr_constraint": None,
             "source": (
-                "saved fused-hop signals + existing detector configs/pair sweep; "
+                "saved fused-hop signals + existing detector configs; existing "
+                "ensemble_sweep is used only to recover pre-existing OR family rules; "
                 "CPU post-processing only"
             ),
             "ground_truth": "[causal_onset_frame, observable_onset_frame]",
@@ -383,6 +384,10 @@ def write_metadata(
             "reruns_detector_search": False,
             "reruns_robo_dopamine": False,
             "clean_fpr_analysis": False,
+            "or_pair_semantics": (
+                "Cartesian product of existing configs within pre-existing OR family "
+                "rules; historical clean-FPR pair pruning is intentionally ignored"
+            ),
         },
         "detector_semantics": {
             "stagnation_consecutive": (
