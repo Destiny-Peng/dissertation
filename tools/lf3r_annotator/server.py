@@ -200,6 +200,8 @@ ROBO_HOP_TABLE_FILES = {
     "ensemble_sweep": "ensemble_sweep.csv",
     "ensemble_selected": "ensemble_selected.csv",
     "ensemble_by_failure_type": "ensemble_by_failure_type.csv",
+    "oracle_global_best": "oracle_global_best.csv",
+    "oracle_summary": "oracle_summary.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -215,6 +217,9 @@ ROBO_HOP_EXTENDED_FILES = (
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
+    "oracle_global_best.csv",
+    "oracle_event_detectability.csv",
+    "oracle_summary.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -284,6 +289,9 @@ ANALYSIS_ARTIFACT_NAMES = {
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
+    "oracle_global_best.csv",
+    "oracle_event_detectability.csv",
+    "oracle_summary.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -1024,6 +1032,18 @@ class AnalysisService:
             if ensemble_failure_path.is_file()
             else []
         )
+        oracle_global_path = directory / ROBO_HOP_TABLE_FILES["oracle_global_best"]
+        oracle_summary_path = directory / ROBO_HOP_TABLE_FILES["oracle_summary"]
+        oracle_global_best = (
+            self._read_csv(oracle_global_path)
+            if oracle_global_path.is_file()
+            else []
+        )
+        oracle_summary = (
+            self._read_csv(oracle_summary_path)
+            if oracle_summary_path.is_file()
+            else []
+        )
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1076,6 +1096,9 @@ class AnalysisService:
             "ensemble_sweep": ensemble_sweep,
             "ensemble_selected": ensemble_selected,
             "ensemble_by_failure_type": ensemble_by_failure_type,
+            "oracle_global_best": oracle_global_best,
+            "oracle_summary": oracle_summary,
+            "oracle_analysis": metadata.get("oracle_analysis") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
             "grasp_failure_diagnosis": metadata.get(
                 "grasp_failure_diagnosis"
@@ -1097,6 +1120,9 @@ class AnalysisService:
                     "ensemble_sweep.csv",
                     "ensemble_selected.csv",
                     "ensemble_by_failure_type.csv",
+                    "oracle_global_best.csv",
+                    "oracle_event_detectability.csv",
+                    "oracle_summary.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
