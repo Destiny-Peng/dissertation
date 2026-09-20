@@ -1076,6 +1076,7 @@ class AnalysisService:
             "ensemble_sweep": ensemble_sweep,
             "ensemble_selected": ensemble_selected,
             "ensemble_by_failure_type": ensemble_by_failure_type,
+            "phenotype_detector": metadata.get("phenotype_detector") or {},
             "grasp_failure_diagnosis": metadata.get(
                 "grasp_failure_diagnosis"
             ) or {},
