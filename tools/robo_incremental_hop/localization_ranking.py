@@ -197,6 +197,18 @@ def _evaluate_candidate(
             if absolute
             else None
         ),
+        "mse_samples": (
+            sum(value * value for value in signed) / len(signed)
+            if signed
+            else None
+        ),
+        "rmse_samples": (
+            math.sqrt(
+                sum(value * value for value in signed) / len(signed)
+            )
+            if signed
+            else None
+        ),
         "before_onset_n": sum(value < 0 for value in signed),
         "at_onset_n": sum(value == 0 for value in signed),
         "after_onset_n": sum(value > 0 for value in signed),
@@ -264,14 +276,47 @@ def _add_ranks(rows: list[dict[str, Any]]) -> None:
             for rank, row in enumerate(ordered, 1):
                 row[f"rank_within_{window}"] = rank
 
+        ordered_rmse = sorted(
+            population_rows,
+            key=lambda row: (
+                0
+                if float(row.get("trigger_coverage") or 0.0) >= 1.0 - 1e-12
+                else 1,
+                (
+                    0.0
+                    if float(row.get("trigger_coverage") or 0.0) >= 1.0 - 1e-12
+                    else -float(row.get("trigger_coverage") or 0.0)
+                ),
+                math.inf
+                if row.get("rmse_samples") is None
+                else float(row["rmse_samples"]),
+                math.inf
+                if row.get("mae_samples") is None
+                else float(row["mae_samples"]),
+                math.inf
+                if row.get("median_absolute_error_samples") is None
+                else float(row["median_absolute_error_samples"]),
+                str(row["config_id"]),
+            ),
+        )
+        for rank, row in enumerate(ordered_rmse, 1):
+            row["rank_rmse"] = rank
+
         for metric, rank_field in (
-            ("median_absolute_error_samples", "rank_median_abs_error"),
             ("mae_samples", "rank_mae"),
+            ("median_absolute_error_samples", "rank_median_abs_error"),
         ):
             ordered = sorted(
                 population_rows,
                 key=lambda row: (
-                    -float(row.get("trigger_coverage") or 0.0),
+                    0
+                    if float(row.get("trigger_coverage") or 0.0) >= 1.0 - 1e-12
+                    else 1,
+                    (
+                        0.0
+                        if float(row.get("trigger_coverage") or 0.0) >= 1.0 - 1e-12
+                        else -float(row.get("trigger_coverage") or 0.0)
+                    ),
                     math.inf if row.get(metric) is None else float(row[metric]),
                     str(row["config_id"]),
                 ),
@@ -341,7 +386,7 @@ def rank_existing_sweep_localization(
         ranking,
         key=lambda row: (
             str(row["population"]),
-            int(row["rank_median_abs_error"]),
+            int(row["rank_rmse"]),
             int(row["rank_mae"]),
             str(row["config_id"]),
         ),
