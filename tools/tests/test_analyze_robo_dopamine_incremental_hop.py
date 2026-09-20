@@ -31,11 +31,95 @@ from robo_incremental_hop.diagnosis import (
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.oracle import build_oracle_analysis
+from robo_incremental_hop.progress_peak import (
+    evaluate_progress_peak_localization,
+    summarize_progress_peak_localization,
+)
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 import robo_incremental_hop.search_cache as search_cache
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
+    def test_progress_peak_uses_earliest_argmax_and_first_failure_onset(self) -> None:
+        signals = {
+            "fail_a": {
+                "frames": [0, 4, 8, 12],
+                "progress": [0.1, 0.8, 0.8, 0.2],
+                "prediction_path": Path("/tmp/fail_a.json"),
+            },
+            "fail_b": {
+                "frames": [0, 4, 8, 12],
+                "progress": [0.1, 0.2, 0.3, 0.9],
+                "prediction_path": Path("/tmp/fail_b.json"),
+            },
+            "recovered": {
+                "frames": [0, 4, 8],
+                "progress": [0.1, 0.9, 0.2],
+                "prediction_path": Path("/tmp/recovered.json"),
+            },
+        }
+        events = [
+            {
+                "event_id": "fail_a::event0",
+                "rollout_id": "fail_a",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 8,
+                "outcome": "terminal_failure",
+                "task_key": "libero_10:0",
+            },
+            {
+                "event_id": "fail_a::event1",
+                "rollout_id": "fail_a",
+                "event_index": 1,
+                "failure_type": "timeout_no_progress",
+                "observable_onset_frame": 12,
+                "outcome": "terminal_failure",
+                "task_key": "libero_10:0",
+            },
+            {
+                "event_id": "fail_b::event0",
+                "rollout_id": "fail_b",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 4,
+                "outcome": "terminal_failure",
+                "task_key": "libero_10:1",
+            },
+            {
+                "event_id": "recovered::event0",
+                "rollout_id": "recovered",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 4,
+                "outcome": "recovered_success",
+                "task_key": "libero_10:2",
+            },
+        ]
+        rows = evaluate_progress_peak_localization(signals, events)
+        self.assertEqual(len(rows), 2)
+        by_id = {row["rollout_id"]: row for row in rows}
+        self.assertEqual(by_id["fail_a"]["annotated_event_n"], 2)
+        self.assertEqual(by_id["fail_a"]["first_observable_onset_frame"], 8)
+        self.assertEqual(by_id["fail_a"]["t_star_frame"], 4)
+        self.assertEqual(by_id["fail_a"]["t_star_minus_onset_samples"], -1)
+        self.assertEqual(by_id["fail_a"]["t_star_minus_onset_frames"], -4)
+        self.assertTrue(by_id["fail_a"]["within_1_samples"])
+        self.assertEqual(by_id["fail_b"]["t_star_frame"], 12)
+        self.assertEqual(by_id["fail_b"]["t_star_minus_onset_samples"], 2)
+
+        summary = summarize_progress_peak_localization(rows)
+        overall = next(
+            row
+            for row in summary
+            if row["group"] == "overall" and row["value"] == "all"
+        )
+        self.assertEqual(overall["rollout_n"], 2)
+        self.assertAlmostEqual(overall["within_1_samples_fraction"], 0.5)
+        self.assertAlmostEqual(overall["within_3_samples_fraction"], 1.0)
+        self.assertAlmostEqual(overall["before_onset_fraction"], 0.5)
+        self.assertAlmostEqual(overall["after_onset_fraction"], 0.5)
+
     def test_search_cache_fingerprint_and_roundtrip(self) -> None:
         signals = {
             "r0": {
