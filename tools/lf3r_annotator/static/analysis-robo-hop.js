@@ -126,15 +126,16 @@
     hopState.scope = scopeSelect ? scopeSelect.value : hopState.scope;
     hopState.loadingRuns = true;
     updateButton();
-    status("Discovering completed Robo-Dopamine runs for " + hopState.scope + "…", "");
+    status("Loading completed Robo-Dopamine runs for " + hopState.scope + "…", "");
     try {
-      var response = await fetch(
-        "/api/baselines/runs?scope=" + encodeURIComponent(hopState.scope),
-        { cache: "no-store" }
-      );
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not discover Robo-Dopamine runs");
-      hopState.runs = payload.runs || [];
+      if (typeof window.workspaceLoadBaselineRuns !== "function") {
+        throw new Error("Shared baseline run catalog is unavailable");
+      }
+      await window.workspaceLoadBaselineRuns(hopState.scope, false);
+      hopState.runs = (
+        window.workspaceState
+        && Array.isArray(window.workspaceState.baselineRuns)
+      ) ? window.workspaceState.baselineRuns : [];
       populateRuns();
     } catch (error) {
       hopState.runs = [];
