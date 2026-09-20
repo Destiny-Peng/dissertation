@@ -171,6 +171,9 @@
   }
 
   function familyLabel(value) {
+    if (String(value || "") === "regression_window_min") {
+      return "regression · window min";
+    }
     return String(value || "")
       .replace(/^stagnation_/, "stagnation · ")
       .replace(/_/g, " ");
@@ -220,6 +223,7 @@
     } else {
       html += '<table class="analysis-table"><caption>Existing single-detector representatives; no new threshold tuning.</caption>'
         + '<thead><tr><th>Family</th><th>FPR cap</th><th>Parameters</th>'
+        + '<th>Grasp R@10</th><th>Grasp eventual</th>'
         + '<th>Event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>No-event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>Overall failed-rollout coverage</th><th>Clean FPR</th></tr></thead><tbody>';
@@ -228,6 +232,8 @@
           + '<td><strong>' + esc(familyLabel(row.detector_family)) + '</strong></td>'
           + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
           + '<td>' + esc(configParameters(row)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_at_10)) + '</strong></td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
@@ -250,20 +256,28 @@
 
     var ensembles = (hop.ensemble_selected || []).filter(function (row) {
       return row.selection_status === "selected"
-        && String(row.selection_target) === "overall_failed_rollout_coverage";
+        && (String(row.selection_target) === "grasp_recall_eventual"
+          || String(row.selection_target) === "grasp_recall_at_10");
     }).sort(function (left, right) {
+      var targetOrder = {
+        grasp_recall_eventual: 0,
+        grasp_recall_at_10: 1
+      };
       return Number(left.clean_fpr_constraint) - Number(right.clean_fpr_constraint)
+        || (targetOrder[String(left.selection_target)] || 0)
+          - (targetOrder[String(right.selection_target)] || 0)
         || Number(left.pair_priority || 99) - Number(right.pair_priority || 99);
     });
 
     html += '<section class="analysis-subsection">'
-      + '<h4>Fused hop · joint pairwise OR search</h4>'
-      + '<p class="analysis-card-note">Both detector parameter grids are jointly swept. The table below shows the ensemble selected for maximum overall failed-rollout coverage under each total clean-FPR cap. Target-specific optima for event/no-event Recall@3/@5/@10/@20/eventual are retained in ensemble_selected.csv.</p>';
+      + '<h4>Fused hop · stagnation OR regression joint search</h4>'
+      + '<p class="analysis-card-note">Stagnation uses near-zero consecutive/k-of-m evidence; regression uses a short rolling-window minimum with empirical θr candidates from the saved fused-hop data. Under each total clean-FPR cap, configurations are selected separately for grasp eventual recall and grasp Recall@10; overall failed-rollout coverage remains a reported secondary metric.</p>';
 
     if (!ensembles.length) {
       html += '<p class="analysis-empty">No joint OR ensemble result is available in this snapshot.</p>';
     } else {
-      html += '<table class="analysis-table"><thead><tr><th>FPR cap</th><th>A</th><th>B</th>'
+      html += '<table class="analysis-table"><thead><tr><th>FPR cap</th><th>Selection target</th><th>Stagnation</th><th>Regression</th>'
+        + '<th>Grasp R@10</th><th>Grasp eventual</th>'
         + '<th>Event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>No-event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>Overall coverage</th><th>Event delay</th><th>No-event delay</th>'
@@ -271,10 +285,13 @@
       ensembles.forEach(function (row) {
         html += '<tr>'
           + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
+          + '<td>' + esc(String(row.selection_target) === "grasp_recall_eventual" ? "grasp eventual" : "grasp R@10") + '</td>'
           + '<td><strong>' + esc(familyLabel(row.detector_a_family)) + '</strong><small>'
           + esc(ensembleParameters(row, "a")) + '</small></td>'
           + '<td><strong>' + esc(familyLabel(row.detector_b_family)) + '</strong><small>'
           + esc(ensembleParameters(row, "b")) + '</small></td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_at_10)) + '</strong></td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
@@ -300,7 +317,7 @@
     var typed = (hop.ensemble_by_failure_type || []).filter(function (row) {
       return Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
         && String(row.horizon) === "eventual"
-        && String(row.selected_for || "").indexOf("overall_failed_rollout_coverage") !== -1;
+        && String(row.selected_for || "").indexOf("grasp_recall_eventual") !== -1;
     });
     if (typed.length) {
       html += '<details class="analysis-subsection"><summary><strong>Failure-type complementarity · ≤20% · eventual</strong></summary>'
