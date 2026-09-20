@@ -908,9 +908,10 @@ localization_fields = [
     'within_1_n', 'within_1', 'within_3_n', 'within_3',
     'within_5_n', 'within_5', 'within_10_n', 'within_10',
     'median_signed_offset_samples', 'median_absolute_error_samples',
-    'mae_samples', 'before_onset_n', 'at_onset_n', 'after_onset_n',
+    'mae_samples', 'mse_samples', 'rmse_samples',
+    'before_onset_n', 'at_onset_n', 'after_onset_n',
     'rank_within_1', 'rank_within_3', 'rank_within_5',
-    'rank_within_10', 'rank_median_abs_error', 'rank_mae'
+    'rank_within_10', 'rank_rmse', 'rank_median_abs_error', 'rank_mae'
 ]
 with (args.output_dir / 'unconstrained_localization_ranking.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=localization_fields)
@@ -927,9 +928,11 @@ with (args.output_dir / 'unconstrained_localization_ranking.csv').open('w', newl
         'within_10_n': 4, 'within_10': 1.0,
         'median_signed_offset_samples': -2,
         'median_absolute_error_samples': 2, 'mae_samples': 2.5,
+        'mse_samples': 7.0, 'rmse_samples': 2.64575131,
         'before_onset_n': 2, 'at_onset_n': 1, 'after_onset_n': 1,
         'rank_within_1': 1, 'rank_within_3': 1, 'rank_within_5': 1,
-        'rank_within_10': 1, 'rank_median_abs_error': 1, 'rank_mae': 1,
+        'rank_within_10': 1, 'rank_rmse': 1,
+        'rank_median_abs_error': 1, 'rank_mae': 1,
     })
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
@@ -1379,7 +1382,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             "cfg1",
         )
         self.assertEqual(
-            hop["unconstrained_localization_top"][0]["rank_median_abs_error"],
+            hop["unconstrained_localization_top"][0]["rank_rmse"],
             1,
         )
         self.assertTrue(
