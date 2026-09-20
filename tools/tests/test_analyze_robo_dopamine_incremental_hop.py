@@ -740,11 +740,11 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             4,
         )
 
-    def test_reference_ensemble_prefers_highest_cap_then_best_coverage(self) -> None:
+    def test_reference_ensemble_prefers_highest_cap_then_best_grasp_recall(self) -> None:
         selected = [
             {
                 "selection_status": "selected",
-                "selection_target": "overall_failed_rollout_coverage",
+                "selection_target": "grasp_recall_eventual",
                 "clean_fpr_constraint": 0.10,
                 "grasp_recall_eventual": 0.7,
                 "grasp_recall_at_10": 0.7,
@@ -755,7 +755,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             },
             {
                 "selection_status": "selected",
-                "selection_target": "overall_failed_rollout_coverage",
+                "selection_target": "grasp_recall_eventual",
                 "clean_fpr_constraint": 0.20,
                 "grasp_recall_eventual": 0.8,
                 "grasp_recall_at_10": 0.7,
@@ -767,7 +767,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             },
             {
                 "selection_status": "selected",
-                "selection_target": "overall_failed_rollout_coverage",
+                "selection_target": "grasp_recall_eventual",
                 "clean_fpr_constraint": 0.20,
                 "grasp_recall_eventual": 0.9,
                 "grasp_recall_at_10": 0.8,
