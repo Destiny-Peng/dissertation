@@ -316,6 +316,54 @@
       html += '</tbody></table>';
     }
 
+    var progressPeak = hop.progress_peak_localization_summary || [];
+    var progressPeakOverall = progressPeak.find(function (row) {
+      return String(row.group) === "overall" && String(row.value) === "all";
+    });
+    if (progressPeakOverall) {
+      html += '<section class="analysis-subsection">'
+        + '<h4>Earliest global progress maximum · first observable failure onset</h4>'
+        + '<p class="analysis-card-note">For each terminal-failure rollout with at least one event annotation, compute t* = min argmax P_t on the saved fused-progress native grid and compare it only with that rollout\'s first observable failure onset. Multi-event rollouts contribute one row.</p>'
+        + '<table class="analysis-table"><thead><tr><th>Rollouts</th><th>Median signed offset</th>'
+        + '<th>Median |error|</th><th>MAE</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th><th>±20</th>'
+        + '<th>Before onset</th><th>At onset</th><th>After onset</th></tr></thead><tbody><tr>'
+        + '<td class="numeric"><strong>' + esc(progressPeakOverall.rollout_n) + '</strong></td>'
+        + '<td class="numeric">' + esc(number(progressPeakOverall.median_signed_offset_samples)) + ' samples</td>'
+        + '<td class="numeric">' + esc(number(progressPeakOverall.median_absolute_error_samples)) + ' samples</td>'
+        + '<td class="numeric">' + esc(number(progressPeakOverall.mean_absolute_error_samples)) + ' samples</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_1_samples_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_3_samples_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_5_samples_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_10_samples_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_20_samples_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.before_onset_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.at_onset_anchor_fraction)) + '</td>'
+        + '<td class="numeric">' + esc(percent(progressPeakOverall.after_onset_fraction)) + '</td>'
+        + '</tr></tbody></table>';
+
+      var byFirstType = progressPeak.filter(function (row) {
+        return String(row.group) === "first_failure_type";
+      });
+      if (byFirstType.length) {
+        html += '<details class="analysis-subsection"><summary><strong>t* localization by first failure type</strong></summary>'
+          + '<table class="analysis-table"><thead><tr><th>First failure type</th><th>N</th><th>Median offset</th>'
+          + '<th>Median |error|</th><th>Within ±3</th><th>±5</th><th>±10</th></tr></thead><tbody>';
+        byFirstType.forEach(function (row) {
+          html += '<tr>'
+            + '<td><strong>' + esc(String(row.value).replace(/_/g, " ")) + '</strong></td>'
+            + '<td class="numeric">' + esc(row.rollout_n) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_3_samples_fraction)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_5_samples_fraction)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_10_samples_fraction)) + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table></details>';
+      }
+      html += '</section>';
+    }
+
     var oracleGrasp = (hop.oracle_summary || []).filter(function (row) {
       return String(row.population) === "grasp_failure";
     }).sort(function (left, right) {
