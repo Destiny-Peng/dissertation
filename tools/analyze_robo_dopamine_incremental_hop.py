@@ -517,7 +517,7 @@ def analyse(
             f"{fingerprint[:12]} · reusing detector/pair-sweep results"
         )
     else:
-        configs, _unused_oracle_configs, phenotype_grid = build_phenotype_detector_configs(
+        configs, _unused_extended_configs, phenotype_grid = build_phenotype_detector_configs(
             signals,
             events,
             no_event_failures,
