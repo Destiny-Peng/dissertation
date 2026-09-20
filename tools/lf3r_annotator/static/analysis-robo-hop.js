@@ -171,12 +171,18 @@
   }
 
   function familyLabel(value) {
-    if (String(value || "") === "regression_window_min") {
-      return "regression · window min";
-    }
-    return String(value || "")
-      .replace(/^stagnation_/, "stagnation · ")
-      .replace(/_/g, " ");
+    var raw = String(value || "");
+    var labels = {
+      consecutive: "Consecutive regression",
+      k_of_m: "k-of-m regression",
+      window_mean: "Window mean regression",
+      cumulative_regression: "Cumulative regression",
+      regression_window_min: "Regression window-min",
+      stagnation_consecutive: "Stagnation consecutive",
+      stagnation_k_of_m: "Stagnation k-of-m",
+      phenotype_or: "Stagnation OR regression"
+    };
+    return labels[raw] || raw.replace(/_/g, " ");
   }
 
   function ensembleParameters(row, prefix) {
@@ -193,23 +199,41 @@
     return configParameters(mapped);
   }
 
-  function localizationConfigParameters(row) {
-    var raw = row.parameters_json;
+  function parametersFromJson(raw) {
     if (!raw) return "n/a";
     try {
       var parsed = JSON.parse(raw);
-      if (String(row.detector_family) === "phenotype_or") {
-        return String(parsed.stagnation_family || "stagnation")
-          + " " + JSON.stringify(parsed.stagnation_parameters || {})
-          + " OR "
-          + String(parsed.regression_family || "regression")
-          + " " + JSON.stringify(parsed.regression_parameters || {});
-      }
+      return configParameters(parsed);
     } catch (_error) {
       return String(raw);
     }
-    return configParameters(row);
   }
+
+  function localizationFamilyLabel(row) {
+    if (String(row.detector_family || "") !== "phenotype_or") {
+      return familyLabel(row.detector_family);
+    }
+    var left = familyLabel(row.a_detector_family || "stagnation");
+    var right = familyLabel(row.b_detector_family || "regression");
+    return left + " OR " + right;
+  }
+
+  function localizationConfigLabel(row) {
+    if (String(row.detector_family || "") !== "phenotype_or") {
+      return String(row.config_id || "");
+    }
+    return "OR combination";
+  }
+
+  function localizationConfigParameters(row) {
+    if (String(row.detector_family || "") !== "phenotype_or") {
+      return configParameters(row);
+    }
+    var left = parametersFromJson(row.a_parameters_json);
+    var right = parametersFromJson(row.b_parameters_json);
+    return "stagnation: " + left + " · regression: " + right;
+  }
+
 
   function renderSnapshot() {
     var host = node("analysisHopResults");
@@ -357,8 +381,8 @@
         rowsForPopulation.forEach(function (row) {
           html += '<tr>'
             + '<td class="numeric"><strong>' + esc(row.rank_rmse) + '</strong></td>'
-            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
-            + '<td><code>' + esc(row.config_id) + '</code></td>'
+            + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
+            + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
             + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
             + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
@@ -401,8 +425,8 @@
           html += '<tr>'
             + '<td class="numeric"><strong>' + esc(row.rank_mse) + '</strong></td>'
             + '<td class="numeric">' + esc(row.eligible_event_n) + '</td>'
-            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
-            + '<td><code>' + esc(row.config_id) + '</code></td>'
+            + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
+            + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
             + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
             + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
             + '<td class="numeric"><strong>' + esc(percent(row.in_interval_rate)) + '</strong></td>'
