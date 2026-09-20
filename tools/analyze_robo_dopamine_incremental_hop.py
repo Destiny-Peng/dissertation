@@ -25,6 +25,48 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+DEFAULT_CPU_LIMIT = 4
+DEFAULT_NICE_TARGET = 10
+THREAD_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "OMP_THREAD_LIMIT",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def _bootstrap_thread_limit(argv: Sequence[str]) -> None:
+    """Apply thread-pool caps before project imports can load native libraries."""
+    cpu_limit = DEFAULT_CPU_LIMIT
+    for index, token in enumerate(argv):
+        if token == "--cpu-limit" and index + 1 < len(argv):
+            try:
+                cpu_limit = max(1, int(argv[index + 1]))
+            except ValueError:
+                break
+        elif token.startswith("--cpu-limit="):
+            try:
+                cpu_limit = max(1, int(token.split("=", 1)[1]))
+            except ValueError:
+                break
+    for name in THREAD_ENV_VARS:
+        current = os.environ.get(name)
+        try:
+            current_value = int(current) if current is not None else None
+        except ValueError:
+            current_value = None
+        os.environ[name] = str(
+            min(cpu_limit, current_value)
+            if current_value is not None and current_value > 0
+            else cpu_limit
+        )
+
+
+_bootstrap_thread_limit(sys.argv[1:])
+
 from robo_incremental_hop.core import CLEAN_FPR_CONSTRAINTS
 from robo_incremental_hop.diagnosis import (
     build_grasp_event_features,
@@ -77,17 +119,6 @@ DEFAULT_OUTPUT_ROOT = (
     / "outputs/robo_dopamine_incremental_hop"
 )
 ANALYSIS_SIGNAL_MODE = "fused"
-DEFAULT_CPU_LIMIT = 4
-DEFAULT_NICE_TARGET = 10
-THREAD_ENV_VARS = (
-    "OMP_NUM_THREADS",
-    "OMP_THREAD_LIMIT",
-    "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS",
-    "NUMEXPR_NUM_THREADS",
-    "BLIS_NUM_THREADS",
-    "VECLIB_MAXIMUM_THREADS",
-)
 
 
 def apply_cpu_limit(cpu_limit: int) -> dict[str, Any]:
