@@ -158,7 +158,7 @@ def write_search_cache(
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=6) as handle:
+        with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=1) as handle:
             json.dump(
                 document,
                 handle,
