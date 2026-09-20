@@ -431,17 +431,25 @@ def _evaluate_config_masks(
             "no_localization_output_n": n - len(localized),
         }
         for window in LOCALIZATION_WINDOWS:
-            summary[f"capacity_within_{window}_recall"] = (
-                sum(bool(row[f"capacity_within_{window}"]) for row in per_event)
-                / n
+            capacity_n = sum(
+                bool(row[f"capacity_within_{window}"])
+                for row in per_event
             )
+            localization_n = sum(
+                bool(row[f"localization_within_{window}"])
+                for row in per_event
+            )
+            summary[f"capacity_within_{window}_n"] = capacity_n
+            summary[f"capacity_within_{window}_recall"] = capacity_n / n
+            summary[f"localization_within_{window}_n"] = localization_n
             summary[f"localization_within_{window}_recall"] = (
-                sum(bool(row[f"localization_within_{window}"]) for row in per_event)
-                / n
+                localization_n / n
             )
-        summary["capacity_eventual_recall"] = (
-            sum(bool(row["capacity_eventual"]) for row in per_event) / n
+        capacity_eventual_n = sum(
+            bool(row["capacity_eventual"]) for row in per_event
         )
+        summary["capacity_eventual_detected_n"] = capacity_eventual_n
+        summary["capacity_eventual_recall"] = capacity_eventual_n / n
         summary_rows.append(summary)
 
     return summary_rows
