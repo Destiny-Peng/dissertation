@@ -411,3 +411,329 @@ def rank_existing_sweep_localization(
             str(row["config_id"]),
         ),
     )
+
+
+
+INTERVAL_LOCALIZATION_WINDOWS = (1, 3, 5)
+
+
+def _interval_population_specs(
+    event_rows: Sequence[Mapping[str, Any]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Eligible terminal-failure events with both causal and observable onset."""
+    events: dict[str, dict[str, Any]] = {}
+    for row in event_rows:
+        if str(row.get("outcome") or "") != "terminal_failure":
+            continue
+        causal = row.get("causal_onset_frame")
+        observable = row.get("observable_onset_frame")
+        if causal is None or observable is None:
+            continue
+        causal_frame = int(causal)
+        observable_frame = int(observable)
+        if causal_frame > observable_frame:
+            continue
+        event_id = str(
+            row.get("event_id")
+            or f"{row.get('rollout_id')}::event{int(row.get('event_index') or 0)}"
+        )
+        events.setdefault(
+            event_id,
+            {
+                "event_id": event_id,
+                "rollout_id": str(row["rollout_id"]),
+                "event_index": int(row.get("event_index") or 0),
+                "failure_type": str(row.get("failure_type") or ""),
+                "causal_onset_frame": causal_frame,
+                "observable_onset_frame": observable_frame,
+            },
+        )
+
+    all_events = sorted(
+        events.values(),
+        key=lambda row: (
+            row["rollout_id"],
+            row["causal_onset_frame"],
+            row["observable_onset_frame"],
+            row["event_index"],
+        ),
+    )
+    by_rollout: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in all_events:
+        by_rollout[event["rollout_id"]].append(event)
+    first_events = [
+        min(
+            rollout_events,
+            key=lambda row: (
+                row["causal_onset_frame"],
+                row["observable_onset_frame"],
+                row["event_index"],
+            ),
+        )
+        for rollout_events in by_rollout.values()
+    ]
+    grasp_events = [
+        event
+        for event in all_events
+        if event["failure_type"] == "grasp_failure"
+    ]
+    return [
+        ("all_eligible_failure_events", all_events),
+        ("first_eligible_event_per_failed_rollout", first_events),
+        ("grasp_failure", grasp_events),
+    ]
+
+
+def _interval_error_samples(
+    *,
+    trigger_index: int,
+    causal_index: int,
+    observable_index: int,
+) -> int:
+    if trigger_index < causal_index:
+        return trigger_index - causal_index
+    if trigger_index > observable_index:
+        return trigger_index - observable_index
+    return 0
+
+
+def _evaluate_interval_candidate(
+    *,
+    candidate: Mapping[str, Any],
+    trigger_by_rollout: Mapping[str, int],
+    signals: Mapping[str, Mapping[str, Any]],
+    population: str,
+    events: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    errors: list[int] = []
+    event_rows: list[int | None] = []
+
+    for event in events:
+        rollout_id = str(event["rollout_id"])
+        signal = signals.get(rollout_id)
+        if signal is None:
+            continue
+        frames = [int(value) for value in signal["frames"]]
+        causal_index = _onset_anchor(
+            frames,
+            int(event["causal_onset_frame"]),
+        )
+        observable_index = _onset_anchor(
+            frames,
+            int(event["observable_onset_frame"]),
+        )
+        if causal_index is None or observable_index is None:
+            continue
+        if causal_index > observable_index:
+            continue
+
+        trigger_frame = trigger_by_rollout.get(rollout_id)
+        trigger_index = (
+            _sample_index(frames, trigger_frame)
+            if trigger_frame is not None
+            else None
+        )
+        error = (
+            _interval_error_samples(
+                trigger_index=trigger_index,
+                causal_index=causal_index,
+                observable_index=observable_index,
+            )
+            if trigger_index is not None
+            else None
+        )
+        event_rows.append(error)
+        if error is not None:
+            errors.append(error)
+
+    n = len(event_rows)
+    triggered_n = len(errors)
+    absolute = [abs(value) for value in errors]
+    squared = [value * value for value in errors]
+    in_interval_n = sum(value == 0 for value in errors)
+    before_n = sum(value < 0 for value in errors)
+    after_n = sum(value > 0 for value in errors)
+
+    result: dict[str, Any] = {
+        **dict(candidate),
+        "population": population,
+        "eligible_event_n": n,
+        "triggered_n": triggered_n,
+        "no_trigger_n": n - triggered_n,
+        "trigger_coverage": triggered_n / n if n else None,
+        "in_interval_n": in_interval_n,
+        "in_interval_rate": in_interval_n / n if n else None,
+        "before_interval_n": before_n,
+        "before_interval_rate": before_n / n if n else None,
+        "after_interval_n": after_n,
+        "after_interval_rate": after_n / n if n else None,
+        "median_signed_interval_error_samples": (
+            float(statistics.median(errors)) if errors else None
+        ),
+        "median_absolute_interval_error_samples": (
+            float(statistics.median(absolute)) if absolute else None
+        ),
+        "mae_samples": (
+            sum(absolute) / len(absolute) if absolute else None
+        ),
+        "mse_samples": (
+            sum(squared) / len(squared) if squared else None
+        ),
+    }
+    for window in INTERVAL_LOCALIZATION_WINDOWS:
+        hit_n = sum(
+            error is not None and abs(error) <= window
+            for error in event_rows
+        )
+        result[f"within_{window}_n"] = hit_n
+        result[f"within_{window}"] = hit_n / n if n else None
+    return result
+
+
+def _add_interval_ranks(rows: list[dict[str, Any]]) -> None:
+    by_population: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_population[str(row["population"])].append(row)
+
+    for population_rows in by_population.values():
+        max_coverage = max(
+            (
+                float(row.get("trigger_coverage") or 0.0)
+                for row in population_rows
+            ),
+            default=0.0,
+        )
+        coverage_floor = (
+            1.0
+            if any(
+                float(row.get("trigger_coverage") or 0.0) >= 1.0 - 1e-12
+                for row in population_rows
+            )
+            else max_coverage
+        )
+        eligible = [
+            row
+            for row in population_rows
+            if float(row.get("trigger_coverage") or 0.0)
+            >= coverage_floor - 1e-12
+        ]
+        for row in population_rows:
+            row["error_rank_coverage_floor"] = coverage_floor
+            row["error_rank_eligible"] = row in eligible
+            row["rank_mse"] = None
+            row["rank_mae"] = None
+            row["rank_median_abs_error"] = None
+
+        for metric, rank_field in (
+            ("mse_samples", "rank_mse"),
+            ("mae_samples", "rank_mae"),
+            (
+                "median_absolute_interval_error_samples",
+                "rank_median_abs_error",
+            ),
+        ):
+            ordered = sorted(
+                eligible,
+                key=lambda row: (
+                    math.inf if row.get(metric) is None else float(row[metric]),
+                    math.inf
+                    if row.get("mae_samples") is None
+                    else float(row["mae_samples"]),
+                    str(row["config_id"]),
+                ),
+            )
+            for rank, row in enumerate(ordered, 1):
+                row[rank_field] = rank
+
+        for window in INTERVAL_LOCALIZATION_WINDOWS:
+            ordered = sorted(
+                population_rows,
+                key=lambda row: (
+                    -float(row.get(f"within_{window}") or 0.0),
+                    -float(row.get("in_interval_rate") or 0.0),
+                    -float(row.get("trigger_coverage") or 0.0),
+                    math.inf
+                    if row.get("mse_samples") is None
+                    else float(row["mse_samples"]),
+                    str(row["config_id"]),
+                ),
+            )
+            for rank, row in enumerate(ordered, 1):
+                row[f"rank_within_{window}"] = rank
+
+
+def rank_existing_sweep_interval_localization(
+    *,
+    event_rows: Sequence[Mapping[str, Any]],
+    ensemble_sweep: Sequence[Mapping[str, Any]],
+    signals: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Post-process existing sweep using [causal, observable] as GT interval."""
+    first_triggers, config_meta = _first_trigger_frames(event_rows)
+    populations = _interval_population_specs(event_rows)
+    ranking: list[dict[str, Any]] = []
+
+    for config_id, meta in sorted(config_meta.items()):
+        trigger_by_rollout = {
+            rollout_id: frame
+            for (candidate_id, rollout_id), frame in first_triggers.items()
+            if candidate_id == config_id
+        }
+        for population, events in populations:
+            ranking.append(
+                _evaluate_interval_candidate(
+                    candidate=meta,
+                    trigger_by_rollout=trigger_by_rollout,
+                    signals=signals,
+                    population=population,
+                    events=events,
+                )
+            )
+
+    for pair in _pair_candidates(ensemble_sweep, config_meta):
+        a_id = str(pair["a_config_id"])
+        b_id = str(pair["b_config_id"])
+        rollout_ids = {
+            rollout_id
+            for candidate_id, rollout_id in first_triggers
+            if candidate_id in {a_id, b_id}
+        }
+        trigger_by_rollout: dict[str, int] = {}
+        for rollout_id in rollout_ids:
+            candidates = [
+                first_triggers.get((a_id, rollout_id)),
+                first_triggers.get((b_id, rollout_id)),
+            ]
+            frames = [value for value in candidates if value is not None]
+            if frames:
+                trigger_by_rollout[rollout_id] = min(frames)
+
+        for population, events in populations:
+            ranking.append(
+                _evaluate_interval_candidate(
+                    candidate=pair,
+                    trigger_by_rollout=trigger_by_rollout,
+                    signals=signals,
+                    population=population,
+                    events=events,
+                )
+            )
+
+    _add_interval_ranks(ranking)
+    return sorted(
+        ranking,
+        key=lambda row: (
+            str(row["population"]),
+            (
+                int(row["rank_mse"])
+                if row.get("rank_mse") is not None
+                else math.inf
+            ),
+            (
+                int(row["rank_mae"])
+                if row.get("rank_mae") is not None
+                else math.inf
+            ),
+            str(row["config_id"]),
+        ),
+    )
