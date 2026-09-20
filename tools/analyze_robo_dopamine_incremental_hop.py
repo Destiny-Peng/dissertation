@@ -86,6 +86,7 @@ from robo_incremental_hop.progress_peak import (
     summarize_progress_peak_localization,
 )
 from robo_incremental_hop.localization_ranking import (
+    rank_existing_sweep_interval_localization,
     rank_existing_sweep_localization,
 )
 from robo_incremental_hop.search_cache import (
@@ -284,6 +285,7 @@ def write_metadata(
     search_cache_info: Mapping[str, Any],
     progress_peak_summary: Sequence[Mapping[str, Any]],
     unconstrained_localization_rows: Sequence[Mapping[str, Any]],
+    interval_localization_rows: Sequence[Mapping[str, Any]],
     grasp_diagnosis: Mapping[str, Any] | None = None,
 ) -> None:
     run_json = run_root / "run.json"
@@ -344,6 +346,27 @@ def write_metadata(
         "phenotype_detector": {
             **dict(phenotype_grid),
             "clean_fpr_constraints": list(CLEAN_FPR_CONSTRAINTS),
+        },
+        "interval_localization_ranking": {
+            "enabled": True,
+            "clean_fpr_constraint": None,
+            "source": "existing event_results.csv and ensemble_sweep.csv only",
+            "ground_truth": "[causal_onset_frame, observable_onset_frame]",
+            "eligible_events": (
+                "terminal_failure events with both causal and observable onset"
+            ),
+            "first_trigger_rule": (
+                "scan rollout from start to end using existing detector semantics; "
+                "localization time is the first trigger; windowed detector time is "
+                "the window end"
+            ),
+            "signed_interval_error": (
+                "prediction<causal => prediction-causal; inside interval => 0; "
+                "prediction>observable => prediction-observable, in native samples"
+            ),
+            "reported_windows": [1, 3, 5],
+            "candidate_row_n": len(interval_localization_rows),
+            "reruns_detector_search": False,
         },
         "unconstrained_localization_ranking": {
             "enabled": True,
@@ -513,6 +536,7 @@ def write_metadata(
             "progress_peak_localization.csv",
             "progress_peak_localization_summary.csv",
             "unconstrained_localization_ranking.csv",
+            "interval_localization_ranking.csv",
             "grasp_event_features.csv",
             "grasp_detected_vs_missed.csv",
             "grasp_matched_control.csv",
@@ -717,6 +741,14 @@ def analyse(
         signals=signals,
     )
 
+    interval_localization_rows = (
+        rank_existing_sweep_interval_localization(
+            event_rows=event_rows,
+            ensemble_sweep=ensemble_sweep,
+            signals=signals,
+        )
+    )
+
     progress_peak_rows = evaluate_progress_peak_localization(
         signals,
         events,
@@ -870,6 +902,10 @@ def analyse(
         unconstrained_localization_rows,
     )
     write_csv(
+        output_dir / "interval_localization_ranking.csv",
+        interval_localization_rows,
+    )
+    write_csv(
         output_dir / "grasp_event_features.csv",
         grasp_features,
     )
@@ -924,6 +960,7 @@ def analyse(
         },
         progress_peak_summary=progress_peak_summary,
         unconstrained_localization_rows=unconstrained_localization_rows,
+        interval_localization_rows=interval_localization_rows,
         grasp_diagnosis=grasp_diagnosis,
     )
     return output_dir
