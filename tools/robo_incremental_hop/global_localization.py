@@ -670,14 +670,55 @@ def ranking_rows(
 
 
 def _cache_fingerprint(
-    base_search_fingerprint: str,
+    signals: Mapping[str, Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
     single_configs: Sequence[Mapping[str, Any]],
     or_configs: Sequence[Mapping[str, Any]],
 ) -> str:
+    event_rollout_ids = sorted(
+        {
+            str(event["rollout_id"])
+            for event in events
+            if str(event["rollout_id"]) in signals
+        }
+    )
     payload = {
         "schema": GLOBAL_LOCALIZATION_SCHEMA,
         "semantics": GLOBAL_LOCALIZATION_SEMANTICS_VERSION,
-        "base_search_fingerprint": base_search_fingerprint,
+        "failure_signals": [
+            {
+                "rollout_id": rollout_id,
+                "signal_source": str(
+                    signals[rollout_id].get("prediction_path") or ""
+                ),
+                "frames": [
+                    int(value)
+                    for value in signals[rollout_id]["frames"]
+                ],
+                "hops": [
+                    float(value)
+                    for value in signals[rollout_id]["hops"]
+                ],
+            }
+            for rollout_id in event_rollout_ids
+        ],
+        "events": [
+            {
+                str(key): (
+                    str(value)
+                    if isinstance(value, Path)
+                    else value
+                )
+                for key, value in sorted(event.items())
+            }
+            for event in sorted(
+                events,
+                key=lambda row: (
+                    str(row.get("rollout_id") or ""),
+                    int(row.get("event_index") or 0),
+                ),
+            )
+        ],
         "single_configs": [
             (
                 config["config_id"],
@@ -700,13 +741,13 @@ def _cache_fingerprint(
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
+            allow_nan=False,
         ).encode("utf-8")
     ).hexdigest()
 
 
 def load_or_compute_global_localization(
     *,
-    base_search_fingerprint: str,
     signals: Mapping[str, Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
     existing_phenotype_configs: Sequence[Mapping[str, Any]],
@@ -723,7 +764,8 @@ def load_or_compute_global_localization(
         existing_ensemble_sweep,
     )
     fingerprint = _cache_fingerprint(
-        base_search_fingerprint,
+        signals,
+        events,
         singles,
         pairs,
     )
