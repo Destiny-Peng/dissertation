@@ -203,6 +203,8 @@
     } else {
       var sweep = Array.isArray(hop.sweep_summary) ? hop.sweep_summary : [];
       var pairwise = Array.isArray(hop.pairwise_overlap) ? hop.pairwise_overlap : [];
+      var pairwiseByFailure = Array.isArray(hop.pairwise_overlap_by_failure_type)
+        ? hop.pairwise_overlap_by_failure_type : [];
       var horizonOrder = ["1", "3", "5", "10", "20", "eventual"];
       var sections = modeOrder.map(function (mode) {
         var modeRows = rows.filter(function (row) {
@@ -289,8 +291,9 @@
             + 'TP overlap is event-level. OR FPR is the actual union of false-positive clean rollouts.</p>'
             + '<table class="analysis-table"><caption>Event-set overlap at every delay horizon.</caption>'
             + '<thead><tr><th>A</th><th>B</th><th>Horizon</th><th>A recall</th><th>B recall</th>'
-            + '<th>Overlap</th><th>A-only</th><th>B-only</th><th>OR recall</th><th>TP Jaccard</th>'
-            + '<th>A FPR</th><th>B FPR</th><th>OR FPR</th></tr></thead><tbody>';
+            + '<th>Overlap</th><th>A-only</th><th>B-only</th><th>OR recall</th><th>OR gain</th>'
+            + '<th>TP Jaccard</th><th>A FPR</th><th>B FPR</th><th>OR FPR</th><th>FP Jaccard</th>'
+            + '</tr></thead><tbody>';
           pairRows.forEach(function (row) {
             var horizon = String(row.horizon) === "eventual" ? "eventual" : "@" + String(row.horizon);
             html += '<tr>'
@@ -303,13 +306,49 @@
               + '<td class="numeric">' + esc(row.a_only_n) + '</td>'
               + '<td class="numeric">' + esc(row.b_only_n) + '</td>'
               + '<td class="numeric"><strong>' + esc(percent(row.or_recall)) + '</strong></td>'
+              + '<td class="numeric">' + esc(percent(row.or_recall_gain_vs_best)) + '</td>'
               + '<td class="numeric">' + esc(percent(row.tp_jaccard)) + '</td>'
               + '<td class="numeric">' + esc(percent(row.a_fpr)) + '</td>'
               + '<td class="numeric">' + esc(percent(row.b_fpr)) + '</td>'
               + '<td class="numeric"><strong>' + esc(percent(row.or_fpr)) + '</strong></td>'
+              + '<td class="numeric">' + esc(percent(row.fp_jaccard)) + '</td>'
               + '</tr>';
           });
           html += '</tbody></table>';
+        }
+
+        var typedRows = pairwiseByFailure.filter(function (row) {
+          return String(row.signal_mode) === mode
+            && Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
+            && String(row.horizon) === "eventual";
+        }).sort(function (left, right) {
+          return String(left.failure_type).localeCompare(String(right.failure_type))
+            || String(left.detector_a_family).localeCompare(String(right.detector_a_family))
+            || String(left.detector_b_family).localeCompare(String(right.detector_b_family));
+        });
+        if (typedRows.length) {
+          html += '<details class="analysis-subsection">'
+            + '<summary><strong>Failure-type complementarity · ≤20% · eventual</strong></summary>'
+            + '<p class="analysis-card-note">Use A-only/B-only to see whether detector families cover different failure mechanisms.</p>'
+            + '<table class="analysis-table"><thead><tr><th>Failure type</th><th>A</th><th>B</th><th>Events</th>'
+            + '<th>A recall</th><th>B recall</th><th>Overlap</th><th>A-only</th><th>B-only</th>'
+            + '<th>OR recall</th><th>TP Jaccard</th></tr></thead><tbody>';
+          typedRows.forEach(function (row) {
+            html += '<tr>'
+              + '<td><strong>' + esc(String(row.failure_type).replace(/_/g, " ")) + '</strong></td>'
+              + '<td>' + esc(familyLabel(row.detector_a_family)) + '</td>'
+              + '<td>' + esc(familyLabel(row.detector_b_family)) + '</td>'
+              + '<td class="numeric">' + esc(row.event_n) + '</td>'
+              + '<td class="numeric">' + esc(percent(row.a_recall)) + '</td>'
+              + '<td class="numeric">' + esc(percent(row.b_recall)) + '</td>'
+              + '<td class="numeric">' + esc(row.overlap_n) + '</td>'
+              + '<td class="numeric">' + esc(row.a_only_n) + '</td>'
+              + '<td class="numeric">' + esc(row.b_only_n) + '</td>'
+              + '<td class="numeric"><strong>' + esc(percent(row.or_recall)) + '</strong></td>'
+              + '<td class="numeric">' + esc(percent(row.tp_jaccard)) + '</td>'
+              + '</tr>';
+          });
+          html += '</tbody></table></details>';
         }
         return html + '</section>';
       }).join("");
