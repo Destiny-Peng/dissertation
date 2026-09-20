@@ -488,6 +488,7 @@
     var run = node("analysisHopRun").value;
     var label = node("analysisHopOutputLabel").value.trim();
     var taskCv = Boolean(node("analysisHopTaskCv").checked);
+    var cpuLimit = Number(node("analysisHopCpuLimit").value);
     if (!run) {
       status("Select a compatible completed Robo-Dopamine run.", "warning");
       return;
@@ -495,6 +496,11 @@
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(label)) {
       status("Output label may contain only letters, numbers, dot, underscore, or hyphen.", "error");
       node("analysisHopOutputLabel").focus();
+      return;
+    }
+    if (!Number.isInteger(cpuLimit) || cpuLimit < 1 || cpuLimit > 16) {
+      status("CPU limit must be an integer from 1 to 16.", "error");
+      node("analysisHopCpuLimit").focus();
       return;
     }
     if (!environmentReady()) {
@@ -515,6 +521,7 @@
           scope: scope,
           runs: { robo_dopamine: run },
           task_cv: taskCv,
+          cpu_limit: cpuLimit,
           output_label: label
         })
       });
