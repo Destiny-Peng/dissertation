@@ -405,6 +405,11 @@ def load_signal(
     frames = [frames[index] for index in order]
     rows = [rows[index] for index in order]
 
+    progress = [
+        finite_number(row.get("progress"), f"{signal_mode} progress")
+        for row in rows
+    ]
+
     if signal_mode == "incremental":
         scale = detect_hop_scale(rows)
         raw_hops = list(scale["raw_hops"])
@@ -439,6 +444,7 @@ def load_signal(
         "rollout_id": rollout_id,
         "signal_mode": signal_mode,
         "frames": frames,
+        "progress": progress,
         "raw_hops": raw_hops,
         "hops": hops,
         "source_scale": source_scale,
