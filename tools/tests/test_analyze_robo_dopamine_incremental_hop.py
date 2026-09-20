@@ -20,6 +20,14 @@ from robo_incremental_hop.core import (
     positive_episode_count,
     recovery_metrics,
 )
+from robo_incremental_hop.diagnosis import (
+    build_grasp_event_features,
+    build_matched_clean_pairs,
+    category_summary,
+    choose_reference_ensemble,
+    summarize_detected_vs_missed,
+    summarize_matched_controls,
+)
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 
 
@@ -552,6 +560,167 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 for row in by_failure
             )
         )
+
+    def test_grasp_failure_diagnosis_taxonomy_and_matched_controls(self) -> None:
+        frames = [0, 4, 8, 12, 16, 20, 24, 28]
+        signals = {
+            "immediate": {
+                "frames": frames,
+                "hops": [0.2, 0.1, -0.2, -0.1, 0.1, 0.1, 0.1, 0.1],
+            },
+            "delayed": {
+                "frames": frames,
+                "hops": [0.2, 0.1, 0.2, 0.2, 0.2, -0.2, -0.1, 0.1],
+            },
+            "stagnation": {
+                "frames": frames,
+                "hops": [0.2, 0.1, 0.005, 0.004, 0.003, 0.002, 0.1, 0.1],
+            },
+            "clear": {
+                "frames": frames,
+                "hops": [0.2, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+            },
+            "clean": {
+                "frames": frames,
+                "hops": [0.2, 0.1, 0.15, 0.12, 0.1, 0.1, 0.1, 0.1],
+            },
+        }
+        events = [
+            {
+                "event_id": rollout_id + "::event0",
+                "rollout_id": rollout_id,
+                "event_index": 0,
+                "task_key": "libero_10:0",
+                "task_suite": "libero_10",
+                "task_id": 0,
+                "outcome": "terminal_failure",
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 8,
+                "episode_end_frame": None,
+                "episode_end_source": "rollout_end",
+            }
+            for rollout_id in ("immediate", "delayed", "stagnation", "clear")
+        ]
+        configs = [
+            make_config(
+                "a",
+                "stagnation_consecutive",
+                delta=0.01,
+                n=2,
+            ),
+            make_config(
+                "b",
+                "window_mean",
+                m=2,
+                theta=-0.05,
+            ),
+        ]
+        reference = {
+            "selection_status": "selected",
+            "selection_target": "overall_failed_rollout_coverage",
+            "clean_fpr_constraint": 0.20,
+            "overall_failed_rollout_coverage": 0.75,
+            "clean_rollout_fpr": 0.0,
+            "pair_priority": 1,
+            "a_config_id": "a",
+            "b_config_id": "b",
+        }
+        features = build_grasp_event_features(
+            signals,
+            events,
+            configs,
+            reference,
+        )
+        by_id = {row["rollout_id"]: row for row in features}
+        self.assertEqual(
+            by_id["immediate"]["failure_mode_category"],
+            "immediate_regression",
+        )
+        self.assertEqual(
+            by_id["delayed"]["failure_mode_category"],
+            "delayed_regression",
+        )
+        self.assertEqual(
+            by_id["stagnation"]["failure_mode_category"],
+            "stagnation",
+        )
+        self.assertEqual(
+            by_id["clear"]["failure_mode_category"],
+            "no_clear_hop_response",
+        )
+        self.assertTrue(by_id["immediate"]["oracle_visible_abnormality"])
+        self.assertTrue(by_id["stagnation"]["oracle_visible_abnormality"])
+        self.assertFalse(by_id["clear"]["oracle_visible_abnormality"])
+
+        detected_summary = summarize_detected_vs_missed(features)
+        self.assertTrue(
+            any(row["feature"] == "negative_fraction_20" for row in detected_summary)
+        )
+
+        matched = build_matched_clean_pairs(
+            features,
+            signals,
+            [
+                {
+                    "rollout_id": "clean",
+                    "task_key": "libero_10:0",
+                }
+            ],
+        )
+        self.assertEqual(len(matched), 4)
+        self.assertTrue(
+            all(row["control_rollout_id"] == "clean" for row in matched)
+        )
+        matched_summary = summarize_matched_controls(matched)
+        self.assertTrue(
+            any(row["feature"] == "min_hop_20" for row in matched_summary)
+        )
+        categories = category_summary(features)
+        self.assertEqual(
+            sum(
+                row["event_n"]
+                for row in categories
+                if not str(row["failure_mode_category"]).startswith("__")
+            ),
+            4,
+        )
+
+    def test_reference_ensemble_prefers_highest_cap_then_best_coverage(self) -> None:
+        selected = [
+            {
+                "selection_status": "selected",
+                "selection_target": "overall_failed_rollout_coverage",
+                "clean_fpr_constraint": 0.10,
+                "overall_failed_rollout_coverage": 1.0,
+                "clean_rollout_fpr": 0.1,
+                "a_config_id": "low",
+                "b_config_id": "cap",
+            },
+            {
+                "selection_status": "selected",
+                "selection_target": "overall_failed_rollout_coverage",
+                "clean_fpr_constraint": 0.20,
+                "overall_failed_rollout_coverage": 0.8,
+                "clean_rollout_fpr": 0.15,
+                "pair_priority": 2,
+                "a_config_id": "worse",
+                "b_config_id": "coverage",
+            },
+            {
+                "selection_status": "selected",
+                "selection_target": "overall_failed_rollout_coverage",
+                "clean_fpr_constraint": 0.20,
+                "overall_failed_rollout_coverage": 0.9,
+                "clean_rollout_fpr": 0.18,
+                "pair_priority": 3,
+                "a_config_id": "reference",
+                "b_config_id": "winner",
+            },
+        ]
+        reference = choose_reference_ensemble(selected)
+        self.assertIsNotNone(reference)
+        self.assertEqual(reference["a_config_id"], "reference")
+        self.assertEqual(reference["b_config_id"], "winner")
 
     def test_early_alarm_and_hop_scale_contracts(self) -> None:
         event = evaluate_event(
