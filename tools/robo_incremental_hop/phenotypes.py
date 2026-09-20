@@ -85,8 +85,9 @@ def _empirical_thresholds(
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
     *,
+    max_clean_fpr: float,
     require_negative: bool,
-) -> tuple[list[float], dict[str, Any]]:
+) -> tuple[list[float], list[float], dict[str, Any]]:
     """Return only threshold values that change failure evidence or clean FP sets.
 
     For a fixed temporal rule, detector positivity is monotone in the threshold:
@@ -137,7 +138,7 @@ def _empirical_thresholds(
             clean_critical[rollout_id] = value
             raw_candidates.add(value)
 
-    candidates = sorted(
+    oracle_thresholds = sorted(
         value
         for value in raw_candidates
         if not require_negative or value < 0.0
@@ -146,7 +147,7 @@ def _empirical_thresholds(
     fpr_by_signature: dict[tuple[str, ...], float] = {}
     clean_n = len(clean_ids)
 
-    for threshold in candidates:
+    for threshold in oracle_thresholds:
         signature = tuple(
             sorted(
                 rollout_id
@@ -155,29 +156,39 @@ def _empirical_thresholds(
             )
         )
         fpr = len(signature) / clean_n if clean_n else 0.0
+        if fpr > max_clean_fpr + 1e-12:
+            continue
         previous = signature_best.get(signature)
         if previous is None or threshold > previous:
             signature_best[signature] = threshold
             fpr_by_signature[signature] = fpr
 
-    retained = sorted(signature_best.values())
-    retained_fprs = []
-    for threshold in retained:
+    operational_thresholds = sorted(signature_best.values())
+    operational_fprs = []
+    for threshold in operational_thresholds:
         signature = next(
             signature
             for signature, candidate in signature_best.items()
             if candidate == threshold
         )
-        retained_fprs.append(fpr_by_signature[signature])
+        operational_fprs.append(fpr_by_signature[signature])
 
-    return retained, {
-        "raw_empirical_candidate_n": len(candidates),
-        "retained_candidate_n": len(retained),
-        "max_clean_fpr_filter": None,
-        "retained_min": min(retained) if retained else None,
-        "retained_max": max(retained) if retained else None,
-        "retained_thresholds": retained,
-        "retained_clean_fprs": retained_fprs,
+    return operational_thresholds, oracle_thresholds, {
+        "raw_empirical_candidate_n": len(oracle_thresholds),
+        "oracle_candidate_n": len(oracle_thresholds),
+        "operational_candidate_n": len(operational_thresholds),
+        "max_clean_fpr_filter": max_clean_fpr,
+        "oracle_min": min(oracle_thresholds) if oracle_thresholds else None,
+        "oracle_max": max(oracle_thresholds) if oracle_thresholds else None,
+        "operational_min": (
+            min(operational_thresholds) if operational_thresholds else None
+        ),
+        "operational_max": (
+            max(operational_thresholds) if operational_thresholds else None
+        ),
+        "oracle_thresholds": oracle_thresholds,
+        "operational_thresholds": operational_thresholds,
+        "operational_clean_fprs": operational_fprs,
         "clean_rollout_n": clean_n,
     }
 
@@ -187,10 +198,12 @@ def build_phenotype_detector_configs(
     events: Sequence[Mapping[str, Any]],
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Build fully empirical stagnation and regression threshold grids."""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Build operational and oracle empirical phenotype grids separately."""
     configs: list[dict[str, Any]] = []
+    oracle_configs: list[dict[str, Any]] = []
     index = 0
+    oracle_index = 0
     max_budget = max(CLEAN_FPR_CONSTRAINTS)
     calibration: dict[str, Any] = {}
 
@@ -205,23 +218,41 @@ def build_phenotype_detector_configs(
             )
         )
 
+    def add_oracle(family: str, **parameters: Any) -> None:
+        nonlocal oracle_index
+        oracle_index += 1
+        oracle_configs.append(
+            make_config(
+                f"oracle{oracle_index:05d}",
+                family,
+                **parameters,
+            )
+        )
+
     for n in CONSECUTIVE_NS:
         scores = {
             rollout_id: _stagnation_consecutive_scores(signal["hops"], n)
             for rollout_id, signal in signals.items()
         }
-        deltas, metadata = _empirical_thresholds(
+        deltas, oracle_deltas, metadata = _empirical_thresholds(
             scores,
             signals,
             events,
             no_event_failures,
             clean_rollouts,
+            max_clean_fpr=max_budget,
             require_negative=False,
         )
         key = f"stagnation_consecutive:n={n}"
         calibration[key] = metadata
         for delta in deltas:
             add(
+                "stagnation_consecutive",
+                delta=delta,
+                n=n,
+            )
+        for delta in oracle_deltas:
+            add_oracle(
                 "stagnation_consecutive",
                 delta=delta,
                 n=n,
@@ -253,18 +284,26 @@ def build_phenotype_detector_configs(
                     m=m,
                     k=k,
                 )
+            for delta in oracle_deltas:
+                add_oracle(
+                    "stagnation_k_of_m",
+                    delta=delta,
+                    m=m,
+                    k=k,
+                )
 
     for m in REGRESSION_MIN_MS:
         scores = {
             rollout_id: _regression_window_min_scores(signal["hops"], m)
             for rollout_id, signal in signals.items()
         }
-        thresholds, metadata = _empirical_thresholds(
+        thresholds, oracle_thresholds, metadata = _empirical_thresholds(
             scores,
             signals,
             events,
             no_event_failures,
             clean_rollouts,
+            max_clean_fpr=max_budget,
             require_negative=True,
         )
         key = f"regression_window_min:m={m}"
@@ -275,13 +314,23 @@ def build_phenotype_detector_configs(
                 m=m,
                 theta=theta,
             )
+        for theta in oracle_thresholds:
+            add_oracle(
+                "regression_window_min",
+                m=m,
+                theta=theta,
+            )
 
     family_counts: dict[str, int] = {}
     for config in configs:
         family = str(config["detector_family"])
         family_counts[family] = family_counts.get(family, 0) + 1
+    oracle_family_counts: dict[str, int] = {}
+    for config in oracle_configs:
+        family = str(config["detector_family"])
+        oracle_family_counts[family] = oracle_family_counts.get(family, 0) + 1
 
-    return configs, {
+    return configs, oracle_configs, {
         "phenotypes": ["stagnation", "regression"],
         "stagnation_families": [
             "stagnation_consecutive",
@@ -297,13 +346,14 @@ def build_phenotype_detector_configs(
             "Recall@1/@3/@5/@10/@20/eventual horizons"
         ),
         "threshold_compression": (
-            "for each temporal rule, keep only the largest empirical threshold "
-            "for each distinct clean false-positive rollout set"
+            "operational grid only: keep the largest threshold for each distinct "
+            "clean false-positive rollout set after the <=20% branch filter; "
+            "oracle grid is never compressed this way because threshold widening "
+            "can move a positive-episode start far before onset"
         ),
         "oracle_grid": (
-            "retain all empirical threshold states, including states above the "
-            "operational clean-FPR budgets, so FPR-unconstrained oracle analysis "
-            "sees the complete searched parameter space"
+            "retain every empirical critical threshold, including states above "
+            "operational clean-FPR budgets, for localization-capacity analysis"
         ),
         "operational_prefilter": (
             "the constrained OR sweep later discards branch states whose "
@@ -311,5 +361,8 @@ def build_phenotype_detector_configs(
             "does not affect the oracle grid"
         ),
         "family_config_counts": dict(sorted(family_counts.items())),
+        "oracle_family_config_counts": dict(sorted(oracle_family_counts.items())),
+        "operational_config_n": len(configs),
+        "oracle_config_n": len(oracle_configs),
         "calibration": calibration,
     }
