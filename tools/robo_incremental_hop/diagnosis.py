@@ -192,7 +192,11 @@ def _category(features: Mapping[str, Any]) -> str:
     if negative_20:
         return "delayed_regression"
     if (
-        float(features.get("near_zero_fraction_20") or 0.0) >= 0.5
+        (
+            int(features.get("available_samples_20") or 0)
+            >= STAGNATION_RUN_THRESHOLD
+            and float(features.get("near_zero_fraction_20") or 0.0) >= 0.5
+        )
         or int(features.get("longest_stagnation_run") or 0)
         >= STAGNATION_RUN_THRESHOLD
     ):
@@ -443,7 +447,7 @@ def build_matched_clean_pairs(
             control_phase = anchor / max(1, len(signal["frames"]) - 1)
             phase_error = abs(control_phase - phase)
             available = int(control.get("available_samples_20") or 0)
-            rank = (-available, phase_error, rollout_id)
+            rank = (phase_error, -available, rollout_id)
             if best is None or rank < best[0]:
                 best = (rank, rollout_id, anchor, control, control_phase)
 
@@ -751,7 +755,7 @@ def diagnosis_metadata(
             "delayed_regression": "no negative hop in first 3, but at least one negative hop within first 20",
             "stagnation": (
                 "no negative hop within first 20 and either near-zero fraction >=0.5 "
-                "or longest |hop|<0.01 run >=3"
+                "with at least 3 available samples, or longest |hop|<0.01 run >=3"
             ),
             "no_clear_hop_response": "none of the above",
             "descriptive_only": True,
