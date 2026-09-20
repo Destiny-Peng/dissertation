@@ -453,91 +453,111 @@
       html += '</tbody></table>';
     }
 
-    var unconstrainedTop = hop.unconstrained_localization_top || [];
-    if (unconstrainedTop.length) {
+    var unconstrainedRows = hop.unconstrained_localization_rows || [];
+    if (unconstrainedRows.length) {
+      var pointSortOptions = [
+        { value: "rmse_samples", label: "RMSE" },
+        { value: "mae_samples", label: "MAE" },
+        { value: "median_absolute_error_samples", label: "Median |error|" },
+        { value: "median_signed_offset_samples", label: "Median signed offset" },
+        { value: "within_1", label: "Within ±1" },
+        { value: "within_3", label: "Within ±3" },
+        { value: "within_5", label: "Within ±5" },
+        { value: "within_10", label: "Within ±10" },
+        { value: "trigger_coverage", label: "Trigger coverage" }
+      ];
+      var pointPopulations = [
+        { value: "all_failure_events", label: "All failure events" },
+        { value: "first_event_per_failed_rollout", label: "First event per failed rollout" },
+        { value: "grasp_failure", label: "Grasp failure" }
+      ];
+      var pointRows = sortedRankingRows(unconstrainedRows, hopState.pointRanking);
       html += '<section class="analysis-subsection">'
         + '<h4>Failed-rollout localization · no clean-FPR constraint</h4>'
-        + '<p class="analysis-card-note">This is a pure re-ranking of configurations and OR pairs already present in the saved sweep artifacts. Each config localizes a failed rollout at its first trigger; no clean-success FPR is used, no new parameter search is performed, and no GT is used to choose among later alarms.</p>';
-
-      ["all_failure_events", "first_event_per_failed_rollout", "grasp_failure"].forEach(function (population) {
-        var rowsForPopulation = unconstrainedTop.filter(function (row) {
-          return String(row.population) === population;
-        }).sort(function (left, right) {
-          return Number(left.rank_rmse) - Number(right.rank_rmse);
-        });
-        if (!rowsForPopulation.length) return;
-        html += '<table class="analysis-table"><caption>'
-          + esc(population.replace(/_/g, " "))
-          + ' · top 10 by RMSE</caption>'
-          + '<thead><tr><th>Rank</th><th>Family</th><th>Config</th><th>Parameters</th>'
-          + '<th>Trigger coverage</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th>'
-          + '<th>RMSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
-          + '<th>Before / At / After</th></tr></thead><tbody>';
-        rowsForPopulation.forEach(function (row) {
-          html += '<tr>'
-            + '<td class="numeric"><strong>' + esc(row.rank_rmse) + '</strong></td>'
-            + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
-            + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
-            + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
-            + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_10)) + '</td>'
-            + '<td class="numeric"><strong>' + esc(number(row.rmse_samples)) + '</strong></td>'
-            + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
-            + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
-            + '</tr>';
-        });
-        html += '</tbody></table>';
+        + '<p class="analysis-card-note">Interactive view of the full saved ranking CSV. Sorting happens locally in the browser; no analysis rerun or backend recomputation is triggered.</p>'
+        + rankingControlsHtml("analysisHopPointRank", hopState.pointRanking, pointPopulations, pointSortOptions)
+        + '<table class="analysis-table"><caption>'
+        + esc(pointRows.length) + ' row(s) shown · sorted by ' + esc(hopState.pointRanking.sortKey)
+        + ' ' + esc(hopState.pointRanking.direction)
+        + '</caption>'
+        + '<thead><tr><th>#</th><th>Family</th><th>Config</th><th>Parameters</th>'
+        + '<th>Trigger coverage</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th>'
+        + '<th>RMSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
+        + '<th>Before / At / After</th></tr></thead><tbody>';
+      pointRows.forEach(function (row, index) {
+        html += '<tr>'
+          + '<td class="numeric"><strong>' + esc(index + 1) + '</strong></td>'
+          + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
+          + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
+          + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
+          + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_10)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(number(row.rmse_samples)) + '</strong></td>'
+          + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
+          + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
+          + '</tr>';
       });
-      html += '</section>';
+      html += '</tbody></table></section>';
     }
 
-    var intervalTop = hop.interval_localization_top || [];
-    if (intervalTop.length) {
+    var intervalRows = hop.interval_localization_rows || [];
+    if (intervalRows.length) {
+      var intervalSortOptions = [
+        { value: "mse_samples", label: "MSE" },
+        { value: "mae_samples", label: "MAE" },
+        { value: "median_absolute_interval_error_samples", label: "Median |error|" },
+        { value: "median_signed_interval_error_samples", label: "Median signed interval error" },
+        { value: "in_interval_rate", label: "In-interval rate" },
+        { value: "within_1", label: "Within 1 sample" },
+        { value: "within_3", label: "Within 3 samples" },
+        { value: "within_5", label: "Within 5 samples" },
+        { value: "before_interval_rate", label: "Before-interval rate" },
+        { value: "after_interval_rate", label: "After-interval rate" },
+        { value: "trigger_coverage", label: "Trigger coverage" }
+      ];
+      var intervalPopulations = [
+        { value: "all_eligible_failure_events", label: "All eligible failure events" },
+        { value: "first_eligible_event_per_failed_rollout", label: "First eligible event per failed rollout" },
+        { value: "grasp_failure", label: "Grasp failure" }
+      ];
+      var intervalViewRows = sortedRankingRows(intervalRows, hopState.intervalRanking);
       html += '<section class="analysis-subsection">'
         + '<h4>Failed-rollout interval localization · [causal, observable]</h4>'
-        + '<p class="analysis-card-note">Pure post-processing of existing sweep artifacts. Each config uses its first trigger on the native fused-hop grid. Ground truth is the annotated interval [causal onset, observable onset]; predictions inside the interval have zero error. No clean-FPR filtering and no detector rerun.</p>';
-
-      ["all_eligible_failure_events", "first_eligible_event_per_failed_rollout", "grasp_failure"].forEach(function (population) {
-        var rowsForPopulation = intervalTop.filter(function (row) {
-          return String(row.population) === population;
-        }).sort(function (left, right) {
-          return Number(left.rank_mse) - Number(right.rank_mse);
-        });
-        if (!rowsForPopulation.length) return;
-        html += '<table class="analysis-table"><caption>'
-          + esc(population.replace(/_/g, " "))
-          + ' · top 10 by MSE</caption>'
-          + '<thead><tr><th>Rank</th><th>N</th><th>Family</th><th>Config</th><th>Parameters</th>'
-          + '<th>Trigger coverage</th><th>In interval</th><th>Within 1</th><th>Within 3</th><th>Within 5</th>'
-          + '<th>MSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
-          + '<th>Before / After</th></tr></thead><tbody>';
-        rowsForPopulation.forEach(function (row) {
-          html += '<tr>'
-            + '<td class="numeric"><strong>' + esc(row.rank_mse) + '</strong></td>'
-            + '<td class="numeric">' + esc(row.eligible_event_n) + '</td>'
-            + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
-            + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
-            + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
-            + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
-            + '<td class="numeric"><strong>' + esc(percent(row.in_interval_rate)) + '</strong></td>'
-            + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
-            + '<td class="numeric"><strong>' + esc(number(row.mse_samples)) + '</strong></td>'
-            + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_absolute_interval_error_samples)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_signed_interval_error_samples)) + '</td>'
-            + '<td class="numeric">' + esc(row.before_interval_n) + ' / ' + esc(row.after_interval_n) + '</td>'
-            + '</tr>';
-        });
-        html += '</tbody></table>';
+        + '<p class="analysis-card-note">Interactive view of the full interval-localization CSV. Predictions inside [causal onset, observable onset] have zero error. Sorting/filtering is browser-side only.</p>'
+        + rankingControlsHtml("analysisHopIntervalRank", hopState.intervalRanking, intervalPopulations, intervalSortOptions)
+        + '<table class="analysis-table"><caption>'
+        + esc(intervalViewRows.length) + ' row(s) shown · sorted by ' + esc(hopState.intervalRanking.sortKey)
+        + ' ' + esc(hopState.intervalRanking.direction)
+        + '</caption>'
+        + '<thead><tr><th>#</th><th>N</th><th>Family</th><th>Config</th><th>Parameters</th>'
+        + '<th>Trigger coverage</th><th>In interval</th><th>Within 1</th><th>Within 3</th><th>Within 5</th>'
+        + '<th>MSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
+        + '<th>Before / After</th></tr></thead><tbody>';
+      intervalViewRows.forEach(function (row, index) {
+        html += '<tr>'
+          + '<td class="numeric"><strong>' + esc(index + 1) + '</strong></td>'
+          + '<td class="numeric">' + esc(row.eligible_event_n) + '</td>'
+          + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
+          + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
+          + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
+          + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.in_interval_rate)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(number(row.mse_samples)) + '</strong></td>'
+          + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_absolute_interval_error_samples)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_signed_interval_error_samples)) + '</td>'
+          + '<td class="numeric">' + esc(row.before_interval_n) + ' / ' + esc(row.after_interval_n) + '</td>'
+          + '</tr>';
       });
-      html += '</section>';
+      html += '</tbody></table></section>';
     }
 
     var progressPeak = hop.progress_peak_localization_summary || [];
@@ -678,6 +698,8 @@
     }
 
     host.innerHTML = html;
+    bindRankingControls("analysisHopPointRank", hopState.pointRanking);
+    bindRankingControls("analysisHopIntervalRank", hopState.intervalRanking);
 
     var source = hop.source || {};
     var freshness = hop.freshness || {};
