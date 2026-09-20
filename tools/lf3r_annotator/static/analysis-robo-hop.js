@@ -223,7 +223,7 @@
     } else {
       html += '<table class="analysis-table"><caption>Existing single-detector representatives; no new threshold tuning.</caption>'
         + '<thead><tr><th>Family</th><th>FPR cap</th><th>Parameters</th>'
-        + '<th>Grasp R@10</th><th>Gain@10</th><th>Grasp eventual</th><th>Gain eventual</th>'
+        + '<th>Grasp R@10</th><th>Grasp eventual</th>'
         + '<th>Event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>No-event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>Overall failed-rollout coverage</th><th>Clean FPR</th></tr></thead><tbody>';
@@ -233,9 +233,7 @@
           + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
           + '<td>' + esc(configParameters(row)) + '</td>'
           + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_at_10)) + '</strong></td>'
-          + '<td class="numeric">' + esc(percent(row.grasp_gain_vs_best_at_10)) + '</td>'
           + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
-          + '<td class="numeric">' + esc(percent(row.grasp_gain_vs_best_eventual)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
@@ -279,7 +277,7 @@
       html += '<p class="analysis-empty">No joint OR ensemble result is available in this snapshot.</p>';
     } else {
       html += '<table class="analysis-table"><thead><tr><th>FPR cap</th><th>Selection target</th><th>Stagnation</th><th>Regression</th>'
-        + '<th>Grasp R@10</th><th>Grasp eventual</th>'
+        + '<th>Grasp R@10</th><th>Gain@10</th><th>Grasp eventual</th><th>Gain eventual</th>'
         + '<th>Event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>No-event R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
         + '<th>Overall coverage</th><th>Event delay</th><th>No-event delay</th>'
@@ -293,7 +291,9 @@
           + '<td><strong>' + esc(familyLabel(row.detector_b_family)) + '</strong><small>'
           + esc(ensembleParameters(row, "b")) + '</small></td>'
           + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_at_10)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.grasp_gain_vs_best_at_10)) + '</td>'
           + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.grasp_gain_vs_best_eventual)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
           + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
