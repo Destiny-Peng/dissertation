@@ -200,10 +200,6 @@ ROBO_HOP_TABLE_FILES = {
     "ensemble_sweep": "ensemble_sweep.csv",
     "ensemble_selected": "ensemble_selected.csv",
     "ensemble_by_failure_type": "ensemble_by_failure_type.csv",
-    "oracle_global_best": "oracle_global_best.csv",
-    "oracle_summary": "oracle_summary.csv",
-    "progress_peak_summary": "progress_peak_localization_summary.csv",
-    "unconstrained_localization": "unconstrained_localization_ranking.csv",
     "interval_localization": "interval_localization_ranking.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
@@ -220,12 +216,6 @@ ROBO_HOP_EXTENDED_FILES = (
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
-    "oracle_global_best.csv",
-    "oracle_event_detectability.csv",
-    "oracle_summary.csv",
-    "progress_peak_localization.csv",
-    "progress_peak_localization_summary.csv",
-    "unconstrained_localization_ranking.csv",
     "interval_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
@@ -296,12 +286,6 @@ ANALYSIS_ARTIFACT_NAMES = {
     "ensemble_sweep.csv",
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
-    "oracle_global_best.csv",
-    "oracle_event_detectability.csv",
-    "oracle_summary.csv",
-    "progress_peak_localization.csv",
-    "progress_peak_localization_summary.csv",
-    "unconstrained_localization_ranking.csv",
     "interval_localization_ranking.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
@@ -1043,40 +1027,6 @@ class AnalysisService:
             if ensemble_failure_path.is_file()
             else []
         )
-        oracle_global_path = directory / ROBO_HOP_TABLE_FILES["oracle_global_best"]
-        oracle_summary_path = directory / ROBO_HOP_TABLE_FILES["oracle_summary"]
-        oracle_global_best = (
-            self._read_csv(oracle_global_path)
-            if oracle_global_path.is_file()
-            else []
-        )
-        oracle_summary = (
-            self._read_csv(oracle_summary_path)
-            if oracle_summary_path.is_file()
-            else []
-        )
-        progress_peak_summary_path = (
-            directory / ROBO_HOP_TABLE_FILES["progress_peak_summary"]
-        )
-        progress_peak_summary = (
-            self._read_csv(progress_peak_summary_path)
-            if progress_peak_summary_path.is_file()
-            else []
-        )
-        unconstrained_localization_path = (
-            directory / ROBO_HOP_TABLE_FILES["unconstrained_localization"]
-        )
-        unconstrained_localization_rows = (
-            self._read_csv(unconstrained_localization_path)
-            if unconstrained_localization_path.is_file()
-            else []
-        )
-        unconstrained_localization_top = [
-            row
-            for row in unconstrained_localization_rows
-            if row.get("rank_rmse") is not None
-            and int(row["rank_rmse"]) <= 10
-        ]
         interval_localization_path = (
             directory / ROBO_HOP_TABLE_FILES["interval_localization"]
         )
@@ -1143,23 +1093,11 @@ class AnalysisService:
             "ensemble_sweep": ensemble_sweep,
             "ensemble_selected": ensemble_selected,
             "ensemble_by_failure_type": ensemble_by_failure_type,
-            "oracle_global_best": oracle_global_best,
-            "oracle_summary": oracle_summary,
-            "progress_peak_localization_summary": progress_peak_summary,
-            "progress_peak_localization": metadata.get(
-                "progress_peak_localization"
-            ) or {},
-            "unconstrained_localization_ranking": metadata.get(
-                "unconstrained_localization_ranking"
-            ) or {},
-            "unconstrained_localization_rows": unconstrained_localization_rows,
-            "unconstrained_localization_top": unconstrained_localization_top,
             "interval_localization_ranking": metadata.get(
                 "interval_localization_ranking"
             ) or {},
             "interval_localization_rows": interval_localization_rows,
             "interval_localization_top": interval_localization_top,
-            "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
             "grasp_failure_diagnosis": metadata.get(
@@ -1182,13 +1120,7 @@ class AnalysisService:
                     "ensemble_sweep.csv",
                     "ensemble_selected.csv",
                     "ensemble_by_failure_type.csv",
-                    "oracle_global_best.csv",
-                    "oracle_event_detectability.csv",
-                    "oracle_summary.csv",
-                    "progress_peak_localization.csv",
-                    "progress_peak_localization_summary.csv",
-                    "unconstrained_localization_ranking.csv",
-                    "interval_localization_ranking.csv",
+                                                                                                                    "interval_localization_ranking.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
