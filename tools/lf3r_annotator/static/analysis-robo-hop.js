@@ -7,12 +7,6 @@
     job: null,
     loadingRuns: false,
     polling: false,
-    pointRanking: {
-      population: "first_event_per_failed_rollout",
-      sortKey: "rmse_samples",
-      direction: "asc",
-      limit: "25"
-    },
     intervalRanking: {
       population: "first_eligible_event_per_failed_rollout",
       sortKey: "mse_samples",
@@ -453,58 +447,6 @@
       html += '</tbody></table>';
     }
 
-    var unconstrainedRows = hop.unconstrained_localization_rows || [];
-    if (unconstrainedRows.length) {
-      var pointSortOptions = [
-        { value: "rmse_samples", label: "RMSE" },
-        { value: "mae_samples", label: "MAE" },
-        { value: "median_absolute_error_samples", label: "Median |error|" },
-        { value: "median_signed_offset_samples", label: "Median signed offset" },
-        { value: "within_1", label: "Within ±1" },
-        { value: "within_3", label: "Within ±3" },
-        { value: "within_5", label: "Within ±5" },
-        { value: "within_10", label: "Within ±10" },
-        { value: "trigger_coverage", label: "Trigger coverage" }
-      ];
-      var pointPopulations = [
-        { value: "all_failure_events", label: "All failure events" },
-        { value: "first_event_per_failed_rollout", label: "First event per failed rollout" },
-        { value: "grasp_failure", label: "Grasp failure" }
-      ];
-      var pointRows = sortedRankingRows(unconstrainedRows, hopState.pointRanking);
-      html += '<section class="analysis-subsection">'
-        + '<h4>Failed-rollout localization · no clean-FPR constraint</h4>'
-        + '<p class="analysis-card-note">Interactive view of the full saved ranking CSV. Sorting happens locally in the browser; no analysis rerun or backend recomputation is triggered.</p>'
-        + rankingControlsHtml("analysisHopPointRank", hopState.pointRanking, pointPopulations, pointSortOptions)
-        + '<table class="analysis-table"><caption>'
-        + esc(pointRows.length) + ' row(s) shown · sorted by ' + esc(hopState.pointRanking.sortKey)
-        + ' ' + esc(hopState.pointRanking.direction)
-        + '</caption>'
-        + '<thead><tr><th>#</th><th>Family</th><th>Config</th><th>Parameters</th>'
-        + '<th>Trigger coverage</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th>'
-        + '<th>RMSE</th><th>MAE</th><th>Median |error|</th><th>Median signed</th>'
-        + '<th>Before / At / After</th></tr></thead><tbody>';
-      pointRows.forEach(function (row, index) {
-        html += '<tr>'
-          + '<td class="numeric"><strong>' + esc(index + 1) + '</strong></td>'
-          + '<td>' + esc(localizationFamilyLabel(row)) + '</td>'
-          + '<td><code>' + esc(localizationConfigLabel(row)) + '</code></td>'
-          + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
-          + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.within_10)) + '</td>'
-          + '<td class="numeric"><strong>' + esc(number(row.rmse_samples)) + '</strong></td>'
-          + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
-          + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
-          + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
-          + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
-          + '</tr>';
-      });
-      html += '</tbody></table></section>';
-    }
-
     var intervalRows = hop.interval_localization_rows || [];
     if (intervalRows.length) {
       var intervalSortOptions = [
@@ -560,118 +502,6 @@
       html += '</tbody></table></section>';
     }
 
-    var progressPeak = hop.progress_peak_localization_summary || [];
-    var progressPeakOverall = progressPeak.find(function (row) {
-      return String(row.group) === "overall" && String(row.value) === "all";
-    });
-    if (progressPeakOverall) {
-      html += '<section class="analysis-subsection">'
-        + '<h4>Earliest global progress maximum · first observable failure onset</h4>'
-        + '<p class="analysis-card-note">For each terminal-failure rollout with at least one event annotation, compute t* = min argmax P_t on the saved fused-progress native grid and compare it only with that rollout\'s first observable failure onset. Multi-event rollouts contribute one row.</p>'
-        + '<table class="analysis-table"><thead><tr><th>Rollouts</th><th>Median signed offset</th>'
-        + '<th>Median |error|</th><th>MAE</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th><th>±20</th>'
-        + '<th>Before onset</th><th>At onset</th><th>After onset</th></tr></thead><tbody><tr>'
-        + '<td class="numeric"><strong>' + esc(progressPeakOverall.rollout_n) + '</strong></td>'
-        + '<td class="numeric">' + esc(number(progressPeakOverall.median_signed_offset_samples)) + ' samples</td>'
-        + '<td class="numeric">' + esc(number(progressPeakOverall.median_absolute_error_samples)) + ' samples</td>'
-        + '<td class="numeric">' + esc(number(progressPeakOverall.mean_absolute_error_samples)) + ' samples</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_1_samples_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_3_samples_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_5_samples_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_10_samples_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.within_20_samples_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.before_onset_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.at_onset_anchor_fraction)) + '</td>'
-        + '<td class="numeric">' + esc(percent(progressPeakOverall.after_onset_fraction)) + '</td>'
-        + '</tr></tbody></table>';
-
-      var byFirstType = progressPeak.filter(function (row) {
-        return String(row.group) === "first_failure_type";
-      });
-      if (byFirstType.length) {
-        html += '<details class="analysis-subsection"><summary><strong>t* localization by first failure type</strong></summary>'
-          + '<table class="analysis-table"><thead><tr><th>First failure type</th><th>N</th><th>Median offset</th>'
-          + '<th>Median |error|</th><th>Within ±3</th><th>±5</th><th>±10</th></tr></thead><tbody>';
-        byFirstType.forEach(function (row) {
-          html += '<tr>'
-            + '<td><strong>' + esc(String(row.value).replace(/_/g, " ")) + '</strong></td>'
-            + '<td class="numeric">' + esc(row.rollout_n) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_absolute_error_samples)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_3_samples_fraction)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_5_samples_fraction)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.within_10_samples_fraction)) + '</td>'
-            + '</tr>';
-        });
-        html += '</tbody></table></details>';
-      }
-      html += '</section>';
-    }
-
-    var oracleGrasp = (hop.oracle_summary || []).filter(function (row) {
-      return String(row.population) === "grasp_failure";
-    }).sort(function (left, right) {
-      var order = { stagnation: 0, regression: 1, combined: 2 };
-      return (order[String(left.signal_family)] || 99)
-        - (order[String(right.signal_family)] || 99);
-    });
-
-    if (oracleGrasp.length) {
-      html += '<section class="analysis-subsection">'
-        + '<h4>FPR-unconstrained oracle detectability · grasp failure</h4>'
-        + '<p class="analysis-card-note">Oracle rows ask whether any searched parameter state can localize each event. A positive episode must start at/after observable onset, with at most one native sample of early tolerance; an alarm that was already continuously positive long before onset does not count.</p>'
-        + '<table class="analysis-table"><thead><tr><th>Phenotype</th>'
-        + '<th>Oracle R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
-        + '<th>Strict eventual</th><th>Median best onset offset</th><th>P25–P75 offset</th></tr></thead><tbody>';
-      oracleGrasp.forEach(function (row) {
-        html += '<tr>'
-          + '<td><strong>' + esc(String(row.signal_family)) + '</strong></td>'
-          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_1)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_3)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_5)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_10)) + '</td>'
-          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_20)) + '</td>'
-          + '<td class="numeric"><strong>' + esc(percent(row.oracle_recall_eventual)) + '</strong></td>'
-          + '<td class="numeric">' + esc(percent(row.strict_recall_eventual)) + '</td>'
-          + '<td class="numeric">' + esc(number(row.median_best_start_offset_samples)) + ' samples</td>'
-          + '<td class="numeric">' + esc(number(row.p25_best_start_offset_samples)) + '–'
-          + esc(number(row.p75_best_start_offset_samples)) + '</td>'
-          + '</tr>';
-      });
-      html += '</tbody></table>';
-
-      var oracleCombined = oracleGrasp.find(function (row) {
-        return String(row.signal_family) === "combined";
-      });
-      var constrained = (hop.ensemble_selected || []).filter(function (row) {
-        return row.selection_status === "selected"
-          && String(row.selection_target) === "grasp_recall_eventual";
-      }).sort(function (left, right) {
-        return Number(right.clean_fpr_constraint) - Number(left.clean_fpr_constraint);
-      });
-      if (oracleCombined) {
-        html += '<table class="analysis-table"><caption>Oracle capacity versus deployable clean-FPR budgets</caption>'
-          + '<thead><tr><th>Setting</th><th>Grasp R@3</th><th>R@10</th><th>Eventual</th>'
-          + '<th>Median delay</th><th>Observed clean FPR</th></tr></thead><tbody>'
-          + '<tr><td><strong>Oracle · ignore FPR</strong></td>'
-          + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_3)) + '</td>'
-          + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_10)) + '</td>'
-          + '<td class="numeric"><strong>' + esc(percent(oracleCombined.oracle_recall_eventual)) + '</strong></td>'
-          + '<td class="numeric">offset ' + esc(number(oracleCombined.median_best_start_offset_samples)) + '</td>'
-          + '<td class="numeric">ignored</td></tr>';
-        constrained.forEach(function (row) {
-          html += '<tr><td>≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + ' clean FPR</td>'
-            + '<td class="numeric">' + esc(percent(row.grasp_recall_at_3)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.grasp_recall_at_10)) + '</td>'
-            + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
-            + '<td class="numeric">' + esc(number(row.grasp_median_delay_samples)) + ' samples (1-based)</td>'
-            + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      }
-      html += '</section>';
-    }
-
     var typed = (hop.ensemble_by_failure_type || []).filter(function (row) {
       return Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
         && String(row.horizon) === "eventual"
@@ -698,7 +528,6 @@
     }
 
     host.innerHTML = html;
-    bindRankingControls("analysisHopPointRank", hopState.pointRanking);
     bindRankingControls("analysisHopIntervalRank", hopState.intervalRanking);
 
     var source = hop.source || {};
