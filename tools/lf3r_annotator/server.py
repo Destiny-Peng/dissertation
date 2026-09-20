@@ -201,6 +201,7 @@ ROBO_HOP_TABLE_FILES = {
     "ensemble_selected": "ensemble_selected.csv",
     "ensemble_by_failure_type": "ensemble_by_failure_type.csv",
     "interval_localization": "interval_localization_ranking.csv",
+    "offline_localization_diagnostics": "offline_localization_diagnostics.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -217,6 +218,7 @@ ROBO_HOP_EXTENDED_FILES = (
     "ensemble_selected.csv",
     "ensemble_by_failure_type.csv",
     "interval_localization_ranking.csv",
+    "offline_localization_diagnostics.csv",
     "grasp_event_features.csv",
     "grasp_detected_vs_missed.csv",
     "grasp_matched_control.csv",
@@ -1121,6 +1123,7 @@ class AnalysisService:
                     "ensemble_selected.csv",
                     "ensemble_by_failure_type.csv",
                                                                                                                     "interval_localization_ranking.csv",
+                    "offline_localization_diagnostics.csv",
                     "grasp_event_features.csv",
                     "grasp_detected_vs_missed.csv",
                     "grasp_matched_control.csv",
