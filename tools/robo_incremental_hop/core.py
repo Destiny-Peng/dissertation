@@ -14,6 +14,7 @@ MEAN_MS = (2, 3, 4, 5, 6, 8)
 MEAN_THRESHOLDS = (-0.10, -0.05, -0.02, 0.00, 0.02, 0.05)
 REGRESSION_MS = (2, 3, 4, 5, 6, 8)
 REGRESSION_THRESHOLDS = (0.05, 0.10, 0.20, 0.30, 0.50, 0.75, 1.00)
+REGRESSION_MIN_MS = (1, 2, 3, 4, 5, 6, 8)
 STAGNATION_DELTAS = (0.01, 0.02, 0.05, 0.10)
 CLEAN_FPR_CONSTRAINTS = (0.05, 0.10, 0.20)
 RECALL_SAMPLE_WINDOWS = (1, 3, 5, 10, 20)
@@ -218,6 +219,13 @@ def detector_mask(hops: Sequence[float], config: Mapping[str, Any]) -> list[bool
         for index in range(m - 1, len(values)):
             window = values[index - m + 1 : index + 1]
             mask[index] = sum(window) / m <= theta
+        return mask
+
+    if family == "regression_window_min":
+        m, theta = int(config["m"]), float(config["theta"])
+        for index in range(m - 1, len(values)):
+            window = values[index - m + 1 : index + 1]
+            mask[index] = min(window) <= theta
         return mask
 
     if family == "cumulative_regression":
