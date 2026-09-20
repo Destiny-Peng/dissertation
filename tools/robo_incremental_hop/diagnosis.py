@@ -342,6 +342,41 @@ def build_grasp_event_features(
                 "onset_anchor_frame": int(signal["frames"][anchor]),
                 "normalized_phase": anchor / denominator,
                 **aligned_hops,
+                "reference_detector_a_family": (
+                    reference_ensemble.get("detector_a_family")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_detector_b_family": (
+                    reference_ensemble.get("detector_b_family")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_a_config_id": (
+                    reference_ensemble.get("a_config_id")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_b_config_id": (
+                    reference_ensemble.get("b_config_id")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_clean_fpr_constraint": (
+                    reference_ensemble.get("clean_fpr_constraint")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_clean_rollout_fpr": (
+                    reference_ensemble.get("clean_rollout_fpr")
+                    if reference_ensemble
+                    else None
+                ),
+                "reference_overall_failed_rollout_coverage": (
+                    reference_ensemble.get("overall_failed_rollout_coverage")
+                    if reference_ensemble
+                    else None
+                ),
                 "reference_detected": detected,
                 "reference_detection_delay_samples": detection_delay_samples,
                 "reference_detection_delay_frames": detection_delay_frames,
