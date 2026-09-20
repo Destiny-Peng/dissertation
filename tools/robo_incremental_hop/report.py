@@ -18,18 +18,93 @@ from .core import (
     config_row,
     detector_mask,
     evaluate_event,
+    evaluate_failure_rollout_from_start,
     positive_episode_count,
     recovery_metrics,
 )
 from .io import project_relative
 
 
+def _aggregate_no_event_failure_metrics(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    n = len(rows)
+    detected = [row for row in rows if row.get("detected")]
+    sample_delays = [
+        float(row["delay_samples"])
+        for row in detected
+        if row.get("delay_samples") is not None
+    ]
+    frame_delays = [
+        float(row["delay_frames"])
+        for row in detected
+        if row.get("delay_frames") is not None
+    ]
+    result: dict[str, Any] = {
+        "no_event_failure_n": n,
+        "no_event_detected_n": len(detected),
+        "no_event_recall_eventual": (
+            len(detected) / n if n else None
+        ),
+        "no_event_median_delay_samples": (
+            statistics.median(sample_delays)
+            if sample_delays
+            else None
+        ),
+        "no_event_median_delay_frames": (
+            statistics.median(frame_delays)
+            if frame_delays
+            else None
+        ),
+    }
+    for window in (1, 3, 5, 10, 20):
+        result[f"no_event_recall_at_{window}"] = (
+            sum(bool(row.get(f"recall_at_{window}")) for row in rows) / n
+            if n
+            else None
+        )
+    return result
+
+
+def _aggregate_failed_rollout_coverage(
+    event_rows: Sequence[Mapping[str, Any]],
+    no_event_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    annotated_terminal: dict[str, bool] = {}
+    for row in event_rows:
+        if row.get("outcome") != "terminal_failure":
+            continue
+        rollout_id = str(row["rollout_id"])
+        annotated_terminal[rollout_id] = (
+            annotated_terminal.get(rollout_id, False)
+            or bool(row.get("eventual_recall"))
+        )
+    no_event_terminal = {
+        str(row["rollout_id"]): bool(row.get("eventual_recall"))
+        for row in no_event_rows
+    }
+    combined = {**annotated_terminal, **no_event_terminal}
+    return {
+        "failed_rollout_n": len(combined),
+        "failed_rollout_detected_n": sum(combined.values()),
+        "overall_failed_rollout_coverage": (
+            sum(combined.values()) / len(combined)
+            if combined
+            else None
+        ),
+        "annotated_failed_rollout_n": len(annotated_terminal),
+        "no_event_failed_rollout_n": len(no_event_terminal),
+    }
+
+
 def evaluate_all_configs(
     configs: Sequence[Mapping[str, Any]],
     signals: Mapping[str, Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
+    no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
 ) -> tuple[
+    list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -38,31 +113,31 @@ def evaluate_all_configs(
         str, list[Mapping[str, Any]]
     ] = defaultdict(list)
     for event in events:
-        events_by_rollout[
-            str(event["rollout_id"])
-        ].append(event)
+        events_by_rollout[str(event["rollout_id"])].append(event)
 
+    no_event_by_id = {
+        str(row["rollout_id"]): row
+        for row in no_event_failures
+    }
     clean_by_id = {
         str(row["rollout_id"]): row
         for row in clean_rollouts
     }
     summary_rows: list[dict[str, Any]] = []
     event_rows: list[dict[str, Any]] = []
+    no_event_rows: list[dict[str, Any]] = []
     clean_rows: list[dict[str, Any]] = []
 
     for config in configs:
         masks = {
-            rollout_id: detector_mask(
-                signal["hops"], config
-            )
+            rollout_id: detector_mask(signal["hops"], config)
             for rollout_id, signal in signals.items()
         }
         config_events: list[dict[str, Any]] = []
+        config_no_event: list[dict[str, Any]] = []
         config_clean: list[dict[str, Any]] = []
 
-        for rollout_id, rollout_events in (
-            events_by_rollout.items()
-        ):
+        for rollout_id, rollout_events in events_by_rollout.items():
             signal = signals.get(rollout_id)
             if signal is None:
                 continue
@@ -81,17 +156,33 @@ def evaluate_all_configs(
                     **config_row(config),
                     **event,
                     **metrics,
-                    "native_sample_n": len(
-                        signal["frames"]
-                    ),
-                    "signal_source": (
-                        project_relative(
-                            signal["prediction_path"]
-                        )
+                    "native_sample_n": len(signal["frames"]),
+                    "signal_source": project_relative(
+                        signal["prediction_path"]
                     ),
                 }
                 config_events.append(row)
                 event_rows.append(row)
+
+        for rollout_id, failure in no_event_by_id.items():
+            signal = signals.get(rollout_id)
+            if signal is None:
+                continue
+            metrics = evaluate_failure_rollout_from_start(
+                signal["frames"],
+                masks[rollout_id],
+            )
+            row = {
+                **config_row(config),
+                **failure,
+                **metrics,
+                "native_sample_n": len(signal["frames"]),
+                "signal_source": project_relative(
+                    signal["prediction_path"]
+                ),
+            }
+            config_no_event.append(row)
+            no_event_rows.append(row)
 
         for rollout_id, clean in clean_by_id.items():
             signal = signals.get(rollout_id)
@@ -119,13 +210,9 @@ def evaluate_all_configs(
                     if positive
                     else None
                 ),
-                "positive_episode_n": (
-                    positive_episode_count(mask)
-                ),
-                "signal_source": (
-                    project_relative(
-                        signal["prediction_path"]
-                    )
+                "positive_episode_n": positive_episode_count(mask),
+                "signal_source": project_relative(
+                    signal["prediction_path"]
                 ),
             }
             config_clean.append(row)
@@ -134,17 +221,17 @@ def evaluate_all_configs(
         summary_rows.append(
             {
                 **config_row(config),
-                **aggregate_event_metrics(
-                    config_events
+                **aggregate_event_metrics(config_events),
+                **_aggregate_no_event_failure_metrics(config_no_event),
+                **_aggregate_failed_rollout_coverage(
+                    config_events,
+                    config_no_event,
                 ),
-                **aggregate_clean_metrics(
-                    config_clean
-                ),
+                **aggregate_clean_metrics(config_clean),
             }
         )
 
-    return summary_rows, event_rows, clean_rows
-
+    return summary_rows, event_rows, no_event_rows, clean_rows
 
 def select_best_configs(
     summary_rows: Sequence[Mapping[str, Any]],
