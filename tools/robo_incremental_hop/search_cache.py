@@ -13,7 +13,9 @@ from typing import Any, Mapping, Sequence
 from .io import PROJECT_ROOT
 
 SEARCH_CACHE_SCHEMA = 1
-SEARCH_SEMANTICS_VERSION = "fused-phenotype-operational-v3-oracle-localization-v2"
+SEARCH_SEMANTICS_VERSION = (
+    "fused-phenotype-operational-v3-oracle-localization-v2-ensemble-sweep-v1"
+)
 SEARCH_CACHE_ROOT = PROJECT_ROOT / "cache" / "robo_dopamine_hop_search"
 
 
