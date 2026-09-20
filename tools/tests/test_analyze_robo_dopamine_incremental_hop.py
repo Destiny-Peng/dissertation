@@ -35,137 +35,97 @@ from robo_incremental_hop.progress_peak import (
     evaluate_progress_peak_localization,
     summarize_progress_peak_localization,
 )
-from robo_incremental_hop.global_localization import (
-    evaluate_global_config_space,
-    select_global_config_results,
+from robo_incremental_hop.localization_ranking import (
+    rank_existing_sweep_localization,
 )
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 import robo_incremental_hop.search_cache as search_cache
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
-    def test_global_config_capacity_is_distinct_from_true_localization(self) -> None:
+    def test_existing_sweep_ranking_uses_first_trigger_without_new_search(self) -> None:
         signals = {
-            "r1": {
-                "frames": [0, 1, 2, 3, 4, 5],
-                "hops": [-1.0, 1.0, 1.0, -1.0, 1.0, 1.0],
-            },
-            "r2": {
-                "frames": [0, 1, 2, 3, 4, 5],
-                "hops": [1.0, 1.0, -1.0, 1.0, 1.0, 1.0],
-            },
+            "r1": {"frames": [0, 1, 2, 3, 4, 5]},
+            "r2": {"frames": [0, 1, 2, 3, 4, 5]},
         }
-        events = [
+        base = {
+            "detector_family": "consecutive",
+            "epsilon": 0.0,
+            "n": 1,
+            "m": None,
+            "k": None,
+            "theta": None,
+            "A": None,
+            "delta": None,
+            "parameters_json": '{"epsilon":0.0,"n":1}',
+            "outcome": "terminal_failure",
+            "failure_type": "grasp_failure",
+        }
+        event_rows = [
             {
-                "event_id": "r1::event0",
+                **base,
+                "config_id": "a",
                 "rollout_id": "r1",
+                "event_id": "r1::event0",
                 "event_index": 0,
-                "failure_type": "grasp_failure",
                 "observable_onset_frame": 3,
-                "episode_end_frame": None,
-                "outcome": "terminal_failure",
+                "earliest_early_positive_frame": 0,
+                "detection_frame": 3,
             },
             {
-                "event_id": "r2::event0",
+                **base,
+                "config_id": "a",
                 "rollout_id": "r2",
+                "event_id": "r2::event0",
                 "event_index": 0,
-                "failure_type": "grasp_failure",
                 "observable_onset_frame": 2,
-                "episode_end_frame": None,
-                "outcome": "terminal_failure",
+                "earliest_early_positive_frame": None,
+                "detection_frame": 2,
+            },
+            {
+                **base,
+                "config_id": "b",
+                "rollout_id": "r1",
+                "event_id": "r1::event0",
+                "event_index": 0,
+                "observable_onset_frame": 3,
+                "earliest_early_positive_frame": None,
+                "detection_frame": 3,
+            },
+            {
+                **base,
+                "config_id": "b",
+                "rollout_id": "r2",
+                "event_id": "r2::event0",
+                "event_index": 0,
+                "observable_onset_frame": 2,
+                "earliest_early_positive_frame": None,
+                "detection_frame": 3,
             },
         ]
-        config = make_config(
-            "fixed",
-            "consecutive",
-            epsilon=0.0,
-            n=1,
+        ensemble_sweep = [
+            {"a_config_id": "a", "b_config_id": "b"}
+        ]
+        ranking = rank_existing_sweep_localization(
+            event_rows=event_rows,
+            ensemble_sweep=ensemble_sweep,
+            signals=signals,
         )
-        config["config_source"] = "test"
-        summaries = evaluate_global_config_space(
-            signals,
-            events,
-            [config],
-            [],
-            {"fixed": config},
-        )
-        all_events = next(
+        first_population = [
             row
-            for row in summaries
-            if row["population"] == "all_annotated_failure_events"
-        )
-        self.assertAlmostEqual(all_events["capacity_within_1_recall"], 1.0)
-        self.assertAlmostEqual(
-            all_events["localization_within_1_recall"],
-            0.5,
-        )
-        self.assertAlmostEqual(
-            all_events["localization_output_coverage"],
-            1.0,
-        )
-        self.assertAlmostEqual(
-            all_events["median_signed_offset_samples"],
+            for row in ranking
+            if row["population"] == "first_event_per_failed_rollout"
+        ]
+        by_id = {row["config_id"]: row for row in first_population}
+        self.assertEqual(by_id["a"]["median_signed_offset_samples"], -1.5)
+        self.assertEqual(by_id["b"]["median_signed_offset_samples"], 0.5)
+        self.assertEqual(by_id["b"]["rank_median_abs_error"], 1)
+        self.assertAlmostEqual(by_id["b"]["within_1"], 1.0)
+        self.assertEqual(
+            by_id["OR:a|b"]["median_signed_offset_samples"],
             -1.5,
         )
-        self.assertAlmostEqual(all_events["mae_samples"], 1.5)
-        self.assertEqual(all_events["before_onset_n"], 1)
-        self.assertEqual(all_events["at_onset_n"], 1)
-
-    def test_global_config_window_alarm_timestamp_is_window_end(self) -> None:
-        signals = {
-            "r0": {
-                "frames": [0, 4, 8, 12],
-                "hops": [1.0, -1.0, -1.0, 1.0],
-            }
-        }
-        events = [
-            {
-                "event_id": "r0::event0",
-                "rollout_id": "r0",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "observable_onset_frame": 4,
-                "episode_end_frame": None,
-                "outcome": "terminal_failure",
-            }
-        ]
-        config = make_config(
-            "window_end",
-            "consecutive",
-            epsilon=0.0,
-            n=2,
-        )
-        config["config_source"] = "test"
-        summaries = evaluate_global_config_space(
-            signals,
-            events,
-            [config],
-            [],
-            {"window_end": config},
-        )
-        row = next(
-            item
-            for item in summaries
-            if item["population"] == "first_event_per_failed_rollout"
-        )
-        self.assertEqual(row["median_signed_offset_samples"], 1.0)
-        self.assertAlmostEqual(row["localization_within_1_recall"], 1.0)
-        self.assertAlmostEqual(row["localization_within_3_recall"], 1.0)
-
-        envelope, single_best = select_global_config_results(summaries)
-        self.assertTrue(
-            any(
-                item["selection_target"] == "capacity_within_1_recall"
-                for item in envelope
-            )
-        )
-        self.assertTrue(
-            any(
-                item["selection_target"] == "minimum_mae"
-                and item["coverage_requirement_status"] == "full_coverage"
-                for item in single_best
-            )
-        )
+        self.assertAlmostEqual(by_id["OR:a|b"]["trigger_coverage"], 1.0)
 
     def test_progress_peak_uses_earliest_argmax_and_first_failure_onset(self) -> None:
         signals = {
