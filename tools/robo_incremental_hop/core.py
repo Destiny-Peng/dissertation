@@ -318,8 +318,8 @@ def evaluate_failure_rollout_from_start(
     """Evaluate a terminal-failure rollout with no annotated failure event.
 
     No onset is synthesized. The failure condition is treated as present from
-    the beginning of the saved native signal. Delay is 1-based in native samples
-    and frame delay is measured from the first saved native frame.
+    rollout start. Delay is 1-based in native samples and frame delay is measured
+    in saved video-frame coordinates from rollout frame 0.
     """
     if len(frames) != len(mask):
         raise ValueError("frames/mask length mismatch")
