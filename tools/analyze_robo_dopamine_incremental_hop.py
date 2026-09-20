@@ -19,6 +19,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +77,84 @@ DEFAULT_OUTPUT_ROOT = (
     / "outputs/robo_dopamine_incremental_hop"
 )
 ANALYSIS_SIGNAL_MODE = "fused"
+DEFAULT_CPU_LIMIT = 4
+DEFAULT_NICE_TARGET = 10
+THREAD_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "OMP_THREAD_LIMIT",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def apply_cpu_limit(cpu_limit: int) -> dict[str, Any]:
+    """Bound analysis CPU concurrency without requiring elevated privileges."""
+    if cpu_limit < 1:
+        raise ValueError("cpu_limit must be positive")
+
+    for name in THREAD_ENV_VARS:
+        current = os.environ.get(name)
+        try:
+            current_value = int(current) if current is not None else None
+        except ValueError:
+            current_value = None
+        os.environ[name] = str(
+            min(cpu_limit, current_value)
+            if current_value is not None and current_value > 0
+            else cpu_limit
+        )
+
+    available_cpus: list[int] = []
+    selected_cpus: list[int] = []
+    affinity_applied = False
+    affinity_error = None
+    if hasattr(os, "sched_getaffinity"):
+        try:
+            available_cpus = sorted(int(cpu) for cpu in os.sched_getaffinity(0))
+        except OSError as exc:
+            affinity_error = str(exc)
+    if not available_cpus:
+        available_cpus = list(range(max(1, int(os.cpu_count() or 1))))
+
+    selected_cpus = available_cpus[: min(cpu_limit, len(available_cpus))]
+    if hasattr(os, "sched_setaffinity"):
+        try:
+            os.sched_setaffinity(0, set(selected_cpus))
+            affinity_applied = True
+        except (OSError, PermissionError) as exc:
+            affinity_error = str(exc)
+
+    nice_before = None
+    nice_after = None
+    nice_error = None
+    if hasattr(os, "getpriority") and hasattr(os, "setpriority"):
+        try:
+            nice_before = int(os.getpriority(os.PRIO_PROCESS, 0))
+            target = max(nice_before, DEFAULT_NICE_TARGET)
+            os.setpriority(os.PRIO_PROCESS, 0, target)
+            nice_after = int(os.getpriority(os.PRIO_PROCESS, 0))
+        except (OSError, PermissionError) as exc:
+            nice_error = str(exc)
+
+    return {
+        "requested_logical_cpus": cpu_limit,
+        "available_logical_cpus": len(available_cpus),
+        "selected_logical_cpus": selected_cpus,
+        "applied_logical_cpu_count": len(selected_cpus),
+        "affinity_applied": affinity_applied,
+        "affinity_error": affinity_error,
+        "thread_env": {
+            name: os.environ.get(name)
+            for name in THREAD_ENV_VARS
+        },
+        "nice_target": DEFAULT_NICE_TARGET,
+        "nice_before": nice_before,
+        "nice_after": nice_after,
+        "nice_error": nice_error,
+    }
 
 
 def sha256(path: Path) -> str:
@@ -174,6 +253,9 @@ def write_metadata(
         "script": project_relative(Path(__file__)),
         "git_revision": git_revision(),
         "analysis_mode": "CPU-only saved-output post-processing; no inference",
+        "resource_limits": dict(
+            getattr(args, "resource_limits", {})
+        ),
         "input": {
             "run_root": project_relative(run_root),
             "selection": (
@@ -666,6 +748,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=4,
     )
     parser.add_argument(
+        "--cpu-limit",
+        type=int,
+        default=DEFAULT_CPU_LIMIT,
+        help=(
+            "Maximum logical CPUs available to this analysis process. "
+            f"Default: {DEFAULT_CPU_LIMIT}. Also caps common BLAS/OpenMP thread pools."
+        ),
+    )
+    parser.add_argument(
         "--no-plots",
         action="store_true",
         help=(
@@ -681,6 +772,17 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.cpu_limit < 1:
+        parser.error("--cpu-limit must be positive")
+    args.resource_limits = apply_cpu_limit(args.cpu_limit)
+    print(
+        "CPU resource limit: "
+        f"requested={args.cpu_limit}, "
+        f"applied={args.resource_limits['applied_logical_cpu_count']}, "
+        f"affinity={args.resource_limits['affinity_applied']}, "
+        f"nice={args.resource_limits['nice_after']}"
+    )
+
     if args.recovery_window_samples < 1:
         parser.error(
             "--recovery-window-samples "
