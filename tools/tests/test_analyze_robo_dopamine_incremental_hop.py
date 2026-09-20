@@ -31,59 +31,100 @@ from robo_incremental_hop.diagnosis import (
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.localization_ranking import (
-    rank_existing_sweep_interval_localization,
+    offline_change_point_localization,
 )
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 import robo_incremental_hop.search_cache as search_cache
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
-    def test_interval_localization_uses_causal_observable_interval(self) -> None:
+    def test_offline_change_point_selects_best_positive_episode(self) -> None:
+        config = make_config(
+            "c",
+            "consecutive",
+            epsilon=-0.1,
+            n=1,
+        )
         signals = {
-            "r0": {"frames": [0, 1, 2, 3, 4]},
-            "r1": {"frames": [0, 1, 2, 3, 4]},
-        }
-        base = {
-            "detector_family": "consecutive",
-            "epsilon": 0.0,
-            "n": 1,
-            "parameters_json": '{"epsilon":0.0,"n":1}',
-            "outcome": "terminal_failure",
-            "failure_type": "grasp_failure",
+            "r0": {
+                "frames": list(range(10)),
+                "hops": [
+                    0.2, -0.2, 0.2, 0.2, 0.3,
+                    -0.5, -0.4, 0.2, -0.15, 0.2,
+                ],
+                "progress": [
+                    0.0, 0.2, 0.1, 0.3, 0.8,
+                    0.4, 0.3, 0.2, 0.1, 0.0,
+                ],
+            },
         }
         event_rows = [
             {
-                **base, "config_id": "c", "rollout_id": "r0",
-                "event_id": "r0::event0", "event_index": 0,
-                "causal_onset_frame": 1, "observable_onset_frame": 3,
-                "earliest_early_positive_frame": 2, "detection_frame": 3,
-            },
-            {
-                **base, "config_id": "c", "rollout_id": "r1",
-                "event_id": "r1::event0", "event_index": 0,
-                "causal_onset_frame": 2, "observable_onset_frame": 3,
-                "earliest_early_positive_frame": 0, "detection_frame": 3,
-            },
+                **config,
+                "rollout_id": "r0",
+                "event_id": "r0::event0",
+                "event_index": 0,
+                "outcome": "terminal_failure",
+                "failure_type": "grasp_failure",
+                "causal_onset_frame": 4,
+                "observable_onset_frame": 6,
+            }
         ]
-        ranking = rank_existing_sweep_interval_localization(
+
+        ranking, diagnostics = offline_change_point_localization(
             event_rows=event_rows,
             ensemble_sweep=[],
             signals=signals,
+            configs=[config],
         )
-        row = next(
-            item for item in ranking
-            if item["population"] == "all_eligible_failure_events"
+
+        offline = next(
+            row
+            for row in ranking
+            if row["population"] == "first_eligible_event_per_failed_rollout"
+            and row["selector"] == "offline_max_change_score"
+            and row["config_id"] == "c"
+            and row["L"] == 2
+            and row["R"] == 2
         )
-        self.assertEqual(row["eligible_event_n"], 2)
-        self.assertAlmostEqual(row["in_interval_rate"], 0.5)
-        self.assertAlmostEqual(row["within_1"], 0.5)
-        self.assertAlmostEqual(row["within_3"], 1.0)
-        self.assertAlmostEqual(row["before_interval_rate"], 0.5)
-        self.assertAlmostEqual(row["after_interval_rate"], 0.0)
-        self.assertAlmostEqual(row["median_signed_interval_error_samples"], -1.0)
-        self.assertAlmostEqual(row["median_absolute_interval_error_samples"], 1.0)
-        self.assertAlmostEqual(row["mae_samples"], 1.0)
-        self.assertAlmostEqual(row["mse_samples"], 2.0)
+        first = next(
+            row
+            for row in ranking
+            if row["population"] == "first_eligible_event_per_failed_rollout"
+            and row["selector"] == "first_trigger"
+            and row["config_id"] == "c"
+        )
+        argmax = next(
+            row
+            for row in ranking
+            if row["population"] == "first_eligible_event_per_failed_rollout"
+            and row["selector"] == "global_fused_progress_argmax"
+        )
+
+        self.assertAlmostEqual(offline["in_interval_rate"], 1.0)
+        self.assertAlmostEqual(offline["within_1"], 1.0)
+        self.assertAlmostEqual(offline["mae_samples"], 0.0)
+        self.assertAlmostEqual(first["before_interval_rate"], 1.0)
+        self.assertAlmostEqual(first["median_signed_interval_error_samples"], -3.0)
+        self.assertAlmostEqual(first["within_3"], 1.0)
+        self.assertAlmostEqual(argmax["in_interval_rate"], 1.0)
+
+        diagnostic = next(
+            row
+            for row in diagnostics
+            if row["config_id"] == "c"
+            and row["L"] == 2
+            and row["R"] == 2
+        )
+        self.assertEqual(diagnostic["candidate_count"], 3)
+        self.assertEqual(diagnostic["scored_candidate_count"], 2)
+        self.assertEqual(diagnostic["candidates_before_interval"], 1)
+        self.assertEqual(diagnostic["candidates_in_interval"], 1)
+        self.assertEqual(diagnostic["candidates_after_interval"], 1)
+        self.assertEqual(diagnostic["first_trigger_sample_index"], 1)
+        self.assertEqual(diagnostic["selected_trigger_sample_index"], 5)
+        self.assertAlmostEqual(diagnostic["selected_score"], 0.7)
+        self.assertEqual(diagnostic["global_progress_argmax_sample_index"], 4)
 
     def test_search_cache_fingerprint_and_roundtrip(self) -> None:
         signals = {
