@@ -329,6 +329,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "grasp_matched_control.csv",
             "grasp_failure_categories.csv",
             "grasp_event_heatmap.png",
+            "cpu_limit",
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "MKL_NUM_THREADS",
         ]:
             self.assertIn(marker, server)
         self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
