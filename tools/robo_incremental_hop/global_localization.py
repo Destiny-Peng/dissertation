@@ -28,6 +28,10 @@ LOCALIZATION_WINDOWS = (1, 3, 5, 10)
 CACHE_ROOT = SEARCH_CACHE_ROOT / "global_localization"
 
 
+def _number_or_inf(value: Any) -> float:
+    return math.inf if value is None else float(value)
+
+
 def _config_key(config: Mapping[str, Any]) -> tuple[str, str]:
     return (
         str(config["detector_family"]),
@@ -435,13 +439,21 @@ def evaluate_global_config_space(
 ) -> list[dict[str, Any]]:
     """Evaluate every fixed config without any clean-FPR filtering."""
     populations = _population_specs(events)
+    target_rollout_ids = sorted(
+        {
+            str(event["rollout_id"])
+            for spec in populations
+            for event in spec["events"]
+            if str(event["rollout_id"]) in signals
+        }
+    )
     masks_by_config: dict[str, dict[str, list[bool]]] = {}
 
     for config in single_configs:
         config_id = str(config["config_id"])
         masks_by_config[config_id] = {
-            rollout_id: detector_mask(signal["hops"], config)
-            for rollout_id, signal in signals.items()
+            rollout_id: detector_mask(signals[rollout_id]["hops"], config)
+            for rollout_id in target_rollout_ids
         }
 
     summaries: list[dict[str, Any]] = []
@@ -471,7 +483,7 @@ def evaluate_global_config_space(
                     masks_by_config[b_id][rollout_id],
                 )
             ]
-            for rollout_id in signals
+            for rollout_id in target_rollout_ids
         }
         pair_summaries = _evaluate_config_masks(
             str(pair["config_id"]),
@@ -520,8 +532,8 @@ def select_global_config_results(
                 eligible,
                 key=lambda row: (
                     -float(row[target]),
-                    float(row.get("median_absolute_error_samples") or math.inf),
-                    float(row.get("mae_samples") or math.inf),
+                    _number_or_inf(row.get("median_absolute_error_samples")),
+                    _number_or_inf(row.get("mae_samples")),
                     str(row["config_id"]),
                 ),
             )
@@ -615,8 +627,8 @@ def ranking_rows(
             -float(row.get("capacity_within_3_recall") or 0.0),
             -float(row.get("capacity_within_10_recall") or 0.0),
             -float(row.get("capacity_eventual_recall") or 0.0),
-            float(row.get("median_absolute_error_samples") or math.inf),
-            float(row.get("mae_samples") or math.inf),
+            _number_or_inf(row.get("median_absolute_error_samples")),
+            _number_or_inf(row.get("mae_samples")),
             str(row["config_id"]),
         ),
     )
