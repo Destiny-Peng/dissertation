@@ -310,6 +310,49 @@ def evaluate_event(
         )
     return result
 
+
+def evaluate_failure_rollout_from_start(
+    frames: Sequence[int],
+    mask: Sequence[bool],
+) -> dict[str, Any]:
+    """Evaluate a terminal-failure rollout with no annotated failure event.
+
+    No onset is synthesized. The failure condition is treated as present from
+    the beginning of the saved native signal. Delay is 1-based in native samples
+    and frame delay is measured from the first saved native frame.
+    """
+    if len(frames) != len(mask):
+        raise ValueError("frames/mask length mismatch")
+    detection = next(
+        (index for index, positive in enumerate(mask) if positive),
+        None,
+    )
+    start_frame = int(frames[0]) if frames else None
+    result: dict[str, Any] = {
+        "rollout_start_frame": start_frame,
+        "eligible_samples": len(frames),
+        "detected": detection is not None,
+        "eventual_recall": detection is not None,
+        "first_alarm_frame": (
+            int(frames[detection]) if detection is not None else None
+        ),
+        "delay_samples": (
+            detection + 1 if detection is not None else None
+        ),
+        "delay_frames": (
+            int(frames[detection]) - start_frame
+            if detection is not None and start_frame is not None
+            else None
+        ),
+    }
+    for window in RECALL_SAMPLE_WINDOWS:
+        delay = result["delay_samples"]
+        result[f"recall_at_{window}"] = bool(
+            delay is not None and delay <= window
+        )
+    return result
+
+
 def describe(values: Iterable[float | int | None]) -> dict[str, float | int | None]:
     data = sorted(
         float(value)
