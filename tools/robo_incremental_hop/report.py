@@ -65,6 +65,44 @@ def _aggregate_no_event_failure_metrics(
     return result
 
 
+def _aggregate_grasp_event_metrics(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    grasp = [
+        row
+        for row in rows
+        if str(row.get("failure_type") or "") == "grasp_failure"
+    ]
+    n = len(grasp)
+    detected = [row for row in grasp if row.get("eventual_recall")]
+    result: dict[str, Any] = {
+        "grasp_event_n": n,
+        "grasp_detected_eventual_n": len(detected),
+        "grasp_recall_eventual": len(detected) / n if n else None,
+        "grasp_median_delay_samples": _median_or_none(
+            [
+                row["delay_samples"]
+                for row in detected
+                if row.get("delay_samples") is not None
+            ]
+        ),
+        "grasp_median_delay_frames": _median_or_none(
+            [
+                row["delay_frames"]
+                for row in detected
+                if row.get("delay_frames") is not None
+            ]
+        ),
+    }
+    for window in (1, 3, 5, 10, 20):
+        result[f"grasp_recall_at_{window}"] = (
+            sum(bool(row.get(f"recall_at_{window}")) for row in grasp) / n
+            if n
+            else None
+        )
+    return result
+
+
 def _aggregate_failed_rollout_coverage(
     event_rows: Sequence[Mapping[str, Any]],
     no_event_rows: Sequence[Mapping[str, Any]],
@@ -221,6 +259,7 @@ def evaluate_all_configs(
             {
                 **config_row(config),
                 **aggregate_event_metrics(config_events),
+                **_aggregate_grasp_event_metrics(config_events),
                 **_aggregate_no_event_failure_metrics(config_no_event),
                 **_aggregate_failed_rollout_coverage(
                     config_events,
@@ -472,23 +511,13 @@ PAIRWISE_HORIZONS: tuple[tuple[str, str], ...] = (
 )
 
 ENSEMBLE_FAMILY_PAIRS: tuple[tuple[str, str], ...] = (
-    ("stagnation_consecutive", "window_mean"),
-    ("stagnation_k_of_m", "window_mean"),
-    ("stagnation_consecutive", "k_of_m"),
+    ("stagnation_consecutive", "regression_window_min"),
+    ("stagnation_k_of_m", "regression_window_min"),
 )
 
 ENSEMBLE_SELECTION_TARGETS: tuple[str, ...] = (
-    "event_recall_at_3",
-    "event_recall_at_5",
-    "event_recall_at_10",
-    "event_recall_at_20",
-    "event_recall_eventual",
-    "no_event_recall_at_3",
-    "no_event_recall_at_5",
-    "no_event_recall_at_10",
-    "no_event_recall_at_20",
-    "no_event_recall_eventual",
-    "overall_failed_rollout_coverage",
+    "grasp_recall_eventual",
+    "grasp_recall_at_10",
 )
 
 
@@ -626,6 +655,12 @@ def build_pairwise_ensemble_rows(
                     )
 
                 event_ids = set(event_a)
+                grasp_event_ids = {
+                    event_id
+                    for event_id, event_row in event_a.items()
+                    if str(event_row.get("failure_type") or "")
+                    == "grasp_failure"
+                }
                 no_event_ids = set(no_event_a)
                 clean_ids = set(clean_a)
 
@@ -667,6 +702,7 @@ def build_pairwise_ensemble_rows(
                         else None
                     ),
                     "event_n": len(event_ids),
+                    "grasp_event_n": len(grasp_event_ids),
                     "no_event_failure_n": len(no_event_ids),
                 }
 
@@ -696,6 +732,34 @@ def build_pairwise_ensemble_rows(
                     row[f"event_tp_jaccard_at_{horizon}"] = (
                         len(event_overlap) / len(event_union)
                         if event_union
+                        else None
+                    )
+
+                    grasp_a = detected_event_a & grasp_event_ids
+                    grasp_b = detected_event_b & grasp_event_ids
+                    grasp_overlap = grasp_a & grasp_b
+                    grasp_union = grasp_a | grasp_b
+                    grasp_recall_key = (
+                        "grasp_recall_eventual"
+                        if horizon == "eventual"
+                        else f"grasp_recall_at_{horizon}"
+                    )
+                    row[grasp_recall_key] = (
+                        len(grasp_union) / len(grasp_event_ids)
+                        if grasp_event_ids
+                        else None
+                    )
+                    row[f"grasp_detected_at_{horizon}_n"] = len(grasp_union)
+                    row[f"grasp_overlap_at_{horizon}_n"] = len(grasp_overlap)
+                    row[f"grasp_a_only_at_{horizon}_n"] = len(
+                        grasp_a - grasp_b
+                    )
+                    row[f"grasp_b_only_at_{horizon}_n"] = len(
+                        grasp_b - grasp_a
+                    )
+                    row[f"grasp_tp_jaccard_at_{horizon}"] = (
+                        len(grasp_overlap) / len(grasp_union)
+                        if grasp_union
                         else None
                     )
 
@@ -740,6 +804,16 @@ def build_pairwise_ensemble_rows(
                     row["event_median_delay_frames"],
                 ) = _or_delay_median(
                     event_eventual,
+                    event_a,
+                    event_b,
+                    "eventual_recall",
+                )
+                grasp_eventual = event_eventual & grasp_event_ids
+                (
+                    row["grasp_median_delay_samples"],
+                    row["grasp_median_delay_frames"],
+                ) = _or_delay_median(
+                    grasp_eventual,
                     event_a,
                     event_b,
                     "eventual_recall",
@@ -827,24 +901,16 @@ def build_pairwise_ensemble_rows(
                     )
                     continue
 
-                delay_field = (
-                    "event_median_delay_samples"
-                    if target.startswith("event_recall")
-                    else (
-                        "no_event_median_delay_samples"
-                        if target.startswith("no_event_recall")
-                        else None
-                    )
-                )
-
                 def rank(row: Mapping[str, Any]) -> tuple[Any, ...]:
-                    delay = (
-                        row.get(delay_field)
-                        if delay_field is not None
-                        else None
+                    secondary_target = (
+                        "grasp_recall_at_10"
+                        if target == "grasp_recall_eventual"
+                        else "grasp_recall_eventual"
                     )
+                    delay = row.get("grasp_median_delay_samples")
                     return (
                         -float(row[target]),
+                        -float(row.get(secondary_target) or 0.0),
                         -float(
                             row.get("overall_failed_rollout_coverage")
                             or 0.0
