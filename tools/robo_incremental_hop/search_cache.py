@@ -100,16 +100,12 @@ def load_search_cache(fingerprint: str) -> dict[str, Any] | None:
         return None
     required = (
         "configs",
-        "oracle_configs",
         "phenotype_grid",
         "summary_rows",
         "event_rows",
         "no_event_rows",
         "clean_rows",
         "ensemble_sweep",
-        "oracle_global_best",
-        "oracle_event_detectability",
-        "oracle_summary",
     )
     if any(key not in document for key in required):
         return None
@@ -120,16 +116,12 @@ def write_search_cache(
     fingerprint: str,
     *,
     configs: Sequence[Mapping[str, Any]],
-    oracle_configs: Sequence[Mapping[str, Any]],
     phenotype_grid: Mapping[str, Any],
     summary_rows: Sequence[Mapping[str, Any]],
     event_rows: Sequence[Mapping[str, Any]],
     no_event_rows: Sequence[Mapping[str, Any]],
     clean_rows: Sequence[Mapping[str, Any]],
     ensemble_sweep: Sequence[Mapping[str, Any]],
-    oracle_global_best: Sequence[Mapping[str, Any]],
-    oracle_event_detectability: Sequence[Mapping[str, Any]],
-    oracle_summary: Sequence[Mapping[str, Any]],
 ) -> Path:
     path = cache_path(fingerprint)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,16 +130,12 @@ def write_search_cache(
         "search_semantics_version": SEARCH_SEMANTICS_VERSION,
         "fingerprint": fingerprint,
         "configs": _jsonable(configs),
-        "oracle_configs": _jsonable(oracle_configs),
         "phenotype_grid": _jsonable(phenotype_grid),
         "summary_rows": _jsonable(summary_rows),
         "event_rows": _jsonable(event_rows),
         "no_event_rows": _jsonable(no_event_rows),
         "clean_rows": _jsonable(clean_rows),
         "ensemble_sweep": _jsonable(ensemble_sweep),
-        "oracle_global_best": _jsonable(oracle_global_best),
-        "oracle_event_detectability": _jsonable(oracle_event_detectability),
-        "oracle_summary": _jsonable(oracle_summary),
     }
 
     fd, temporary_name = tempfile.mkstemp(
@@ -317,7 +305,6 @@ def load_legacy_search_seed(
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
     configs: Sequence[Mapping[str, Any]],
-    oracle_configs: Sequence[Mapping[str, Any]],
     phenotype_grid: Mapping[str, Any],
 ) -> tuple[dict[str, Any] | None, Path | None]:
     """Best-effort import of a compatible pre-cache completed analysis.
@@ -333,9 +320,6 @@ def load_legacy_search_seed(
         "no_event_failure_results.csv",
         "clean_rollout_results.csv",
         "ensemble_sweep.csv",
-        "oracle_global_best.csv",
-        "oracle_event_detectability.csv",
-        "oracle_summary.csv",
     )
     if not output_root.is_dir():
         return None, None
@@ -389,10 +373,6 @@ def load_legacy_search_seed(
         if _jsonable(previous_grid) != expected_grid:
             continue
 
-        oracle_meta = metadata.get("oracle_analysis") or {}
-        if oracle_meta.get("early_tolerance_native_samples") != 1:
-            continue
-
         generated_at = _metadata_time(metadata)
         if generated_at is None or not _inputs_older_than(
             generated_at,
@@ -409,13 +389,6 @@ def load_legacy_search_seed(
             )
             clean_rows = _read_csv_typed(directory / "clean_rollout_results.csv")
             ensemble_sweep = _read_csv_typed(directory / "ensemble_sweep.csv")
-            oracle_global_best = _read_csv_typed(
-                directory / "oracle_global_best.csv"
-            )
-            oracle_event_detectability = _read_csv_typed(
-                directory / "oracle_event_detectability.csv"
-            )
-            oracle_summary = _read_csv_typed(directory / "oracle_summary.csv")
         except (OSError, csv.Error):
             continue
 
@@ -446,16 +419,12 @@ def load_legacy_search_seed(
         return (
             {
                 "configs": [dict(config) for config in configs],
-                "oracle_configs": [dict(config) for config in oracle_configs],
                 "phenotype_grid": dict(phenotype_grid),
                 "summary_rows": summary_rows,
                 "event_rows": event_rows,
                 "no_event_rows": no_event_rows,
                 "clean_rows": clean_rows,
                 "ensemble_sweep": ensemble_sweep,
-                "oracle_global_best": oracle_global_best,
-                "oracle_event_detectability": oracle_event_detectability,
-                "oracle_summary": oracle_summary,
             },
             directory,
         )
