@@ -1229,6 +1229,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
                 "scope": "libero_10",
                 "runs": {"robo_dopamine": roots["robo_dopamine"]},
                 "task_cv": False,
+                "cpu_limit": 2,
                 "output_label": "hop_test",
             },
         ) as response:
@@ -1241,6 +1242,11 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(job["fused_coverage"], 0.5)
         self.assertIn("--selection", job["command"])
         self.assertIn("--run-root", job["command"])
+        self.assertIn("--cpu-limit", job["command"])
+        cpu_flag = job["command"].index("--cpu-limit")
+        self.assertEqual(job["command"][cpu_flag + 1], "2")
+        self.assertEqual(job["parameters"]["cpu_limit"], 2)
+        self.assertEqual(job["parameters"]["nice_target"], 10)
         self.assertNotIn("--safe-run", job["command"])
         self.assertNotIn("--procvlm-run", job["command"])
         self.assertNotIn("--rynnvalue-run", job["command"])
