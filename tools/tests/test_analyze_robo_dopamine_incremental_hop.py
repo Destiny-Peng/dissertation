@@ -119,7 +119,8 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         by_id = {row["config_id"]: row for row in first_population}
         self.assertEqual(by_id["a"]["median_signed_offset_samples"], -1.5)
         self.assertEqual(by_id["b"]["median_signed_offset_samples"], 0.5)
-        self.assertEqual(by_id["b"]["rank_median_abs_error"], 1)
+        self.assertEqual(by_id["b"]["rank_rmse"], 1)
+        self.assertAlmostEqual(by_id["b"]["rmse_samples"], 2 ** -0.5)
         self.assertAlmostEqual(by_id["b"]["within_1"], 1.0)
         self.assertEqual(
             by_id["OR:a|b"]["median_signed_offset_samples"],
