@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""CPU-only failure analysis from four saved Robo-Dopamine hop signals.
+"""CPU-only failure analysis from saved Robo-Dopamine fused hop.
 
-Compare incremental, forward, backward, and fused hop on the same rollout
-intersection using existing LF3R human annotations. No inference is launched.
-No generic change-point or whole-rollout Q95/std detector is used.
+Evaluate event-localized failures, terminal failures without event annotations,
+and clean-success controls using existing LF3R annotations. Jointly sweep simple
+pairwise OR detector ensembles on the fused signal only. No inference is
+launched and no new annotation type is introduced.
 
 Example:
     python3 tools/analyze_robo_dopamine_incremental_hop.py \
@@ -37,7 +38,6 @@ from robo_incremental_hop.core import (
 )
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
-    SIGNAL_MODES,
     build_base_records,
     ensure_within_project,
     load_manifest,
@@ -45,7 +45,7 @@ from robo_incremental_hop.io import (
     resolve_project_path,
 )
 from robo_incremental_hop.report import (
-    build_pairwise_overlap_rows,
+    build_pairwise_ensemble_rows,
     build_recovery_rows,
     choose_representative_rollouts,
     evaluate_all_configs,
@@ -74,6 +74,7 @@ DEFAULT_OUTPUT_ROOT = (
     PROJECT_ROOT
     / "outputs/robo_dopamine_incremental_hop"
 )
+ANALYSIS_SIGNAL_MODE = "fused"
 
 
 def sha256(path: Path) -> str:
@@ -160,7 +161,7 @@ def write_metadata(
             signal["scale_detection"]
             for signal in signals_by_mode.get(mode, {}).values()
         ][:10]
-        for mode in SIGNAL_MODES
+        for mode in (ANALYSIS_SIGNAL_MODE,)
     }
 
     metadata = {
@@ -189,26 +190,17 @@ def write_metadata(
             "annotation_dir": project_relative(annotation_dir),
         },
         "signal": {
-            "name": "Robo-Dopamine four-mode hop comparison",
-            "modes": list(SIGNAL_MODES),
+            "name": "Robo-Dopamine fused hop failure detection",
+            "modes": [ANALYSIS_SIGNAL_MODE],
             "native_grid_only": True,
             "interpolation": False,
-            "same_rollout_intersection": True,
+            "same_rollout_intersection": False,
             "common_rollout_n": len(common_rollout_ids),
             "common_rollout_ids": sorted(common_rollout_ids),
             "normalization": {
-                "incremental": (
-                    "Use saved hop directly when confirmed in [-1,1]; divide "
-                    "legacy percentage-point storage by 100 only when confirmed."
-                ),
-                "forward": "Use saved derived hop without rescaling.",
-                "backward": "Use saved derived hop without rescaling.",
                 "fused": "Use saved fused-progress difference hop without rescaling.",
             },
             "semantics": {
-                "incremental": "official raw model score; hop = raw_score",
-                "forward": "difference of consecutive forward progress predictions",
-                "backward": "difference of consecutive backward-derived progress values",
                 "fused": "difference of consecutive arithmetic-mean fused progress values",
             },
             "scale_detection_examples": scale_examples,
@@ -254,40 +246,51 @@ def write_metadata(
             ),
             "pre_onset_lookback_samples": 10,
             "parameter_selection": (
-                "separately for each signal mode and detector family under "
-                "clean-rollout FPR constraints: maximize recall@3, then smaller "
-                "median sample delay, then lower clean-rollout FPR"
+                "Single-detector representatives keep the existing event Recall@3 "
+                "selection rule. Pairwise OR ensembles jointly sweep both detector "
+                "parameter grids under total clean-rollout FPR caps."
+            ),
+            "no_event_failure": (
+                "For terminal-failure rollouts with no failure-event annotation, "
+                "do not synthesize an onset. Treat failure as present from rollout "
+                "start and report first-alarm Recall@1/@3/@5/@10/@20/eventual plus "
+                "start-to-alarm delay on the native fused-signal grid."
+            ),
+            "overall_failed_rollout_coverage": (
+                "A terminal-failure rollout is covered when any annotated event is "
+                "eventually detected, or when a no-event terminal-failure rollout "
+                "has any alarm before rollout end."
             ),
             "recovery_hop_window_samples": args.recovery_window_samples,
-            "pairwise_complementarity": (
-                "Within each signal mode and clean-FPR budget, pair the already "
-                "selected representative detector from each family without "
-                "retuning. Report event-set overlap and true clean-rollout FP "
-                "union for @1/@3/@5/@10/@20/eventual; pairwise OR detection time "
-                "uses the earlier qualifying detector."
+            "pairwise_ensemble": (
+                "Fused-only OR ensemble search for three prioritized family pairs. "
+                "Each selection target is optimized separately under total clean "
+                "FPR caps 5%, 10%, and 20%; inference outputs are reused."
             ),
         },
         "generalization": {
             "task_cv_enabled": bool(args.task_cv),
-            "method": "optional leave-one-task-out tuning/evaluation per signal mode",
+            "method": "optional leave-one-task-out tuning/evaluation on fused hop",
             "full_dataset_sweep_separate": True,
         },
         "counts_by_signal_mode": {
             mode: dict(provenance_by_mode.get(mode, {}))
-            for mode in SIGNAL_MODES
+            for mode in (ANALYSIS_SIGNAL_MODE,)
         },
         "detector_config_n_per_signal": len(configs),
-        "detector_config_n_total": len(configs) * len(SIGNAL_MODES),
+        "detector_config_n_total": len(configs),
         "selected_config_n": selected_count(best_rows),
         "outputs": [
             "sweep_summary.csv",
             "event_results.csv",
+            "no_event_failure_results.csv",
             "clean_rollout_results.csv",
             "best_configs.csv",
             "recovery_results.csv",
             "breakdown_summary.csv",
-            "pairwise_overlap.csv",
-            "pairwise_overlap_by_failure_type.csv",
+            "ensemble_sweep.csv",
+            "ensemble_selected.csv",
+            "ensemble_by_failure_type.csv",
             "metadata.json",
             "task_cv_results.csv (only with --task-cv)",
             "plots/<signal_mode>/ (unless --no-plots)",
@@ -342,138 +345,121 @@ def analyse(
         raise FileNotFoundError(selection_path)
     allowed_rollout_ids = load_selection_ids(selection_path)
 
-    first_pass: dict[str, tuple[Any, Any, Any, Any]] = {}
-    for signal_mode in SIGNAL_MODES:
-        first_pass[signal_mode] = build_base_records(
+    signals, events, no_event_failures, clean_rollouts, provenance = (
+        build_base_records(
             run_root,
             manifest,
             annotation_dir,
             allowed_rollout_ids=allowed_rollout_ids,
-            signal_mode=signal_mode,
+            signal_mode=ANALYSIS_SIGNAL_MODE,
         )
-
-    common_rollout_ids: set[str] | None = None
-    for signal_mode in SIGNAL_MODES:
-        signal_ids = set(first_pass[signal_mode][0])
-        common_rollout_ids = (
-            signal_ids
-            if common_rollout_ids is None
-            else common_rollout_ids.intersection(signal_ids)
-        )
-    common_rollout_ids = common_rollout_ids or set()
-    if not common_rollout_ids:
+    )
+    analysis_rollout_ids = set(signals)
+    if not analysis_rollout_ids:
         raise ValueError(
-            "No rollout has all four saved Robo-Dopamine hop signals "
-            "(incremental, forward, backward, fused)"
+            "No rollout has a usable saved Robo-Dopamine fused hop signal"
         )
 
     configs = build_detector_configs()
-    all_summary_rows: list[dict[str, Any]] = []
-    all_event_rows: list[dict[str, Any]] = []
-    all_clean_rows: list[dict[str, Any]] = []
-    all_best_rows: list[dict[str, Any]] = []
-    all_breakdown_rows: list[dict[str, Any]] = []
-    all_recovery_rows: list[dict[str, Any]] = []
-    all_cv_rows: list[dict[str, Any]] = []
-    signals_by_mode: dict[str, Mapping[str, Mapping[str, Any]]] = {}
-    provenance_by_mode: dict[str, Mapping[str, Any]] = {}
+    summary_rows, event_rows, no_event_rows, clean_rows = evaluate_all_configs(
+        configs,
+        signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
+    best_rows = select_best_configs(summary_rows)
+    breakdown_rows = summarize_breakdowns(
+        configs,
+        event_rows,
+        clean_rows,
+    )
+    selected_configs = selected_unique_configs(best_rows, configs)
+    recovery_rows = build_recovery_rows(
+        selected_configs,
+        signals,
+        events,
+        window_samples=args.recovery_window_samples,
+    )
 
-    def tag(signal_mode: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    def tag(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         return [
-            {"signal_mode": signal_mode, **dict(row)}
+            {"signal_mode": ANALYSIS_SIGNAL_MODE, **dict(row)}
             for row in rows
         ]
 
-    for signal_mode in SIGNAL_MODES:
-        signals, events, clean_rollouts, provenance = build_base_records(
-            run_root,
-            manifest,
-            annotation_dir,
-            allowed_rollout_ids=common_rollout_ids,
-            signal_mode=signal_mode,
-        )
-        signals_by_mode[signal_mode] = signals
-        provenance_by_mode[signal_mode] = provenance
+    tagged_summary = tag(summary_rows)
+    tagged_events = tag(event_rows)
+    tagged_no_event = tag(no_event_rows)
+    tagged_clean = tag(clean_rows)
+    tagged_best = tag(best_rows)
+    tagged_breakdown = tag(breakdown_rows)
+    tagged_recovery = tag(recovery_rows)
 
-        summary_rows, event_rows, clean_rows = evaluate_all_configs(
-            configs, signals, events, clean_rollouts
+    ensemble_sweep, ensemble_selected, ensemble_failure_types = (
+        build_pairwise_ensemble_rows(
+            configs,
+            event_rows,
+            no_event_rows,
+            clean_rows,
         )
-        best_rows = select_best_configs(summary_rows)
-        breakdown_rows = summarize_breakdowns(
-            configs, event_rows, clean_rows
+    )
+
+    cv_rows: list[dict[str, Any]] = []
+    if args.task_cv:
+        cv_rows = tag(
+            task_cross_validation(
+                configs,
+                event_rows,
+                clean_rows,
+            )
         )
-        selected_configs = selected_unique_configs(best_rows, configs)
-        recovery_rows = build_recovery_rows(
-            selected_configs,
+
+    if not args.no_plots:
+        plot_dir = output_dir / "plots" / ANALYSIS_SIGNAL_MODE
+        plot_tradeoff(
+            summary_rows,
+            plot_dir / "recall_at_3_vs_clean_fpr.png",
+        )
+        plot_detector_heatmaps(summary_rows, plot_dir)
+        plot_delay_distributions(
+            best_rows,
+            event_rows,
+            plot_dir / "selected_detection_delay_boxplot.png",
+        )
+        representative_ids = choose_representative_rollouts(
+            args.representative_rollout or [],
+            events,
+            signals,
+            args.max_representative_rollouts,
+        )
+        plot_representative_rollouts(
+            selected_plot_configs(best_rows, configs),
+            representative_ids,
             signals,
             events,
-            window_samples=args.recovery_window_samples,
+            plot_dir,
+            signal_mode=ANALYSIS_SIGNAL_MODE,
         )
 
-        all_summary_rows.extend(tag(signal_mode, summary_rows))
-        all_event_rows.extend(tag(signal_mode, event_rows))
-        all_clean_rows.extend(tag(signal_mode, clean_rows))
-        all_best_rows.extend(tag(signal_mode, best_rows))
-        all_breakdown_rows.extend(tag(signal_mode, breakdown_rows))
-        all_recovery_rows.extend(tag(signal_mode, recovery_rows))
-
-        if args.task_cv:
-            all_cv_rows.extend(
-                tag(
-                    signal_mode,
-                    task_cross_validation(
-                        configs,
-                        event_rows,
-                        clean_rows,
-                    ),
-                )
-            )
-
-        if not args.no_plots:
-            plot_dir = output_dir / "plots" / signal_mode
-            plot_tradeoff(
-                summary_rows,
-                plot_dir / "recall_at_3_vs_clean_fpr.png",
-            )
-            plot_detector_heatmaps(summary_rows, plot_dir)
-            plot_delay_distributions(
-                best_rows,
-                event_rows,
-                plot_dir / "selected_detection_delay_boxplot.png",
-            )
-            representative_ids = choose_representative_rollouts(
-                args.representative_rollout or [],
-                events,
-                signals,
-                args.max_representative_rollouts,
-            )
-            plot_representative_rollouts(
-                selected_plot_configs(best_rows, configs),
-                representative_ids,
-                signals,
-                events,
-                plot_dir,
-                signal_mode=signal_mode,
-            )
-
-    write_csv(output_dir / "sweep_summary.csv", all_summary_rows)
-    write_csv(output_dir / "event_results.csv", all_event_rows)
-    write_csv(output_dir / "clean_rollout_results.csv", all_clean_rows)
-    write_csv(output_dir / "best_configs.csv", all_best_rows)
-    write_csv(output_dir / "recovery_results.csv", all_recovery_rows)
-    write_csv(output_dir / "breakdown_summary.csv", all_breakdown_rows)
-    pairwise_rows, pairwise_failure_rows = build_pairwise_overlap_rows(
-        all_best_rows,
-        all_event_rows,
-        all_clean_rows,
-    )
-    write_csv(output_dir / "pairwise_overlap.csv", pairwise_rows)
+    write_csv(output_dir / "sweep_summary.csv", tagged_summary)
+    write_csv(output_dir / "event_results.csv", tagged_events)
     write_csv(
-        output_dir / "pairwise_overlap_by_failure_type.csv",
-        pairwise_failure_rows,
+        output_dir / "no_event_failure_results.csv",
+        tagged_no_event,
+    )
+    write_csv(output_dir / "clean_rollout_results.csv", tagged_clean)
+    write_csv(output_dir / "best_configs.csv", tagged_best)
+    write_csv(output_dir / "recovery_results.csv", tagged_recovery)
+    write_csv(output_dir / "breakdown_summary.csv", tagged_breakdown)
+    write_csv(output_dir / "ensemble_sweep.csv", ensemble_sweep)
+    write_csv(output_dir / "ensemble_selected.csv", ensemble_selected)
+    write_csv(
+        output_dir / "ensemble_by_failure_type.csv",
+        ensemble_failure_types,
     )
     if args.task_cv:
-        write_csv(output_dir / "task_cv_results.csv", all_cv_rows)
+        write_csv(output_dir / "task_cv_results.csv", cv_rows)
 
     write_metadata(
         output_dir,
@@ -482,10 +468,10 @@ def analyse(
         manifest_path=manifest_path,
         annotation_dir=annotation_dir,
         configs=configs,
-        signals_by_mode=signals_by_mode,
-        provenance_by_mode=provenance_by_mode,
-        common_rollout_ids=common_rollout_ids,
-        best_rows=all_best_rows,
+        signals_by_mode={ANALYSIS_SIGNAL_MODE: signals},
+        provenance_by_mode={ANALYSIS_SIGNAL_MODE: provenance},
+        common_rollout_ids=analysis_rollout_ids,
+        best_rows=tagged_best,
     )
     return output_dir
 
@@ -497,9 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-root",
         required=True,
         help=(
-            "Completed Robo-Dopamine multi-perspective/fused run "
-            "containing saved incremental, forward, backward, and fused "
-            "hop outputs."
+            "Completed Robo-Dopamine run containing a saved fused hop output."
         ),
     )
     parser.add_argument(
