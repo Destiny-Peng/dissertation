@@ -211,8 +211,15 @@ def choose_reference_ensemble(
         dict(row)
         for row in ensemble_selected
         if row.get("selection_status") == "selected"
-        and row.get("selection_target") == "overall_failed_rollout_coverage"
+        and row.get("selection_target") == "grasp_recall_eventual"
     ]
+    if not rows:
+        rows = [
+            dict(row)
+            for row in ensemble_selected
+            if row.get("selection_status") == "selected"
+            and row.get("selection_target") == "grasp_recall_at_10"
+        ]
     if not rows:
         return None
     max_cap = max(float(row["clean_fpr_constraint"]) for row in rows)
@@ -223,6 +230,8 @@ def choose_reference_ensemble(
     ]
     rows.sort(
         key=lambda row: (
+            -float(row.get("grasp_recall_eventual") or 0.0),
+            -float(row.get("grasp_recall_at_10") or 0.0),
             -float(row.get("overall_failed_rollout_coverage") or 0.0),
             float(row.get("clean_rollout_fpr") or 0.0),
             int(row.get("pair_priority") or 999),
