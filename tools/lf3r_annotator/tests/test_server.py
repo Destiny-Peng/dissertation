@@ -225,8 +225,8 @@ class ServerTest(unittest.TestCase):
             ),
             mock.patch.object(
                 self.app.baselines,
-                "_scan_robo_run_four_signal_ids",
-                side_effect=AssertionError("Robo signal inventory should come from cache"),
+                "_robo_run_signal_ids",
+                side_effect=AssertionError("Fused signal inventory should come from cache"),
             ),
         ):
             with self.request(
