@@ -327,7 +327,7 @@ def evaluate_failure_rollout_from_start(
         (index for index, positive in enumerate(mask) if positive),
         None,
     )
-    start_frame = int(frames[0]) if frames else None
+    start_frame = 0
     result: dict[str, Any] = {
         "rollout_start_frame": start_frame,
         "eligible_samples": len(frames),
