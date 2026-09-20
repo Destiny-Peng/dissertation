@@ -86,6 +86,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                     event_rows=[{"config_id": "c0", "detected": True}],
                     no_event_rows=[],
                     clean_rows=[],
+                    ensemble_sweep=[{"pair_priority": 1}],
                     oracle_global_best=[],
                     oracle_event_detectability=[],
                     oracle_summary=[],
@@ -94,6 +95,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 self.assertIsNotNone(cached)
                 self.assertEqual(cached["summary_rows"][0]["value"], 1.0)
                 self.assertTrue(cached["event_rows"][0]["detected"])
+                self.assertEqual(cached["ensemble_sweep"][0]["pair_priority"], 1)
             finally:
                 search_cache.SEARCH_CACHE_ROOT = original_root
 
