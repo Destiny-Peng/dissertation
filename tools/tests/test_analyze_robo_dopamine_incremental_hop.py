@@ -19,6 +19,7 @@ from robo_incremental_hop.core import (
     positive_episode_count,
     recovery_metrics,
 )
+from robo_incremental_hop.report import build_pairwise_overlap_rows
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
@@ -344,6 +345,95 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         self.assertFalse(event["recall_at_10"])
         self.assertTrue(event["recall_at_20"])
         self.assertTrue(event["eventual_recall"])
+
+    def test_pairwise_overlap_tracks_tp_and_clean_fp_complementarity(self) -> None:
+        best_rows = [
+            {
+                "signal_mode": "incremental",
+                "clean_fpr_constraint": 0.20,
+                "selection_status": "selected",
+                "detector_family": "consecutive",
+                "config_id": "a",
+            },
+            {
+                "signal_mode": "incremental",
+                "clean_fpr_constraint": 0.20,
+                "selection_status": "selected",
+                "detector_family": "stagnation_consecutive",
+                "config_id": "b",
+            },
+        ]
+
+        def event_row(
+            config_id: str,
+            event_id: str,
+            failure_type: str,
+            detected: bool,
+            delay: int | None,
+        ) -> dict:
+            return {
+                "signal_mode": "incremental",
+                "config_id": config_id,
+                "event_id": event_id,
+                "rollout_id": event_id.split("::")[0],
+                "event_index": int(event_id.rsplit("event", 1)[1]),
+                "failure_type": failure_type,
+                "recall_at_1": bool(detected and delay is not None and delay <= 1),
+                "recall_at_3": bool(detected and delay is not None and delay <= 3),
+                "recall_at_5": bool(detected and delay is not None and delay <= 5),
+                "recall_at_10": bool(detected and delay is not None and delay <= 10),
+                "recall_at_20": bool(detected and delay is not None and delay <= 20),
+                "eventual_recall": detected,
+                "delay_samples": delay,
+                "delay_frames": None if delay is None else delay * 4,
+            }
+
+        event_rows = [
+            event_row("a", "r0::event0", "timeout_no_progress", True, 1),
+            event_row("a", "r1::event0", "grasp_failure", True, 2),
+            event_row("a", "r2::event0", "grasp_failure", False, None),
+            event_row("b", "r0::event0", "timeout_no_progress", False, None),
+            event_row("b", "r1::event0", "grasp_failure", True, 3),
+            event_row("b", "r2::event0", "grasp_failure", True, 2),
+        ]
+        clean_rows = [
+            {"signal_mode": "incremental", "config_id": "a", "rollout_id": "c0", "any_positive": True},
+            {"signal_mode": "incremental", "config_id": "a", "rollout_id": "c1", "any_positive": False},
+            {"signal_mode": "incremental", "config_id": "b", "rollout_id": "c0", "any_positive": True},
+            {"signal_mode": "incremental", "config_id": "b", "rollout_id": "c1", "any_positive": True},
+        ]
+
+        summary, by_failure = build_pairwise_overlap_rows(
+            best_rows,
+            event_rows,
+            clean_rows,
+        )
+        at3 = next(row for row in summary if row["horizon"] == "3")
+        self.assertEqual(at3["event_n"], 3)
+        self.assertEqual(at3["a_detected_n"], 2)
+        self.assertEqual(at3["b_detected_n"], 2)
+        self.assertEqual(at3["overlap_n"], 1)
+        self.assertEqual(at3["a_only_n"], 1)
+        self.assertEqual(at3["b_only_n"], 1)
+        self.assertEqual(at3["or_detected_n"], 3)
+        self.assertAlmostEqual(at3["or_recall"], 1.0)
+        self.assertAlmostEqual(at3["tp_jaccard"], 1.0 / 3.0)
+        self.assertAlmostEqual(at3["a_fpr"], 0.5)
+        self.assertAlmostEqual(at3["b_fpr"], 1.0)
+        self.assertAlmostEqual(at3["or_fpr"], 1.0)
+        self.assertAlmostEqual(at3["fp_jaccard"], 0.5)
+
+        grasp = next(
+            row
+            for row in by_failure
+            if row["horizon"] == "3"
+            and row["failure_type"] == "grasp_failure"
+        )
+        self.assertEqual(grasp["event_n"], 2)
+        self.assertEqual(grasp["overlap_n"], 1)
+        self.assertEqual(grasp["a_only_n"], 0)
+        self.assertEqual(grasp["b_only_n"], 1)
+        self.assertAlmostEqual(grasp["or_recall"], 1.0)
 
     def test_early_alarm_and_hop_scale_contracts(self) -> None:
         event = evaluate_event(
