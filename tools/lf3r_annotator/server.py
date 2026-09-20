@@ -30,7 +30,7 @@ import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 from task_supervisor import TmuxJobSupervisor, TmuxSupervisorError
 
@@ -2360,6 +2360,10 @@ class BaselineRunIndex:
             )
         return True
 
+    def clear_rollout_cache(self) -> None:
+        with self.lock, self._connect() as connection:
+            connection.execute("DELETE FROM baseline_run_rollout_cache")
+
     def _delete_roots(self, run_roots: list[str]) -> None:
         if not run_roots:
             return
@@ -2526,6 +2530,7 @@ class BaselineService:
 
     def rebuild_run_index(self) -> dict[str, int]:
         result = self.run_index.rebuild()
+        self.run_index.clear_rollout_cache()
         # Explicit rescans are intentionally allowed to warm the persistent
         # rollout/signal inventory once. Normal catalog reads never recurse
         # through outputs/baselines after the cache is populated.
