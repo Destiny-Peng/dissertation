@@ -390,7 +390,7 @@ def analyse(
             "No rollout has a usable saved Robo-Dopamine fused hop signal"
         )
 
-    configs, phenotype_grid = build_phenotype_detector_configs(
+    configs, oracle_configs, phenotype_grid = build_phenotype_detector_configs(
         signals,
         events,
         no_event_failures,
@@ -441,7 +441,7 @@ def analyse(
     )
     oracle_global_best, oracle_event_detectability, oracle_summary = (
         build_oracle_analysis(
-            configs,
+            oracle_configs,
             signals,
             events,
             no_event_failures,
