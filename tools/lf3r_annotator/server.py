@@ -203,6 +203,7 @@ ROBO_HOP_TABLE_FILES = {
     "oracle_global_best": "oracle_global_best.csv",
     "oracle_summary": "oracle_summary.csv",
     "progress_peak_summary": "progress_peak_localization_summary.csv",
+    "unconstrained_localization": "unconstrained_localization_ranking.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -1059,6 +1060,20 @@ class AnalysisService:
             if progress_peak_summary_path.is_file()
             else []
         )
+        unconstrained_localization_path = (
+            directory / ROBO_HOP_TABLE_FILES["unconstrained_localization"]
+        )
+        unconstrained_localization_rows = (
+            self._read_csv(unconstrained_localization_path)
+            if unconstrained_localization_path.is_file()
+            else []
+        )
+        unconstrained_localization_top = [
+            row
+            for row in unconstrained_localization_rows
+            if row.get("rank_median_abs_error") is not None
+            and int(row["rank_median_abs_error"]) <= 10
+        ]
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1120,6 +1135,7 @@ class AnalysisService:
             "unconstrained_localization_ranking": metadata.get(
                 "unconstrained_localization_ranking"
             ) or {},
+            "unconstrained_localization_top": unconstrained_localization_top,
             "oracle_analysis": metadata.get("oracle_analysis") or {},
             "search_cache": metadata.get("search_cache") or {},
             "phenotype_detector": metadata.get("phenotype_detector") or {},
