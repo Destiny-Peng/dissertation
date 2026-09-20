@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -31,9 +32,71 @@ from robo_incremental_hop.diagnosis import (
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.oracle import build_oracle_analysis
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
+import robo_incremental_hop.search_cache as search_cache
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
+    def test_search_cache_fingerprint_and_roundtrip(self) -> None:
+        signals = {
+            "r0": {
+                "frames": [0, 4, 8],
+                "hops": [0.1, -0.2, 0.0],
+            }
+        }
+        events = [
+            {
+                "event_id": "r0::event0",
+                "rollout_id": "r0",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 4,
+            }
+        ]
+        fingerprint = search_cache.search_fingerprint(
+            signals,
+            events,
+            [],
+            [],
+        )
+        self.assertEqual(
+            fingerprint,
+            search_cache.search_fingerprint(signals, events, [], []),
+        )
+        changed = {
+            "r0": {
+                "frames": [0, 4, 8],
+                "hops": [0.1, -0.21, 0.0],
+            }
+        }
+        self.assertNotEqual(
+            fingerprint,
+            search_cache.search_fingerprint(changed, events, [], []),
+        )
+
+        original_root = search_cache.SEARCH_CACHE_ROOT
+        with tempfile.TemporaryDirectory() as temporary:
+            search_cache.SEARCH_CACHE_ROOT = Path(temporary)
+            try:
+                search_cache.write_search_cache(
+                    fingerprint,
+                    configs=[make_config("c0", "regression_window_min", m=1, theta=-0.2)],
+                    oracle_configs=[],
+                    phenotype_grid={"example": True},
+                    summary_rows=[{"config_id": "c0", "value": 1.0}],
+                    event_rows=[{"config_id": "c0", "detected": True}],
+                    no_event_rows=[],
+                    clean_rows=[],
+                    oracle_global_best=[],
+                    oracle_event_detectability=[],
+                    oracle_summary=[],
+                )
+                cached = search_cache.load_search_cache(fingerprint)
+                self.assertIsNotNone(cached)
+                self.assertEqual(cached["summary_rows"][0]["value"], 1.0)
+                self.assertTrue(cached["event_rows"][0]["detected"])
+            finally:
+                search_cache.SEARCH_CACHE_ROOT = original_root
+
     def config(
         self,
         family: str,
