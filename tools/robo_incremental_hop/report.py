@@ -622,6 +622,22 @@ def build_pairwise_ensemble_rows(
     for row in clean_rows:
         clean_by_config[str(row["config_id"])][str(row["rollout_id"])] = row
 
+    max_budget = max(CLEAN_FPR_CONSTRAINTS)
+    for family, family_configs in list(configs_by_family.items()):
+        feasible = []
+        for config in family_configs:
+            rows = clean_by_config.get(str(config["config_id"]), {})
+            if not rows:
+                feasible.append(config)
+                continue
+            fpr = (
+                sum(bool(row.get("any_positive")) for row in rows.values())
+                / len(rows)
+            )
+            if fpr <= max_budget + 1e-12:
+                feasible.append(config)
+        configs_by_family[family] = feasible
+
     sweep_rows: list[dict[str, Any]] = []
 
     for pair_index, (family_a, family_b) in enumerate(
