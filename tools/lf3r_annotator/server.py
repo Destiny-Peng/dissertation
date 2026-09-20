@@ -197,8 +197,9 @@ ROBO_HOP_TABLE_FILES = {
     "best_configs": "best_configs.csv",
     "recovery_results": "recovery_results.csv",
     "breakdown_summary": "breakdown_summary.csv",
-    "pairwise_overlap": "pairwise_overlap.csv",
-    "pairwise_overlap_by_failure_type": "pairwise_overlap_by_failure_type.csv",
+    "ensemble_sweep": "ensemble_sweep.csv",
+    "ensemble_selected": "ensemble_selected.csv",
+    "ensemble_by_failure_type": "ensemble_by_failure_type.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -209,9 +210,11 @@ ROBO_HOP_REQUIRED_FILES = (
     "recovery_results.csv",
     "breakdown_summary.csv",
 )
-ROBO_HOP_COMPLEMENTARITY_FILES = (
-    "pairwise_overlap.csv",
-    "pairwise_overlap_by_failure_type.csv",
+ROBO_HOP_EXTENDED_FILES = (
+    "no_event_failure_results.csv",
+    "ensemble_sweep.csv",
+    "ensemble_selected.csv",
+    "ensemble_by_failure_type.csv",
 )
 
 # These allowlists are deliberately kept server-side. The Analysis page can
@@ -267,12 +270,14 @@ ANALYSIS_ARTIFACT_NAMES = {
     "event_triggered_controls.csv",
     "sweep_summary.csv",
     "event_results.csv",
+    "no_event_failure_results.csv",
     "clean_rollout_results.csv",
     "best_configs.csv",
     "recovery_results.csv",
     "breakdown_summary.csv",
-    "pairwise_overlap.csv",
-    "pairwise_overlap_by_failure_type.csv",
+    "ensemble_sweep.csv",
+    "ensemble_selected.csv",
+    "ensemble_by_failure_type.csv",
     "task_cv_results.csv",
 }
 CHANGEPOINT_EVENT_FIELDS = (
@@ -948,6 +953,7 @@ class AnalysisService:
             if signal.get("name") not in {
                 "Robo-Dopamine incremental hop",
                 "Robo-Dopamine four-mode hop comparison",
+                "Robo-Dopamine fused hop failure detection",
             }:
                 continue
             candidates.append((metadata_path.stat().st_mtime, directory, metadata))
@@ -962,7 +968,7 @@ class AnalysisService:
             return {
                 "available": False,
                 "message": (
-                    "No complete Robo-Dopamine four-signal hop analysis found under "
+                    "No complete Robo-Dopamine fused-hop failure analysis found under "
                     "outputs/robo_dopamine_incremental_hop."
                 ),
             }
@@ -985,18 +991,24 @@ class AnalysisService:
         best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
         sweep_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["sweep_summary"])
         recovery_results = self._read_csv(directory / ROBO_HOP_TABLE_FILES["recovery_results"])
-        pairwise_overlap_path = directory / ROBO_HOP_TABLE_FILES["pairwise_overlap"]
-        pairwise_failure_path = (
-            directory / ROBO_HOP_TABLE_FILES["pairwise_overlap_by_failure_type"]
+        ensemble_sweep_path = directory / ROBO_HOP_TABLE_FILES["ensemble_sweep"]
+        ensemble_selected_path = directory / ROBO_HOP_TABLE_FILES["ensemble_selected"]
+        ensemble_failure_path = (
+            directory / ROBO_HOP_TABLE_FILES["ensemble_by_failure_type"]
         )
-        pairwise_overlap = (
-            self._read_csv(pairwise_overlap_path)
-            if pairwise_overlap_path.is_file()
+        ensemble_sweep = (
+            self._read_csv(ensemble_sweep_path)
+            if ensemble_sweep_path.is_file()
             else []
         )
-        pairwise_overlap_by_failure_type = (
-            self._read_csv(pairwise_failure_path)
-            if pairwise_failure_path.is_file()
+        ensemble_selected = (
+            self._read_csv(ensemble_selected_path)
+            if ensemble_selected_path.is_file()
+            else []
+        )
+        ensemble_by_failure_type = (
+            self._read_csv(ensemble_failure_path)
+            if ensemble_failure_path.is_file()
             else []
         )
         task_cv_path = directory / "task_cv_results.csv"
@@ -1048,8 +1060,9 @@ class AnalysisService:
             "selected_configs": selected_configs,
             "sweep_summary": sweep_summary,
             "recovery_results": recovery_results,
-            "pairwise_overlap": pairwise_overlap,
-            "pairwise_overlap_by_failure_type": pairwise_overlap_by_failure_type,
+            "ensemble_sweep": ensemble_sweep,
+            "ensemble_selected": ensemble_selected,
+            "ensemble_by_failure_type": ensemble_by_failure_type,
             "task_cv_available": task_cv_path.is_file(),
             "artifacts": [
                 {
@@ -1063,8 +1076,10 @@ class AnalysisService:
                     "best_configs.csv",
                     "recovery_results.csv",
                     "breakdown_summary.csv",
-                    "pairwise_overlap.csv",
-                    "pairwise_overlap_by_failure_type.csv",
+                    "no_event_failure_results.csv",
+                    "ensemble_sweep.csv",
+                    "ensemble_selected.csv",
+                    "ensemble_by_failure_type.csv",
                     "task_cv_results.csv",
                 )
                 if (directory / name).is_file()
@@ -4699,7 +4714,7 @@ class AnalysisJobService:
                     if job.get("analysis_kind") == "robo_hop_comparison":
                         required = (
                             *required,
-                            *ROBO_HOP_COMPLEMENTARITY_FILES,
+                            *ROBO_HOP_EXTENDED_FILES,
                         )
                     missing_message = (
                         "Robo-Dopamine hop comparison completed without all required artifacts"
