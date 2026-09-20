@@ -760,6 +760,7 @@ best_fields = [
     'config_id', 'epsilon', 'n', 'event_n',
     'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
     'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'grasp_recall_at_10', 'grasp_recall_eventual',
     'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
     'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
     'overall_failed_rollout_coverage', 'median_delay_samples',
@@ -802,12 +803,13 @@ ensemble_fields = [
 ensemble_row = {
     'signal_mode': 'fused', 'ensemble_logic': 'OR',
     'detector_a_family': 'stagnation_consecutive',
-    'detector_b_family': 'window_mean', 'clean_fpr_constraint': 0.2,
-    'selection_target': 'overall_failed_rollout_coverage',
+    'detector_b_family': 'regression_window_min', 'clean_fpr_constraint': 0.2,
+    'selection_target': 'grasp_recall_eventual',
     'selection_status': 'selected', 'event_recall_at_1': 0.5,
     'event_recall_at_3': 0.75, 'event_recall_at_5': 1.0,
     'event_recall_at_10': 1.0, 'event_recall_at_20': 1.0,
-    'event_recall_eventual': 1.0, 'no_event_recall_at_1': 0.0,
+    'event_recall_eventual': 1.0, 'grasp_recall_at_10': 1.0,
+    'grasp_recall_eventual': 1.0, 'no_event_recall_at_1': 0.0,
     'no_event_recall_at_3': 0.5, 'no_event_recall_at_5': 1.0,
     'no_event_recall_at_10': 1.0, 'no_event_recall_at_20': 1.0,
     'no_event_recall_eventual': 1.0, 'overall_failed_rollout_coverage': 1.0,
@@ -829,9 +831,9 @@ with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as
     writer.writeheader()
     writer.writerow({
         'signal_mode': 'fused', 'clean_fpr_constraint': 0.2,
-        'selected_for': 'overall_failed_rollout_coverage',
+        'selected_for': 'grasp_recall_eventual',
         'detector_a_family': 'stagnation_consecutive',
-        'detector_b_family': 'window_mean', 'failure_type': 'grasp_failure',
+        'detector_b_family': 'regression_window_min', 'failure_type': 'grasp_failure',
         'horizon': 'eventual', 'event_n': 1, 'overlap_n': 0,
         'a_only_n': 1, 'b_only_n': 0, 'or_recall': 1.0, 'tp_jaccard': 0.0,
     })
@@ -1234,7 +1236,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(len(hop["ensemble_selected"]), 1)
         self.assertEqual(
             hop["ensemble_selected"][0]["selection_target"],
-            "overall_failed_rollout_coverage",
+            "grasp_recall_eventual",
         )
         self.assertTrue(
             any(
