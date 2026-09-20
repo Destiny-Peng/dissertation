@@ -217,10 +217,17 @@ class ServerTest(unittest.TestCase):
         )
         self.assertTrue(index_path.is_file())
 
-        with mock.patch.object(
-            Path,
-            "rglob",
-            side_effect=AssertionError("baseline tree should not be rescanned"),
+        with (
+            mock.patch.object(
+                Path,
+                "rglob",
+                side_effect=AssertionError("baseline tree should not be rescanned"),
+            ),
+            mock.patch.object(
+                self.app.baselines,
+                "_scan_robo_run_four_signal_ids",
+                side_effect=AssertionError("Robo signal inventory should come from cache"),
+            ),
         ):
             with self.request(
                 "/api/baselines/runs?scope=libero_10&condition=full_instruction"
