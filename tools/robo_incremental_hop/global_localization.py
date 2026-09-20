@@ -52,108 +52,124 @@ def _copy_config(
 
 
 def build_global_config_space(
-    empirical_phenotype_configs: Sequence[Mapping[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    """Union the historical full grid with current empirical phenotype states.
+    existing_phenotype_configs: Sequence[Mapping[str, Any]],
+    existing_ensemble_sweep: Sequence[Mapping[str, Any]],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, Any],
+]:
+    """Reuse the historical full grid plus already-searched phenotype configs.
 
-    Returns single-detector configs, OR-pair configs, and compact metadata.
-    Duplicate single configs are removed by family+parameters, preferring the
-    historical fixed-grid ID only for provenance stability.
+    No new phenotype pair search is created here. OR candidates are exactly the
+    unique parameter pairs already present in ensemble_sweep; this analysis
+    merely removes clean-FPR filtering from their localization evaluation.
     """
-    singles: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    ranked_singles: list[dict[str, Any]] = []
+    support_configs: dict[str, dict[str, Any]] = {}
+    seen_ranked: set[tuple[str, str]] = set()
 
     for index, config in enumerate(build_detector_configs(), 1):
         key = _config_key(config)
-        if key in seen:
+        if key in seen_ranked:
             continue
-        seen.add(key)
-        singles.append(
-            _copy_config(
-                config,
-                config_id=f"global_fixed_{index:05d}",
-                config_source="historical_full_grid",
-            )
+        seen_ranked.add(key)
+        copied = _copy_config(
+            config,
+            config_id=f"global_fixed_{index:05d}",
+            config_source="historical_full_grid",
         )
+        ranked_singles.append(copied)
+        support_configs[str(copied["config_id"])] = copied
 
-    empirical_added = 0
-    for config in empirical_phenotype_configs:
+    phenotype_by_original_id: dict[str, dict[str, Any]] = {}
+    phenotype_added = 0
+    for config in existing_phenotype_configs:
+        original_id = str(config["config_id"])
+        copied = dict(config)
+        copied["config_source"] = "existing_phenotype_component_grid"
+        phenotype_by_original_id[original_id] = copied
+        support_configs[original_id] = copied
+
         key = _config_key(config)
-        if key in seen:
+        if key in seen_ranked:
             continue
-        seen.add(key)
-        empirical_added += 1
-        singles.append(
-            _copy_config(
-                config,
-                config_id=f"global_emp_{empirical_added:05d}",
-                config_source="empirical_phenotype_grid",
-            )
+        seen_ranked.add(key)
+        phenotype_added += 1
+        ranked_copy = _copy_config(
+            config,
+            config_id=f"global_phen_{phenotype_added:05d}",
+            config_source="existing_phenotype_component_grid",
         )
+        ranked_singles.append(ranked_copy)
+        support_configs[str(ranked_copy["config_id"])] = ranked_copy
 
-    stagnation = [
-        config
-        for config in singles
-        if str(config["detector_family"]).startswith("stagnation_")
-    ]
-    regression = [
-        config
-        for config in singles
-        if str(config["detector_family"]) == "regression_window_min"
-    ]
-
+    pair_keys: set[tuple[str, str]] = set()
     pairs: list[dict[str, Any]] = []
-    pair_index = 0
-    for stagnation_config in stagnation:
-        for regression_config in regression:
-            pair_index += 1
-            pair_id = f"global_or_{pair_index:07d}"
-            parameters = {
-                "logic": "OR",
-                "stagnation_config_id": stagnation_config["config_id"],
-                "stagnation_family": stagnation_config["detector_family"],
-                "stagnation_parameters": json.loads(
-                    str(stagnation_config["parameters_json"])
+    skipped_missing_components = 0
+    for row in existing_ensemble_sweep:
+        a_id = str(row.get("a_config_id") or "")
+        b_id = str(row.get("b_config_id") or "")
+        if not a_id or not b_id:
+            continue
+        key = (a_id, b_id)
+        if key in pair_keys:
+            continue
+        pair_keys.add(key)
+        config_a = phenotype_by_original_id.get(a_id)
+        config_b = phenotype_by_original_id.get(b_id)
+        if config_a is None or config_b is None:
+            skipped_missing_components += 1
+            continue
+        pair_id = f"global_or_{len(pairs) + 1:07d}"
+        parameters = {
+            "logic": "OR",
+            "stagnation_config_id": a_id,
+            "stagnation_family": config_a["detector_family"],
+            "stagnation_parameters": json.loads(
+                str(config_a["parameters_json"])
+            ),
+            "regression_config_id": b_id,
+            "regression_family": config_b["detector_family"],
+            "regression_parameters": json.loads(
+                str(config_b["parameters_json"])
+            ),
+        }
+        pairs.append(
+            {
+                "config_id": pair_id,
+                "detector_family": "phenotype_or",
+                "config_source": "reused_existing_ensemble_sweep",
+                "parameters_json": json.dumps(
+                    parameters,
+                    sort_keys=True,
+                    separators=(",", ":"),
                 ),
-                "regression_config_id": regression_config["config_id"],
-                "regression_family": regression_config["detector_family"],
-                "regression_parameters": json.loads(
-                    str(regression_config["parameters_json"])
-                ),
+                "stagnation_config_id": a_id,
+                "regression_config_id": b_id,
             }
-            pairs.append(
-                {
-                    "config_id": pair_id,
-                    "detector_family": "phenotype_or",
-                    "config_source": "complete_stagnation_regression_or",
-                    "parameters_json": json.dumps(
-                        parameters,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
-                    "stagnation_config_id": stagnation_config["config_id"],
-                    "regression_config_id": regression_config["config_id"],
-                }
-            )
+        )
 
     family_counts: dict[str, int] = defaultdict(int)
-    for config in singles:
+    for config in ranked_singles:
         family_counts[str(config["detector_family"])] += 1
 
-    return singles, pairs, {
-        "single_config_n": len(singles),
+    return ranked_singles, pairs, support_configs, {
+        "single_config_n": len(ranked_singles),
         "or_config_n": len(pairs),
-        "total_config_n": len(singles) + len(pairs),
+        "total_config_n": len(ranked_singles) + len(pairs),
         "historical_fixed_grid_n": len(build_detector_configs()),
-        "empirical_unique_added_n": empirical_added,
+        "existing_phenotype_unique_added_n": phenotype_added,
+        "existing_ensemble_sweep_row_n": len(existing_ensemble_sweep),
+        "or_missing_component_pair_n": skipped_missing_components,
         "single_family_counts": dict(sorted(family_counts.items())),
         "or_definition": (
-            "every stagnation_consecutive/stagnation_k_of_m single config OR "
-            "every regression_window_min config from the existing two-phenotype "
-            "branch; legacy detector families remain standalone candidates"
+            "unique stagnation/regression parameter pairs already present in "
+            "the cached existing ensemble_sweep; no new pair search and no "
+            "clean-FPR filtering are applied in this localization analysis"
         ),
     }
-
 
 def _episode_starts(mask: Sequence[bool]) -> list[int]:
     return [
@@ -436,6 +452,7 @@ def evaluate_global_config_space(
     events: Sequence[Mapping[str, Any]],
     single_configs: Sequence[Mapping[str, Any]],
     or_configs: Sequence[Mapping[str, Any]],
+    support_configs: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     """Evaluate every fixed config without any clean-FPR filtering."""
     populations = _population_specs(events)
@@ -449,8 +466,18 @@ def evaluate_global_config_space(
     )
     masks_by_config: dict[str, dict[str, list[bool]]] = {}
 
-    for config in single_configs:
-        config_id = str(config["config_id"])
+    needed_ids = {
+        str(config["config_id"])
+        for config in single_configs
+    }
+    for pair in or_configs:
+        needed_ids.add(str(pair["stagnation_config_id"]))
+        needed_ids.add(str(pair["regression_config_id"]))
+
+    for config_id in sorted(needed_ids):
+        config = support_configs.get(config_id)
+        if config is None:
+            continue
         masks_by_config[config_id] = {
             rollout_id: detector_mask(signals[rollout_id]["hops"], config)
             for rollout_id in target_rollout_ids
@@ -674,7 +701,8 @@ def load_or_compute_global_localization(
     base_search_fingerprint: str,
     signals: Mapping[str, Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
-    empirical_phenotype_configs: Sequence[Mapping[str, Any]],
+    existing_phenotype_configs: Sequence[Mapping[str, Any]],
+    existing_ensemble_sweep: Sequence[Mapping[str, Any]],
     refresh: bool = False,
 ) -> tuple[
     list[dict[str, Any]],
@@ -682,8 +710,9 @@ def load_or_compute_global_localization(
     list[dict[str, Any]],
     dict[str, Any],
 ]:
-    singles, pairs, space_metadata = build_global_config_space(
-        empirical_phenotype_configs
+    singles, pairs, support_configs, space_metadata = build_global_config_space(
+        existing_phenotype_configs,
+        existing_ensemble_sweep,
     )
     fingerprint = _cache_fingerprint(
         base_search_fingerprint,
@@ -721,6 +750,7 @@ def load_or_compute_global_localization(
         events,
         singles,
         pairs,
+        support_configs,
     )
     envelope, single_best = select_global_config_results(summaries)
     ranking = ranking_rows(summaries)
