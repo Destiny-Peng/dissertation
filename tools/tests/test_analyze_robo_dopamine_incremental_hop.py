@@ -402,7 +402,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             {"rollout_id": f"clean{index}"}
             for index in range(5)
         ]
-        configs, metadata = build_phenotype_detector_configs(
+        configs, oracle_configs, metadata = build_phenotype_detector_configs(
             signals,
             events,
             [],
@@ -415,6 +415,12 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         ]
         self.assertTrue(regression)
         self.assertTrue(all(float(config["theta"]) < 0.0 for config in regression))
+        oracle_regression = [
+            config
+            for config in oracle_configs
+            if config["detector_family"] == "regression_window_min"
+        ]
+        self.assertGreaterEqual(len(oracle_regression), len(regression))
         self.assertTrue(
             any(abs(float(config["theta"]) + 0.30) < 1e-12 for config in regression)
         )
