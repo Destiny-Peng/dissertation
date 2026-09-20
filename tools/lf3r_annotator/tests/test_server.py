@@ -902,53 +902,35 @@ with (args.output_dir / 'progress_peak_localization_summary.csv').open('w', newl
         'at_onset_anchor_fraction': 0.0,
         'after_onset_fraction': 0.0,
     })
-global_fields = [
-    'population', 'selection_kind', 'selection_target', 'selection_value',
-    'config_id', 'detector_family', 'config_source', 'parameters_json',
-    'event_n', 'capacity_within_1_recall', 'capacity_within_3_recall',
-    'capacity_within_5_recall', 'capacity_within_10_recall',
-    'capacity_eventual_recall', 'localization_output_coverage',
-    'localization_within_1_recall', 'localization_within_3_recall',
-    'localization_within_5_recall', 'localization_within_10_recall',
+localization_fields = [
+    'population', 'config_id', 'detector_family', 'parameters_json',
+    'event_n', 'triggered_n', 'no_trigger_n', 'trigger_coverage',
+    'within_1_n', 'within_1', 'within_3_n', 'within_3',
+    'within_5_n', 'within_5', 'within_10_n', 'within_10',
     'median_signed_offset_samples', 'median_absolute_error_samples',
     'mae_samples', 'before_onset_n', 'at_onset_n', 'after_onset_n',
-    'coverage_requirement_status'
+    'rank_within_1', 'rank_within_3', 'rank_within_5',
+    'rank_within_10', 'rank_median_abs_error', 'rank_mae'
 ]
-global_row = {
-    'population': 'first_event_per_failed_rollout',
-    'selection_kind': 'metric_specific_capacity_upper_envelope',
-    'selection_target': 'capacity_within_3_recall', 'selection_value': 0.75,
-    'config_id': 'global_fixed_00001', 'detector_family': 'consecutive',
-    'config_source': 'historical_full_grid', 'parameters_json': '{{"epsilon":0,"n":1}}',
-    'event_n': 4, 'capacity_within_1_recall': 0.5,
-    'capacity_within_3_recall': 0.75, 'capacity_within_5_recall': 1.0,
-    'capacity_within_10_recall': 1.0, 'capacity_eventual_recall': 1.0,
-    'localization_output_coverage': 1.0, 'localization_within_1_recall': 0.25,
-    'localization_within_3_recall': 0.5, 'localization_within_5_recall': 0.75,
-    'localization_within_10_recall': 1.0, 'median_signed_offset_samples': -2,
-    'median_absolute_error_samples': 2, 'mae_samples': 2.5,
-    'before_onset_n': 2, 'at_onset_n': 1, 'after_onset_n': 1,
-    'coverage_requirement_status': '',
-}
-with (args.output_dir / 'global_config_localization_best_by_tolerance.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=global_fields)
+with (args.output_dir / 'unconstrained_localization_ranking.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=localization_fields)
     writer.writeheader()
-    writer.writerow(global_row)
-single_row = dict(global_row)
-single_row.update({
-    'selection_kind': 'single_global_config',
-    'selection_target': 'minimum_mae',
-    'selection_value': '',
-    'coverage_requirement_status': 'full_coverage',
-})
-with (args.output_dir / 'global_config_localization_single_best.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=global_fields)
-    writer.writeheader()
-    writer.writerow(single_row)
-with (args.output_dir / 'global_config_localization_ranking.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=global_fields)
-    writer.writeheader()
-    writer.writerow(global_row)
+    writer.writerow({
+        'population': 'first_event_per_failed_rollout',
+        'config_id': 'cfg1', 'detector_family': 'consecutive',
+        'parameters_json': '{{"epsilon":0,"n":1}}',
+        'event_n': 4, 'triggered_n': 4, 'no_trigger_n': 0,
+        'trigger_coverage': 1.0,
+        'within_1_n': 2, 'within_1': 0.5,
+        'within_3_n': 3, 'within_3': 0.75,
+        'within_5_n': 4, 'within_5': 1.0,
+        'within_10_n': 4, 'within_10': 1.0,
+        'median_signed_offset_samples': -2,
+        'median_absolute_error_samples': 2, 'mae_samples': 2.5,
+        'before_onset_n': 2, 'at_onset_n': 1, 'after_onset_n': 1,
+        'rank_within_1': 1, 'rank_within_3': 1, 'rank_within_5': 1,
+        'rank_within_10': 1, 'rank_median_abs_error': 1, 'rank_mae': 1,
+    })
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
     'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
@@ -1393,12 +1375,12 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             1,
         )
         self.assertEqual(
-            hop["global_config_localization_best_by_tolerance"][0]["selection_target"],
-            "capacity_within_3_recall",
+            hop["unconstrained_localization_top"][0]["config_id"],
+            "cfg1",
         )
         self.assertEqual(
-            hop["global_config_localization_single_best"][0]["selection_target"],
-            "minimum_mae",
+            hop["unconstrained_localization_top"][0]["rank_median_abs_error"],
+            1,
         )
         self.assertTrue(
             any(
