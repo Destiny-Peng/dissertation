@@ -839,6 +839,41 @@ with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as
         'horizon': 'eventual', 'event_n': 1, 'overlap_n': 0,
         'a_only_n': 1, 'b_only_n': 0, 'or_recall': 1.0, 'tp_jaccard': 0.0,
     })
+with (args.output_dir / 'oracle_global_best.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'signal_family', 'population', 'population_n', 'selection_target',
+        'selected_detected_n', 'selected_recall', 'recall_at_3',
+        'recall_at_10', 'recall_eventual', 'median_detection_delay_samples'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'signal_family': 'combined', 'population': 'grasp_failure',
+        'population_n': 1, 'selection_target': 'eventual',
+        'selected_detected_n': 1, 'selected_recall': 1.0,
+        'recall_at_3': 1.0, 'recall_at_10': 1.0, 'recall_eventual': 1.0,
+        'median_detection_delay_samples': 1.0,
+    })
+with (args.output_dir / 'oracle_summary.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'signal_family', 'population', 'population_n',
+        'oracle_recall_at_1', 'oracle_recall_at_3', 'oracle_recall_at_5',
+        'oracle_recall_at_10', 'oracle_recall_at_20', 'oracle_recall_eventual',
+        'strict_recall_eventual', 'median_best_delay_samples',
+        'p25_best_delay_samples', 'p75_best_delay_samples'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'signal_family': 'combined', 'population': 'grasp_failure',
+        'population_n': 1, 'oracle_recall_at_1': 1.0,
+        'oracle_recall_at_3': 1.0, 'oracle_recall_at_5': 1.0,
+        'oracle_recall_at_10': 1.0, 'oracle_recall_at_20': 1.0,
+        'oracle_recall_eventual': 1.0, 'strict_recall_eventual': 1.0,
+        'median_best_delay_samples': 1.0, 'p25_best_delay_samples': 1.0,
+        'p75_best_delay_samples': 1.0,
+    })
+(args.output_dir / 'oracle_event_detectability.csv').write_text(
+    'signal_family,record_kind,rollout_id,oracle_detectable\n'
+)
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
     'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
@@ -1255,6 +1290,20 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(
             any(
                 item["name"] == "grasp_event_features.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertEqual(
+            hop["oracle_summary"][0]["signal_family"],
+            "combined",
+        )
+        self.assertEqual(
+            hop["oracle_summary"][0]["population"],
+            "grasp_failure",
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "oracle_summary.csv"
                 for item in hop["artifacts"]
             )
         )
