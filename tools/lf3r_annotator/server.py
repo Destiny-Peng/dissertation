@@ -197,6 +197,8 @@ ROBO_HOP_TABLE_FILES = {
     "best_configs": "best_configs.csv",
     "recovery_results": "recovery_results.csv",
     "breakdown_summary": "breakdown_summary.csv",
+    "pairwise_overlap": "pairwise_overlap.csv",
+    "pairwise_overlap_by_failure_type": "pairwise_overlap_by_failure_type.csv",
 }
 ROBO_HOP_REQUIRED_FILES = (
     "metadata.json",
@@ -265,6 +267,8 @@ ANALYSIS_ARTIFACT_NAMES = {
     "best_configs.csv",
     "recovery_results.csv",
     "breakdown_summary.csv",
+    "pairwise_overlap.csv",
+    "pairwise_overlap_by_failure_type.csv",
     "task_cv_results.csv",
 }
 CHANGEPOINT_EVENT_FIELDS = (
@@ -977,6 +981,20 @@ class AnalysisService:
         best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
         sweep_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["sweep_summary"])
         recovery_results = self._read_csv(directory / ROBO_HOP_TABLE_FILES["recovery_results"])
+        pairwise_overlap_path = directory / ROBO_HOP_TABLE_FILES["pairwise_overlap"]
+        pairwise_failure_path = (
+            directory / ROBO_HOP_TABLE_FILES["pairwise_overlap_by_failure_type"]
+        )
+        pairwise_overlap = (
+            self._read_csv(pairwise_overlap_path)
+            if pairwise_overlap_path.is_file()
+            else []
+        )
+        pairwise_overlap_by_failure_type = (
+            self._read_csv(pairwise_failure_path)
+            if pairwise_failure_path.is_file()
+            else []
+        )
         task_cv_path = directory / "task_cv_results.csv"
         selected_configs = [
             row for row in best_configs
@@ -1026,6 +1044,8 @@ class AnalysisService:
             "selected_configs": selected_configs,
             "sweep_summary": sweep_summary,
             "recovery_results": recovery_results,
+            "pairwise_overlap": pairwise_overlap,
+            "pairwise_overlap_by_failure_type": pairwise_overlap_by_failure_type,
             "task_cv_available": task_cv_path.is_file(),
             "artifacts": [
                 {
@@ -1039,6 +1059,8 @@ class AnalysisService:
                     "best_configs.csv",
                     "recovery_results.csv",
                     "breakdown_summary.csv",
+                    "pairwise_overlap.csv",
+                    "pairwise_overlap_by_failure_type.csv",
                     "task_cv_results.csv",
                 )
                 if (directory / name).is_file()
