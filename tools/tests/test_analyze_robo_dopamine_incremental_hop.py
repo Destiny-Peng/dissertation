@@ -30,14 +30,8 @@ from robo_incremental_hop.diagnosis import (
     summarize_matched_controls,
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
-from robo_incremental_hop.oracle import build_oracle_analysis
-from robo_incremental_hop.progress_peak import (
-    evaluate_progress_peak_localization,
-    summarize_progress_peak_localization,
-)
 from robo_incremental_hop.localization_ranking import (
     rank_existing_sweep_interval_localization,
-    rank_existing_sweep_localization,
 )
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 import robo_incremental_hop.search_cache as search_cache
@@ -91,171 +85,6 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         self.assertAlmostEqual(row["mae_samples"], 1.0)
         self.assertAlmostEqual(row["mse_samples"], 2.0)
 
-    def test_existing_sweep_ranking_uses_first_trigger_without_new_search(self) -> None:
-        signals = {
-            "r1": {"frames": [0, 1, 2, 3, 4, 5]},
-            "r2": {"frames": [0, 1, 2, 3, 4, 5]},
-        }
-        base = {
-            "detector_family": "consecutive",
-            "epsilon": 0.0,
-            "n": 1,
-            "m": None,
-            "k": None,
-            "theta": None,
-            "A": None,
-            "delta": None,
-            "parameters_json": '{"epsilon":0.0,"n":1}',
-            "outcome": "terminal_failure",
-            "failure_type": "grasp_failure",
-        }
-        event_rows = [
-            {
-                **base,
-                "config_id": "a",
-                "rollout_id": "r1",
-                "event_id": "r1::event0",
-                "event_index": 0,
-                "observable_onset_frame": 3,
-                "earliest_early_positive_frame": 0,
-                "detection_frame": 3,
-            },
-            {
-                **base,
-                "config_id": "a",
-                "rollout_id": "r2",
-                "event_id": "r2::event0",
-                "event_index": 0,
-                "observable_onset_frame": 2,
-                "earliest_early_positive_frame": None,
-                "detection_frame": 2,
-            },
-            {
-                **base,
-                "config_id": "b",
-                "rollout_id": "r1",
-                "event_id": "r1::event0",
-                "event_index": 0,
-                "observable_onset_frame": 3,
-                "earliest_early_positive_frame": None,
-                "detection_frame": 3,
-            },
-            {
-                **base,
-                "config_id": "b",
-                "rollout_id": "r2",
-                "event_id": "r2::event0",
-                "event_index": 0,
-                "observable_onset_frame": 2,
-                "earliest_early_positive_frame": None,
-                "detection_frame": 3,
-            },
-        ]
-        ensemble_sweep = [
-            {"a_config_id": "a", "b_config_id": "b"}
-        ]
-        ranking = rank_existing_sweep_localization(
-            event_rows=event_rows,
-            ensemble_sweep=ensemble_sweep,
-            signals=signals,
-        )
-        first_population = [
-            row
-            for row in ranking
-            if row["population"] == "first_event_per_failed_rollout"
-        ]
-        by_id = {row["config_id"]: row for row in first_population}
-        self.assertEqual(by_id["a"]["median_signed_offset_samples"], -1.5)
-        self.assertEqual(by_id["b"]["median_signed_offset_samples"], 0.5)
-        self.assertEqual(by_id["b"]["rank_rmse"], 1)
-        self.assertAlmostEqual(by_id["b"]["rmse_samples"], 2 ** -0.5)
-        self.assertAlmostEqual(by_id["b"]["within_1"], 1.0)
-        self.assertEqual(
-            by_id["OR:a|b"]["median_signed_offset_samples"],
-            -1.5,
-        )
-        self.assertAlmostEqual(by_id["OR:a|b"]["trigger_coverage"], 1.0)
-
-    def test_progress_peak_uses_earliest_argmax_and_first_failure_onset(self) -> None:
-        signals = {
-            "fail_a": {
-                "frames": [0, 4, 8, 12],
-                "progress": [0.1, 0.8, 0.8, 0.2],
-                "prediction_path": Path("/tmp/fail_a.json"),
-            },
-            "fail_b": {
-                "frames": [0, 4, 8, 12],
-                "progress": [0.1, 0.2, 0.3, 0.9],
-                "prediction_path": Path("/tmp/fail_b.json"),
-            },
-            "recovered": {
-                "frames": [0, 4, 8],
-                "progress": [0.1, 0.9, 0.2],
-                "prediction_path": Path("/tmp/recovered.json"),
-            },
-        }
-        events = [
-            {
-                "event_id": "fail_a::event0",
-                "rollout_id": "fail_a",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "observable_onset_frame": 8,
-                "outcome": "terminal_failure",
-                "task_key": "libero_10:0",
-            },
-            {
-                "event_id": "fail_a::event1",
-                "rollout_id": "fail_a",
-                "event_index": 1,
-                "failure_type": "timeout_no_progress",
-                "observable_onset_frame": 12,
-                "outcome": "terminal_failure",
-                "task_key": "libero_10:0",
-            },
-            {
-                "event_id": "fail_b::event0",
-                "rollout_id": "fail_b",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "observable_onset_frame": 4,
-                "outcome": "terminal_failure",
-                "task_key": "libero_10:1",
-            },
-            {
-                "event_id": "recovered::event0",
-                "rollout_id": "recovered",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "observable_onset_frame": 4,
-                "outcome": "recovered_success",
-                "task_key": "libero_10:2",
-            },
-        ]
-        rows = evaluate_progress_peak_localization(signals, events)
-        self.assertEqual(len(rows), 2)
-        by_id = {row["rollout_id"]: row for row in rows}
-        self.assertEqual(by_id["fail_a"]["annotated_event_n"], 2)
-        self.assertEqual(by_id["fail_a"]["first_observable_onset_frame"], 8)
-        self.assertEqual(by_id["fail_a"]["t_star_frame"], 4)
-        self.assertEqual(by_id["fail_a"]["t_star_minus_onset_samples"], -1)
-        self.assertEqual(by_id["fail_a"]["t_star_minus_onset_frames"], -4)
-        self.assertTrue(by_id["fail_a"]["within_1_samples"])
-        self.assertEqual(by_id["fail_b"]["t_star_frame"], 12)
-        self.assertEqual(by_id["fail_b"]["t_star_minus_onset_samples"], 2)
-
-        summary = summarize_progress_peak_localization(rows)
-        overall = next(
-            row
-            for row in summary
-            if row["group"] == "overall" and row["value"] == "all"
-        )
-        self.assertEqual(overall["rollout_n"], 2)
-        self.assertAlmostEqual(overall["within_1_samples_fraction"], 0.5)
-        self.assertAlmostEqual(overall["within_3_samples_fraction"], 1.0)
-        self.assertAlmostEqual(overall["before_onset_fraction"], 0.5)
-        self.assertAlmostEqual(overall["after_onset_fraction"], 0.5)
-
     def test_search_cache_fingerprint_and_roundtrip(self) -> None:
         signals = {
             "r0": {
@@ -300,16 +129,12 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 search_cache.write_search_cache(
                     fingerprint,
                     configs=[make_config("c0", "regression_window_min", m=1, theta=-0.2)],
-                    oracle_configs=[],
                     phenotype_grid={"example": True},
                     summary_rows=[{"config_id": "c0", "value": 1.0}],
                     event_rows=[{"config_id": "c0", "detected": True}],
                     no_event_rows=[],
                     clean_rows=[],
                     ensemble_sweep=[{"pair_priority": 1}],
-                    oracle_global_best=[],
-                    oracle_event_detectability=[],
-                    oracle_summary=[],
                 )
                 cached = search_cache.load_search_cache(fingerprint)
                 self.assertIsNotNone(cached)
@@ -715,126 +540,6 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         )
         self.assertIn("oracle_grid", metadata)
         self.assertIn("operational_prefilter", metadata)
-
-    def test_oracle_rejects_long_pre_onset_positive_episode(self) -> None:
-        frames = [0, 4, 8, 12, 16]
-        signals = {
-            "tolerated": {
-                "frames": frames,
-                "hops": [0.2, 0.2, -0.3, -0.2, 0.1],
-            },
-            "long_early": {
-                "frames": frames,
-                "hops": [-0.3, -0.3, -0.3, -0.3, -0.3],
-            },
-            "persistent": {
-                "frames": frames,
-                "hops": [-0.3, 0.1, 0.1, 0.1, 0.1],
-            },
-        }
-        events = [
-            {
-                "event_id": "tolerated::event0",
-                "rollout_id": "tolerated",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "outcome": "terminal_failure",
-                "observable_onset_frame": 12,
-                "episode_end_frame": None,
-            },
-            {
-                "event_id": "long_early::event0",
-                "rollout_id": "long_early",
-                "event_index": 0,
-                "failure_type": "grasp_failure",
-                "outcome": "terminal_failure",
-                "observable_onset_frame": 12,
-                "episode_end_frame": None,
-            },
-        ]
-        no_event = [
-            {
-                "rollout_id": "persistent",
-                "outcome": "terminal_failure",
-            }
-        ]
-        configs = [
-            make_config(
-                "st",
-                "stagnation_consecutive",
-                delta=1.0,
-                n=1,
-            ),
-            make_config(
-                "reg",
-                "regression_window_min",
-                m=1,
-                theta=-0.1,
-            ),
-        ]
-        global_best, detectability, summary = build_oracle_analysis(
-            configs,
-            signals,
-            events,
-            no_event,
-            [],
-            early_tolerance_samples=1,
-        )
-
-        regression_events = {
-            row["event_id"]: row
-            for row in detectability
-            if row["signal_family"] == "regression"
-            and row["record_kind"] == "annotated_event"
-        }
-        self.assertTrue(regression_events["tolerated::event0"]["oracle_detectable"])
-        self.assertFalse(
-            regression_events["tolerated::event0"]["oracle_detectable_strict"]
-        )
-        self.assertEqual(
-            regression_events["tolerated::event0"]["best_start_offset_samples"],
-            -1,
-        )
-        self.assertEqual(
-            regression_events["tolerated::event0"]["best_delay_samples"],
-            0,
-        )
-        self.assertFalse(
-            regression_events["long_early::event0"]["oracle_detectable"]
-        )
-
-        grasp_regression = next(
-            row
-            for row in summary
-            if row["signal_family"] == "regression"
-            and row["population"] == "grasp_failure"
-        )
-        self.assertAlmostEqual(
-            grasp_regression["oracle_recall_eventual"],
-            0.5,
-        )
-        self.assertAlmostEqual(
-            grasp_regression["strict_recall_eventual"],
-            0.0,
-        )
-        persistent_regression = next(
-            row
-            for row in summary
-            if row["signal_family"] == "regression"
-            and row["population"] == "no_event_failure_rollouts"
-        )
-        self.assertAlmostEqual(
-            persistent_regression["oracle_recall_at_1"],
-            1.0,
-        )
-        self.assertTrue(
-            any(
-                row["signal_family"] == "combined"
-                and row["population"] == "grasp_failure"
-                and row["selection_target"] == "eventual"
-                for row in global_best
-            )
-        )
 
     def test_joint_pairwise_or_sweep_uses_true_fp_union(self) -> None:
         configs = [
