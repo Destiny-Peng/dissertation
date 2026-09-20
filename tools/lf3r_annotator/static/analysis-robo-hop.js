@@ -88,7 +88,7 @@
         && (run.status === "complete" || run.status === "complete_with_errors");
     });
     var choices = roboRuns.filter(function (run) {
-      return Number(run.four_signal_scope_rollout_count || 0) > 0;
+      return Number(run.fused_scope_rollout_count || 0) > 0;
     });
     var previous = select.value;
     if (!choices.length) {
@@ -96,17 +96,17 @@
       select.disabled = true;
       status(
         roboRuns.length
-          ? roboRuns.length + " completed Robo-Dopamine run(s) were found, but none contain a common rollout set with all four hop signals: incremental, forward, backward, and fused."
+          ? roboRuns.length + " completed Robo-Dopamine run(s) were found, but none contain saved fused hop for this scope."
           : "No completed Robo-Dopamine run was found for this scope.",
         "warning"
       );
     } else {
       select.innerHTML = choices.map(function (run) {
-        var available = Number(run.four_signal_scope_rollout_count || 0);
+        var available = Number(run.fused_scope_rollout_count || 0);
         var requested = Number(run.selected_scope_rollouts || 0);
         var coverage = requested ? Math.round(1000 * available / requested) / 10 : 0;
         return '<option value="' + esc(run.run_root) + '">'
-          + esc(runLabel(run) + " · four-signal " + available + "/" + requested + " (" + coverage + "%)")
+          + esc(runLabel(run) + " · fused " + available + "/" + requested + " (" + coverage + "%)")
           + '</option>';
       }).join("");
       select.disabled = false;
@@ -114,7 +114,7 @@
         select.value = previous;
       }
       status(
-        choices.length + " completed Robo-Dopamine run(s) contain a common four-signal rollout set in this scope. The analysis compares incremental, forward, backward, and fused hop on exactly the same rollouts.",
+        choices.length + " completed Robo-Dopamine run(s) contain saved fused hop in this scope. Only fused hop is analyzed.",
         ""
       );
     }
@@ -176,6 +176,20 @@
       .replace(/_/g, " ");
   }
 
+  function ensembleParameters(row, prefix) {
+    var mapped = {
+      epsilon: row[prefix + "_epsilon"],
+      n: row[prefix + "_n"],
+      m: row[prefix + "_m"],
+      k: row[prefix + "_k"],
+      theta: row[prefix + "_theta"],
+      A: row[prefix + "_A"],
+      delta: row[prefix + "_delta"],
+      parameters_json: row[prefix + "_parameters_json"]
+    };
+    return configParameters(mapped);
+  }
+
   function renderSnapshot() {
     var host = node("analysisHopResults");
     var artifacts = node("analysisHopArtifacts");
@@ -183,188 +197,139 @@
     var snapshot = window.workspaceState && workspaceState.analysisSnapshot;
     var hop = snapshot && (snapshot.robo_hop || snapshot.robo_incremental_hop);
     if (!hop || !hop.available) {
-      host.innerHTML = '<p class="analysis-empty">No completed four-signal Robo-Dopamine hop analysis snapshot yet.</p>';
+      host.innerHTML = '<p class="analysis-empty">No completed Robo-Dopamine fused-hop failure analysis snapshot yet.</p>';
       artifacts.innerHTML = "";
       if (!activeJob()) badge("idle");
       return;
     }
 
-    var modeOrder = ["incremental", "forward", "backward", "fused"];
     var rows = (hop.best_configs || []).filter(function (row) {
-      return row.selection_status === "selected";
+      return row.selection_status === "selected"
+        && (!row.signal_mode || String(row.signal_mode) === "fused");
     }).sort(function (left, right) {
-      return modeOrder.indexOf(String(left.signal_mode)) - modeOrder.indexOf(String(right.signal_mode))
-        || String(left.detector_family).localeCompare(String(right.detector_family))
+      return String(left.detector_family).localeCompare(String(right.detector_family))
         || Number(left.clean_fpr_constraint) - Number(right.clean_fpr_constraint);
     });
 
+    var html = '<section class="analysis-subsection">'
+      + '<h4>Fused hop · single detectors</h4>'
+      + '<p class="analysis-card-note">Event failures use observable-onset localization; terminal failures without events use rollout-start time-to-alarm; clean successes remain the FPR control.</p>';
+
     if (!rows.length) {
-      host.innerHTML = '<p class="analysis-empty">The latest snapshot has no parameter configuration satisfying the requested clean-FPR constraints.</p>';
+      html += '<p class="analysis-empty">No selected single-detector configuration satisfies the clean-FPR constraints.</p>';
     } else {
-      var sweep = Array.isArray(hop.sweep_summary) ? hop.sweep_summary : [];
-      var pairwise = Array.isArray(hop.pairwise_overlap) ? hop.pairwise_overlap : [];
-      var pairwiseByFailure = Array.isArray(hop.pairwise_overlap_by_failure_type)
-        ? hop.pairwise_overlap_by_failure_type : [];
-      var horizonOrder = ["1", "3", "5", "10", "20", "eventual"];
-      var sections = modeOrder.map(function (mode) {
-        var modeRows = rows.filter(function (row) {
-          return String(row.signal_mode) === mode;
-        });
-        if (!modeRows.length) return "";
-
-        var tenPercent = modeRows.filter(function (row) {
-          return Math.abs(Number(row.clean_fpr_constraint) - 0.10) < 1e-9;
-        });
-        var modeSweep = sweep.filter(function (row) {
-          return String(row.signal_mode) === mode;
-        });
-        var feasible5 = modeSweep.filter(function (row) {
-          return Number(row.clean_rollout_fpr) <= 0.05 + 1e-12;
-        }).length;
-        var feasible10 = modeSweep.filter(function (row) {
-          return Number(row.clean_rollout_fpr) <= 0.10 + 1e-12;
-        }).length;
-        var feasible20 = modeSweep.filter(function (row) {
-          return Number(row.clean_rollout_fpr) <= 0.20 + 1e-12;
-        }).length;
-
-        var headline = tenPercent.length
-          ? '<div class="analysis-kpis">'
-            + tenPercent.map(function (row) {
-              return '<article><span>' + esc(familyLabel(row.detector_family)) + ' · ≤10% clean FPR</span>'
-                + '<strong>' + esc(percent(row.event_recall_at_3)) + '</strong>'
-                + '<small>R@1 ' + esc(percent(row.event_recall_at_1))
-                + ' · R@3 ' + esc(percent(row.event_recall_at_3))
-                + ' · R@5 ' + esc(percent(row.event_recall_at_5))
-                + ' · R@10 ' + esc(percent(row.event_recall_at_10))
-                + ' · R@20 ' + esc(percent(row.event_recall_at_20))
-                + ' · eventual ' + esc(percent(row.event_recall_eventual))
-                + '</small></article>';
-            }).join('')
-            + '</div>'
-          : '';
-
-        var html = '<section class="analysis-subsection">'
-          + '<h4>' + esc(mode.charAt(0).toUpperCase() + mode.slice(1)) + ' hop</h4>'
-          + '<p class="analysis-card-note">Full sweep: ' + esc(modeSweep.length)
-          + ' configurations · feasible under clean-FPR caps: '
-          + esc(feasible5) + ' @5%, ' + esc(feasible10) + ' @10%, ' + esc(feasible20) + ' @20%.</p>'
-          + headline
-          + '<table class="analysis-table"><caption>Best ' + esc(mode)
-          + ' configurations under the 5%, 10%, and 20% clean-rollout FPR constraints.</caption>'
-          + '<thead><tr><th>Family</th><th>Clean-FPR cap</th><th>Parameters</th><th>Events</th>'
-          + '<th>R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
-          + '<th>Median delay</th><th>Clean FPR</th></tr></thead><tbody>';
-
-        modeRows.forEach(function (row) {
-          html += '<tr>'
-            + '<td><strong>' + esc(familyLabel(row.detector_family)) + '</strong></td>'
-            + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
-            + '<td>' + esc(configParameters(row)) + '</td>'
-            + '<td class="numeric">' + esc(row.event_n == null ? "n/a" : row.event_n) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_at_1)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_at_10)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_at_20)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.event_recall_eventual)) + '</td>'
-            + '<td class="numeric">' + esc(number(row.median_delay_samples)) + ' samples / '
-            + esc(number(row.median_delay_frames)) + ' frames</td>'
-            + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
-            + '</tr>';
-        });
-        html += '</tbody></table>';
-
-        var pairRows = pairwise.filter(function (row) {
-          return String(row.signal_mode) === mode
-            && Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9;
-        }).sort(function (left, right) {
-          var pairLeft = String(left.detector_a_family) + "::" + String(left.detector_b_family);
-          var pairRight = String(right.detector_a_family) + "::" + String(right.detector_b_family);
-          return pairLeft.localeCompare(pairRight)
-            || horizonOrder.indexOf(String(left.horizon)) - horizonOrder.indexOf(String(right.horizon));
-        });
-
-        if (pairRows.length) {
-          html += '<h5>Pairwise OR complementarity · ≤20% clean-FPR representatives</h5>'
-            + '<p class="analysis-card-note">Same selected detector configurations; no threshold retuning. '
-            + 'TP overlap is event-level. OR FPR is the actual union of false-positive clean rollouts.</p>'
-            + '<table class="analysis-table"><caption>Event-set overlap at every delay horizon.</caption>'
-            + '<thead><tr><th>A</th><th>B</th><th>Horizon</th><th>A recall</th><th>B recall</th>'
-            + '<th>Overlap</th><th>A-only</th><th>B-only</th><th>OR recall</th><th>OR gain</th>'
-            + '<th>TP Jaccard</th><th>A FPR</th><th>B FPR</th><th>OR FPR</th><th>FP Jaccard</th>'
-            + '</tr></thead><tbody>';
-          pairRows.forEach(function (row) {
-            var horizon = String(row.horizon) === "eventual" ? "eventual" : "@" + String(row.horizon);
-            html += '<tr>'
-              + '<td><strong>' + esc(familyLabel(row.detector_a_family)) + '</strong></td>'
-              + '<td><strong>' + esc(familyLabel(row.detector_b_family)) + '</strong></td>'
-              + '<td>' + esc(horizon) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.a_recall)) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.b_recall)) + '</td>'
-              + '<td class="numeric">' + esc(row.overlap_n) + '</td>'
-              + '<td class="numeric">' + esc(row.a_only_n) + '</td>'
-              + '<td class="numeric">' + esc(row.b_only_n) + '</td>'
-              + '<td class="numeric"><strong>' + esc(percent(row.or_recall)) + '</strong></td>'
-              + '<td class="numeric">' + esc(percent(row.or_recall_gain_vs_best)) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.tp_jaccard)) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.a_fpr)) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.b_fpr)) + '</td>'
-              + '<td class="numeric"><strong>' + esc(percent(row.or_fpr)) + '</strong></td>'
-              + '<td class="numeric">' + esc(percent(row.fp_jaccard)) + '</td>'
-              + '</tr>';
-          });
-          html += '</tbody></table>';
-        }
-
-        var typedRows = pairwiseByFailure.filter(function (row) {
-          return String(row.signal_mode) === mode
-            && Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
-            && String(row.horizon) === "eventual";
-        }).sort(function (left, right) {
-          return String(left.failure_type).localeCompare(String(right.failure_type))
-            || String(left.detector_a_family).localeCompare(String(right.detector_a_family))
-            || String(left.detector_b_family).localeCompare(String(right.detector_b_family));
-        });
-        if (typedRows.length) {
-          html += '<details class="analysis-subsection">'
-            + '<summary><strong>Failure-type complementarity · ≤20% · eventual</strong></summary>'
-            + '<p class="analysis-card-note">Use A-only/B-only to see whether detector families cover different failure mechanisms.</p>'
-            + '<table class="analysis-table"><thead><tr><th>Failure type</th><th>A</th><th>B</th><th>Events</th>'
-            + '<th>A recall</th><th>B recall</th><th>Overlap</th><th>A-only</th><th>B-only</th>'
-            + '<th>OR recall</th><th>TP Jaccard</th></tr></thead><tbody>';
-          typedRows.forEach(function (row) {
-            html += '<tr>'
-              + '<td><strong>' + esc(String(row.failure_type).replace(/_/g, " ")) + '</strong></td>'
-              + '<td>' + esc(familyLabel(row.detector_a_family)) + '</td>'
-              + '<td>' + esc(familyLabel(row.detector_b_family)) + '</td>'
-              + '<td class="numeric">' + esc(row.event_n) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.a_recall)) + '</td>'
-              + '<td class="numeric">' + esc(percent(row.b_recall)) + '</td>'
-              + '<td class="numeric">' + esc(row.overlap_n) + '</td>'
-              + '<td class="numeric">' + esc(row.a_only_n) + '</td>'
-              + '<td class="numeric">' + esc(row.b_only_n) + '</td>'
-              + '<td class="numeric"><strong>' + esc(percent(row.or_recall)) + '</strong></td>'
-              + '<td class="numeric">' + esc(percent(row.tp_jaccard)) + '</td>'
-              + '</tr>';
-          });
-          html += '</tbody></table></details>';
-        }
-        return html + '</section>';
-      }).join("");
-      host.innerHTML = sections;
+      html += '<table class="analysis-table"><caption>Existing single-detector representatives; no new threshold tuning.</caption>'
+        + '<thead><tr><th>Family</th><th>FPR cap</th><th>Parameters</th>'
+        + '<th>Event R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+        + '<th>No-event R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+        + '<th>Overall failed-rollout coverage</th><th>Clean FPR</th></tr></thead><tbody>';
+      rows.forEach(function (row) {
+        html += '<tr>'
+          + '<td><strong>' + esc(familyLabel(row.detector_family)) + '</strong></td>'
+          + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
+          + '<td>' + esc(configParameters(row)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_20)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_eventual)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_20)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_eventual)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.overall_failed_rollout_coverage)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
     }
+    html += '</section>';
+
+    var ensembles = (hop.ensemble_selected || []).filter(function (row) {
+      return row.selection_status === "selected"
+        && String(row.selection_target) === "overall_failed_rollout_coverage";
+    }).sort(function (left, right) {
+      return Number(left.clean_fpr_constraint) - Number(right.clean_fpr_constraint)
+        || Number(left.pair_priority || 99) - Number(right.pair_priority || 99);
+    });
+
+    html += '<section class="analysis-subsection">'
+      + '<h4>Fused hop · joint pairwise OR search</h4>'
+      + '<p class="analysis-card-note">Both detector parameter grids are jointly swept. The table below shows the ensemble selected for maximum overall failed-rollout coverage under each total clean-FPR cap. Target-specific optima for event/no-event Recall@3/@5/@10/@20/eventual are retained in ensemble_selected.csv.</p>';
+
+    if (!ensembles.length) {
+      html += '<p class="analysis-empty">No joint OR ensemble result is available in this snapshot.</p>';
+    } else {
+      html += '<table class="analysis-table"><thead><tr><th>FPR cap</th><th>A</th><th>B</th>'
+        + '<th>Event R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+        + '<th>No-event R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+        + '<th>Overall coverage</th><th>Event delay</th><th>No-event delay</th>'
+        + '<th>FP overlap</th><th>OR FPR</th></tr></thead><tbody>';
+      ensembles.forEach(function (row) {
+        html += '<tr>'
+          + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + '</td>'
+          + '<td><strong>' + esc(familyLabel(row.detector_a_family)) + '</strong><small>'
+          + esc(ensembleParameters(row, "a")) + '</small></td>'
+          + '<td><strong>' + esc(familyLabel(row.detector_b_family)) + '</strong><small>'
+          + esc(ensembleParameters(row, "b")) + '</small></td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_20)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_eventual)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_20)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.no_event_recall_at_eventual)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.overall_failed_rollout_coverage)) + '</strong></td>'
+          + '<td class="numeric">' + esc(number(row.event_median_delay_samples)) + ' samples</td>'
+          + '<td class="numeric">' + esc(number(row.no_event_median_delay_samples)) + ' samples</td>'
+          + '<td class="numeric">' + esc(row.fp_overlap_n == null ? "n/a" : row.fp_overlap_n) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.clean_rollout_fpr)) + '</strong></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+
+    var typed = (hop.ensemble_by_failure_type || []).filter(function (row) {
+      return Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
+        && String(row.horizon) === "eventual"
+        && String(row.selected_for || "").indexOf("overall_failed_rollout_coverage") !== -1;
+    });
+    if (typed.length) {
+      html += '<details class="analysis-subsection"><summary><strong>Failure-type complementarity · ≤20% · eventual</strong></summary>'
+        + '<table class="analysis-table"><thead><tr><th>Failure type</th><th>A</th><th>B</th><th>Events</th>'
+        + '<th>Overlap</th><th>A-only</th><th>B-only</th><th>OR recall</th><th>TP Jaccard</th></tr></thead><tbody>';
+      typed.forEach(function (row) {
+        html += '<tr>'
+          + '<td><strong>' + esc(String(row.failure_type).replace(/_/g, " ")) + '</strong></td>'
+          + '<td>' + esc(familyLabel(row.detector_a_family)) + '</td>'
+          + '<td>' + esc(familyLabel(row.detector_b_family)) + '</td>'
+          + '<td class="numeric">' + esc(row.event_n) + '</td>'
+          + '<td class="numeric">' + esc(row.overlap_n) + '</td>'
+          + '<td class="numeric">' + esc(row.a_only_n) + '</td>'
+          + '<td class="numeric">' + esc(row.b_only_n) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.or_recall)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.tp_jaccard)) + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></details>';
+    }
+
+    host.innerHTML = html;
 
     var source = hop.source || {};
     var freshness = hop.freshness || {};
     var signal = hop.signal || {};
-    var commonCount = signal.common_rollout_n;
+    var rolloutCount = signal.common_rollout_n;
     var sourceText = "Latest snapshot: " + (source.directory || "unknown")
-      + " · common four-signal rollouts " + (commonCount == null ? "n/a" : commonCount)
+      + " · fused-hop rollouts " + (rolloutCount == null ? "n/a" : rolloutCount)
       + (freshness.stale ? " · STALE against current annotations/manifest" : " · current");
     var links = (hop.artifacts || []).map(function (item) {
       return '<a class="analysis-download-link" href="' + esc(item.url) + '" download><strong>'
-        + esc(item.name) + '</strong><small>four-signal hop comparison</small></a>';
+        + esc(item.name) + '</strong><small>fused-hop failure analysis</small></a>';
     }).join("");
     artifacts.innerHTML = '<p>' + esc(sourceText) + '</p>'
       + (links ? '<div class="analysis-download-grid">' + links + '</div>' : "");
@@ -401,7 +366,7 @@
       await loadLog(jobId);
       if (job.status === "queued" || job.status === "running") {
         status(
-          "Four-signal hop analysis " + job.status + " · "
+          "Fused-hop failure analysis " + job.status + " · "
             + job.selected_rollouts + " rollout(s) · CPU post-processing only.",
           ""
         );
@@ -413,13 +378,13 @@
         return;
       }
       if (job.status === "complete") {
-        status("Four-signal hop analysis complete · " + (job.output_dir || "snapshot ready"), "");
+        status("Fused-hop failure analysis complete · " + (job.output_dir || "snapshot ready"), "");
         if (typeof window.workspaceLoadAnalysis === "function") {
           await window.workspaceLoadAnalysis(true);
         }
         renderSnapshot();
       } else {
-        status("Four-signal hop analysis failed; inspect the log.", "error");
+        status("Fused-hop failure analysis failed; inspect the log.", "error");
       }
     } catch (error) {
       badge("failed");
@@ -451,7 +416,7 @@
     }
 
     badge("queued");
-    status("Starting four-signal Robo-Dopamine hop analysis…", "");
+    status("Starting fused-hop Robo-Dopamine failure analysis…", "");
     node("analysisHopLog").textContent = "";
     node("analysisHopRunButton").disabled = true;
     try {
@@ -467,14 +432,14 @@
         })
       });
       var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not start four-signal hop analysis");
+      if (!response.ok) throw new Error(payload.error || "Could not start fused-hop failure analysis");
       hopState.job = payload.job;
       await loadLog(payload.job.job_id);
       pollJob(payload.job.job_id);
     } catch (error) {
       hopState.job = null;
       badge("failed");
-      status("Four-signal hop analysis error: " + error.message, "error");
+      status("Fused-hop failure analysis error: " + error.message, "error");
       updateButton();
     }
   }
