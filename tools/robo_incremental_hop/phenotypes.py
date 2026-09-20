@@ -88,14 +88,13 @@ def _empirical_thresholds(
     max_clean_fpr: float,
     require_negative: bool,
 ) -> tuple[list[float], list[float], dict[str, Any]]:
-    """Return only threshold values that change failure evidence or clean FP sets.
+    """Build operational and oracle threshold views from empirical critical values.
 
-    For a fixed temporal rule, detector positivity is monotone in the threshold:
-    a sample fires iff its rule-specific critical score <= threshold. Candidate
-    thresholds therefore only need to occur at empirical critical values. We
-    collect failure critical values at @1/@3/@5/@10/@20/eventual, add clean
-    rollout critical values, reject configurations above the loosest clean-FPR
-    budget, then keep only the largest threshold for each distinct clean-FP set.
+    Oracle keeps every empirical critical threshold because localization is not
+    monotone after the positive-episode-start guard: widening a threshold can
+    make an alarm start too early. Operational search may safely compress states
+    by clean false-positive set because its standard post-onset recall metric is
+    monotone, and it only needs branch states feasible under the loosest FPR cap.
     """
     raw_candidates: set[float] = set()
 
@@ -266,7 +265,7 @@ def build_phenotype_detector_configs(
                 )
                 for rollout_id, signal in signals.items()
             }
-            deltas, metadata = _empirical_thresholds(
+            deltas, oracle_deltas, metadata = _empirical_thresholds(
                 scores,
                 signals,
                 events,
