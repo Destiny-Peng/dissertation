@@ -333,6 +333,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "OMP_NUM_THREADS",
             "OPENBLAS_NUM_THREADS",
             "MKL_NUM_THREADS",
+            '"search_cache": metadata.get("search_cache") or {}',
         ]:
             self.assertIn(marker, server)
         self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
@@ -361,6 +362,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "oracle_recall_at_10",
             "oracle_recall_eventual",
             "strict_recall_eventual",
+            "search cache HIT",
+            "search cache MISS / refreshed",
             "regression_window_min",
             "overall_failed_rollout_coverage",
             "clean_rollout_fpr",
