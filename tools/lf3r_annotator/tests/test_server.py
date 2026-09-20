@@ -839,100 +839,38 @@ with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as
         'horizon': 'eventual', 'event_n': 1, 'overlap_n': 0,
         'a_only_n': 1, 'b_only_n': 0, 'or_recall': 1.0, 'tp_jaccard': 0.0,
     })
-with (args.output_dir / 'oracle_global_best.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=[
-        'signal_family', 'population', 'population_n', 'selection_target',
-        'selected_detected_n', 'selected_recall', 'recall_at_3',
-        'recall_at_10', 'recall_eventual', 'median_detection_delay_samples'
-    ])
-    writer.writeheader()
-    writer.writerow({
-        'signal_family': 'combined', 'population': 'grasp_failure',
-        'population_n': 1, 'selection_target': 'eventual',
-        'selected_detected_n': 1, 'selected_recall': 1.0,
-        'recall_at_3': 1.0, 'recall_at_10': 1.0, 'recall_eventual': 1.0,
-        'median_detection_delay_samples': 1.0,
-    })
-with (args.output_dir / 'oracle_summary.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=[
-        'signal_family', 'population', 'population_n',
-        'oracle_recall_at_1', 'oracle_recall_at_3', 'oracle_recall_at_5',
-        'oracle_recall_at_10', 'oracle_recall_at_20', 'oracle_recall_eventual',
-        'strict_recall_eventual', 'median_best_delay_samples',
-        'p25_best_delay_samples', 'p75_best_delay_samples'
-    ])
-    writer.writeheader()
-    writer.writerow({
-        'signal_family': 'combined', 'population': 'grasp_failure',
-        'population_n': 1, 'oracle_recall_at_1': 1.0,
-        'oracle_recall_at_3': 1.0, 'oracle_recall_at_5': 1.0,
-        'oracle_recall_at_10': 1.0, 'oracle_recall_at_20': 1.0,
-        'oracle_recall_eventual': 1.0, 'strict_recall_eventual': 1.0,
-        'median_best_delay_samples': 1.0, 'p25_best_delay_samples': 1.0,
-        'p75_best_delay_samples': 1.0,
-    })
-(args.output_dir / 'oracle_event_detectability.csv').write_text(
-    'signal_family,record_kind,rollout_id,oracle_detectable\n'
-)
-(args.output_dir / 'progress_peak_localization.csv').write_text(
-    'rollout_id,first_observable_onset_frame,t_star_frame,t_star_minus_onset_samples\n'
-    'r0,8,4,-1\n'
-)
-with (args.output_dir / 'progress_peak_localization_summary.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=[
-        'group', 'value', 'rollout_n', 'median_signed_offset_samples',
-        'median_absolute_error_samples', 'mean_absolute_error_samples',
-        'within_1_samples_fraction', 'within_3_samples_fraction',
-        'within_5_samples_fraction', 'within_10_samples_fraction',
-        'within_20_samples_fraction', 'before_onset_fraction',
-        'at_onset_anchor_fraction', 'after_onset_fraction'
-    ])
-    writer.writeheader()
-    writer.writerow({
-        'group': 'overall', 'value': 'all', 'rollout_n': 1,
-        'median_signed_offset_samples': -1,
-        'median_absolute_error_samples': 1,
-        'mean_absolute_error_samples': 1,
-        'within_1_samples_fraction': 1.0,
-        'within_3_samples_fraction': 1.0,
-        'within_5_samples_fraction': 1.0,
-        'within_10_samples_fraction': 1.0,
-        'within_20_samples_fraction': 1.0,
-        'before_onset_fraction': 1.0,
-        'at_onset_anchor_fraction': 0.0,
-        'after_onset_fraction': 0.0,
-    })
-localization_fields = [
+interval_fields = [
     'population', 'config_id', 'detector_family', 'parameters_json',
-    'event_n', 'triggered_n', 'no_trigger_n', 'trigger_coverage',
+    'eligible_event_n', 'triggered_n', 'no_trigger_n', 'trigger_coverage',
+    'in_interval_n', 'in_interval_rate',
     'within_1_n', 'within_1', 'within_3_n', 'within_3',
-    'within_5_n', 'within_5', 'within_10_n', 'within_10',
-    'median_signed_offset_samples', 'median_absolute_error_samples',
-    'mae_samples', 'mse_samples', 'rmse_samples',
-    'before_onset_n', 'at_onset_n', 'after_onset_n',
-    'rank_within_1', 'rank_within_3', 'rank_within_5',
-    'rank_within_10', 'rank_rmse', 'rank_median_abs_error', 'rank_mae'
+    'within_5_n', 'within_5',
+    'before_interval_n', 'before_interval_rate',
+    'after_interval_n', 'after_interval_rate',
+    'median_signed_interval_error_samples',
+    'median_absolute_interval_error_samples',
+    'mae_samples', 'mse_samples',
+    'rank_mse', 'rank_mae', 'rank_median_abs_error'
 ]
-with (args.output_dir / 'unconstrained_localization_ranking.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=localization_fields)
+with (args.output_dir / 'interval_localization_ranking.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=interval_fields)
     writer.writeheader()
     writer.writerow({
-        'population': 'first_event_per_failed_rollout',
+        'population': 'first_eligible_event_per_failed_rollout',
         'config_id': 'cfg1', 'detector_family': 'consecutive',
         'parameters_json': '{{"epsilon":0,"n":1}}',
-        'event_n': 4, 'triggered_n': 4, 'no_trigger_n': 0,
+        'eligible_event_n': 4, 'triggered_n': 4, 'no_trigger_n': 0,
         'trigger_coverage': 1.0,
-        'within_1_n': 2, 'within_1': 0.5,
-        'within_3_n': 3, 'within_3': 0.75,
+        'in_interval_n': 2, 'in_interval_rate': 0.5,
+        'within_1_n': 3, 'within_1': 0.75,
+        'within_3_n': 4, 'within_3': 1.0,
         'within_5_n': 4, 'within_5': 1.0,
-        'within_10_n': 4, 'within_10': 1.0,
-        'median_signed_offset_samples': -2,
-        'median_absolute_error_samples': 2, 'mae_samples': 2.5,
-        'mse_samples': 7.0, 'rmse_samples': 2.64575131,
-        'before_onset_n': 2, 'at_onset_n': 1, 'after_onset_n': 1,
-        'rank_within_1': 1, 'rank_within_3': 1, 'rank_within_5': 1,
-        'rank_within_10': 1, 'rank_rmse': 1,
-        'rank_median_abs_error': 1, 'rank_mae': 1,
+        'before_interval_n': 1, 'before_interval_rate': 0.25,
+        'after_interval_n': 1, 'after_interval_rate': 0.25,
+        'median_signed_interval_error_samples': 0,
+        'median_absolute_interval_error_samples': 0.5,
+        'mae_samples': 0.75, 'mse_samples': 1.25,
+        'rank_mse': 1, 'rank_mae': 1, 'rank_median_abs_error': 1,
     })
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
@@ -1360,37 +1298,20 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             )
         )
         self.assertEqual(
-            hop["oracle_summary"][0]["signal_family"],
-            "combined",
-        )
-        self.assertEqual(
-            hop["oracle_summary"][0]["population"],
-            "grasp_failure",
-        )
-        self.assertTrue(
-            any(
-                item["name"] == "oracle_summary.csv"
-                for item in hop["artifacts"]
-            )
-        )
-        self.assertEqual(
-            hop["progress_peak_localization_summary"][0]["rollout_n"],
-            1,
-        )
-        self.assertEqual(
-            hop["unconstrained_localization_top"][0]["config_id"],
+            hop["interval_localization_rows"][0]["config_id"],
             "cfg1",
         )
         self.assertEqual(
-            hop["unconstrained_localization_top"][0]["rank_rmse"],
+            hop["interval_localization_rows"][0]["rank_mse"],
             1,
         )
         self.assertTrue(
             any(
-                item["name"] == "progress_peak_localization.csv"
+                item["name"] == "interval_localization_ranking.csv"
                 for item in hop["artifacts"]
             )
         )
+
 
     def test_analysis_run_rejects_missing_ids_and_paths(self) -> None:
         self.install_fake_temporal_analyzer()
