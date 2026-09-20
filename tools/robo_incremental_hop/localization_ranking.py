@@ -244,12 +244,13 @@ def _pair_candidates(
             {
                 "config_id": f"OR:{a_id}|{b_id}",
                 "detector_family": "phenotype_or",
-                "parameters_json": (
-                    f"{a.get('detector_family')} {a.get('parameters_json')} OR "
-                    f"{b.get('detector_family')} {b.get('parameters_json')}"
-                ),
+                "parameters_json": None,
                 "a_config_id": a_id,
                 "b_config_id": b_id,
+                "a_detector_family": a.get("detector_family"),
+                "b_detector_family": b.get("detector_family"),
+                "a_parameters_json": a.get("parameters_json"),
+                "b_parameters_json": b.get("parameters_json"),
             }
         )
     return rows
