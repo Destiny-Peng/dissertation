@@ -36,6 +36,7 @@ from robo_incremental_hop.progress_peak import (
     summarize_progress_peak_localization,
 )
 from robo_incremental_hop.localization_ranking import (
+    rank_existing_sweep_interval_localization,
     rank_existing_sweep_localization,
 )
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
@@ -43,6 +44,53 @@ import robo_incremental_hop.search_cache as search_cache
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
+    def test_interval_localization_uses_causal_observable_interval(self) -> None:
+        signals = {
+            "r0": {"frames": [0, 1, 2, 3, 4]},
+            "r1": {"frames": [0, 1, 2, 3, 4]},
+        }
+        base = {
+            "detector_family": "consecutive",
+            "epsilon": 0.0,
+            "n": 1,
+            "parameters_json": '{"epsilon":0.0,"n":1}',
+            "outcome": "terminal_failure",
+            "failure_type": "grasp_failure",
+        }
+        event_rows = [
+            {
+                **base, "config_id": "c", "rollout_id": "r0",
+                "event_id": "r0::event0", "event_index": 0,
+                "causal_onset_frame": 1, "observable_onset_frame": 3,
+                "earliest_early_positive_frame": 2, "detection_frame": 3,
+            },
+            {
+                **base, "config_id": "c", "rollout_id": "r1",
+                "event_id": "r1::event0", "event_index": 0,
+                "causal_onset_frame": 2, "observable_onset_frame": 3,
+                "earliest_early_positive_frame": 0, "detection_frame": 3,
+            },
+        ]
+        ranking = rank_existing_sweep_interval_localization(
+            event_rows=event_rows,
+            ensemble_sweep=[],
+            signals=signals,
+        )
+        row = next(
+            item for item in ranking
+            if item["population"] == "all_eligible_failure_events"
+        )
+        self.assertEqual(row["eligible_event_n"], 2)
+        self.assertAlmostEqual(row["in_interval_rate"], 0.5)
+        self.assertAlmostEqual(row["within_1"], 0.5)
+        self.assertAlmostEqual(row["within_3"], 1.0)
+        self.assertAlmostEqual(row["before_interval_rate"], 0.5)
+        self.assertAlmostEqual(row["after_interval_rate"], 0.0)
+        self.assertAlmostEqual(row["median_signed_interval_error_samples"], -1.0)
+        self.assertAlmostEqual(row["median_absolute_interval_error_samples"], 1.0)
+        self.assertAlmostEqual(row["mae_samples"], 1.0)
+        self.assertAlmostEqual(row["mse_samples"], 2.0)
+
     def test_existing_sweep_ranking_uses_first_trigger_without_new_search(self) -> None:
         signals = {
             "r1": {"frames": [0, 1, 2, 3, 4, 5]},
