@@ -410,9 +410,14 @@
     var source = hop.source || {};
     var freshness = hop.freshness || {};
     var signal = hop.signal || {};
+    var searchCache = hop.search_cache || {};
     var rolloutCount = signal.common_rollout_n;
+    var cacheText = searchCache.enabled
+      ? (searchCache.hit ? " · search cache HIT" : " · search cache MISS / refreshed")
+      : "";
     var sourceText = "Latest snapshot: " + (source.directory || "unknown")
       + " · fused-hop rollouts " + (rolloutCount == null ? "n/a" : rolloutCount)
+      + cacheText
       + (freshness.stale ? " · STALE against current annotations/manifest" : " · current");
     var links = (hop.artifacts || []).map(function (item) {
       return '<a class="analysis-download-link" href="' + esc(item.url) + '" download><strong>'
