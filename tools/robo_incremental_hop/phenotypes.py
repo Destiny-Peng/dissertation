@@ -199,9 +199,12 @@ def _empirical_thresholds(
         "operational_max": (
             max(operational_thresholds) if operational_thresholds else None
         ),
-        "oracle_thresholds": oracle_thresholds,
-        "operational_thresholds": operational_thresholds,
-        "operational_clean_fprs": operational_fprs,
+        "operational_clean_fpr_min": (
+            min(operational_fprs) if operational_fprs else None
+        ),
+        "operational_clean_fpr_max": (
+            max(operational_fprs) if operational_fprs else None
+        ),
         "clean_rollout_n": clean_n,
     }
 
