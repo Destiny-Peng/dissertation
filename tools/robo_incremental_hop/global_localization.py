@@ -274,8 +274,7 @@ def _evaluate_config_masks(
     masks: Mapping[str, Sequence[bool]],
     signals: Mapping[str, Mapping[str, Any]],
     populations: Sequence[Mapping[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    detail_rows: list[dict[str, Any]] = []
+) -> list[dict[str, Any]]:
     summary_rows: list[dict[str, Any]] = []
 
     for spec in populations:
@@ -359,7 +358,6 @@ def _evaluate_config_masks(
                     and abs(signed_offset) <= window
                 )
             per_event.append(row)
-            detail_rows.append(row)
 
         if not per_event:
             continue
@@ -426,7 +424,7 @@ def _evaluate_config_masks(
         )
         summary_rows.append(summary)
 
-    return detail_rows, summary_rows
+    return summary_rows
 
 
 def evaluate_global_config_space(
@@ -434,7 +432,7 @@ def evaluate_global_config_space(
     events: Sequence[Mapping[str, Any]],
     single_configs: Sequence[Mapping[str, Any]],
     or_configs: Sequence[Mapping[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     """Evaluate every fixed config without any clean-FPR filtering."""
     populations = _population_specs(events)
     masks_by_config: dict[str, dict[str, list[bool]]] = {}
@@ -446,11 +444,10 @@ def evaluate_global_config_space(
             for rollout_id, signal in signals.items()
         }
 
-    details: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
     for config in single_configs:
         config_id = str(config["config_id"])
-        config_details, config_summaries = _evaluate_config_masks(
+        config_summaries = _evaluate_config_masks(
             config_id,
             str(config["detector_family"]),
             str(config.get("config_source") or "single"),
@@ -459,7 +456,6 @@ def evaluate_global_config_space(
             signals,
             populations,
         )
-        details.extend(config_details)
         summaries.extend(config_summaries)
 
     for pair in or_configs:
@@ -477,7 +473,7 @@ def evaluate_global_config_space(
             ]
             for rollout_id in signals
         }
-        pair_details, pair_summaries = _evaluate_config_masks(
+        pair_summaries = _evaluate_config_masks(
             str(pair["config_id"]),
             "phenotype_or",
             str(pair["config_source"]),
@@ -486,10 +482,9 @@ def evaluate_global_config_space(
             signals,
             populations,
         )
-        details.extend(pair_details)
         summaries.extend(pair_summaries)
 
-    return details, summaries
+    return summaries
 
 
 def select_global_config_results(
@@ -673,7 +668,6 @@ def load_or_compute_global_localization(
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
-    list[dict[str, Any]],
     dict[str, Any],
 ]:
     singles, pairs, space_metadata = build_global_config_space(
@@ -701,7 +695,6 @@ def load_or_compute_global_localization(
                     list(cached["ranking"]),
                     list(cached["envelope"]),
                     list(cached["single_best"]),
-                    list(cached["details"]),
                     {
                         **space_metadata,
                         "cache_hit": True,
@@ -711,7 +704,7 @@ def load_or_compute_global_localization(
         except (OSError, json.JSONDecodeError, KeyError):
             pass
 
-    details, summaries = evaluate_global_config_space(
+    summaries = evaluate_global_config_space(
         signals,
         events,
         singles,
@@ -726,7 +719,6 @@ def load_or_compute_global_localization(
         "ranking": ranking,
         "envelope": envelope,
         "single_best": single_best,
-        "details": details,
     }
 
     fd, temporary_name = tempfile.mkstemp(
@@ -759,7 +751,6 @@ def load_or_compute_global_localization(
         ranking,
         envelope,
         single_best,
-        details,
         {
             **space_metadata,
             "cache_hit": False,
