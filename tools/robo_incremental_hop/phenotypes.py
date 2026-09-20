@@ -85,7 +85,6 @@ def _empirical_thresholds(
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
     *,
-    max_clean_fpr: float,
     require_negative: bool,
 ) -> tuple[list[float], dict[str, Any]]:
     """Return only threshold values that change failure evidence or clean FP sets.
@@ -156,8 +155,6 @@ def _empirical_thresholds(
             )
         )
         fpr = len(signature) / clean_n if clean_n else 0.0
-        if fpr > max_clean_fpr + 1e-12:
-            continue
         previous = signature_best.get(signature)
         if previous is None or threshold > previous:
             signature_best[signature] = threshold
@@ -176,7 +173,7 @@ def _empirical_thresholds(
     return retained, {
         "raw_empirical_candidate_n": len(candidates),
         "retained_candidate_n": len(retained),
-        "max_clean_fpr_filter": max_clean_fpr,
+        "max_clean_fpr_filter": None,
         "retained_min": min(retained) if retained else None,
         "retained_max": max(retained) if retained else None,
         "retained_thresholds": retained,
@@ -219,7 +216,6 @@ def build_phenotype_detector_configs(
             events,
             no_event_failures,
             clean_rollouts,
-            max_clean_fpr=max_budget,
             require_negative=False,
         )
         key = f"stagnation_consecutive:n={n}"
@@ -269,7 +265,6 @@ def build_phenotype_detector_configs(
             events,
             no_event_failures,
             clean_rollouts,
-            max_clean_fpr=max_budget,
             require_negative=True,
         )
         key = f"regression_window_min:m={m}"
@@ -305,9 +300,15 @@ def build_phenotype_detector_configs(
             "for each temporal rule, keep only the largest empirical threshold "
             "for each distinct clean false-positive rollout set"
         ),
-        "prefilter": (
-            "discard threshold states whose branch-alone clean-rollout FPR "
-            f"exceeds {max_budget:.2f}; final OR still uses exact 5/10/20% caps"
+        "oracle_grid": (
+            "retain all empirical threshold states, including states above the "
+            "operational clean-FPR budgets, so FPR-unconstrained oracle analysis "
+            "sees the complete searched parameter space"
+        ),
+        "operational_prefilter": (
+            "the constrained OR sweep later discards branch states whose "
+            f"branch-alone clean-rollout FPR exceeds {max_budget:.2f}; this "
+            "does not affect the oracle grid"
         ),
         "family_config_counts": dict(sorted(family_counts.items())),
         "calibration": calibration,
