@@ -909,6 +909,22 @@ def build_pairwise_ensemble_rows(
                 )
                 sweep_rows.append(row)
 
+    selected_rows, selected_failure_rows = select_pairwise_ensemble_rows(
+        sweep_rows,
+        event_rows,
+    )
+    return sweep_rows, selected_rows, selected_failure_rows
+
+
+def select_pairwise_ensemble_rows(
+    sweep_rows: Sequence[Mapping[str, Any]],
+    event_rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Select current ensemble targets from a previously computed pair sweep."""
+    event_by_config: dict[str, dict[str, Mapping[str, Any]]] = defaultdict(dict)
+    for row in event_rows:
+        event_by_config[str(row["config_id"])][_event_identity(row)] = row
+
     selected_rows: list[dict[str, Any]] = []
     for constraint in CLEAN_FPR_CONSTRAINTS:
         eligible = [
@@ -1052,7 +1068,7 @@ def build_pairwise_ensemble_rows(
                     }
                 )
 
-    return sweep_rows, selected_rows, selected_failure_rows
+    return selected_rows, selected_failure_rows
 
 
 def selected_unique_configs(
