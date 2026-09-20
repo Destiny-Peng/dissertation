@@ -6,7 +6,19 @@
     runs: [],
     job: null,
     loadingRuns: false,
-    polling: false
+    polling: false,
+    pointRanking: {
+      population: "first_event_per_failed_rollout",
+      sortKey: "rmse_samples",
+      direction: "asc",
+      limit: "25"
+    },
+    intervalRanking: {
+      population: "first_eligible_event_per_failed_rollout",
+      sortKey: "mse_samples",
+      direction: "asc",
+      limit: "25"
+    }
   };
 
   function node(id) {
@@ -232,6 +244,89 @@
     var left = parametersFromJson(row.a_parameters_json);
     var right = parametersFromJson(row.b_parameters_json);
     return "stagnation: " + left + " · regression: " + right;
+  }
+
+
+  function rankingSortValue(row, key) {
+    var value = row[key];
+    if (value == null || value === "") return null;
+    var numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : String(value);
+  }
+
+  function sortedRankingRows(rows, state) {
+    var filtered = (rows || []).filter(function (row) {
+      return String(row.population) === String(state.population);
+    });
+    filtered.sort(function (left, right) {
+      var a = rankingSortValue(left, state.sortKey);
+      var b = rankingSortValue(right, state.sortKey);
+      if (a == null && b == null) return String(left.config_id).localeCompare(String(right.config_id));
+      if (a == null) return 1;
+      if (b == null) return -1;
+      var order = 0;
+      if (typeof a === "number" && typeof b === "number") {
+        order = a - b;
+      } else {
+        order = String(a).localeCompare(String(b));
+      }
+      if (state.direction === "desc") order = -order;
+      return order || String(left.config_id).localeCompare(String(right.config_id));
+    });
+    if (String(state.limit) !== "all") {
+      filtered = filtered.slice(0, Math.max(1, Number(state.limit) || 25));
+    }
+    return filtered;
+  }
+
+  function rankingControlsHtml(prefix, state, populations, sortOptions) {
+    var populationOptions = populations.map(function (item) {
+      return '<option value="' + esc(item.value) + '"'
+        + (String(state.population) === String(item.value) ? ' selected' : '')
+        + '>' + esc(item.label) + '</option>';
+    }).join("");
+    var sortHtml = sortOptions.map(function (item) {
+      return '<option value="' + esc(item.value) + '"'
+        + (String(state.sortKey) === String(item.value) ? ' selected' : '')
+        + '>' + esc(item.label) + '</option>';
+    }).join("");
+    var limits = ["10", "25", "50", "all"].map(function (value) {
+      return '<option value="' + value + '"'
+        + (String(state.limit) === value ? ' selected' : '')
+        + '>' + (value === "all" ? "All" : value) + '</option>';
+    }).join("");
+    return '<div class="analysis-run-grid">'
+      + '<label><span>Population</span><select id="' + prefix + 'Population">' + populationOptions + '</select></label>'
+      + '<label><span>Sort by</span><select id="' + prefix + 'Sort">' + sortHtml + '</select></label>'
+      + '<label><span>Direction</span><select id="' + prefix + 'Direction">'
+      + '<option value="asc"' + (state.direction === "asc" ? ' selected' : '') + '>Ascending</option>'
+      + '<option value="desc"' + (state.direction === "desc" ? ' selected' : '') + '>Descending</option>'
+      + '</select></label>'
+      + '<label><span>Rows</span><select id="' + prefix + 'Limit">' + limits + '</select></label>'
+      + '</div>';
+  }
+
+  function bindRankingControls(prefix, state) {
+    var population = node(prefix + "Population");
+    var sort = node(prefix + "Sort");
+    var direction = node(prefix + "Direction");
+    var limit = node(prefix + "Limit");
+    if (population) population.addEventListener("change", function () {
+      state.population = population.value;
+      renderSnapshot();
+    });
+    if (sort) sort.addEventListener("change", function () {
+      state.sortKey = sort.value;
+      renderSnapshot();
+    });
+    if (direction) direction.addEventListener("change", function () {
+      state.direction = direction.value;
+      renderSnapshot();
+    });
+    if (limit) limit.addEventListener("change", function () {
+      state.limit = limit.value;
+      renderSnapshot();
+    });
   }
 
 
