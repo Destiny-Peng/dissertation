@@ -51,7 +51,6 @@ from robo_incremental_hop.report import (
     choose_representative_rollouts,
     evaluate_all_configs,
     plot_delay_distributions,
-    plot_detector_heatmaps,
     plot_representative_rollouts,
     plot_tradeoff,
     select_best_configs,
@@ -465,7 +464,6 @@ def analyse(
             summary_rows,
             plot_dir / "recall_at_3_vs_clean_fpr.png",
         )
-        plot_detector_heatmaps(summary_rows, plot_dir)
         plot_delay_distributions(
             best_rows,
             event_rows,
