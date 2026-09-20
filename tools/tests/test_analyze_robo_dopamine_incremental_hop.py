@@ -28,6 +28,7 @@ from robo_incremental_hop.diagnosis import (
     summarize_detected_vs_missed,
     summarize_matched_controls,
 )
+from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 
 
@@ -375,6 +376,58 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         self.assertFalse(missed["recall_at_20"])
         self.assertIsNone(missed["first_alarm_frame"])
 
+    def test_empirical_regression_grid_comes_from_saved_hop_values(self) -> None:
+        signals = {
+            "failure": {
+                "frames": [0, 4, 8, 12],
+                "hops": [0.1, -0.30, 0.05, -0.10],
+            },
+            "clean0": {"frames": [0, 4, 8, 12], "hops": [0.2, 0.1, 0.1, 0.1]},
+            "clean1": {"frames": [0, 4, 8, 12], "hops": [0.2, 0.1, 0.1, 0.1]},
+            "clean2": {"frames": [0, 4, 8, 12], "hops": [0.2, 0.1, 0.1, 0.1]},
+            "clean3": {"frames": [0, 4, 8, 12], "hops": [0.2, 0.1, 0.1, 0.1]},
+            "clean4": {"frames": [0, 4, 8, 12], "hops": [0.2, -0.25, 0.1, 0.1]},
+        }
+        events = [
+            {
+                "rollout_id": "failure",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "observable_onset_frame": 0,
+                "episode_end_frame": None,
+            }
+        ]
+        clean = [
+            {"rollout_id": f"clean{index}"}
+            for index in range(5)
+        ]
+        configs, metadata = build_phenotype_detector_configs(
+            signals,
+            events,
+            [],
+            clean,
+        )
+        regression = [
+            config
+            for config in configs
+            if config["detector_family"] == "regression_window_min"
+        ]
+        self.assertTrue(regression)
+        self.assertTrue(all(float(config["theta"]) < 0.0 for config in regression))
+        self.assertTrue(
+            any(abs(float(config["theta"]) + 0.30) < 1e-12 for config in regression)
+        )
+        self.assertEqual(
+            metadata["regression_family"],
+            "regression_window_min",
+        )
+        for config in regression:
+            positives = sum(
+                any(detector_mask(signals[f"clean{index}"]["hops"], config))
+                for index in range(5)
+            )
+            self.assertLessEqual(positives / 5.0, 0.20 + 1e-12)
+
     def test_joint_pairwise_or_sweep_uses_true_fp_union(self) -> None:
         configs = [
             make_config(
@@ -391,13 +444,13 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             ),
             make_config(
                 "b1",
-                "window_mean",
+                "regression_window_min",
                 m=3,
                 theta=-0.02,
             ),
             make_config(
                 "b2",
-                "window_mean",
+                "regression_window_min",
                 m=5,
                 theta=0.0,
             ),
@@ -472,7 +525,7 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                         second,
                         2 if second else None,
                         event=True,
-                        failure_type="timeout_no_progress",
+                        failure_type="grasp_failure",
                     ),
                 ]
             )
@@ -528,6 +581,8 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         self.assertAlmostEqual(combo["clean_rollout_fpr"], 0.2)
         self.assertEqual(combo["fp_overlap_n"], 0)
         self.assertAlmostEqual(combo["event_recall_eventual"], 1.0)
+        self.assertAlmostEqual(combo["grasp_recall_eventual"], 1.0)
+        self.assertAlmostEqual(combo["grasp_recall_at_10"], 1.0)
         self.assertAlmostEqual(combo["no_event_recall_eventual"], 1.0)
         self.assertAlmostEqual(
             combo["overall_failed_rollout_coverage"],
@@ -544,19 +599,19 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             if row["selection_status"] == "selected"
             and row["clean_fpr_constraint"] == 0.20
             and row["selection_target"]
-            == "overall_failed_rollout_coverage"
+            == "grasp_recall_eventual"
             and row["detector_a_family"]
             == "stagnation_consecutive"
-            and row["detector_b_family"] == "window_mean"
+            and row["detector_b_family"] == "regression_window_min"
         )
         self.assertEqual(chosen["a_config_id"], "a2")
         self.assertEqual(chosen["b_config_id"], "b1")
         self.assertAlmostEqual(chosen["selection_value"], 1.0)
         self.assertTrue(
             any(
-                row["failure_type"] == "timeout_no_progress"
+                row["failure_type"] == "grasp_failure"
                 and row["horizon"] == "eventual"
-                and row["b_only_n"] == 0
+                and row["or_recall"] == 1.0
                 for row in by_failure
             )
         )
@@ -610,14 +665,14 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             ),
             make_config(
                 "b",
-                "window_mean",
+                "regression_window_min",
                 m=2,
                 theta=-0.05,
             ),
         ]
         reference = {
             "selection_status": "selected",
-            "selection_target": "overall_failed_rollout_coverage",
+            "selection_target": "grasp_recall_eventual",
             "clean_fpr_constraint": 0.20,
             "overall_failed_rollout_coverage": 0.75,
             "clean_rollout_fpr": 0.0,
@@ -691,6 +746,8 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 "selection_status": "selected",
                 "selection_target": "overall_failed_rollout_coverage",
                 "clean_fpr_constraint": 0.10,
+                "grasp_recall_eventual": 0.7,
+                "grasp_recall_at_10": 0.7,
                 "overall_failed_rollout_coverage": 1.0,
                 "clean_rollout_fpr": 0.1,
                 "a_config_id": "low",
@@ -700,6 +757,8 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 "selection_status": "selected",
                 "selection_target": "overall_failed_rollout_coverage",
                 "clean_fpr_constraint": 0.20,
+                "grasp_recall_eventual": 0.8,
+                "grasp_recall_at_10": 0.7,
                 "overall_failed_rollout_coverage": 0.8,
                 "clean_rollout_fpr": 0.15,
                 "pair_priority": 2,
@@ -710,6 +769,8 @@ class IncrementalHopDetectorTests(unittest.TestCase):
                 "selection_status": "selected",
                 "selection_target": "overall_failed_rollout_coverage",
                 "clean_fpr_constraint": 0.20,
+                "grasp_recall_eventual": 0.9,
+                "grasp_recall_at_10": 0.8,
                 "overall_failed_rollout_coverage": 0.9,
                 "clean_rollout_fpr": 0.18,
                 "pair_priority": 3,
