@@ -765,6 +765,28 @@ def build_pairwise_ensemble_rows(
                         if grasp_event_ids
                         else None
                     )
+                    grasp_a_recall = (
+                        len(grasp_a) / len(grasp_event_ids)
+                        if grasp_event_ids
+                        else None
+                    )
+                    grasp_b_recall = (
+                        len(grasp_b) / len(grasp_event_ids)
+                        if grasp_event_ids
+                        else None
+                    )
+                    grasp_suffix = (
+                        "eventual" if horizon == "eventual" else f"at_{horizon}"
+                    )
+                    row[f"grasp_a_recall_{grasp_suffix}"] = grasp_a_recall
+                    row[f"grasp_b_recall_{grasp_suffix}"] = grasp_b_recall
+                    row[f"grasp_gain_vs_best_{grasp_suffix}"] = (
+                        row[grasp_recall_key] - max(grasp_a_recall, grasp_b_recall)
+                        if row[grasp_recall_key] is not None
+                        and grasp_a_recall is not None
+                        and grasp_b_recall is not None
+                        else None
+                    )
                     row[f"grasp_detected_at_{horizon}_n"] = len(grasp_union)
                     row[f"grasp_overlap_at_{horizon}_n"] = len(grasp_overlap)
                     row[f"grasp_a_only_at_{horizon}_n"] = len(
