@@ -318,6 +318,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "best_configs.csv",
         ]:
             self.assertIn(marker, server)
+        self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
+        self.assertNotIn('fetch(\n        "/api/baselines/runs?scope="', hop_analysis)
         for marker in [
             'analysis_kind: "robo_hop_comparison"',
             "/api/analysis/run",
