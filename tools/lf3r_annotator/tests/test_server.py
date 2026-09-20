@@ -902,6 +902,53 @@ with (args.output_dir / 'progress_peak_localization_summary.csv').open('w', newl
         'at_onset_anchor_fraction': 0.0,
         'after_onset_fraction': 0.0,
     })
+global_fields = [
+    'population', 'selection_kind', 'selection_target', 'selection_value',
+    'config_id', 'detector_family', 'config_source', 'parameters_json',
+    'event_n', 'capacity_within_1_recall', 'capacity_within_3_recall',
+    'capacity_within_5_recall', 'capacity_within_10_recall',
+    'capacity_eventual_recall', 'localization_output_coverage',
+    'localization_within_1_recall', 'localization_within_3_recall',
+    'localization_within_5_recall', 'localization_within_10_recall',
+    'median_signed_offset_samples', 'median_absolute_error_samples',
+    'mae_samples', 'before_onset_n', 'at_onset_n', 'after_onset_n',
+    'coverage_requirement_status'
+]
+global_row = {
+    'population': 'first_event_per_failed_rollout',
+    'selection_kind': 'metric_specific_capacity_upper_envelope',
+    'selection_target': 'capacity_within_3_recall', 'selection_value': 0.75,
+    'config_id': 'global_fixed_00001', 'detector_family': 'consecutive',
+    'config_source': 'historical_full_grid', 'parameters_json': '{"epsilon":0,"n":1}',
+    'event_n': 4, 'capacity_within_1_recall': 0.5,
+    'capacity_within_3_recall': 0.75, 'capacity_within_5_recall': 1.0,
+    'capacity_within_10_recall': 1.0, 'capacity_eventual_recall': 1.0,
+    'localization_output_coverage': 1.0, 'localization_within_1_recall': 0.25,
+    'localization_within_3_recall': 0.5, 'localization_within_5_recall': 0.75,
+    'localization_within_10_recall': 1.0, 'median_signed_offset_samples': -2,
+    'median_absolute_error_samples': 2, 'mae_samples': 2.5,
+    'before_onset_n': 2, 'at_onset_n': 1, 'after_onset_n': 1,
+    'coverage_requirement_status': '',
+}
+with (args.output_dir / 'global_config_localization_best_by_tolerance.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=global_fields)
+    writer.writeheader()
+    writer.writerow(global_row)
+single_row = dict(global_row)
+single_row.update({
+    'selection_kind': 'single_global_config',
+    'selection_target': 'minimum_mae',
+    'selection_value': '',
+    'coverage_requirement_status': 'full_coverage',
+})
+with (args.output_dir / 'global_config_localization_single_best.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=global_fields)
+    writer.writeheader()
+    writer.writerow(single_row)
+with (args.output_dir / 'global_config_localization_ranking.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=global_fields)
+    writer.writeheader()
+    writer.writerow(global_row)
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
     'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
@@ -1344,6 +1391,14 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(
             hop["progress_peak_localization_summary"][0]["rollout_n"],
             1,
+        )
+        self.assertEqual(
+            hop["global_config_localization_best_by_tolerance"][0]["selection_target"],
+            "capacity_within_3_recall",
+        )
+        self.assertEqual(
+            hop["global_config_localization_single_best"][0]["selection_target"],
+            "minimum_mae",
         )
         self.assertTrue(
             any(
