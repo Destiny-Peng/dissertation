@@ -346,6 +346,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "no_event_recall_eventual",
             "grasp_recall_at_10",
             "grasp_recall_eventual",
+            "grasp_gain_vs_best_at_10",
+            "grasp_gain_vs_best_eventual",
             "regression_window_min",
             "overall_failed_rollout_coverage",
             "clean_rollout_fpr",
