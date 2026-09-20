@@ -710,7 +710,8 @@ def analyse(
         base_search_fingerprint=fingerprint,
         signals=signals,
         events=events,
-        empirical_phenotype_configs=oracle_configs,
+        existing_phenotype_configs=configs,
+        existing_ensemble_sweep=ensemble_sweep,
         refresh=bool(args.refresh_search_cache),
     )
     print(
