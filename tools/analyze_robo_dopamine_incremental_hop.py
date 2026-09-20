@@ -385,6 +385,15 @@ def write_metadata(
                 "rmse_samples",
                 "trigger_coverage",
             ],
+            "primary_ranking": (
+                "RMSE ascending; if any config has 100% trigger coverage, rank "
+                "only full-coverage configs. Otherwise rank only the maximum-"
+                "coverage configs. MAE then median absolute error are tie-breakers."
+            ),
+            "signed_offset_role": (
+                "diagnostic direction only; signed offset never determines "
+                "localization quality rank"
+            ),
             "candidate_row_n": len(unconstrained_localization_rows),
             "reruns_detector_search": False,
         },
