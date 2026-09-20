@@ -45,6 +45,7 @@ from robo_incremental_hop.io import (
     resolve_project_path,
 )
 from robo_incremental_hop.report import (
+    build_pairwise_overlap_rows,
     build_recovery_rows,
     choose_representative_rollouts,
     evaluate_all_configs,
@@ -258,6 +259,13 @@ def write_metadata(
                 "median sample delay, then lower clean-rollout FPR"
             ),
             "recovery_hop_window_samples": args.recovery_window_samples,
+            "pairwise_complementarity": (
+                "Within each signal mode and clean-FPR budget, pair the already "
+                "selected representative detector from each family without "
+                "retuning. Report event-set overlap and true clean-rollout FP "
+                "union for @1/@3/@5/@10/@20/eventual; pairwise OR detection time "
+                "uses the earlier qualifying detector."
+            ),
         },
         "generalization": {
             "task_cv_enabled": bool(args.task_cv),
@@ -278,6 +286,8 @@ def write_metadata(
             "best_configs.csv",
             "recovery_results.csv",
             "breakdown_summary.csv",
+            "pairwise_overlap.csv",
+            "pairwise_overlap_by_failure_type.csv",
             "metadata.json",
             "task_cv_results.csv (only with --task-cv)",
             "plots/<signal_mode>/ (unless --no-plots)",
@@ -452,6 +462,16 @@ def analyse(
     write_csv(output_dir / "best_configs.csv", all_best_rows)
     write_csv(output_dir / "recovery_results.csv", all_recovery_rows)
     write_csv(output_dir / "breakdown_summary.csv", all_breakdown_rows)
+    pairwise_rows, pairwise_failure_rows = build_pairwise_overlap_rows(
+        all_best_rows,
+        all_event_rows,
+        all_clean_rows,
+    )
+    write_csv(output_dir / "pairwise_overlap.csv", pairwise_rows)
+    write_csv(
+        output_dir / "pairwise_overlap_by_failure_type.csv",
+        pairwise_failure_rows,
+    )
     if args.task_cv:
         write_csv(output_dir / "task_cv_results.csv", all_cv_rows)
 
