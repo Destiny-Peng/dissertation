@@ -874,6 +874,34 @@ with (args.output_dir / 'oracle_summary.csv').open('w', newline='') as handle:
 (args.output_dir / 'oracle_event_detectability.csv').write_text(
     'signal_family,record_kind,rollout_id,oracle_detectable\n'
 )
+(args.output_dir / 'progress_peak_localization.csv').write_text(
+    'rollout_id,first_observable_onset_frame,t_star_frame,t_star_minus_onset_samples\n'
+    'r0,8,4,-1\n'
+)
+with (args.output_dir / 'progress_peak_localization_summary.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'group', 'value', 'rollout_n', 'median_signed_offset_samples',
+        'median_absolute_error_samples', 'mean_absolute_error_samples',
+        'within_1_samples_fraction', 'within_3_samples_fraction',
+        'within_5_samples_fraction', 'within_10_samples_fraction',
+        'within_20_samples_fraction', 'before_onset_fraction',
+        'at_onset_anchor_fraction', 'after_onset_fraction'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'group': 'overall', 'value': 'all', 'rollout_n': 1,
+        'median_signed_offset_samples': -1,
+        'median_absolute_error_samples': 1,
+        'mean_absolute_error_samples': 1,
+        'within_1_samples_fraction': 1.0,
+        'within_3_samples_fraction': 1.0,
+        'within_5_samples_fraction': 1.0,
+        'within_10_samples_fraction': 1.0,
+        'within_20_samples_fraction': 1.0,
+        'before_onset_fraction': 1.0,
+        'at_onset_anchor_fraction': 0.0,
+        'after_onset_fraction': 0.0,
+    })
 for name in (
     'event_results.csv', 'no_event_failure_results.csv',
     'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
@@ -1310,6 +1338,16 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(
             any(
                 item["name"] == "oracle_summary.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertEqual(
+            hop["progress_peak_localization_summary"][0]["rollout_n"],
+            1,
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "progress_peak_localization.csv"
                 for item in hop["artifacts"]
             )
         )
