@@ -4438,24 +4438,21 @@ class AnalysisJobService:
         )
         if metadata.get("status") not in BASELINE_RUN_STATUSES:
             raise ValidationError(
-                "Four-signal hop analysis requires a completed Robo-Dopamine run"
+                "Fused-hop failure analysis requires a completed Robo-Dopamine run"
             )
-        run_ids, _signal_ids_by_mode, _four_signal_ids = (
+        run_ids, signal_ids_by_mode, _four_signal_ids = (
             self.baselines._run_inventory(run_path, "robo_dopamine")
         )
         overlap = selected_ids.intersection(run_ids)
-        four_signal_ids, _signal_ids_by_mode = (
-            self.baselines._robo_run_four_signal_ids(
-                run_path,
-                overlap,
-            )
+        fused_ids = overlap.intersection(
+            signal_ids_by_mode.get("fused", set())
         )
-        if not four_signal_ids:
+        if not fused_ids:
             raise ValidationError(
-                "Selected Robo-Dopamine run has no rollout in this scope with all "
-                "four saved hop signals: incremental, forward, backward, and fused."
+                "Selected Robo-Dopamine run has no rollout in this scope with a "
+                "saved fused hop signal."
             )
-        return run_path, metadata, four_signal_ids
+        return run_path, metadata, fused_ids
 
     def start_robo_hop_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
@@ -4515,7 +4512,7 @@ class AnalysisJobService:
             "schema_version": 1,
             "scope": scope,
             "requested_rollouts": len(records),
-            "available_four_signal_rollouts": len(available_records),
+            "available_fused_rollouts": len(available_records),
             "selection": [{"id": record["id"]} for record in available_records],
         }
         command = [
@@ -4550,7 +4547,7 @@ class AnalysisJobService:
                 "scope": scope,
                 "requested_rollouts": len(records),
                 "selected_rollouts": len(available_records),
-                "four_signal_coverage": (
+                "fused_coverage": (
                     len(available_records) / len(records) if records else 0.0
                 ),
                 "runs": {"robo_dopamine": self._relative(run_path)},
