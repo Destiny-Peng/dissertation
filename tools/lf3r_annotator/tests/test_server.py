@@ -758,6 +758,7 @@ metadata = {
 best_fields = [
     'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
     'config_id', 'epsilon', 'n', 'event_n',
+    'grasp_recall_at_10', 'grasp_recall_eventual',
     'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
     'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
     'grasp_recall_at_10', 'grasp_recall_eventual',
@@ -767,12 +768,13 @@ best_fields = [
     'no_event_median_delay_samples', 'clean_rollout_fpr'
 ]
 best_row = {
-    'signal_mode': 'fused', 'detector_family': 'consecutive',
+    'signal_mode': 'fused', 'detector_family': 'stagnation_consecutive',
     'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
     'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3, 'event_n': 1,
     'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
     'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
     'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
+    'grasp_recall_at_10': 1.0, 'grasp_recall_eventual': 1.0,
     'no_event_recall_at_1': 0.0, 'no_event_recall_at_3': 0.5,
     'no_event_recall_at_5': 1.0, 'no_event_recall_at_10': 1.0,
     'no_event_recall_at_20': 1.0, 'no_event_recall_eventual': 1.0,
