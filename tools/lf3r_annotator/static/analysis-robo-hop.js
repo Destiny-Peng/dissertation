@@ -330,7 +330,7 @@
         + '<p class="analysis-card-note">Oracle rows ask whether any searched parameter state can localize each event. A positive episode must start at/after observable onset, with at most one native sample of early tolerance; an alarm that was already continuously positive long before onset does not count.</p>'
         + '<table class="analysis-table"><thead><tr><th>Phenotype</th>'
         + '<th>Oracle R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
-        + '<th>Strict eventual</th><th>Median best delay</th><th>P25–P75</th></tr></thead><tbody>';
+        + '<th>Strict eventual</th><th>Median best onset offset</th><th>P25–P75 offset</th></tr></thead><tbody>';
       oracleGrasp.forEach(function (row) {
         html += '<tr>'
           + '<td><strong>' + esc(String(row.signal_family)) + '</strong></td>'
@@ -341,9 +341,9 @@
           + '<td class="numeric">' + esc(percent(row.oracle_recall_at_20)) + '</td>'
           + '<td class="numeric"><strong>' + esc(percent(row.oracle_recall_eventual)) + '</strong></td>'
           + '<td class="numeric">' + esc(percent(row.strict_recall_eventual)) + '</td>'
-          + '<td class="numeric">' + esc(number(row.median_best_delay_samples)) + ' samples</td>'
-          + '<td class="numeric">' + esc(number(row.p25_best_delay_samples)) + '–'
-          + esc(number(row.p75_best_delay_samples)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_best_start_offset_samples)) + ' samples</td>'
+          + '<td class="numeric">' + esc(number(row.p25_best_start_offset_samples)) + '–'
+          + esc(number(row.p75_best_start_offset_samples)) + '</td>'
           + '</tr>';
       });
       html += '</tbody></table>';
@@ -365,14 +365,14 @@
           + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_3)) + '</td>'
           + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_10)) + '</td>'
           + '<td class="numeric"><strong>' + esc(percent(oracleCombined.oracle_recall_eventual)) + '</strong></td>'
-          + '<td class="numeric">' + esc(number(oracleCombined.median_best_delay_samples)) + ' samples</td>'
+          + '<td class="numeric">offset ' + esc(number(oracleCombined.median_best_start_offset_samples)) + '</td>'
           + '<td class="numeric">ignored</td></tr>';
         constrained.forEach(function (row) {
           html += '<tr><td>≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + ' clean FPR</td>'
             + '<td class="numeric">' + esc(percent(row.grasp_recall_at_3)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.grasp_recall_at_10)) + '</td>'
             + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
-            + '<td class="numeric">' + esc(number(row.grasp_median_delay_samples)) + ' samples</td>'
+            + '<td class="numeric">' + esc(number(row.grasp_median_delay_samples)) + ' samples (1-based)</td>'
             + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td></tr>';
         });
         html += '</tbody></table>';
