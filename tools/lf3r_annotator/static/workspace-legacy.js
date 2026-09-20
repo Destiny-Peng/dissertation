@@ -2303,10 +2303,19 @@ function workspacePopulateAnalysisRunSelectors() {
 
 async function workspaceLoadBaselineRuns(scope, force) {
   scope = scope || workspaceState.analysisRunScope || "natural_observation";
-  if (workspaceState.baselineRunsLoading && !force) return;
+  if (
+    workspaceState.baselineRunsLoading
+    && !force
+    && workspaceState.baselineRunsScope === scope
+  ) {
+    while (workspaceState.baselineRunsLoading) {
+      await new Promise(function (resolve) { window.setTimeout(resolve, 20); });
+    }
+    return workspaceState.baselineRuns;
+  }
   if (!force && workspaceState.baselineRunsScope === scope && workspaceState.baselineRunsLoaded) {
     workspaceRenderAnalysisRunPanel();
-    return;
+    return workspaceState.baselineRuns;
   }
   var requestId = ++workspaceState.baselineRunsRequest;
   workspaceState.analysisRunScope = scope;
@@ -2339,6 +2348,7 @@ async function workspaceLoadBaselineRuns(scope, force) {
       workspaceRenderAnalysisRunPanel();
     }
   }
+  return workspaceState.baselineRuns;
 }
 
 async function workspaceLoadAnalysisRunLog(jobId) {
