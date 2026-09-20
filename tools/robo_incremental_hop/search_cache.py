@@ -45,6 +45,7 @@ def search_fingerprint(
     signal_payload = [
         {
             "rollout_id": rollout_id,
+            "signal_source": str(signal.get("prediction_path") or ""),
             "frames": [int(value) for value in signal["frames"]],
             "hops": [float(value) for value in signal["hops"]],
         }
