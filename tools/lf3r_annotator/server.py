@@ -2064,6 +2064,18 @@ class BaselineRunIndex:
                 ON baseline_runs (baseline, status, sort_time DESC)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS baseline_run_rollout_cache (
+                    run_root TEXT PRIMARY KEY,
+                    jobs_mtime_ns INTEGER NOT NULL,
+                    jobs_size INTEGER NOT NULL,
+                    rollout_ids_json TEXT NOT NULL,
+                    robo_signal_ids_json TEXT,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
 
     def _relative_run_root(self, run_path: Path) -> str:
         resolved = run_path.resolve()
@@ -2247,12 +2259,117 @@ class BaselineRunIndex:
             )
         return {"scanned": scanned, "indexed": len(rows)}
 
+    def cached_rollout_details(
+        self,
+        run_path: Path,
+    ) -> dict[str, Any] | None:
+        """Return cached rollout/signal inventory when jobs.jsonl is unchanged."""
+        run_path = run_path.resolve()
+        jobs_path = run_path / "jobs.jsonl"
+        if not jobs_path.is_file():
+            return None
+        try:
+            stat = jobs_path.stat()
+            run_root = self._relative_run_root(run_path)
+        except (OSError, ValidationError):
+            return None
+        with self.lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT jobs_mtime_ns, jobs_size, rollout_ids_json, robo_signal_ids_json
+                FROM baseline_run_rollout_cache
+                WHERE run_root = ?
+                """,
+                (run_root,),
+            ).fetchone()
+        if row is None:
+            return None
+        if int(row[0]) != stat.st_mtime_ns or int(row[1]) != stat.st_size:
+            return None
+        try:
+            rollout_ids = json.loads(row[2])
+            robo_signal_ids = json.loads(row[3]) if row[3] else None
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(rollout_ids, list) or not all(
+            isinstance(value, str) for value in rollout_ids
+        ):
+            return None
+        if robo_signal_ids is not None and not isinstance(robo_signal_ids, dict):
+            return None
+        return {
+            "rollout_ids": rollout_ids,
+            "robo_signal_ids": robo_signal_ids,
+        }
+
+    def store_rollout_details(
+        self,
+        run_path: Path,
+        rollout_ids: set[str],
+        robo_signal_ids: Mapping[str, set[str]] | None = None,
+    ) -> bool:
+        """Persist rollout inventory so catalog reads avoid raw-tree probing."""
+        run_path = run_path.resolve()
+        jobs_path = run_path / "jobs.jsonl"
+        if not jobs_path.is_file():
+            return False
+        try:
+            stat = jobs_path.stat()
+            run_root = self._relative_run_root(run_path)
+        except (OSError, ValidationError):
+            return False
+        signal_payload = (
+            json.dumps(
+                {
+                    str(mode): sorted(set(ids))
+                    for mode, ids in robo_signal_ids.items()
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if robo_signal_ids is not None
+            else None
+        )
+        with self.lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO baseline_run_rollout_cache (
+                    run_root, jobs_mtime_ns, jobs_size, rollout_ids_json,
+                    robo_signal_ids_json, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_root) DO UPDATE SET
+                    jobs_mtime_ns = excluded.jobs_mtime_ns,
+                    jobs_size = excluded.jobs_size,
+                    rollout_ids_json = excluded.rollout_ids_json,
+                    robo_signal_ids_json = excluded.robo_signal_ids_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    run_root,
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                    json.dumps(
+                        sorted(set(rollout_ids)),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    signal_payload,
+                    dt.datetime.now(dt.timezone.utc).isoformat(),
+                ),
+            )
+        return True
+
     def _delete_roots(self, run_roots: list[str]) -> None:
         if not run_roots:
             return
         with self.lock, self._connect() as connection:
             connection.executemany(
                 "DELETE FROM baseline_runs WHERE run_root = ?",
+                [(run_root,) for run_root in run_roots],
+            )
+            connection.executemany(
+                "DELETE FROM baseline_run_rollout_cache WHERE run_root = ?",
                 [(run_root,) for run_root in run_roots],
             )
 
@@ -2408,7 +2525,14 @@ class BaselineService:
         return self.run_index.candidates(method, statuses)
 
     def rebuild_run_index(self) -> dict[str, int]:
-        return self.run_index.rebuild()
+        result = self.run_index.rebuild()
+        # Explicit rescans are intentionally allowed to warm the persistent
+        # rollout/signal inventory once. Normal catalog reads never recurse
+        # through outputs/baselines after the cache is populated.
+        for method in BASELINE_METHODS:
+            for run_path, _metadata in self._run_candidates(method):
+                self._run_inventory(run_path, method)
+        return result
 
     def _run_candidates(self, method: str) -> list[tuple[Path, dict[str, Any]]]:
         return self._indexed_run_candidates(method, BASELINE_RUN_STATUSES)
@@ -3049,7 +3173,7 @@ class BaselineService:
             ) is not None
         }
 
-    def _robo_run_four_signal_ids(
+    def _scan_robo_run_four_signal_ids(
         self,
         run_path: Path,
         run_ids: set[str],
@@ -3063,12 +3187,73 @@ class BaselineService:
             common.intersection_update(by_mode[mode])
         return common, by_mode
 
+    def _run_inventory(
+        self,
+        run_path: Path,
+        method: str,
+    ) -> tuple[set[str], dict[str, set[str]], set[str]]:
+        """Read run membership from persistent cache; probe Robo outputs at most once."""
+        cached = self.run_index.cached_rollout_details(run_path)
+        if cached is not None:
+            run_ids = set(cached["rollout_ids"])
+            if method != "robo_dopamine":
+                return run_ids, {}, set()
+            raw_signal_ids = cached.get("robo_signal_ids")
+            if isinstance(raw_signal_ids, dict) and all(
+                mode in raw_signal_ids for mode in self.ROBO_HOP_SIGNAL_MODES
+            ):
+                by_mode = {
+                    mode: {
+                        str(value)
+                        for value in raw_signal_ids.get(mode, [])
+                        if isinstance(value, str)
+                    }
+                    for mode in self.ROBO_HOP_SIGNAL_MODES
+                }
+                common = set(run_ids)
+                for mode in self.ROBO_HOP_SIGNAL_MODES:
+                    common.intersection_update(by_mode[mode])
+                return run_ids, by_mode, common
+
+        run_ids = run_rollout_ids(run_path)
+        by_mode: dict[str, set[str]] = {}
+        common: set[str] = set()
+        if method == "robo_dopamine":
+            common, by_mode = self._scan_robo_run_four_signal_ids(
+                run_path, run_ids
+            )
+        self.run_index.store_rollout_details(
+            run_path,
+            run_ids,
+            by_mode if method == "robo_dopamine" else None,
+        )
+        return run_ids, by_mode, common
+
+    def _robo_run_four_signal_ids(
+        self,
+        run_path: Path,
+        run_ids: set[str],
+    ) -> tuple[set[str], dict[str, set[str]]]:
+        cached_run_ids, cached_by_mode, _cached_common = self._run_inventory(
+            run_path, "robo_dopamine"
+        )
+        requested = set(run_ids).intersection(cached_run_ids)
+        by_mode = {
+            mode: requested.intersection(cached_by_mode.get(mode, set()))
+            for mode in self.ROBO_HOP_SIGNAL_MODES
+        }
+        common = set(requested)
+        for mode in self.ROBO_HOP_SIGNAL_MODES:
+            common.intersection_update(by_mode[mode])
+        return common, by_mode
+
     def _robo_run_incremental_ids(
         self,
         run_path: Path,
         run_ids: set[str],
     ) -> set[str]:
-        return self._robo_run_signal_ids(run_path, run_ids, "incremental")
+        _common, by_mode = self._robo_run_four_signal_ids(run_path, run_ids)
+        return by_mode["incremental"]
 
     def list_runs(
         self,
@@ -3095,7 +3280,9 @@ class BaselineService:
                         continue
                 elif run_condition != condition:
                     continue
-                run_ids = run_rollout_ids(run_path)
+                run_ids, signal_ids_by_mode, four_signal_ids = self._run_inventory(
+                    run_path, method
+                )
                 missing = selected_ids - run_ids if run_ids else selected_ids
                 source_ids = {
                     (
@@ -3110,12 +3297,7 @@ class BaselineService:
                     source_ids = set(run_ids)
                 summary = self._run_summary(run_path, metadata)
                 incremental_ids: set[str] = set()
-                four_signal_ids: set[str] = set()
-                signal_ids_by_mode: dict[str, set[str]] = {}
                 if method == "robo_dopamine":
-                    four_signal_ids, signal_ids_by_mode = (
-                        self._robo_run_four_signal_ids(run_path, run_ids)
-                    )
                     incremental_ids = signal_ids_by_mode["incremental"]
                 summary.update({
                     "created_at": metadata.get("created_at"),
@@ -3937,6 +4119,14 @@ class BaselineService:
         job_id = str(job["job_id"])
         try:
             self._refresh_progress(job_id)
+            run_path, metadata = self._find_job_run(job)
+            if (
+                run_path is not None
+                and metadata is not None
+                and str(metadata.get("status") or "") in BASELINE_RUN_STATUSES
+                and str(metadata.get("baseline") or "") in BASELINE_METHODS
+            ):
+                self._run_inventory(run_path, str(metadata["baseline"]))
             with self.jobs_lock:
                 if reason:
                     job["status"] = "failed"
@@ -4175,7 +4365,9 @@ class AnalysisJobService:
             raise ValidationError(
                 "Four-signal hop analysis requires a completed Robo-Dopamine run"
             )
-        run_ids = run_rollout_ids(run_path)
+        run_ids, _signal_ids_by_mode, _four_signal_ids = (
+            self.baselines._run_inventory(run_path, "robo_dopamine")
+        )
         overlap = selected_ids.intersection(run_ids)
         four_signal_ids, _signal_ids_by_mode = (
             self.baselines._robo_run_four_signal_ids(
