@@ -1,8 +1,7 @@
-"""Data-driven detector grids for fused-hop stagnation/regression phenotypes."""
+"""Empirical detector grids for fused-hop stagnation/regression phenotypes."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
 from .core import (
@@ -11,23 +10,8 @@ from .core import (
     KOFM_MS,
     RECALL_SAMPLE_WINDOWS,
     REGRESSION_MIN_MS,
-    STAGNATION_DELTAS,
-    detector_mask,
     make_config,
 )
-
-
-def rolling_window_minimum(
-    hops: Sequence[float],
-    m: int,
-) -> list[float | None]:
-    if m < 1:
-        raise ValueError("regression window m must be positive")
-    values = [float(value) for value in hops]
-    result: list[float | None] = [None] * len(values)
-    for index in range(m - 1, len(values)):
-        result[index] = min(values[index - m + 1 : index + 1])
-    return result
 
 
 def _event_post_indices(
@@ -44,98 +28,159 @@ def _event_post_indices(
     ]
 
 
-def _candidate_thresholds_for_m(
+def _stagnation_consecutive_scores(
+    hops: Sequence[float],
+    n: int,
+) -> list[float | None]:
+    """Minimum delta needed for the consecutive rule to fire at each sample."""
+    values = [abs(float(value)) for value in hops]
+    scores: list[float | None] = [None] * len(values)
+    for index in range(n - 1, len(values)):
+        scores[index] = max(values[index - n + 1 : index + 1])
+    return scores
+
+
+def _stagnation_k_of_m_scores(
+    hops: Sequence[float],
+    m: int,
+    k: int,
+) -> list[float | None]:
+    """Minimum delta needed for k-of-m stagnation to fire at each sample."""
+    values = [abs(float(value)) for value in hops]
+    scores: list[float | None] = [None] * len(values)
+    for index in range(m - 1, len(values)):
+        window = sorted(values[index - m + 1 : index + 1])
+        scores[index] = window[k - 1]
+    return scores
+
+
+def _regression_window_min_scores(
+    hops: Sequence[float],
+    m: int,
+) -> list[float | None]:
+    """Minimum theta_r needed for rolling-window-min regression to fire."""
+    values = [float(value) for value in hops]
+    scores: list[float | None] = [None] * len(values)
+    for index in range(m - 1, len(values)):
+        scores[index] = min(values[index - m + 1 : index + 1])
+    return scores
+
+
+def _critical_value(
+    scores: Sequence[float | None],
+    indices: Sequence[int],
+) -> float | None:
+    values = [
+        float(scores[index])
+        for index in indices
+        if 0 <= index < len(scores) and scores[index] is not None
+    ]
+    return min(values) if values else None
+
+
+def _empirical_thresholds(
+    score_by_rollout: Mapping[str, Sequence[float | None]],
     signals: Mapping[str, Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
     *,
-    m: int,
     max_clean_fpr: float,
+    require_negative: bool,
 ) -> tuple[list[float], dict[str, Any]]:
-    rolling_by_rollout = {
-        rollout_id: rolling_window_minimum(signal["hops"], m)
-        for rollout_id, signal in signals.items()
-    }
-    candidates: set[float] = set()
+    """Return only threshold values that change failure evidence or clean FP sets.
 
-    def add_horizon_minima(
-        rollout_id: str,
-        indices: Sequence[int],
-    ) -> None:
-        rolling = rolling_by_rollout.get(rollout_id)
-        if rolling is None:
-            return
-        horizons: list[int | None] = list(RECALL_SAMPLE_WINDOWS) + [None]
-        for horizon in horizons:
-            selected = indices if horizon is None else indices[:horizon]
-            values = [
-                float(rolling[index])
-                for index in selected
-                if rolling[index] is not None
-            ]
-            if values:
-                threshold = min(values)
-                if threshold < 0.0:
-                    candidates.add(threshold)
+    For a fixed temporal rule, detector positivity is monotone in the threshold:
+    a sample fires iff its rule-specific critical score <= threshold. Candidate
+    thresholds therefore only need to occur at empirical critical values. We
+    collect failure critical values at @1/@3/@5/@10/@20/eventual, add clean
+    rollout critical values, reject configurations above the loosest clean-FPR
+    budget, then keep only the largest threshold for each distinct clean-FP set.
+    """
+    raw_candidates: set[float] = set()
 
     for event in events:
         rollout_id = str(event["rollout_id"])
         signal = signals.get(rollout_id)
-        if signal is None:
+        scores = score_by_rollout.get(rollout_id)
+        if signal is None or scores is None:
             continue
-        add_horizon_minima(
-            rollout_id,
-            _event_post_indices(signal["frames"], event),
-        )
+        post = _event_post_indices(signal["frames"], event)
+        for window in (*RECALL_SAMPLE_WINDOWS, None):
+            indices = post if window is None else post[:window]
+            value = _critical_value(scores, indices)
+            if value is not None:
+                raw_candidates.add(value)
 
     for failure in no_event_failures:
         rollout_id = str(failure["rollout_id"])
         signal = signals.get(rollout_id)
-        if signal is None:
+        scores = score_by_rollout.get(rollout_id)
+        if signal is None or scores is None:
             continue
-        add_horizon_minima(
-            rollout_id,
-            list(range(len(signal["hops"]))),
-        )
+        indices = list(range(len(signal["hops"])))
+        for window in (*RECALL_SAMPLE_WINDOWS, None):
+            selected = indices if window is None else indices[:window]
+            value = _critical_value(scores, selected)
+            if value is not None:
+                raw_candidates.add(value)
 
-    clean_ids = [
-        str(row["rollout_id"])
-        for row in clean_rollouts
-        if str(row["rollout_id"]) in signals
-    ]
-    retained: list[float] = []
-    fpr_by_threshold: dict[float, float] = {}
-    for threshold in sorted(candidates):
-        config = make_config(
-            "empirical_probe",
-            "regression_window_min",
-            m=m,
-            theta=threshold,
-        )
-        positives = 0
-        for rollout_id in clean_ids:
-            if any(detector_mask(signals[rollout_id]["hops"], config)):
-                positives += 1
-        fpr = positives / len(clean_ids) if clean_ids else 0.0
-        fpr_by_threshold[threshold] = fpr
-        if fpr <= max_clean_fpr + 1e-12:
-            retained.append(threshold)
+    clean_critical: dict[str, float] = {}
+    for clean in clean_rollouts:
+        rollout_id = str(clean["rollout_id"])
+        scores = score_by_rollout.get(rollout_id)
+        if scores is None:
+            continue
+        value = _critical_value(scores, list(range(len(scores))))
+        if value is not None:
+            clean_critical[rollout_id] = value
+            raw_candidates.add(value)
 
-    metadata = {
-        "m": m,
-        "raw_candidate_n": len(candidates),
+    candidates = sorted(
+        value
+        for value in raw_candidates
+        if not require_negative or value < 0.0
+    )
+    signature_best: dict[tuple[str, ...], float] = {}
+    fpr_by_signature: dict[tuple[str, ...], float] = {}
+    clean_n = len(clean_critical)
+
+    for threshold in candidates:
+        signature = tuple(
+            sorted(
+                rollout_id
+                for rollout_id, critical in clean_critical.items()
+                if critical <= threshold
+            )
+        )
+        fpr = len(signature) / clean_n if clean_n else 0.0
+        if fpr > max_clean_fpr + 1e-12:
+            continue
+        previous = signature_best.get(signature)
+        if previous is None or threshold > previous:
+            signature_best[signature] = threshold
+            fpr_by_signature[signature] = fpr
+
+    retained = sorted(signature_best.values())
+    retained_fprs = []
+    for threshold in retained:
+        signature = next(
+            signature
+            for signature, candidate in signature_best.items()
+            if candidate == threshold
+        )
+        retained_fprs.append(fpr_by_signature[signature])
+
+    return retained, {
+        "raw_empirical_candidate_n": len(candidates),
         "retained_candidate_n": len(retained),
         "max_clean_fpr_filter": max_clean_fpr,
         "retained_min": min(retained) if retained else None,
         "retained_max": max(retained) if retained else None,
         "retained_thresholds": retained,
-        "retained_clean_fprs": [
-            fpr_by_threshold[threshold]
-            for threshold in retained
-        ],
+        "retained_clean_fprs": retained_fprs,
+        "clean_rollout_n": clean_n,
     }
-    return retained, metadata
 
 
 def build_phenotype_detector_configs(
@@ -144,15 +189,11 @@ def build_phenotype_detector_configs(
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Build stagnation grids plus empirical short-window regression grids.
-
-    Regression thresholds are actual observed failure-side rolling-window
-    minimum values that still keep the regression branch by itself within the
-    loosest clean-rollout FPR budget. The final OR ensemble is still evaluated
-    against the exact 5/10/20% total clean-FPR constraints.
-    """
+    """Build fully empirical stagnation and regression threshold grids."""
     configs: list[dict[str, Any]] = []
     index = 0
+    max_budget = max(CLEAN_FPR_CONSTRAINTS)
+    calibration: dict[str, Any] = {}
 
     def add(family: str, **parameters: Any) -> None:
         nonlocal index
@@ -165,17 +206,49 @@ def build_phenotype_detector_configs(
             )
         )
 
-    for delta in STAGNATION_DELTAS:
-        for n in CONSECUTIVE_NS:
+    for n in CONSECUTIVE_NS:
+        scores = {
+            rollout_id: _stagnation_consecutive_scores(signal["hops"], n)
+            for rollout_id, signal in signals.items()
+        }
+        deltas, metadata = _empirical_thresholds(
+            scores,
+            signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+            max_clean_fpr=max_budget,
+            require_negative=False,
+        )
+        key = f"stagnation_consecutive:n={n}"
+        calibration[key] = metadata
+        for delta in deltas:
             add(
                 "stagnation_consecutive",
                 delta=delta,
                 n=n,
             )
 
-    for delta in STAGNATION_DELTAS:
-        for m in KOFM_MS:
-            for k in range(1, m + 1):
+    for m in KOFM_MS:
+        for k in range(1, m + 1):
+            scores = {
+                rollout_id: _stagnation_k_of_m_scores(
+                    signal["hops"], m, k
+                )
+                for rollout_id, signal in signals.items()
+            }
+            deltas, metadata = _empirical_thresholds(
+                scores,
+                signals,
+                events,
+                no_event_failures,
+                clean_rollouts,
+                max_clean_fpr=max_budget,
+                require_negative=False,
+            )
+            key = f"stagnation_k_of_m:m={m},k={k}"
+            calibration[key] = metadata
+            for delta in deltas:
                 add(
                     "stagnation_k_of_m",
                     delta=delta,
@@ -183,18 +256,22 @@ def build_phenotype_detector_configs(
                     k=k,
                 )
 
-    max_budget = max(CLEAN_FPR_CONSTRAINTS)
-    threshold_metadata: dict[str, Any] = {}
     for m in REGRESSION_MIN_MS:
-        thresholds, metadata = _candidate_thresholds_for_m(
+        scores = {
+            rollout_id: _regression_window_min_scores(signal["hops"], m)
+            for rollout_id, signal in signals.items()
+        }
+        thresholds, metadata = _empirical_thresholds(
+            scores,
             signals,
             events,
             no_event_failures,
             clean_rollouts,
-            m=m,
             max_clean_fpr=max_budget,
+            require_negative=True,
         )
-        threshold_metadata[str(m)] = metadata
+        key = f"regression_window_min:m={m}"
+        calibration[key] = metadata
         for theta in thresholds:
             add(
                 "regression_window_min",
@@ -202,9 +279,10 @@ def build_phenotype_detector_configs(
                 theta=theta,
             )
 
-    family_counts: dict[str, int] = defaultdict(int)
+    family_counts: dict[str, int] = {}
     for config in configs:
-        family_counts[str(config["detector_family"])] += 1
+        family = str(config["detector_family"])
+        family_counts[family] = family_counts.get(family, 0) + 1
 
     return configs, {
         "phenotypes": ["stagnation", "regression"],
@@ -213,16 +291,22 @@ def build_phenotype_detector_configs(
             "stagnation_k_of_m",
         ],
         "regression_family": "regression_window_min",
-        "regression_semantics": "min(h[t-m+1:t]) <= theta_r",
+        "stagnation_semantics": "abs(h_t) <= empirical delta",
+        "regression_semantics": "min(h[t-m+1:t]) <= empirical theta_r",
         "regression_window_ms": list(REGRESSION_MIN_MS),
-        "regression_threshold_source": (
-            "actual observed failure-side rolling-window minima at "
-            "Recall@1/@3/@5/@10/@20/eventual horizons; negative values only"
+        "threshold_source": (
+            "empirical rule-specific critical values from saved fused-hop failure "
+            "and clean rollouts; failure values are sampled at "
+            "Recall@1/@3/@5/@10/@20/eventual horizons"
         ),
-        "regression_prefilter": (
-            "retain only thresholds whose regression branch alone has "
-            f"clean-rollout FPR <= {max_budget:.2f}"
+        "threshold_compression": (
+            "for each temporal rule, keep only the largest empirical threshold "
+            "for each distinct clean false-positive rollout set"
+        ),
+        "prefilter": (
+            "discard threshold states whose branch-alone clean-rollout FPR "
+            f"exceeds {max_budget:.2f}; final OR still uses exact 5/10/20% caps"
         ),
         "family_config_counts": dict(sorted(family_counts.items())),
-        "regression_thresholds_by_m": threshold_metadata,
+        "calibration": calibration,
     }
