@@ -628,14 +628,15 @@
         <section class="analysis-card analysis-run-card" aria-labelledby="analysisHopTitle">
           <div class="analysis-card-heading">
             <div>
-              <p class="eyebrow">ROBO-DOPAMINE HOP COMPARISON</p>
-              <h3 id="analysisHopTitle">Four-signal failure evidence</h3>
+              <p class="eyebrow">ROBO-DOPAMINE FUSED HOP</p>
+              <h3 id="analysisHopTitle">Failure detection and ensemble analysis</h3>
             </div>
             <span id="analysisHopBadge" class="analysis-badge">Idle</span>
           </div>
-          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine hop from
-            <strong>incremental, forward, backward, and fused</strong> outputs. The same detector sweep is applied
-            separately to all four signals on their common rollout set. It does not run inference.</p>
+          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
+            <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
+            events use rollout-start detection latency. Pairwise OR ensembles reuse the same saved outputs and do not
+            run inference.</p>
           <form id="analysisHopForm" class="analysis-run-form">
             <div class="analysis-run-grid">
               <label><span>Rollout scope</span>
@@ -650,8 +651,8 @@
                 <select id="analysisHopRun">
                   <option value="">Loading compatible runs...</option>
                 </select>
-                <small class="analysis-run-field-help">Choose a completed multi-perspective/fused run with a common
-                  rollout set containing saved incremental, forward, backward, and fused pred_vllm.json outputs.</small>
+                <small class="analysis-run-field-help">Choose a completed Robo-Dopamine run with saved fused
+                  hop output for the selected rollout scope.</small>
               </label>
               <label><span>Output label</span>
                 <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
@@ -663,9 +664,9 @@
             </div>
             <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
               Robo-Dopamine runs.</p>
-            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run four-signal hop analysis</button>
+            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run fused-hop analysis</button>
           </form>
-          <pre id="analysisHopLog" class="job-log" aria-label="Latest four-signal hop analysis log"></pre>
+          <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
           <div id="analysisHopResults" class="analysis-table-wrap"></div>
           <div id="analysisHopArtifacts" class="analysis-provenance"></div>
         </section>
