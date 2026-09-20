@@ -334,61 +334,45 @@
       html += '</tbody></table>';
     }
 
-    var globalEnvelope = hop.global_config_localization_best_by_tolerance || [];
-    var globalSingle = hop.global_config_localization_single_best || [];
-    if (globalEnvelope.length || globalSingle.length) {
+    var unconstrainedTop = hop.unconstrained_localization_top || [];
+    if (unconstrainedTop.length) {
       html += '<section class="analysis-subsection">'
-        + '<h4>FPR-unconstrained global-config localization</h4>'
-        + '<p class="analysis-card-note">One fixed detector configuration is shared across the whole evaluation population. Capacity asks whether any positive-episode start from that fixed config appears near onset. True localization is stricter: the config itself outputs exactly one cut point per rollout, defined as its earliest positive-episode start. No clean-FPR filtering is used here.</p>';
+        + '<h4>Failed-rollout localization · no clean-FPR constraint</h4>'
+        + '<p class="analysis-card-note">This is a pure re-ranking of configurations and OR pairs already present in the saved sweep artifacts. Each config localizes a failed rollout at its first trigger; no clean-success FPR is used, no new parameter search is performed, and no GT is used to choose among later alarms.</p>';
 
-      if (globalEnvelope.length) {
-        html += '<table class="analysis-table"><caption>Metric-specific capacity upper envelope · fixed config per row</caption>'
-          + '<thead><tr><th>Population</th><th>Target</th><th>Best recall</th><th>Family</th><th>Config</th>'
-          + '<th>Parameters</th><th>True-loc ±1</th><th>±3</th><th>±5</th><th>±10</th>'
-          + '<th>Loc output coverage</th></tr></thead><tbody>';
-        globalEnvelope.forEach(function (row) {
+      ["all_failure_events", "first_event_per_failed_rollout", "grasp_failure"].forEach(function (population) {
+        var rowsForPopulation = unconstrainedTop.filter(function (row) {
+          return String(row.population) === population;
+        }).sort(function (left, right) {
+          return Number(left.rank_median_abs_error) - Number(right.rank_median_abs_error);
+        });
+        if (!rowsForPopulation.length) return;
+        html += '<table class="analysis-table"><caption>'
+          + esc(population.replace(/_/g, " "))
+          + ' · top 10 by median |error| (coverage prioritized)</caption>'
+          + '<thead><tr><th>Rank</th><th>Family</th><th>Config</th><th>Parameters</th>'
+          + '<th>Trigger coverage</th><th>Within ±1</th><th>±3</th><th>±5</th><th>±10</th>'
+          + '<th>Median signed</th><th>Median |error|</th><th>MAE</th>'
+          + '<th>Before / At / After</th></tr></thead><tbody>';
+        rowsForPopulation.forEach(function (row) {
           html += '<tr>'
-            + '<td><strong>' + esc(String(row.population).replace(/_/g, " ")) + '</strong></td>'
-            + '<td>' + esc(String(row.selection_target).replace(/^capacity_/, "").replace(/_recall$/, "").replace(/_/g, " ")) + '</td>'
-            + '<td class="numeric"><strong>' + esc(percent(row.selection_value)) + '</strong></td>'
+            + '<td class="numeric"><strong>' + esc(row.rank_median_abs_error) + '</strong></td>'
             + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
             + '<td><code>' + esc(row.config_id) + '</code></td>'
             + '<td><small>' + esc(globalConfigParameters(row)) + '</small></td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_1_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_3_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_5_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_10_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_output_coverage)) + '</td>'
-            + '</tr>';
-        });
-        html += '</tbody></table>';
-      }
-
-      if (globalSingle.length) {
-        html += '<table class="analysis-table"><caption>True single-cut localization · earliest positive-episode start</caption>'
-          + '<thead><tr><th>Population</th><th>Optimize</th><th>Coverage rule</th><th>Family</th><th>Config</th>'
-          + '<th>Output coverage</th><th>Median signed</th><th>Median |e|</th><th>MAE</th>'
-          + '<th>±1</th><th>±3</th><th>±5</th><th>±10</th><th>Before / At / After</th></tr></thead><tbody>';
-        globalSingle.forEach(function (row) {
-          html += '<tr>'
-            + '<td><strong>' + esc(String(row.population).replace(/_/g, " ")) + '</strong></td>'
-            + '<td>' + esc(String(row.selection_target).replace(/_/g, " ")) + '</td>'
-            + '<td>' + esc(String(row.coverage_requirement_status || "")) + '</td>'
-            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
-            + '<td><code>' + esc(row.config_id) + '</code><small>' + esc(globalConfigParameters(row)) + '</small></td>'
-            + '<td class="numeric">' + esc(percent(row.localization_output_coverage)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_5)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.within_10)) + '</td>'
             + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
             + '<td class="numeric"><strong>' + esc(number(row.median_absolute_error_samples)) + '</strong></td>'
             + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_1_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_3_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_5_recall)) + '</td>'
-            + '<td class="numeric">' + esc(percent(row.localization_within_10_recall)) + '</td>'
             + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
             + '</tr>';
         });
         html += '</tbody></table>';
-      }
+      });
       html += '</section>';
     }
 
