@@ -29,6 +29,7 @@ from robo_incremental_hop.diagnosis import (
     summarize_matched_controls,
 )
 from robo_incremental_hop.phenotypes import build_phenotype_detector_configs
+from robo_incremental_hop.oracle import build_oracle_analysis
 from robo_incremental_hop.report import build_pairwise_ensemble_rows
 
 
@@ -421,12 +422,128 @@ class IncrementalHopDetectorTests(unittest.TestCase):
             metadata["regression_family"],
             "regression_window_min",
         )
-        for config in regression:
-            positives = sum(
-                any(detector_mask(signals[f"clean{index}"]["hops"], config))
-                for index in range(5)
+        self.assertIn("oracle_grid", metadata)
+        self.assertIn("operational_prefilter", metadata)
+
+    def test_oracle_rejects_long_pre_onset_positive_episode(self) -> None:
+        frames = [0, 4, 8, 12, 16]
+        signals = {
+            "tolerated": {
+                "frames": frames,
+                "hops": [0.2, 0.2, -0.3, -0.2, 0.1],
+            },
+            "long_early": {
+                "frames": frames,
+                "hops": [-0.3, -0.3, -0.3, -0.3, -0.3],
+            },
+            "persistent": {
+                "frames": frames,
+                "hops": [-0.3, 0.1, 0.1, 0.1, 0.1],
+            },
+        }
+        events = [
+            {
+                "event_id": "tolerated::event0",
+                "rollout_id": "tolerated",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "outcome": "terminal_failure",
+                "observable_onset_frame": 12,
+                "episode_end_frame": None,
+            },
+            {
+                "event_id": "long_early::event0",
+                "rollout_id": "long_early",
+                "event_index": 0,
+                "failure_type": "grasp_failure",
+                "outcome": "terminal_failure",
+                "observable_onset_frame": 12,
+                "episode_end_frame": None,
+            },
+        ]
+        no_event = [
+            {
+                "rollout_id": "persistent",
+                "outcome": "terminal_failure",
+            }
+        ]
+        configs = [
+            make_config(
+                "st",
+                "stagnation_consecutive",
+                delta=1.0,
+                n=1,
+            ),
+            make_config(
+                "reg",
+                "regression_window_min",
+                m=1,
+                theta=-0.1,
+            ),
+        ]
+        global_best, detectability, summary = build_oracle_analysis(
+            configs,
+            signals,
+            events,
+            no_event,
+            [],
+            early_tolerance_samples=1,
+        )
+
+        regression_events = {
+            row["event_id"]: row
+            for row in detectability
+            if row["signal_family"] == "regression"
+            and row["record_kind"] == "annotated_event"
+        }
+        self.assertTrue(regression_events["tolerated::event0"]["oracle_detectable"])
+        self.assertFalse(
+            regression_events["tolerated::event0"]["oracle_detectable_strict"]
+        )
+        self.assertEqual(
+            regression_events["tolerated::event0"]["best_start_offset_samples"],
+            -1,
+        )
+        self.assertEqual(
+            regression_events["tolerated::event0"]["best_delay_samples"],
+            0,
+        )
+        self.assertFalse(
+            regression_events["long_early::event0"]["oracle_detectable"]
+        )
+
+        grasp_regression = next(
+            row
+            for row in summary
+            if row["signal_family"] == "regression"
+            and row["population"] == "grasp_failure"
+        )
+        self.assertAlmostEqual(
+            grasp_regression["oracle_recall_eventual"],
+            0.5,
+        )
+        self.assertAlmostEqual(
+            grasp_regression["strict_recall_eventual"],
+            0.0,
+        )
+        persistent_regression = next(
+            row
+            for row in summary
+            if row["signal_family"] == "regression"
+            and row["population"] == "no_event_failure_rollouts"
+        )
+        self.assertAlmostEqual(
+            persistent_regression["oracle_recall_at_1"],
+            1.0,
+        )
+        self.assertTrue(
+            any(
+                row["signal_family"] == "combined"
+                and row["population"] == "grasp_failure"
+                and row["selection_target"] == "eventual"
+                for row in global_best
             )
-            self.assertLessEqual(positives / 5.0, 0.20 + 1e-12)
+        )
 
     def test_joint_pairwise_or_sweep_uses_true_fp_union(self) -> None:
         configs = [
