@@ -193,7 +193,7 @@
     return configParameters(mapped);
   }
 
-  function globalConfigParameters(row) {
+  function localizationConfigParameters(row) {
     var raw = row.parameters_json;
     if (!raw) return "n/a";
     try {
@@ -359,7 +359,7 @@
             + '<td class="numeric"><strong>' + esc(row.rank_median_abs_error) + '</strong></td>'
             + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
             + '<td><code>' + esc(row.config_id) + '</code></td>'
-            + '<td><small>' + esc(globalConfigParameters(row)) + '</small></td>'
+            + '<td><small>' + esc(localizationConfigParameters(row)) + '</small></td>'
             + '<td class="numeric">' + esc(percent(row.trigger_coverage)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.within_1)) + '</td>'
             + '<td class="numeric">' + esc(percent(row.within_3)) + '</td>'
