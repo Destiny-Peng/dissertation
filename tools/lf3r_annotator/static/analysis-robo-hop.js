@@ -316,6 +316,70 @@
       html += '</tbody></table>';
     }
 
+    var oracleGrasp = (hop.oracle_summary || []).filter(function (row) {
+      return String(row.population) === "grasp_failure";
+    }).sort(function (left, right) {
+      var order = { stagnation: 0, regression: 1, combined: 2 };
+      return (order[String(left.signal_family)] || 99)
+        - (order[String(right.signal_family)] || 99);
+    });
+
+    if (oracleGrasp.length) {
+      html += '<section class="analysis-subsection">'
+        + '<h4>FPR-unconstrained oracle detectability · grasp failure</h4>'
+        + '<p class="analysis-card-note">Oracle rows ask whether any searched parameter state can localize each event. A positive episode must start at/after observable onset, with at most one native sample of early tolerance; an alarm that was already continuously positive long before onset does not count.</p>'
+        + '<table class="analysis-table"><thead><tr><th>Phenotype</th>'
+        + '<th>Oracle R@1</th><th>R@3</th><th>R@5</th><th>R@10</th><th>R@20</th><th>Eventual</th>'
+        + '<th>Strict eventual</th><th>Median best delay</th><th>P25–P75</th></tr></thead><tbody>';
+      oracleGrasp.forEach(function (row) {
+        html += '<tr>'
+          + '<td><strong>' + esc(String(row.signal_family)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_1)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_5)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.oracle_recall_at_20)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.oracle_recall_eventual)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.strict_recall_eventual)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_best_delay_samples)) + ' samples</td>'
+          + '<td class="numeric">' + esc(number(row.p25_best_delay_samples)) + '–'
+          + esc(number(row.p75_best_delay_samples)) + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+
+      var oracleCombined = oracleGrasp.find(function (row) {
+        return String(row.signal_family) === "combined";
+      });
+      var constrained = (hop.ensemble_selected || []).filter(function (row) {
+        return row.selection_status === "selected"
+          && String(row.selection_target) === "grasp_recall_eventual";
+      }).sort(function (left, right) {
+        return Number(right.clean_fpr_constraint) - Number(left.clean_fpr_constraint);
+      });
+      if (oracleCombined) {
+        html += '<table class="analysis-table"><caption>Oracle capacity versus deployable clean-FPR budgets</caption>'
+          + '<thead><tr><th>Setting</th><th>Grasp R@3</th><th>R@10</th><th>Eventual</th>'
+          + '<th>Median delay</th><th>Observed clean FPR</th></tr></thead><tbody>'
+          + '<tr><td><strong>Oracle · ignore FPR</strong></td>'
+          + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(oracleCombined.oracle_recall_at_10)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(oracleCombined.oracle_recall_eventual)) + '</strong></td>'
+          + '<td class="numeric">' + esc(number(oracleCombined.median_best_delay_samples)) + ' samples</td>'
+          + '<td class="numeric">ignored</td></tr>';
+        constrained.forEach(function (row) {
+          html += '<tr><td>≤ ' + esc(percent(row.clean_fpr_constraint, 0)) + ' clean FPR</td>'
+            + '<td class="numeric">' + esc(percent(row.grasp_recall_at_3)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.grasp_recall_at_10)) + '</td>'
+            + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
+            + '<td class="numeric">' + esc(number(row.grasp_median_delay_samples)) + ' samples</td>'
+            + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</section>';
+    }
+
     var typed = (hop.ensemble_by_failure_type || []).filter(function (row) {
       return Math.abs(Number(row.clean_fpr_constraint) - 0.20) < 1e-9
         && String(row.horizon) === "eventual"
