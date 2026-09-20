@@ -193,6 +193,24 @@
     return configParameters(mapped);
   }
 
+  function globalConfigParameters(row) {
+    var raw = row.parameters_json;
+    if (!raw) return "n/a";
+    try {
+      var parsed = JSON.parse(raw);
+      if (String(row.detector_family) === "phenotype_or") {
+        return String(parsed.stagnation_family || "stagnation")
+          + " " + JSON.stringify(parsed.stagnation_parameters || {})
+          + " OR "
+          + String(parsed.regression_family || "regression")
+          + " " + JSON.stringify(parsed.regression_parameters || {});
+      }
+    } catch (_error) {
+      return String(raw);
+    }
+    return configParameters(row);
+  }
+
   function renderSnapshot() {
     var host = node("analysisHopResults");
     var artifacts = node("analysisHopArtifacts");
@@ -314,6 +332,64 @@
           + '</tr>';
       });
       html += '</tbody></table>';
+    }
+
+    var globalEnvelope = hop.global_config_localization_best_by_tolerance || [];
+    var globalSingle = hop.global_config_localization_single_best || [];
+    if (globalEnvelope.length || globalSingle.length) {
+      html += '<section class="analysis-subsection">'
+        + '<h4>FPR-unconstrained global-config localization</h4>'
+        + '<p class="analysis-card-note">One fixed detector configuration is shared across the whole evaluation population. Capacity asks whether any positive-episode start from that fixed config appears near onset. True localization is stricter: the config itself outputs exactly one cut point per rollout, defined as its earliest positive-episode start. No clean-FPR filtering is used here.</p>';
+
+      if (globalEnvelope.length) {
+        html += '<table class="analysis-table"><caption>Metric-specific capacity upper envelope · fixed config per row</caption>'
+          + '<thead><tr><th>Population</th><th>Target</th><th>Best recall</th><th>Family</th><th>Config</th>'
+          + '<th>Parameters</th><th>True-loc ±1</th><th>±3</th><th>±5</th><th>±10</th>'
+          + '<th>Loc output coverage</th></tr></thead><tbody>';
+        globalEnvelope.forEach(function (row) {
+          html += '<tr>'
+            + '<td><strong>' + esc(String(row.population).replace(/_/g, " ")) + '</strong></td>'
+            + '<td>' + esc(String(row.selection_target).replace(/^capacity_/, "").replace(/_recall$/, "").replace(/_/g, " ")) + '</td>'
+            + '<td class="numeric"><strong>' + esc(percent(row.selection_value)) + '</strong></td>'
+            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
+            + '<td><code>' + esc(row.config_id) + '</code></td>'
+            + '<td><small>' + esc(globalConfigParameters(row)) + '</small></td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_1_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_3_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_5_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_10_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_output_coverage)) + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      if (globalSingle.length) {
+        html += '<table class="analysis-table"><caption>True single-cut localization · earliest positive-episode start</caption>'
+          + '<thead><tr><th>Population</th><th>Optimize</th><th>Coverage rule</th><th>Family</th><th>Config</th>'
+          + '<th>Output coverage</th><th>Median signed</th><th>Median |e|</th><th>MAE</th>'
+          + '<th>±1</th><th>±3</th><th>±5</th><th>±10</th><th>Before / At / After</th></tr></thead><tbody>';
+        globalSingle.forEach(function (row) {
+          html += '<tr>'
+            + '<td><strong>' + esc(String(row.population).replace(/_/g, " ")) + '</strong></td>'
+            + '<td>' + esc(String(row.selection_target).replace(/_/g, " ")) + '</td>'
+            + '<td>' + esc(String(row.coverage_requirement_status || "")) + '</td>'
+            + '<td>' + esc(familyLabel(row.detector_family)) + '</td>'
+            + '<td><code>' + esc(row.config_id) + '</code><small>' + esc(globalConfigParameters(row)) + '</small></td>'
+            + '<td class="numeric">' + esc(percent(row.localization_output_coverage)) + '</td>'
+            + '<td class="numeric">' + esc(number(row.median_signed_offset_samples)) + '</td>'
+            + '<td class="numeric"><strong>' + esc(number(row.median_absolute_error_samples)) + '</strong></td>'
+            + '<td class="numeric">' + esc(number(row.mae_samples)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_1_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_3_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_5_recall)) + '</td>'
+            + '<td class="numeric">' + esc(percent(row.localization_within_10_recall)) + '</td>'
+            + '<td class="numeric">' + esc(row.before_onset_n) + ' / ' + esc(row.at_onset_n) + ' / ' + esc(row.after_onset_n) + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</section>';
     }
 
     var progressPeak = hop.progress_peak_localization_summary || [];
