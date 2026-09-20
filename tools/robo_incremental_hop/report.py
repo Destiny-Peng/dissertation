@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import math
+import statistics
 from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -371,6 +373,291 @@ def summarize_breakdowns(
                 }
             )
     return result
+
+
+
+PAIRWISE_HORIZONS: tuple[tuple[str, str], ...] = (
+    ("1", "recall_at_1"),
+    ("3", "recall_at_3"),
+    ("5", "recall_at_5"),
+    ("10", "recall_at_10"),
+    ("20", "recall_at_20"),
+    ("eventual", "eventual_recall"),
+)
+
+
+def _event_identity(row: Mapping[str, Any]) -> str:
+    event_id = row.get("event_id")
+    if event_id not in (None, ""):
+        return str(event_id)
+    return (
+        f"{row.get('rollout_id')}::event"
+        f"{int(row.get('event_index') or 0)}"
+    )
+
+
+def _median_or_none(values: Sequence[float | int]) -> float | None:
+    return float(statistics.median(values)) if values else None
+
+
+def build_pairwise_overlap_rows(
+    best_rows: Sequence[Mapping[str, Any]],
+    event_rows: Sequence[Mapping[str, Any]],
+    clean_rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Compare selected detector families without retuning any configuration.
+
+    Pairs are formed only within one signal mode and one clean-FPR budget. Each
+    family contributes the representative configuration already selected by the
+    existing Recall@3 rule. Event overlap is evaluated at @1/@3/@5/@10/@20 and
+    eventual horizons; clean false-positive overlap is the true rollout-level
+    union of each detector's existing any_positive flag.
+    """
+    selected = [
+        row
+        for row in best_rows
+        if row.get("selection_status") == "selected"
+        and row.get("config_id") not in (None, "")
+        and row.get("signal_mode") not in (None, "")
+        and row.get("clean_fpr_constraint") is not None
+    ]
+
+    events_by_config: dict[
+        tuple[str, str], dict[str, Mapping[str, Any]]
+    ] = defaultdict(dict)
+    for row in event_rows:
+        mode = str(row.get("signal_mode") or "")
+        config_id = str(row.get("config_id") or "")
+        if not mode or not config_id:
+            continue
+        events_by_config[(mode, config_id)][_event_identity(row)] = row
+
+    clean_by_config: dict[
+        tuple[str, str], dict[str, Mapping[str, Any]]
+    ] = defaultdict(dict)
+    for row in clean_rows:
+        mode = str(row.get("signal_mode") or "")
+        config_id = str(row.get("config_id") or "")
+        rollout_id = str(row.get("rollout_id") or "")
+        if not mode or not config_id or not rollout_id:
+            continue
+        clean_by_config[(mode, config_id)][rollout_id] = row
+
+    selected_by_group: dict[
+        tuple[str, float], list[Mapping[str, Any]]
+    ] = defaultdict(list)
+    for row in selected:
+        selected_by_group[
+            (
+                str(row["signal_mode"]),
+                float(row["clean_fpr_constraint"]),
+            )
+        ].append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    failure_rows: list[dict[str, Any]] = []
+
+    for (signal_mode, constraint), representatives in sorted(
+        selected_by_group.items()
+    ):
+        representatives = sorted(
+            representatives,
+            key=lambda row: (
+                str(row.get("detector_family") or ""),
+                str(row.get("config_id") or ""),
+            ),
+        )
+        for detector_a, detector_b in combinations(representatives, 2):
+            family_a = str(detector_a["detector_family"])
+            family_b = str(detector_b["detector_family"])
+            config_a = str(detector_a["config_id"])
+            config_b = str(detector_b["config_id"])
+            event_map_a = events_by_config.get((signal_mode, config_a), {})
+            event_map_b = events_by_config.get((signal_mode, config_b), {})
+            event_ids = sorted(set(event_map_a).intersection(event_map_b))
+
+            clean_map_a = clean_by_config.get((signal_mode, config_a), {})
+            clean_map_b = clean_by_config.get((signal_mode, config_b), {})
+            clean_ids = sorted(set(clean_map_a).intersection(clean_map_b))
+            clean_fp_a = {
+                rollout_id
+                for rollout_id in clean_ids
+                if bool(clean_map_a[rollout_id].get("any_positive"))
+            }
+            clean_fp_b = {
+                rollout_id
+                for rollout_id in clean_ids
+                if bool(clean_map_b[rollout_id].get("any_positive"))
+            }
+            clean_fp_overlap = clean_fp_a.intersection(clean_fp_b)
+            clean_fp_union = clean_fp_a.union(clean_fp_b)
+            clean_n = len(clean_ids)
+            clean_base = {
+                "clean_rollout_n": clean_n,
+                "a_fp_n": len(clean_fp_a),
+                "b_fp_n": len(clean_fp_b),
+                "fp_overlap_n": len(clean_fp_overlap),
+                "a_only_fp_n": len(clean_fp_a - clean_fp_b),
+                "b_only_fp_n": len(clean_fp_b - clean_fp_a),
+                "or_fp_n": len(clean_fp_union),
+                "a_fpr": len(clean_fp_a) / clean_n if clean_n else None,
+                "b_fpr": len(clean_fp_b) / clean_n if clean_n else None,
+                "or_fpr": len(clean_fp_union) / clean_n if clean_n else None,
+                "fp_jaccard": (
+                    len(clean_fp_overlap) / len(clean_fp_union)
+                    if clean_fp_union
+                    else None
+                ),
+            }
+
+            for horizon, field in PAIRWISE_HORIZONS:
+                detected_a = {
+                    event_id
+                    for event_id in event_ids
+                    if bool(event_map_a[event_id].get(field))
+                }
+                detected_b = {
+                    event_id
+                    for event_id in event_ids
+                    if bool(event_map_b[event_id].get(field))
+                }
+                overlap = detected_a.intersection(detected_b)
+                union = detected_a.union(detected_b)
+                event_n = len(event_ids)
+
+                sample_delays: list[float | int] = []
+                frame_delays: list[float | int] = []
+                for event_id in union:
+                    qualifying = []
+                    if event_id in detected_a:
+                        qualifying.append(event_map_a[event_id])
+                    if event_id in detected_b:
+                        qualifying.append(event_map_b[event_id])
+                    sample_candidates = [
+                        row["delay_samples"]
+                        for row in qualifying
+                        if row.get("delay_samples") is not None
+                    ]
+                    frame_candidates = [
+                        row["delay_frames"]
+                        for row in qualifying
+                        if row.get("delay_frames") is not None
+                    ]
+                    if sample_candidates:
+                        sample_delays.append(min(sample_candidates))
+                    if frame_candidates:
+                        frame_delays.append(min(frame_candidates))
+
+                a_recall = len(detected_a) / event_n if event_n else None
+                b_recall = len(detected_b) / event_n if event_n else None
+                or_recall = len(union) / event_n if event_n else None
+                best_recall = (
+                    max(a_recall, b_recall)
+                    if a_recall is not None and b_recall is not None
+                    else None
+                )
+                summary_rows.append(
+                    {
+                        "signal_mode": signal_mode,
+                        "clean_fpr_constraint": constraint,
+                        "horizon": horizon,
+                        "detector_a_family": family_a,
+                        "detector_a_config_id": config_a,
+                        "detector_b_family": family_b,
+                        "detector_b_config_id": config_b,
+                        "event_n": event_n,
+                        "a_detected_n": len(detected_a),
+                        "b_detected_n": len(detected_b),
+                        "overlap_n": len(overlap),
+                        "a_only_n": len(detected_a - detected_b),
+                        "b_only_n": len(detected_b - detected_a),
+                        "or_detected_n": len(union),
+                        "a_recall": a_recall,
+                        "b_recall": b_recall,
+                        "or_recall": or_recall,
+                        "or_recall_gain_vs_best": (
+                            or_recall - best_recall
+                            if or_recall is not None and best_recall is not None
+                            else None
+                        ),
+                        "tp_jaccard": (
+                            len(overlap) / len(union)
+                            if union
+                            else None
+                        ),
+                        "or_median_delay_samples": _median_or_none(sample_delays),
+                        "or_median_delay_frames": _median_or_none(frame_delays),
+                        **clean_base,
+                        "or_fpr_increase_vs_max": (
+                            clean_base["or_fpr"]
+                            - max(clean_base["a_fpr"], clean_base["b_fpr"])
+                            if clean_base["or_fpr"] is not None
+                            and clean_base["a_fpr"] is not None
+                            and clean_base["b_fpr"] is not None
+                            else None
+                        ),
+                    }
+                )
+
+                failure_types = sorted(
+                    {
+                        str(event_map_a[event_id].get("failure_type") or "other")
+                        for event_id in event_ids
+                    }
+                )
+                for failure_type in failure_types:
+                    typed_ids = {
+                        event_id
+                        for event_id in event_ids
+                        if str(
+                            event_map_a[event_id].get("failure_type") or "other"
+                        ) == failure_type
+                    }
+                    typed_a = detected_a.intersection(typed_ids)
+                    typed_b = detected_b.intersection(typed_ids)
+                    typed_overlap = typed_a.intersection(typed_b)
+                    typed_union = typed_a.union(typed_b)
+                    typed_n = len(typed_ids)
+                    typed_a_recall = len(typed_a) / typed_n if typed_n else None
+                    typed_b_recall = len(typed_b) / typed_n if typed_n else None
+                    typed_or_recall = len(typed_union) / typed_n if typed_n else None
+                    failure_rows.append(
+                        {
+                            "signal_mode": signal_mode,
+                            "clean_fpr_constraint": constraint,
+                            "horizon": horizon,
+                            "failure_type": failure_type,
+                            "detector_a_family": family_a,
+                            "detector_a_config_id": config_a,
+                            "detector_b_family": family_b,
+                            "detector_b_config_id": config_b,
+                            "event_n": typed_n,
+                            "a_detected_n": len(typed_a),
+                            "b_detected_n": len(typed_b),
+                            "overlap_n": len(typed_overlap),
+                            "a_only_n": len(typed_a - typed_b),
+                            "b_only_n": len(typed_b - typed_a),
+                            "or_detected_n": len(typed_union),
+                            "a_recall": typed_a_recall,
+                            "b_recall": typed_b_recall,
+                            "or_recall": typed_or_recall,
+                            "or_recall_gain_vs_best": (
+                                typed_or_recall
+                                - max(typed_a_recall, typed_b_recall)
+                                if typed_or_recall is not None
+                                and typed_a_recall is not None
+                                and typed_b_recall is not None
+                                else None
+                            ),
+                            "tp_jaccard": (
+                                len(typed_overlap) / len(typed_union)
+                                if typed_union
+                                else None
+                            ),
+                        }
+                    )
+
+    return summary_rows, failure_rows
 
 
 def selected_unique_configs(
