@@ -676,7 +676,12 @@ def build_pairwise_ensemble_rows(
                     event_overlap = detected_event_a & detected_event_b
                     event_union = detected_event_a | detected_event_b
                     row[f"event_detected_at_{horizon}_n"] = len(event_union)
-                    row[f"event_recall_at_{horizon}"] = (
+                    event_recall_key = (
+                        "event_recall_eventual"
+                        if horizon == "eventual"
+                        else f"event_recall_at_{horizon}"
+                    )
+                    row[event_recall_key] = (
                         len(event_union) / len(event_ids)
                         if event_ids
                         else None
@@ -701,7 +706,12 @@ def build_pairwise_ensemble_rows(
                     row[f"no_event_detected_at_{horizon}_n"] = len(
                         no_event_union
                     )
-                    row[f"no_event_recall_at_{horizon}"] = (
+                    no_event_recall_key = (
+                        "no_event_recall_eventual"
+                        if horizon == "eventual"
+                        else f"no_event_recall_at_{horizon}"
+                    )
+                    row[no_event_recall_key] = (
                         len(no_event_union) / len(no_event_ids)
                         if no_event_ids
                         else None
