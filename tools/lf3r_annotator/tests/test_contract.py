@@ -311,13 +311,16 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "localization_event_metrics",
             "localization_summary",
             "ROBO_HOP_REQUIRED_FILES",
+            "ROBO_HOP_EXTENDED_FILES",
             "start_robo_hop_run",
             "robo_hop_comparison",
-            "four_signal_scope_rollout_count",
+            "fused_scope_rollout_count",
             "sweep_summary.csv",
             "best_configs.csv",
-            "pairwise_overlap.csv",
-            "pairwise_overlap_by_failure_type.csv",
+            "no_event_failure_results.csv",
+            "ensemble_sweep.csv",
+            "ensemble_selected.csv",
+            "ensemble_by_failure_type.csv",
         ]:
             self.assertIn(marker, server)
         self.assertIn("window.workspaceLoadBaselineRuns", hop_analysis)
@@ -326,20 +329,28 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             'analysis_kind: "robo_hop_comparison"',
             "/api/analysis/run",
             "analysisHopRunButton",
+            "fused_scope_rollout_count",
             "event_recall_at_1",
             "event_recall_at_3",
             "event_recall_at_5",
             "event_recall_at_10",
             "event_recall_at_20",
             "event_recall_eventual",
+            "no_event_recall_at_1",
+            "no_event_recall_at_3",
+            "no_event_recall_eventual",
+            "overall_failed_rollout_coverage",
             "clean_rollout_fpr",
-            "median_delay_samples",
-            "pairwise_overlap",
+            "event_median_delay_samples",
+            "no_event_median_delay_samples",
+            "ensemble_selected",
+            "ensemble_by_failure_type",
             "tp_jaccard",
-            "or_fpr",
             "workspaceLoadAnalysis(true)",
         ]:
             self.assertIn(marker, hop_analysis)
+        self.assertNotIn("modeOrder", hop_analysis)
+        self.assertNotIn("pairwise_overlap", hop_analysis)
         for marker in [
             "--font-scale",
             "--review-font-scale",
@@ -437,10 +448,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysis-download-grid",
             "clipPath",
             "workspaceDashboardRenderSnapshot",
-            "Four-signal failure evidence",
-            "incremental",
-            "forward",
-            "backward",
+            "Failure detection and ensemble analysis",
             "fused",
         ]:
             self.assertIn(marker, html + workspace + hop_analysis)

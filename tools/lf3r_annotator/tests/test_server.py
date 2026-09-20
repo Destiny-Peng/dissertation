@@ -225,8 +225,8 @@ class ServerTest(unittest.TestCase):
             ),
             mock.patch.object(
                 self.app.baselines,
-                "_scan_robo_run_four_signal_ids",
-                side_effect=AssertionError("Robo signal inventory should come from cache"),
+                "_robo_run_signal_ids",
+                side_effect=AssertionError("Fused signal inventory should come from cache"),
             ),
         ):
             with self.request(
@@ -733,71 +733,118 @@ parser.add_argument('--run-root', type=Path, required=True)
 args = parser.parse_known_args()[0]
 args.output_dir.mkdir(parents=True, exist_ok=True)
 selection = json.loads(args.selection.read_text())
-modes = ['incremental', 'forward', 'backward', 'fused']
 metadata = {
     'signal': {
-        'name': 'Robo-Dopamine four-mode hop comparison',
-        'modes': modes,
+        'name': 'Robo-Dopamine fused hop failure detection',
+        'modes': ['fused'],
         'common_rollout_n': len(selection['selection']),
     },
     'input': {'run_root': str(args.run_root), 'selection': str(args.selection)},
     'counts_by_signal_mode': {
-        mode: {'usable_rollout_n': len(selection['selection']), 'event_n': 1, 'clean_rollout_n': 1}
-        for mode in modes
+        'fused': {
+            'usable_rollout_n': len(selection['selection']),
+            'event_n': 1,
+            'no_event_failure_rollout_n': 1,
+            'clean_rollout_n': 1,
+        }
     },
     'detector_config_n_per_signal': 1,
-    'detector_config_n_total': 4,
-    'selected_config_n': 4,
+    'detector_config_n_total': 1,
+    'selected_config_n': 1,
     'generalization': {'task_cv_enabled': False},
 }
 (args.output_dir / 'metadata.json').write_text(json.dumps(metadata))
+
+best_fields = [
+    'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
+    'config_id', 'epsilon', 'n', 'event_n',
+    'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+    'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
+    'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
+    'overall_failed_rollout_coverage', 'median_delay_samples',
+    'no_event_median_delay_samples', 'clean_rollout_fpr'
+]
+best_row = {
+    'signal_mode': 'fused', 'detector_family': 'consecutive',
+    'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
+    'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3, 'event_n': 1,
+    'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
+    'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
+    'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
+    'no_event_recall_at_1': 0.0, 'no_event_recall_at_3': 0.5,
+    'no_event_recall_at_5': 1.0, 'no_event_recall_at_10': 1.0,
+    'no_event_recall_at_20': 1.0, 'no_event_recall_eventual': 1.0,
+    'overall_failed_rollout_coverage': 1.0,
+    'median_delay_samples': 2, 'no_event_median_delay_samples': 3,
+    'clean_rollout_fpr': 0.0,
+}
 with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=[
-        'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
-        'config_id', 'epsilon', 'n', 'event_n',
-        'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
-        'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
-        'median_delay_samples', 'median_delay_frames', 'clean_rollout_fpr'
-    ])
+    writer = csv.DictWriter(handle, fieldnames=best_fields)
     writer.writeheader()
-    for mode in modes:
-        writer.writerow({
-            'signal_mode': mode, 'detector_family': 'consecutive',
-            'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
-            'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3,
-            'event_n': 1,
-            'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
-            'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
-            'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
-            'median_delay_samples': 2, 'median_delay_frames': 4,
-            'clean_rollout_fpr': 0.0,
-        })
+    writer.writerow(best_row)
 with (args.output_dir / 'sweep_summary.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=best_fields)
+    writer.writeheader()
+    writer.writerow(best_row)
+
+ensemble_fields = [
+    'signal_mode', 'ensemble_logic', 'detector_a_family', 'detector_b_family',
+    'clean_fpr_constraint', 'selection_target', 'selection_status',
+    'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+    'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
+    'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
+    'overall_failed_rollout_coverage', 'clean_rollout_fpr',
+    'event_median_delay_samples', 'no_event_median_delay_samples',
+    'fp_overlap_n', 'a_config_id', 'b_config_id'
+]
+ensemble_row = {
+    'signal_mode': 'fused', 'ensemble_logic': 'OR',
+    'detector_a_family': 'stagnation_consecutive',
+    'detector_b_family': 'window_mean', 'clean_fpr_constraint': 0.2,
+    'selection_target': 'overall_failed_rollout_coverage',
+    'selection_status': 'selected', 'event_recall_at_1': 0.5,
+    'event_recall_at_3': 0.75, 'event_recall_at_5': 1.0,
+    'event_recall_at_10': 1.0, 'event_recall_at_20': 1.0,
+    'event_recall_eventual': 1.0, 'no_event_recall_at_1': 0.0,
+    'no_event_recall_at_3': 0.5, 'no_event_recall_at_5': 1.0,
+    'no_event_recall_at_10': 1.0, 'no_event_recall_at_20': 1.0,
+    'no_event_recall_eventual': 1.0, 'overall_failed_rollout_coverage': 1.0,
+    'clean_rollout_fpr': 0.2, 'event_median_delay_samples': 2,
+    'no_event_median_delay_samples': 3, 'fp_overlap_n': 0,
+    'a_config_id': 'a1', 'b_config_id': 'b1',
+}
+for name in ('ensemble_sweep.csv', 'ensemble_selected.csv'):
+    with (args.output_dir / name).open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=ensemble_fields)
+        writer.writeheader()
+        writer.writerow(ensemble_row)
+with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as handle:
     writer = csv.DictWriter(handle, fieldnames=[
-        'signal_mode', 'config_id', 'detector_family', 'clean_rollout_fpr',
-        'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
-        'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
-        'median_delay_samples'
+        'signal_mode', 'clean_fpr_constraint', 'selected_for',
+        'detector_a_family', 'detector_b_family', 'failure_type', 'horizon',
+        'event_n', 'overlap_n', 'a_only_n', 'b_only_n', 'or_recall', 'tp_jaccard'
     ])
     writer.writeheader()
-    for mode in modes:
-        writer.writerow({
-            'signal_mode': mode, 'config_id': 'cfg0001',
-            'detector_family': 'consecutive', 'clean_rollout_fpr': 0.0,
-            'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
-            'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
-            'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
-            'median_delay_samples': 2,
-        })
+    writer.writerow({
+        'signal_mode': 'fused', 'clean_fpr_constraint': 0.2,
+        'selected_for': 'overall_failed_rollout_coverage',
+        'detector_a_family': 'stagnation_consecutive',
+        'detector_b_family': 'window_mean', 'failure_type': 'grasp_failure',
+        'horizon': 'eventual', 'event_n': 1, 'overlap_n': 0,
+        'a_only_n': 1, 'b_only_n': 0, 'or_recall': 1.0, 'tp_jaccard': 0.0,
+    })
 for name in (
-    'event_results.csv', 'clean_rollout_results.csv',
-    'recovery_results.csv', 'breakdown_summary.csv'
+    'event_results.csv', 'no_event_failure_results.csv',
+    'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv'
 ):
     (args.output_dir / name).write_text('signal_mode,config_id\\n')
-print('fake four-signal hop analysis complete')
+print('fake fused-hop failure analysis complete')
 """,
             encoding="utf-8",
         )
+
     def install_fake_rollout_generator(self, exit_code: int = 0) -> None:
         script = self.root / "tools" / "lf3r_annotator" / "generate_libero10_natural.sh"
         script.parent.mkdir(parents=True, exist_ok=True)
@@ -1077,62 +1124,39 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(analysis["available"])
         self.assertEqual(analysis["source"]["selection_count"], 1)
 
-    def test_robo_hop_analysis_run_uses_incremental_saved_output(self) -> None:
+    def test_robo_hop_analysis_uses_fused_saved_output_only(self) -> None:
         self.install_fake_robo_hop_analyzer()
         roots = self.seed_analysis_runs()
         extra_rollout = {
             **self.rollout,
-            "id": "sample-rollout-without-incremental",
+            "id": "sample-rollout-without-fused",
             "episode_index": 1,
         }
         with (self.root / "manifest.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(extra_rollout) + "\n")
+
         robo_root = self.root / roots["robo_dopamine"]
         raw_root = robo_root / "raw" / self.rollout["id"]
-        mode_paths = {}
-        for mode, hop, progress, score in (
-            ("incremental", -0.1, 0.2, "-10%"),
-            ("forward", -0.2, 0.4, "40%"),
-            ("backward", -0.15, 0.5, "-50%"),
-            ("fused", -0.12, 0.35, "0%"),
-        ):
-            path = raw_root / mode / "pred_vllm.json"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps([
-                    {
-                        "id": "sample-af_000002",
-                        "image": ["", "", "", "", "", "frame_000002.png"],
-                        "hop": hop,
-                        "progress": progress,
-                        "pred": "<score>" + score + "</score>",
-                    }
-                ]),
-                encoding="utf-8",
-            )
-            mode_paths[mode] = path
-        metadata_dir = raw_root / "multi_perspective"
-        metadata_dir.mkdir(parents=True, exist_ok=True)
-        (metadata_dir / "metadata.json").write_text(
-            json.dumps(
+        fused_path = raw_root / "fused" / "pred_vllm.json"
+        fused_path.parent.mkdir(parents=True, exist_ok=True)
+        fused_path.write_text(
+            json.dumps([
                 {
-                    "prediction_paths": {
-                        "incremental": str(mode_paths["incremental"]),
-                        "forward": str(mode_paths["forward"]),
-                        "backward": str(mode_paths["backward"]),
-                    },
-                    "fused_path": str(mode_paths["fused"])
+                    "id": "sample-af_000002",
+                    "image": ["", "", "", "", "", "frame_000002.png"],
+                    "hop": -0.12,
+                    "progress": 0.35,
+                    "pred": "<score>0%</score>",
                 }
-            ),
+            ]),
             encoding="utf-8",
         )
         (raw_root / "worker_result.json").write_text(
             json.dumps(
                 {
                     "eval_mode": "fused",
-                    "eval_modes": ["incremental", "forward", "backward"],
-                    "raw_model_output": str(mode_paths["fused"]),
-                    "fused_model_output": str(mode_paths["fused"]),
+                    "raw_model_output": str(fused_path),
+                    "fused_model_output": str(fused_path),
                 }
             ),
             encoding="utf-8",
@@ -1146,14 +1170,14 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             and row["run_root"] == roots["robo_dopamine"]
         )
         self.assertFalse(robo_run["compatible"])
-        self.assertFalse(robo_run["four_signal_compatible"])
-        self.assertEqual(robo_run["four_signal_rollout_count"], 1)
-        self.assertEqual(robo_run["four_signal_scope_rollout_count"], 1)
-        self.assertEqual(robo_run["four_signal_missing_rollouts"], 1)
-        self.assertEqual(robo_run["four_signal_scope_coverage"], 0.5)
+        self.assertFalse(robo_run["fused_compatible"])
+        self.assertEqual(robo_run["fused_rollout_count"], 1)
+        self.assertEqual(robo_run["fused_scope_rollout_count"], 1)
+        self.assertEqual(robo_run["fused_missing_rollouts"], 1)
+        self.assertEqual(robo_run["fused_scope_coverage"], 0.5)
         self.assertEqual(
             robo_run["hop_signal_rollout_counts"],
-            {"incremental": 1, "forward": 1, "backward": 1, "fused": 1},
+            {"fused": 1},
         )
 
         with self.request(
@@ -1172,7 +1196,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(job["analysis_kind"], "robo_hop_comparison")
         self.assertEqual(job["requested_rollouts"], 2)
         self.assertEqual(job["selected_rollouts"], 1)
-        self.assertEqual(job["four_signal_coverage"], 0.5)
+        self.assertEqual(job["fused_coverage"], 0.5)
         self.assertIn("--selection", job["command"])
         self.assertIn("--run-root", job["command"])
         self.assertNotIn("--safe-run", job["command"])
@@ -1186,9 +1210,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             [{"id": self.rollout["id"]}],
         )
         self.assertEqual(selection_doc["requested_rollouts"], 2)
-        self.assertEqual(selection_doc["available_four_signal_rollouts"], 1)
-        self.assertEqual(job["requested_rollouts"], 2)
-        self.assertEqual(job["four_signal_coverage"], 0.5)
+        self.assertEqual(selection_doc["available_fused_rollouts"], 1)
+
         final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
         with self.request("/api/analysis") as response:
@@ -1198,28 +1221,29 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(hop["available"])
         self.assertEqual(
             {row["signal_mode"] for row in hop["selected_configs"]},
-            {"incremental", "forward", "backward", "fused"},
+            {"fused"},
         )
-        self.assertTrue(
-            all(row["detector_family"] == "consecutive" for row in hop["selected_configs"])
-        )
-        self.assertTrue(
-            all(row["event_recall_at_3"] == 0.5 for row in hop["selected_configs"])
-        )
-        self.assertTrue(
-            all(row["event_recall_eventual"] == 1 for row in hop["selected_configs"])
-        )
-        self.assertEqual(len(hop["sweep_summary"]), 4)
-        self.assertTrue(
-            all(row["event_recall_at_20"] == 1 for row in hop["sweep_summary"])
-        )
+        self.assertEqual(len(hop["sweep_summary"]), 1)
         self.assertEqual(
-            {row["signal_mode"] for row in hop["sweep_summary"]},
-            {"incremental", "forward", "backward", "fused"},
+            hop["selected_configs"][0]["overall_failed_rollout_coverage"],
+            1.0,
         )
-        self.assertEqual(hop["recovery_results"], [])
+        self.assertEqual(len(hop["ensemble_selected"]), 1)
+        self.assertEqual(
+            hop["ensemble_selected"][0]["selection_target"],
+            "overall_failed_rollout_coverage",
+        )
         self.assertTrue(
-            any(item["name"] == "best_configs.csv" for item in hop["artifacts"])
+            any(
+                item["name"] == "no_event_failure_results.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "ensemble_selected.csv"
+                for item in hop["artifacts"]
+            )
         )
 
     def test_analysis_run_rejects_missing_ids_and_paths(self) -> None:

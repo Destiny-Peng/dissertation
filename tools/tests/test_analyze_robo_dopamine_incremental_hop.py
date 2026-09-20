@@ -15,11 +15,12 @@ from robo_incremental_hop.core import (
     detect_hop_scale,
     detector_mask,
     evaluate_event,
+    evaluate_failure_rollout_from_start,
     make_config,
     positive_episode_count,
     recovery_metrics,
 )
-from robo_incremental_hop.report import build_pairwise_overlap_rows
+from robo_incremental_hop.report import build_pairwise_ensemble_rows
 
 
 class IncrementalHopDetectorTests(unittest.TestCase):
@@ -346,94 +347,211 @@ class IncrementalHopDetectorTests(unittest.TestCase):
         self.assertTrue(event["recall_at_20"])
         self.assertTrue(event["eventual_recall"])
 
-    def test_pairwise_overlap_tracks_tp_and_clean_fp_complementarity(self) -> None:
-        best_rows = [
-            {
-                "signal_mode": "incremental",
-                "clean_fpr_constraint": 0.20,
-                "selection_status": "selected",
-                "detector_family": "consecutive",
-                "config_id": "a",
-            },
-            {
-                "signal_mode": "incremental",
-                "clean_fpr_constraint": 0.20,
-                "selection_status": "selected",
-                "detector_family": "stagnation_consecutive",
-                "config_id": "b",
-            },
+    def test_no_event_failure_uses_rollout_start_latency(self) -> None:
+        detected = evaluate_failure_rollout_from_start(
+            [4, 8, 12],
+            [False, True, True],
+        )
+        self.assertTrue(detected["eventual_recall"])
+        self.assertFalse(detected["recall_at_1"])
+        self.assertTrue(detected["recall_at_3"])
+        self.assertEqual(detected["delay_samples"], 2)
+        self.assertEqual(detected["first_alarm_frame"], 8)
+        self.assertEqual(detected["delay_frames"], 8)
+
+        missed = evaluate_failure_rollout_from_start(
+            [4, 8, 12],
+            [False, False, False],
+        )
+        self.assertFalse(missed["eventual_recall"])
+        self.assertFalse(missed["recall_at_20"])
+        self.assertIsNone(missed["first_alarm_frame"])
+
+    def test_joint_pairwise_or_sweep_uses_true_fp_union(self) -> None:
+        configs = [
+            make_config(
+                "a1",
+                "stagnation_consecutive",
+                delta=0.02,
+                n=2,
+            ),
+            make_config(
+                "a2",
+                "stagnation_consecutive",
+                delta=0.05,
+                n=3,
+            ),
+            make_config(
+                "b1",
+                "window_mean",
+                m=3,
+                theta=-0.02,
+            ),
+            make_config(
+                "b2",
+                "window_mean",
+                m=5,
+                theta=0.0,
+            ),
         ]
 
-        def event_row(
+        def detection_row(
             config_id: str,
-            event_id: str,
-            failure_type: str,
+            row_id: str,
             detected: bool,
             delay: int | None,
+            *,
+            event: bool,
+            failure_type: str = "other",
         ) -> dict:
-            return {
-                "signal_mode": "incremental",
+            base = {
                 "config_id": config_id,
-                "event_id": event_id,
-                "rollout_id": event_id.split("::")[0],
-                "event_index": int(event_id.rsplit("event", 1)[1]),
-                "failure_type": failure_type,
-                "recall_at_1": bool(detected and delay is not None and delay <= 1),
-                "recall_at_3": bool(detected and delay is not None and delay <= 3),
-                "recall_at_5": bool(detected and delay is not None and delay <= 5),
-                "recall_at_10": bool(detected and delay is not None and delay <= 10),
-                "recall_at_20": bool(detected and delay is not None and delay <= 20),
+                "rollout_id": row_id.split("::")[0],
+                "recall_at_1": bool(
+                    detected and delay is not None and delay <= 1
+                ),
+                "recall_at_3": bool(
+                    detected and delay is not None and delay <= 3
+                ),
+                "recall_at_5": bool(
+                    detected and delay is not None and delay <= 5
+                ),
+                "recall_at_10": bool(
+                    detected and delay is not None and delay <= 10
+                ),
+                "recall_at_20": bool(
+                    detected and delay is not None and delay <= 20
+                ),
                 "eventual_recall": detected,
+                "detected": detected,
                 "delay_samples": delay,
                 "delay_frames": None if delay is None else delay * 4,
+                "outcome": "terminal_failure",
             }
+            if event:
+                base.update(
+                    {
+                        "event_id": row_id,
+                        "event_index": int(
+                            row_id.rsplit("event", 1)[1]
+                        ),
+                        "failure_type": failure_type,
+                    }
+                )
+            return base
 
-        event_rows = [
-            event_row("a", "r0::event0", "timeout_no_progress", True, 1),
-            event_row("a", "r1::event0", "grasp_failure", True, 2),
-            event_row("a", "r2::event0", "grasp_failure", False, None),
-            event_row("b", "r0::event0", "timeout_no_progress", False, None),
-            event_row("b", "r1::event0", "grasp_failure", True, 3),
-            event_row("b", "r2::event0", "grasp_failure", True, 2),
+        event_pattern = {
+            "a1": (True, False),
+            "a2": (False, True),
+            "b1": (True, True),
+            "b2": (False, False),
+        }
+        event_rows = []
+        for config_id, (first, second) in event_pattern.items():
+            event_rows.extend(
+                [
+                    detection_row(
+                        config_id,
+                        "r0::event0",
+                        first,
+                        1 if first else None,
+                        event=True,
+                        failure_type="grasp_failure",
+                    ),
+                    detection_row(
+                        config_id,
+                        "r1::event0",
+                        second,
+                        2 if second else None,
+                        event=True,
+                        failure_type="timeout_no_progress",
+                    ),
+                ]
+            )
+
+        no_event_pattern = {
+            "a1": False,
+            "a2": True,
+            "b1": False,
+            "b2": True,
+        }
+        no_event_rows = [
+            detection_row(
+                config_id,
+                "r2",
+                detected,
+                3 if detected else None,
+                event=False,
+            )
+            for config_id, detected in no_event_pattern.items()
         ]
+
+        clean_ids = ["c0", "c1", "c2", "c3", "c4"]
+        false_positive = {
+            "a1": {"c0"},
+            "a2": {"c1"},
+            "b1": set(),
+            "b2": set(),
+        }
         clean_rows = [
-            {"signal_mode": "incremental", "config_id": "a", "rollout_id": "c0", "any_positive": True},
-            {"signal_mode": "incremental", "config_id": "a", "rollout_id": "c1", "any_positive": False},
-            {"signal_mode": "incremental", "config_id": "b", "rollout_id": "c0", "any_positive": True},
-            {"signal_mode": "incremental", "config_id": "b", "rollout_id": "c1", "any_positive": True},
+            {
+                "config_id": config_id,
+                "rollout_id": rollout_id,
+                "any_positive": rollout_id in false_positive[config_id],
+            }
+            for config_id in false_positive
+            for rollout_id in clean_ids
         ]
 
-        summary, by_failure = build_pairwise_overlap_rows(
-            best_rows,
+        sweep, selected, by_failure = build_pairwise_ensemble_rows(
+            configs,
             event_rows,
+            no_event_rows,
             clean_rows,
         )
-        at3 = next(row for row in summary if row["horizon"] == "3")
-        self.assertEqual(at3["event_n"], 3)
-        self.assertEqual(at3["a_detected_n"], 2)
-        self.assertEqual(at3["b_detected_n"], 2)
-        self.assertEqual(at3["overlap_n"], 1)
-        self.assertEqual(at3["a_only_n"], 1)
-        self.assertEqual(at3["b_only_n"], 1)
-        self.assertEqual(at3["or_detected_n"], 3)
-        self.assertAlmostEqual(at3["or_recall"], 1.0)
-        self.assertAlmostEqual(at3["tp_jaccard"], 1.0 / 3.0)
-        self.assertAlmostEqual(at3["a_fpr"], 0.5)
-        self.assertAlmostEqual(at3["b_fpr"], 1.0)
-        self.assertAlmostEqual(at3["or_fpr"], 1.0)
-        self.assertAlmostEqual(at3["fp_jaccard"], 0.5)
+        self.assertEqual(len(sweep), 4)
 
-        grasp = next(
+        combo = next(
             row
-            for row in by_failure
-            if row["horizon"] == "3"
-            and row["failure_type"] == "grasp_failure"
+            for row in sweep
+            if row["a_config_id"] == "a2"
+            and row["b_config_id"] == "b1"
         )
-        self.assertEqual(grasp["event_n"], 2)
-        self.assertEqual(grasp["overlap_n"], 1)
-        self.assertEqual(grasp["a_only_n"], 0)
-        self.assertEqual(grasp["b_only_n"], 1)
-        self.assertAlmostEqual(grasp["or_recall"], 1.0)
+        self.assertAlmostEqual(combo["clean_rollout_fpr"], 0.2)
+        self.assertEqual(combo["fp_overlap_n"], 0)
+        self.assertAlmostEqual(combo["event_recall_eventual"], 1.0)
+        self.assertAlmostEqual(combo["no_event_recall_eventual"], 1.0)
+        self.assertAlmostEqual(
+            combo["overall_failed_rollout_coverage"],
+            1.0,
+        )
+        self.assertEqual(combo["event_overlap_at_eventual_n"], 1)
+        self.assertEqual(combo["event_a_only_at_eventual_n"], 0)
+        self.assertEqual(combo["event_b_only_at_eventual_n"], 1)
+        self.assertEqual(combo["no_event_a_only_at_eventual_n"], 1)
+
+        chosen = next(
+            row
+            for row in selected
+            if row["selection_status"] == "selected"
+            and row["clean_fpr_constraint"] == 0.20
+            and row["selection_target"]
+            == "overall_failed_rollout_coverage"
+            and row["detector_a_family"]
+            == "stagnation_consecutive"
+            and row["detector_b_family"] == "window_mean"
+        )
+        self.assertEqual(chosen["a_config_id"], "a2")
+        self.assertEqual(chosen["b_config_id"], "b1")
+        self.assertAlmostEqual(chosen["selection_value"], 1.0)
+        self.assertTrue(
+            any(
+                row["failure_type"] == "timeout_no_progress"
+                and row["horizon"] == "eventual"
+                and row["b_only_n"] == 0
+                for row in by_failure
+            )
+        )
 
     def test_early_alarm_and_hop_scale_contracts(self) -> None:
         event = evaluate_event(
