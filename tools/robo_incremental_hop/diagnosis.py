@@ -297,6 +297,30 @@ def build_grasp_event_features(
             or int(features.get("longest_stagnation_run") or 0)
             >= STAGNATION_RUN_THRESHOLD
         )
+        aligned_hops: dict[str, Any] = {}
+        for offset in range(
+            -DIAGNOSIS_PRE_SAMPLES,
+            DIAGNOSIS_POST_SAMPLES + 1,
+        ):
+            index = anchor + offset
+            key = (
+                f"hop_offset_m{abs(offset)}"
+                if offset < 0
+                else (
+                    "hop_offset_0"
+                    if offset == 0
+                    else f"hop_offset_p{offset}"
+                )
+            )
+            value = None
+            if 0 <= index < len(signal["hops"]):
+                if (
+                    offset < 0
+                    or end_frame is None
+                    or int(signal["frames"][index]) < end_frame
+                ):
+                    value = float(signal["hops"][index])
+            aligned_hops[key] = value
         denominator = max(1, len(signal["frames"]) - 1)
         rows.append(
             {
@@ -313,6 +337,7 @@ def build_grasp_event_features(
                 "onset_anchor_index": anchor,
                 "onset_anchor_frame": int(signal["frames"][anchor]),
                 "normalized_phase": anchor / denominator,
+                **aligned_hops,
                 "reference_detected": detected,
                 "reference_detection_delay_samples": detection_delay_samples,
                 "reference_detection_delay_frames": detection_delay_frames,
@@ -695,6 +720,17 @@ def diagnosis_metadata(
         for row in matched_rows
         if row.get("control_oracle_visible_abnormality") is not None
     ]
+    reference_recall = detected / total if total else None
+    oracle_coverage = oracle / total if total else None
+    matched_clean_positive = sum(
+        bool(row.get("control_oracle_visible_abnormality"))
+        for row in matched_oracle
+    )
+    matched_clean_coverage = (
+        matched_clean_positive / len(matched_oracle)
+        if matched_oracle
+        else None
+    )
     return {
         "enabled": True,
         "failure_type": "grasp_failure",
@@ -703,7 +739,7 @@ def diagnosis_metadata(
         "reference_missed_n": (
             sum(row.get("reference_detected") is False for row in feature_rows)
         ),
-        "reference_recall": detected / total if total else None,
+        "reference_recall": reference_recall,
         "event_window": {
             "pre_samples": DIAGNOSIS_PRE_SAMPLES,
             "post_samples": DIAGNOSIS_POST_SAMPLES,
@@ -723,12 +759,15 @@ def diagnosis_metadata(
         "oracle_visible_abnormality": {
             "definition": "min hop within first 20 < 0 OR longest |hop|<0.01 run >=3",
             "event_n": oracle,
-            "coverage": oracle / total if total else None,
-            "matched_clean_n": len(matched_oracle),
-            "matched_clean_positive_n": sum(
-                bool(row.get("control_oracle_visible_abnormality"))
-                for row in matched_oracle
+            "coverage": oracle_coverage,
+            "reference_recall_gap": (
+                oracle_coverage - reference_recall
+                if oracle_coverage is not None and reference_recall is not None
+                else None
             ),
+            "matched_clean_n": len(matched_oracle),
+            "matched_clean_positive_n": matched_clean_positive,
+            "matched_clean_positive_fraction": matched_clean_coverage,
             "not_a_detector": True,
         },
         "matched_control": {
