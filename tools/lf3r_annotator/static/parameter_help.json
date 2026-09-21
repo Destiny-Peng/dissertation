@@ -302,6 +302,13 @@
       "applies_to": "ProcVLM; batch and single-rollout reruns",
       "description": "Use the official PyTorch value head to replace generated progress with regression predictions. Requires trained pooler/value-head checkpoint weights. Disabling uses text-based vLLM inference. The vLLM memory fraction does not cap PyTorch memory.",
       "forwarded_as": "--enable-value-head -> enable_value_head=True"
+    },
+    "result_filter": {
+      "cli": "WebUI/server selection filter (runner receives explicit --rollout-id values)",
+      "default": "all; choices: all, missing_valid",
+      "applies_to": "batch baseline runs",
+      "description": "When set to missing_valid, selects only rollouts that do not already have a parseable completed result for the selected baseline and instruction condition. Failed, missing, empty, or otherwise unreadable outputs remain eligible.",
+      "forwarded_as": "server recomputes result coverage, then forwards only missing rollout IDs to run_lf3r_baseline.py"
     }
   },
   "rollout": {
@@ -374,6 +381,13 @@
       "applies_to": "OpenVLA natural rollout generator (selected task suite)",
       "description": "Square replay-video width and height. This changes saved MP4 resolution only; it does not change the checkpoint policy input, which remains 224x224. Use an even value from 64 through 2048.",
       "forwarded_as": "wrapper -> --record_resolution=N to the official evaluator"
+    },
+    "video_view_mode": {
+      "cli": "--video-view-mode MODE",
+      "default": "single_view; choices: single_view, libero_three_view",
+      "applies_to": "LIBERO rollout generation",
+      "description": "Controls the review recording only. libero_three_view preserves the canonical single-view rollout and policy input, then replays the recorded actions without model inference to create an additional horizontal agent + side + wrist video.",
+      "forwarded_as": "WebUI -> generator wrapper -> post-run generate_libero_multiview.py replay"
     }
   },
   "settings": {
