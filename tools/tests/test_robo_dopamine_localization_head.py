@@ -101,6 +101,7 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         row = dataset["r"]
         self.assertEqual(row["event"]["event_id"], "r::event0")
         self.assertEqual(row["context"].shape, (5, 2, 5))
+        self.assertEqual(row["sequence"].shape, (5, 2))
         self.assertEqual(row["causal_index"], 1)
         self.assertEqual(row["observable_index"], 2)
         self.assertEqual(row["labels"].tolist(), [0.0, 1.0, 1.0, 0.0, 0.0])
@@ -189,7 +190,7 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertTrue(training["sequence_model"])
         self.assertEqual(training["hidden"], 16)
-        self.assertTrue(all(np.isfinite(row["prediction_score"]) for row in rows))
+        self.assertTrue(all(np.isfinite(row["score"]) for row in rows))
 
     def test_interval_metrics_match_requested_definition(self) -> None:
         dataset = self.synthetic_dataset(1)
