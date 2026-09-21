@@ -212,6 +212,17 @@ ROBO_HOP_REQUIRED_FILES = (
     "recovery_results.csv",
     "breakdown_summary.csv",
 )
+ROBO_LOCALIZATION_HEAD_REQUIRED_FILES = (
+    "metadata.json",
+    "ablation_comparison.csv",
+    "ablation_delta.csv",
+    "per_split_metrics.csv",
+    "per_rollout_predictions.csv",
+    "training_records.json",
+    "split_manifest.json",
+    "conclusion.md",
+)
+
 ROBO_HOP_EXTENDED_FILES = (
     "no_event_failure_results.csv",
     "ensemble_sweep.csv",
@@ -704,6 +715,9 @@ class AnalysisService:
         self.analysis_root = self.project_root / "outputs" / "baseline_signal_analysis"
         self.robo_hop_root = (
             self.project_root / "outputs" / "robo_dopamine_incremental_hop"
+        )
+        self.robo_localization_head_root = (
+            self.project_root / "outputs" / "robo_dopamine_localization_head"
         )
 
     def _relative(self, path: Path) -> str:
@@ -1974,6 +1988,74 @@ class AnalysisService:
             "legacy_temporal_available": True,
         }
 
+
+    def _latest_robo_localization_head_snapshot(
+        self,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        root = self.robo_localization_head_root
+        if not root.is_dir():
+            return None
+        candidates: list[tuple[float, Path, dict[str, Any]]] = []
+        for metadata_path in root.rglob("metadata.json"):
+            directory = metadata_path.parent
+            if not all(
+                (directory / name).is_file()
+                for name in ROBO_LOCALIZATION_HEAD_REQUIRED_FILES
+            ):
+                continue
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if metadata.get("analysis") != "robo_dopamine_bilstm_success_negative_ablation":
+                continue
+            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+        if not candidates:
+            return None
+        _, directory, metadata = max(candidates, key=lambda item: item[0])
+        return directory, metadata
+
+    def robo_localization_head_response(self) -> dict[str, Any]:
+        selected = self._latest_robo_localization_head_snapshot()
+        if selected is None:
+            return {
+                "available": False,
+                "message": "No completed BiLSTM success-negative training snapshot yet.",
+            }
+        directory, metadata = selected
+        return {
+            "available": True,
+            "source": {
+                "directory": self._relative(directory),
+                "generated_at": metadata.get("generated_at"),
+                "run_root": metadata.get("run_root"),
+            },
+            "metadata": metadata,
+            "comparison": self._read_csv(directory / "ablation_comparison.csv"),
+            "delta": self._read_csv(directory / "ablation_delta.csv"),
+            "per_split": self._read_csv(directory / "per_split_metrics.csv"),
+            "artifacts": [
+                {
+                    "name": name,
+                    "url": "/api/analysis/robo-localization-head/artifacts/" + name,
+                }
+                for name in ROBO_LOCALIZATION_HEAD_REQUIRED_FILES
+                if (directory / name).is_file()
+            ],
+        }
+
+    def robo_localization_head_artifact_path(self, name: str) -> Path:
+        if name not in ROBO_LOCALIZATION_HEAD_REQUIRED_FILES:
+            raise ValidationError("Unsupported localization-head artifact")
+        selected = self._latest_robo_localization_head_snapshot()
+        if selected is None:
+            raise FileNotFoundError(name)
+        directory, _metadata = selected
+        path = (directory / name).resolve()
+        path.relative_to(directory.resolve())
+        if not path.is_file():
+            raise FileNotFoundError(name)
+        return path
 
     def robo_hop_response(self) -> dict[str, Any]:
         """Return the latest Robo-Dopamine fused-hop snapshot directly."""
@@ -4327,6 +4409,9 @@ class AnalysisJobService:
         self.robo_hop_root = (
             self.project_root / "outputs" / "robo_dopamine_incremental_hop"
         )
+        self.robo_localization_head_root = (
+            self.project_root / "outputs" / "robo_dopamine_localization_head"
+        )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
             analysis_python
@@ -4339,6 +4424,13 @@ class AnalysisJobService:
         if not configured_python.is_absolute():
             configured_python = self.project_root / configured_python
         self.analysis_python = Path(os.path.abspath(configured_python))
+        robo_python = os.environ.get("LF3R_ROBODOPAMINE_PYTHON")
+        if robo_python:
+            self.robo_python = Path(os.path.abspath(Path(robo_python).expanduser()))
+        else:
+            self.robo_python = (
+                self.project_root / "conda_envs" / "LF3R-robo-dopamine" / "bin" / "python"
+            )
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
         self.tmux.register_handler(
@@ -4661,9 +4753,164 @@ class AnalysisJobService:
             raise
         return dict(job)
 
+    def start_robo_localization_head_run(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        allowed_fields = {
+            "analysis_kind", "runs", "output_label", "device", "repeats",
+            "epochs", "patience", "learning_rate", "weight_decay", "grad_clip",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise ValidationError(
+                "Unknown localization-head field(s): " + ", ".join(sorted(unknown_fields))
+            )
+        if not self.robo_python.is_file() or not os.access(self.robo_python, os.X_OK):
+            raise AnalysisEnvironmentError(
+                "Robo-Dopamine PyTorch Python is unavailable: "
+                + self._relative(self.robo_python)
+            )
+        check = subprocess.run(
+            [str(self.robo_python), "-c", "import torch, numpy; print(torch.__version__)"],
+            cwd=str(self.project_root),
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if check.returncode != 0:
+            raise AnalysisEnvironmentError(
+                "Robo-Dopamine environment cannot import torch: "
+                + (check.stderr or check.stdout)[-1200:]
+            )
+
+        raw_runs = payload.get("runs")
+        if not isinstance(raw_runs, dict):
+            raise ValidationError("runs must be an object")
+        run_path, metadata = self.baselines._explicit_run_candidate(
+            "robo_dopamine",
+            raw_runs.get("robo_dopamine"),
+            {"full_instruction", "unknown"},
+        )
+        if metadata.get("status") not in BASELINE_RUN_STATUSES:
+            raise ValidationError("Selected Robo-Dopamine run is not complete")
+        _run_ids, signal_ids_by_mode, _four = self.baselines._run_inventory(
+            run_path, "robo_dopamine"
+        )
+        if not signal_ids_by_mode.get("fused"):
+            raise ValidationError(
+                "Selected Robo-Dopamine run contains no saved fused-hop outputs"
+            )
+
+        label = str(payload.get("output_label") or "web_bilstm_success_ablation").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
+            raise ValidationError(
+                "output_label must contain only letters, numbers, dot, underscore, or hyphen"
+            )
+        device = str(payload.get("device") or "auto").strip()
+        if not re.fullmatch(r"(auto|cpu|cuda(?::\d+)?)", device):
+            raise ValidationError("device must be auto, cpu, cuda, or cuda:N")
+        repeats = self._integer(payload.get("repeats", 5), "repeats", 1, 50)
+        epochs = self._integer(payload.get("epochs", 300), "epochs", 1, 5000)
+        patience = self._integer(payload.get("patience", 35), "patience", 1, 1000)
+        try:
+            learning_rate = float(payload.get("learning_rate", 0.003))
+            weight_decay = float(payload.get("weight_decay", 1e-4))
+            grad_clip = float(payload.get("grad_clip", 5.0))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                "learning_rate, weight_decay, and grad_clip must be numeric"
+            ) from exc
+        if learning_rate <= 0 or weight_decay < 0 or grad_clip <= 0:
+            raise ValidationError(
+                "learning_rate and grad_clip must be > 0; weight_decay must be >= 0"
+            )
+
+        script = self.project_root / "tools" / "train_robo_dopamine_localization_head.py"
+        if not script.is_file():
+            raise ValidationError("BiLSTM localization-head training script is missing")
+
+        job_id = "analysis-bilstm-" + uuid.uuid4().hex[:12]
+        workspace = self.robo_localization_head_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.robo_localization_head_root / (
+            "web_" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_" + label + "_" + job_id[-8:]
+        )
+        command = [
+            str(self.robo_python),
+            str(script),
+            "--run-root", str(run_path),
+            "--manifest", str(self.manifest_path),
+            "--annotations", str(self.annotation_root / "records"),
+            "--output-dir", str(output_temp),
+            "--device", device,
+            "--repeats", str(repeats),
+            "--epochs", str(epochs),
+            "--patience", str(patience),
+            "--learning-rate", str(learning_rate),
+            "--weight-decay", str(weight_decay),
+            "--grad-clip", str(grad_clip),
+        ]
+        self.robo_localization_head_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        (self.robo_localization_head_root / ".web_jobs").mkdir(
+            parents=True, exist_ok=True
+        )
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            workspace.mkdir(parents=True, exist_ok=False)
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "robo_bilstm_success_ablation",
+                "status": "queued",
+                "selected_rollouts": int(metadata.get("selected_rollouts") or 0),
+                "runs": {"robo_dopamine": self._relative(run_path)},
+                "parameters": {
+                    "device": device,
+                    "repeats": repeats,
+                    "epochs": epochs,
+                    "patience": patience,
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "grad_clip": grad_clip,
+                },
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.robo_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job,
+                command,
+                self.log_root / f"{job_id}.log",
+                interpreter=str(self.robo_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
+        if payload.get("analysis_kind") == "robo_bilstm_success_ablation":
+            return self.start_robo_localization_head_run(payload)
         if payload.get("analysis_kind") in {
             "robo_incremental_hop",
             "robo_hop_comparison",
@@ -4811,7 +5058,12 @@ class AnalysisJobService:
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                if job.get("analysis_kind") in {
+                if job.get("analysis_kind") == "robo_bilstm_success_ablation":
+                    required = ROBO_LOCALIZATION_HEAD_REQUIRED_FILES
+                    missing_message = (
+                        "BiLSTM localization-head training completed without all required artifacts"
+                    )
+                elif job.get("analysis_kind") in {
                     "robo_incremental_hop",
                     "robo_hop_comparison",
                 }:
@@ -4841,14 +5093,17 @@ class AnalysisJobService:
                 job["status"] = "complete"
             else:
                 job["status"] = "failed"
-                label = (
-                    "Robo-Dopamine hop comparison"
-                    if job.get("analysis_kind") in {
-                        "robo_incremental_hop",
-                        "robo_hop_comparison",
-                    }
-                    else "Temporal analysis"
-                )
+                if job.get("analysis_kind") == "robo_bilstm_success_ablation":
+                    label = "BiLSTM localization-head training"
+                else:
+                    label = (
+                        "Robo-Dopamine hop comparison"
+                        if job.get("analysis_kind") in {
+                            "robo_incremental_hop",
+                            "robo_hop_comparison",
+                        }
+                        else "Temporal analysis"
+                    )
                 error = error or f"{label} exited with code {return_code}"
         except Exception as exc:
             job["status"] = "failed"
@@ -5469,6 +5724,28 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"analysis": self.app.analysis.response(compact=compact)},
                 )
+                return
+            if path == "/api/analysis/robo-localization-head":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {
+                        "localization_head": (
+                            self.app.analysis.robo_localization_head_response()
+                        )
+                    },
+                )
+                return
+            if path.startswith("/api/analysis/robo-localization-head/artifacts/"):
+                name = path.rsplit("/", 1)[-1]
+                try:
+                    artifact = self.app.analysis.robo_localization_head_artifact_path(name)
+                except FileNotFoundError:
+                    self.json_error(
+                        HTTPStatus.NOT_FOUND,
+                        "Localization-head artifact is unavailable",
+                    )
+                    return
+                self.file_response(artifact)
                 return
             if path == "/api/analysis/robo-hop":
                 self.json_response(
