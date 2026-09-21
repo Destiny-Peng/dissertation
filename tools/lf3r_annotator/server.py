@@ -4778,21 +4778,14 @@ class AnalysisJobService:
         # the authoritative environment check; any import/CUDA error is kept in
         # its persistent log instead of dropping the POST connection.
 
-        raw_runs = payload.get("runs")
-        if not isinstance(raw_runs, dict):
-            raise ValidationError("runs must be an object")
-        run_path, metadata = self.baselines._explicit_run_candidate(
-            "robo_dopamine",
-            raw_runs.get("robo_dopamine"),
-            {"full_instruction", "unknown"},
-        )
-        if metadata.get("status") not in BASELINE_RUN_STATUSES:
-            raise ValidationError("Selected Robo-Dopamine run is not complete")
+        # BiLSTM evaluation now treats all completed Robo-Dopamine runs as a
+        # result pool. The training process selects the latest usable fused
+        # result independently for each rollout, so a newly rerun partial batch
+        # is automatically merged with older rollout results.
+        pool_root = self.baselines.baseline_root
+        if not pool_root.is_dir():
+            raise ValidationError("Baseline output pool does not exist")
 
-        # Keep the HTTP request path lightweight, like baseline run submission:
-        # validate only the selected run metadata here, then launch tmux. The
-        # training script owns fused-output/data/PyTorch validation and writes
-        # any failure into the persistent log for the WebUI to tail.
         label = str(payload.get("output_label") or "web_bilstm_success_ablation").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
             raise ValidationError(
@@ -4867,7 +4860,7 @@ class AnalysisJobService:
         command = [
             str(self.robo_python),
             str(script),
-            "--run-root", str(run_path),
+            "--run-pool-root", str(pool_root),
             "--manifest", str(self.manifest_path),
             "--annotations", str(self.annotation_root / "records"),
             "--output-dir", str(output_temp),
@@ -4893,8 +4886,10 @@ class AnalysisJobService:
                 "job_type": "analysis",
                 "analysis_kind": "robo_bilstm_success_ablation",
                 "status": "queued",
-                "selected_rollouts": int(metadata.get("selected_rollouts") or 0),
-                "runs": {"robo_dopamine": self._relative(run_path)},
+                "selected_rollouts": 0,
+                "runs": {
+                    "robo_dopamine_pool": self._relative(pool_root)
+                },
                 "parameters": {
                     "device": device,
                     "repeats": repeats,
@@ -4904,6 +4899,8 @@ class AnalysisJobService:
                     "weight_decay": weight_decay,
                     "grad_clip": grad_clip,
                     "success_ratios": success_ratios,
+                    "result_selection": "latest_usable_fused_per_rollout",
+                    "run_pool_root": self._relative(pool_root),
                 },
                 "command": command,
                 "output_dir": self._relative(output_final),
