@@ -2028,7 +2028,11 @@ class AnalysisService:
             "source": {
                 "directory": self._relative(directory),
                 "generated_at": metadata.get("generated_at"),
-                "run_root": metadata.get("run_root"),
+                "source_root": (
+                    metadata.get("source_root")
+                    or metadata.get("run_root")
+                ),
+                "selection_mode": metadata.get("selection_mode"),
             },
             "metadata": metadata,
             "comparison": self._read_csv(directory / "ablation_comparison.csv"),
