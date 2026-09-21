@@ -1031,6 +1031,22 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()
 
+        def annotate(record: dict, status: str) -> None:
+            self.app.store.write(
+                record,
+                {
+                    "annotator": "test",
+                    "review_status": status,
+                    "outcome_label": "success",
+                    "failure_type": "none_success",
+                    "confidence": 5,
+                    "failure_events": [],
+                    "notes": "",
+                },
+            )
+
+        annotate(self.rollout, "complete")
+
         second_video = self.root / "outputs" / "sample2.mp4"
         second_video.write_bytes(b"second-video")
         second = {
@@ -1044,17 +1060,53 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             json.dumps(self.rollout) + "\n" + json.dumps(second) + "\n",
             encoding="utf-8",
         )
+        annotate(second, "complete")
 
         with self.request(
             "/api/baselines/result-coverage?baseline=safe&scope=libero_10&condition=full_instruction"
         ) as response:
             coverage = json.load(response)
+        self.assertEqual(coverage["scope_rollouts"], 2)
         self.assertEqual(coverage["matched_rollouts"], 2)
+        self.assertEqual(coverage["complete_annotation_rollouts"], 2)
+        self.assertEqual(coverage["incomplete_annotation_rollouts"], 0)
         self.assertEqual(coverage["valid_result_rollouts"], 1)
         self.assertEqual(coverage["missing_valid_result_rollouts"], 1)
         self.assertEqual(coverage["valid_source_rollout_ids"], ["sample-rollout"])
         self.assertEqual(coverage["missing_source_rollout_ids"], ["sample-rollout-2"])
 
+        annotate(second, "in_progress")
+        with self.request(
+            "/api/baselines/result-coverage?baseline=safe&scope=libero_10&condition=full_instruction"
+        ) as response:
+            incomplete_coverage = json.load(response)
+        self.assertEqual(incomplete_coverage["scope_rollouts"], 2)
+        self.assertEqual(incomplete_coverage["complete_annotation_rollouts"], 1)
+        self.assertEqual(incomplete_coverage["incomplete_annotation_rollouts"], 1)
+        self.assertEqual(incomplete_coverage["missing_valid_result_rollouts"], 0)
+        self.assertEqual(
+            incomplete_coverage["incomplete_source_rollout_ids"],
+            ["sample-rollout-2"],
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(
+                "/api/baselines/run-batch",
+                {
+                    "baseline": "safe",
+                    "scope": "libero_10",
+                    "gpu": "0",
+                    "result_filter": "missing_valid",
+                    "parallel_workers": 1,
+                    "start_index": 0,
+                },
+            )
+        self.assertEqual(caught.exception.code, 400)
+
+        annotate(second, "complete")
+
+        # A run can mention a rollout but still be invalid if its raw output is
+        # missing/unparseable; such a rollout must remain eligible.
         safe_output = (
             self.root
             / "outputs"
@@ -1076,6 +1128,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             ["sample-rollout", "sample-rollout-2"],
         )
 
+        # Restore one valid prior result and verify the authoritative batch
+        # selection forwards only the genuinely missing rollout ID.
         safe_output.parent.mkdir(parents=True, exist_ok=True)
         safe_output.write_text(
             "action_timestep,max_token_prob,avg_token_prob\n10,0.9,0.8\n",
@@ -1100,6 +1154,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             job = json.load(response)["job"]
         self.assertEqual(job["result_filter"], "missing_valid")
         self.assertEqual(job["scope_rollouts_before_result_filter"], 2)
+        self.assertEqual(job["complete_annotation_rollouts"], 2)
+        self.assertEqual(job["incomplete_annotation_rollouts_skipped"], 0)
         self.assertEqual(job["valid_result_rollouts_skipped"], 1)
         self.assertEqual(job["selected_rollouts"], 1)
         rollout_flags = [
