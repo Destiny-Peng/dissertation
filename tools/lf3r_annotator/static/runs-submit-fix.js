@@ -30,9 +30,25 @@
     var method = byId("baselineBatchMethod").value;
     var scope = byId("baselineBatchScope").value;
     var condition = byId("baselineBatchCondition").value || "full_instruction";
+    var resultFilter = baselineBatchResultFilterValue();
     var memory = Number(byId("baselineBatchMemoryUtilization").value);
-    readBaselineBatchWorkers();
 
+    if (resultFilter === "missing_valid") {
+      var coverage = await loadBaselineBatchCoverage(true);
+      if (!coverage) {
+        setBaselineBatchStatus("Could not verify existing baseline result coverage.", "error");
+        return;
+      }
+      if (!coverage.missing_valid_result_rollouts) {
+        setBaselineBatchStatus(
+          "Every matching rollout already has a valid " + method + " result; nothing to run.",
+          "warning"
+        );
+        return;
+      }
+    }
+
+    readBaselineBatchWorkers();
     var range = baselineBatchTotalRange();
     var summary = baselineBatchWorkerSummary();
     var workers = (state.baselineBatchWorkers || []).map(function (worker) {
@@ -71,6 +87,9 @@
 
     var confirmation = "Run " + method + " for " + instructionConditionLabel(condition)
       + " over " + selected.length + " unique rollout(s)? This launches GPU inference."
+      + (resultFilter === "missing_valid"
+        ? " Rollouts with an existing valid result will be skipped by the server."
+        : "")
       + " It will start " + workers.length + " rollout worker(s).";
     if (!window.confirm(confirmation)) return;
 
@@ -83,6 +102,7 @@
       baseline: method,
       scope: scope,
       instruction_condition: condition,
+      result_filter: resultFilter,
       gpu: gpu,
       memory_utilization: memory,
       start_index: range.start,
