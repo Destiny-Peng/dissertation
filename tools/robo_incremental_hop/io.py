@@ -467,12 +467,126 @@ def load_incremental_signal(
 ) -> dict[str, Any]:
     return load_signal(run_root, rollout_id, "incremental")
 
+def discover_robo_dopamine_run_roots(pool_root: Path) -> list[Path]:
+    """Discover completed full-instruction Robo-Dopamine runs below a pool."""
+    pool_root = ensure_within_project(pool_root, "Robo-Dopamine run pool")
+    if not pool_root.is_dir():
+        raise FileNotFoundError(pool_root)
+
+    runs: list[Path] = []
+    for metadata_path in pool_root.rglob("run.json"):
+        try:
+            metadata = load_json(metadata_path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        if metadata.get("baseline") != "robo_dopamine":
+            continue
+        if metadata.get("status") not in {"complete", "complete_with_errors"}:
+            continue
+
+        condition = str(
+            metadata.get("instruction_variant")
+            or metadata.get("instruction_condition")
+            or "unknown"
+        )
+        path_text = metadata_path.parent.as_posix()
+        if condition in {"subtask_a", "subtask_b"}:
+            continue
+        if "/instruction_variants/" in path_text and (
+            "/subtask_a/" in path_text or "/subtask_b/" in path_text
+        ):
+            continue
+        runs.append(metadata_path.parent.resolve())
+
+    return sorted(set(runs))
+
+
+def latest_usable_signals(
+    pool_root: Path,
+    signal_mode: str,
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, Path],
+    dict[str, Any],
+]:
+    """Pick the newest usable saved signal independently for each rollout.
+
+    Recency is based on the per-rollout worker_result.json mtime. If the newest
+    completed result for a rollout cannot resolve the requested signal mode,
+    older completed results for that same rollout are tried in descending
+    recency order.
+    """
+    run_roots = discover_robo_dopamine_run_roots(pool_root)
+    if not run_roots:
+        raise ValueError(
+            f"No completed Robo-Dopamine runs found under {pool_root}"
+        )
+
+    candidates: dict[str, list[tuple[float, Path]]] = {}
+    jobs_sources: list[str] = []
+    for run_root in run_roots:
+        completed_ids, sources = completed_rollout_ids(run_root)
+        jobs_sources.extend(sources)
+        for rollout_id in completed_ids:
+            worker_result = run_root / "raw" / rollout_id / "worker_result.json"
+            if not worker_result.is_file():
+                continue
+            try:
+                stamp = worker_result.stat().st_mtime
+            except OSError:
+                continue
+            candidates.setdefault(rollout_id, []).append((stamp, run_root))
+
+    signals: dict[str, dict[str, Any]] = {}
+    selected_roots: dict[str, Path] = {}
+    rejected_candidates: list[dict[str, str]] = []
+    selected_run_counts: Counter[str] = Counter()
+
+    for rollout_id, rows in sorted(candidates.items()):
+        for _stamp, run_root in sorted(
+            rows,
+            key=lambda item: (item[0], item[1].as_posix()),
+            reverse=True,
+        ):
+            try:
+                signal = load_signal(run_root, rollout_id, signal_mode)
+            except (FileNotFoundError, OSError, ValueError) as exc:
+                rejected_candidates.append(
+                    {
+                        "rollout_id": rollout_id,
+                        "run_root": project_relative(run_root),
+                        "reason": str(exc),
+                    }
+                )
+                continue
+            signal["source_run_root"] = run_root
+            signals[rollout_id] = signal
+            selected_roots[rollout_id] = run_root
+            selected_run_counts[project_relative(run_root)] += 1
+            break
+
+    provenance = {
+        "selection_mode": "latest_usable_signal_per_rollout",
+        "pool_root": project_relative(pool_root),
+        "discovered_run_n": len(run_roots),
+        "candidate_rollout_n": len(candidates),
+        "selected_rollout_n": len(signals),
+        "selected_run_counts": dict(selected_run_counts),
+        "jobs_sources": sorted(set(jobs_sources)),
+        "rejected_newer_candidates": rejected_candidates,
+    }
+    return signals, selected_roots, provenance
+
+
 def build_base_records(
     run_root: Path,
     manifest: Mapping[str, Mapping[str, Any]],
     annotation_dir: Path,
     allowed_rollout_ids: set[str] | None = None,
     signal_mode: str = "incremental",
+    latest_per_rollout: bool = False,
 ) -> tuple[
     dict[str, dict[str, Any]],
     list[dict[str, Any]],
@@ -480,9 +594,17 @@ def build_base_records(
     list[dict[str, Any]],
     dict[str, Any],
 ]:
-    completed_ids, jobs_sources = completed_rollout_ids(
-        run_root
-    )
+    latest_signals: dict[str, dict[str, Any]] = {}
+    latest_roots: dict[str, Path] = {}
+    latest_provenance: dict[str, Any] = {}
+    if latest_per_rollout:
+        latest_signals, latest_roots, latest_provenance = latest_usable_signals(
+            run_root, signal_mode
+        )
+        completed_ids = sorted(latest_signals)
+        jobs_sources = list(latest_provenance.get("jobs_sources") or [])
+    else:
+        completed_ids, jobs_sources = completed_rollout_ids(run_root)
     completed_before_filter = len(completed_ids)
     if allowed_rollout_ids is not None:
         completed_set = set(completed_ids)
@@ -537,10 +659,12 @@ def build_base_records(
             continue
 
         try:
-            signal = load_signal(
-                run_root, rollout_id, signal_mode
+            signal = (
+                latest_signals[rollout_id]
+                if latest_per_rollout
+                else load_signal(run_root, rollout_id, signal_mode)
             )
-        except (FileNotFoundError, OSError, ValueError) as exc:
+        except (FileNotFoundError, OSError, ValueError, KeyError) as exc:
             exclusions.append(
                 {
                     "rollout_id": rollout_id,
@@ -567,6 +691,11 @@ def build_base_records(
         outcome = normalize_outcome(annotation)
         signal.update(
             {
+                "source_run_root": (
+                    latest_roots.get(rollout_id, run_root)
+                    if latest_per_rollout
+                    else run_root
+                ),
                 "task_key": task_key,
                 "task_suite": suite,
                 "task_id": task_id,
@@ -719,6 +848,12 @@ def build_base_records(
 
     provenance = {
         "signal_mode": signal_mode,
+        "selection_mode": (
+            "latest_usable_signal_per_rollout"
+            if latest_per_rollout
+            else "single_run_root"
+        ),
+        "run_pool": latest_provenance if latest_per_rollout else None,
         "completed_rollout_n": len(completed_ids),
         "completed_rollout_n_before_selection": completed_before_filter,
         "selection_filter_n": (
