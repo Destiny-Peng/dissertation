@@ -93,6 +93,28 @@ class NonAnalysisToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tools.robo_interval_sweep_command({})
 
+    def test_manifest_rebuild_keeps_default_roots_and_appends_extras(self):
+        command = tools.rebuild_manifest_command(
+            {"extra_scan_roots": ["tools"]}
+        )
+        roots = [
+            Path(command[index + 1]).resolve()
+            for index, token in enumerate(command[:-1])
+            if token == "--scan-root"
+        ]
+        expected_defaults = [path.resolve() for path in tools.DEFAULT_MANIFEST_SCAN_ROOTS]
+        for path in expected_defaults:
+            self.assertIn(path, roots)
+        self.assertIn((tools.PROJECT_ROOT / "tools").resolve(), roots)
+        self.assertEqual(len(roots), len(set(roots)))
+        self.assertEqual(roots[: len(expected_defaults)], expected_defaults)
+
+    def test_manifest_rebuild_rejects_missing_extra_root(self):
+        with self.assertRaisesRegex(ValueError, "scan root does not exist"):
+            tools.rebuild_manifest_command(
+                {"extra_scan_roots": ["outputs/definitely-not-a-real-rollout-root"]}
+            )
+
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
@@ -101,6 +123,17 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertEqual(job["action"], "validate_variants")
         self.assertEqual(tmux.handler[0], tools.TOOL_JOB_TYPE)
         self.assertIn("--check-only", tmux.submitted[1])
+
+    def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
+        source = (HERE / "static" / "runs-layout.js").read_text(encoding="utf-8")
+        self.assertIn("rebuildManifestExtraRoots", source)
+        self.assertIn("extra_scan_roots", source)
+        self.assertIn("Default scan roots · always included", source)
+        self.assertIn("Rebuild manifest + refresh", source)
+        self.assertIn("await loadRollouts(preferredId)", source)
+        self.assertIn("await loadRolloutOptions()", source)
+        self.assertIn("lf3r.runs.extraManifestScanRoots", source)
+        self.assertIn("Manifest rebuild failed:", source)
 
 
 if __name__ == "__main__":

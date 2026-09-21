@@ -214,12 +214,19 @@ body[data-view="runs"] .runs-tool-grid > label > span {
 }
 
 body[data-view="runs"] .runs-tool-grid input,
-body[data-view="runs"] .runs-tool-grid select {
+body[data-view="runs"] .runs-tool-grid select,
+body[data-view="runs"] .runs-tool-grid textarea {
   width: 100%;
   min-height: 37px;
   padding: .45rem .55rem;
   font-size: .84rem;
   border-radius: 7px;
+}
+
+body[data-view="runs"] .runs-tool-grid textarea {
+  min-height: 82px;
+  resize: vertical;
+  line-height: 1.4;
 }
 
 body[data-view="runs"] .runs-tool-grid .runs-tool-wide { grid-column: 1 / -1; }
@@ -354,6 +361,57 @@ body[data-view="runs"] .runs-maintenance-actions {
 body[data-view="runs"] .runs-maintenance-actions button {
   min-height: 42px;
   white-space: normal;
+}
+
+body[data-view="runs"] .runs-maintenance-validation {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body[data-view="runs"] .runs-manifest-rescan {
+  margin-top: .8rem;
+  padding-top: .8rem;
+  border-top: 1px solid #222d37;
+}
+
+body[data-view="runs"] .runs-manifest-rescan-heading {
+  display: grid;
+  gap: .18rem;
+  margin-bottom: .65rem;
+}
+
+body[data-view="runs"] .runs-manifest-rescan-heading strong {
+  color: #d4dce1;
+  font-size: .86rem;
+}
+
+body[data-view="runs"] .runs-manifest-rescan-heading span,
+body[data-view="runs"] .runs-manifest-summary {
+  color: #7f8c96;
+  font-size: .73rem;
+  line-height: 1.45;
+}
+
+body[data-view="runs"] .runs-path-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+body[data-view="runs"] .runs-path-list code {
+  padding: .28rem .42rem;
+  color: #b7c5ce;
+  background: #0d141a;
+  border: 1px solid #28343d;
+  border-radius: 6px;
+  font-size: .73rem;
+}
+
+body[data-view="runs"] .runs-manifest-summary {
+  margin-top: .62rem;
+  padding: .5rem .6rem;
+  background: #0f171d;
+  border: 1px solid #27343d;
+  border-radius: 7px;
 }
 
 @media (max-width: 1180px) {

@@ -168,10 +168,18 @@
         '</section>',
         '<section class="runs-tool-card runs-maintenance-card">',
           '<div class="runs-tool-card-heading"><div><h3>Validation & maintenance</h3><p>Bounded checks around existing project artifacts. No Analysis jobs are launched here.</p></div></div>',
-          '<div class="runs-maintenance-actions">',
+          '<div class="runs-maintenance-actions runs-maintenance-validation">',
             '<button id="validateBaselinesRun" class="ghost-button" type="button">Validate baseline pipelines</button>',
             '<button id="validateVariantsRun" class="ghost-button" type="button">Validate instruction variants</button>',
-            '<button id="rebuildManifestRun" class="ghost-button" type="button">Rescan rollout manifest</button>',
+          '</div>',
+          '<div class="runs-manifest-rescan">',
+            '<div class="runs-manifest-rescan-heading"><strong>Import / rescan external rollouts</strong><span>Rebuild the main rollout manifest, then refresh Review and Runs automatically.</span></div>',
+            '<div class="runs-tool-grid">',
+              '<label class="runs-tool-wide"><span>Default scan roots · always included</span><div class="runs-path-list"><code>outputs/openvla_libero</code><code>outputs/openvla_libero_spatial_native</code></div></label>',
+              '<label class="runs-tool-wide"><span>Additional scan roots · optional, one project-local directory per line</span><textarea id="rebuildManifestExtraRoots" rows="3" placeholder="outputs/imported_rollouts&#10;outputs/another_rollout_root"></textarea></label>',
+            '</div>',
+            '<div id="rebuildManifestSummary" class="runs-manifest-summary">No rescan has been run in this page session.</div>',
+            '<div class="runs-tool-action"><span>Expected layout: &lt;root&gt;/&lt;run containing natural&gt;/&lt;suite&gt;/taskN--epM--succ0|1.mp4. Default roots are never dropped when extras are supplied.</span><button id="rebuildManifestRun" class="save-button" type="button">Rebuild manifest + refresh</button></div>',
           '</div>',
         '</section>',
       '</div>',
@@ -345,6 +353,20 @@
 
   var toolPollTimer = null;
   var activeToolJobId = null;
+  var manifestRebuildBefore = {};
+  var manifestRefreshHandled = {};
+
+  var manifestExtraRootsNode = document.getElementById("rebuildManifestExtraRoots");
+  if (manifestExtraRootsNode) {
+    try {
+      manifestExtraRootsNode.value = localStorage.getItem("lf3r.runs.extraManifestScanRoots") || "";
+    } catch (_) {}
+    manifestExtraRootsNode.addEventListener("input", function () {
+      try {
+        localStorage.setItem("lf3r.runs.extraManifestScanRoots", manifestExtraRootsNode.value);
+      } catch (_) {}
+    });
+  }
 
   function activityNodes() {
     return [
@@ -406,6 +428,54 @@
         if (nodes.log) nodes.log.textContent = logText;
       });
       await refreshToolJobs();
+      if (
+        job.action === "rebuild_manifest"
+        && job.status === "failed"
+        && !manifestRefreshHandled[job.job_id]
+      ) {
+        manifestRefreshHandled[job.job_id] = true;
+        var failedSummary = document.getElementById("rebuildManifestSummary");
+        if (failedSummary) {
+          failedSummary.textContent = "Manifest rebuild failed: " + (job.error || "see project-tool log");
+        }
+      }
+      if (
+        job.action === "rebuild_manifest"
+        && job.status === "complete"
+        && !manifestRefreshHandled[job.job_id]
+      ) {
+        manifestRefreshHandled[job.job_id] = true;
+        var beforeCount = Object.prototype.hasOwnProperty.call(manifestRebuildBefore, job.job_id)
+          ? manifestRebuildBefore[job.job_id]
+          : null;
+        var summaryNode = document.getElementById("rebuildManifestSummary");
+        if (summaryNode) summaryNode.textContent = "Manifest rebuilt; refreshing rollout catalog…";
+        try {
+          var preferredId = (typeof state !== "undefined" && state) ? state.selectedId : null;
+          if (typeof loadRollouts === "function") {
+            await loadRollouts(preferredId);
+          }
+          await loadRolloutOptions();
+          var afterCount = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
+            ? state.rollouts.length
+            : null;
+          if (summaryNode) {
+            if (afterCount == null) {
+              summaryNode.textContent = "Manifest rebuilt successfully. Rollout catalog refresh completed.";
+            } else if (beforeCount == null) {
+              summaryNode.textContent = "Manifest rebuilt successfully · " + afterCount + " rollout(s) loaded.";
+            } else {
+              var delta = afterCount - beforeCount;
+              var deltaText = delta > 0 ? " · +" + delta + " new" : (delta < 0 ? " · " + delta + " net" : " · no net count change");
+              summaryNode.textContent = "Manifest rebuilt successfully · " + afterCount + " rollout(s)" + deltaText + ".";
+            }
+          }
+        } catch (refreshError) {
+          if (summaryNode) {
+            summaryNode.textContent = "Manifest rebuilt, but automatic catalog refresh failed: " + String(refreshError.message || refreshError);
+          }
+        }
+      }
       if (job.status === "queued" || job.status === "running") {
         toolPollTimer = setTimeout(pollToolJob, 1000);
       }
@@ -505,7 +575,28 @@
 
   document.getElementById("validateBaselinesRun").addEventListener("click", function () { submitTool("validate_baselines", { check_environments: true }).catch(function () {}); });
   document.getElementById("validateVariantsRun").addEventListener("click", function () { submitTool("validate_variants", {}).catch(function () {}); });
-  document.getElementById("rebuildManifestRun").addEventListener("click", function () { submitTool("rebuild_manifest", {}).catch(function () {}); });
+  document.getElementById("rebuildManifestRun").addEventListener("click", function () {
+    var rawRoots = text("rebuildManifestExtraRoots");
+    var extraRoots = rawRoots
+      .split(/[\n,]+/)
+      .map(function (value) { return value.trim(); })
+      .filter(function (value, index, values) { return value && values.indexOf(value) === index; });
+    var summaryNode = document.getElementById("rebuildManifestSummary");
+    if (summaryNode) {
+      summaryNode.textContent = "Submitting manifest rebuild"
+        + (extraRoots.length ? " with " + extraRoots.length + " additional scan root(s)…" : " using the default scan roots…");
+    }
+    var beforeCount = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
+      ? state.rollouts.length
+      : null;
+    submitTool("rebuild_manifest", { extra_scan_roots: extraRoots })
+      .then(function (job) {
+        manifestRebuildBefore[job.job_id] = beforeCount;
+      })
+      .catch(function (error) {
+        if (summaryNode) summaryNode.textContent = "Manifest rebuild failed to start: " + String(error.message || error);
+      });
+  });
 
   async function loadRolloutOptions() {
     var select = document.getElementById("roboSweepRollout");
