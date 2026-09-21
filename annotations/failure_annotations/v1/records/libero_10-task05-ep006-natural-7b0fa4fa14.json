@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_10-task05-ep006-natural-7b0fa4fa14",
+  "updated_at": "2026-09-21T06:35:45.693795+00:00",
+  "created_at": "2026-09-21T06:35:45.693795+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "collision",
+  "confidence": null,
+  "failure_events": [
+    {
+      "failure_type": "collision",
+      "causal_onset_frame": 158,
+      "observable_onset_frame": 236,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 158,
+  "observable_onset_frame": 236,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}
