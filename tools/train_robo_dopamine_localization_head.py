@@ -898,13 +898,25 @@ def conclusion_text(
     return "\n".join(lines)
 
 def analyze(args: argparse.Namespace) -> Path:
-    run_root = ensure_within_project(resolve_project_path(args.run_root), "run root")
+    if args.run_pool_root:
+        source_root = ensure_within_project(
+            resolve_project_path(args.run_pool_root), "run pool root"
+        )
+        latest_per_rollout = True
+    elif args.run_root:
+        source_root = ensure_within_project(
+            resolve_project_path(args.run_root), "run root"
+        )
+        latest_per_rollout = False
+    else:
+        raise ValueError("Either --run-pool-root or --run-root is required")
+
     manifest_path = ensure_within_project(resolve_project_path(args.manifest), "manifest")
     annotation_dir = ensure_within_project(
         resolve_project_path(args.annotations), "annotation directory"
     )
-    if not run_root.is_dir():
-        raise FileNotFoundError(run_root)
+    if not source_root.is_dir():
+        raise FileNotFoundError(source_root)
     if not manifest_path.is_file():
         raise FileNotFoundError(manifest_path)
     if not annotation_dir.is_dir():
@@ -921,18 +933,21 @@ def analyze(args: argparse.Namespace) -> Path:
 
     log(
         "Starting BiLSTM success-negative ablation "
-        f"run_root={project_relative(run_root)} device={args.device} "
+        f"source_root={project_relative(source_root)} "
+        f"selection={'latest-per-rollout' if latest_per_rollout else 'single-run'} "
+        f"device={args.device} "
         f"repeats={args.repeats} epochs={args.epochs} patience={args.patience} "
         f"success_ratios={','.join(str(value) for value in args.success_ratios)}"
     )
     log("Loading saved fused Robo-Dopamine signals and annotations")
     manifest = load_manifest(manifest_path)
     signals, events, _no_event_failures, clean_rollouts, provenance = build_base_records(
-        run_root,
+        source_root,
         manifest,
         annotation_dir,
         allowed_rollout_ids=None,
         signal_mode="fused",
+        latest_per_rollout=latest_per_rollout,
     )
     failure_dataset = build_failure_dataset(signals, events)
     success_dataset = build_success_dataset(signals, clean_rollouts)
@@ -1126,7 +1141,12 @@ def analyze(args: argparse.Namespace) -> Path:
         output_dir / "split_manifest.json",
         {
             "schema_version": 3,
-            "run_root": project_relative(run_root),
+            "source_root": project_relative(source_root),
+            "selection_mode": (
+                "latest_usable_signal_per_rollout"
+                if latest_per_rollout
+                else "single_run_root"
+            ),
             "failure_rollout_n": len(failure_dataset),
             "clean_success_rollout_n": len(success_dataset),
             "random_splits": split_records,
@@ -1144,7 +1164,12 @@ def analyze(args: argparse.Namespace) -> Path:
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "analysis": "robo_dopamine_bilstm_success_negative_ablation",
             "analysis_mode": "saved-output PyTorch training; no Robo-Dopamine inference",
-            "run_root": project_relative(run_root),
+            "source_root": project_relative(source_root),
+            "selection_mode": (
+                "latest_usable_signal_per_rollout"
+                if latest_per_rollout
+                else "single_run_root"
+            ),
             "manifest": project_relative(manifest_path),
             "annotation_dir": project_relative(annotation_dir),
             "device": str(device),
@@ -1210,8 +1235,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--run-root",
-        required=True,
-        help="Completed Robo-Dopamine run with saved fused progress/hop",
+        default=None,
+        help=(
+            "Legacy single completed Robo-Dopamine run. "
+            "Use --run-pool-root for latest-per-rollout aggregation."
+        ),
+    )
+    parser.add_argument(
+        "--run-pool-root",
+        default=None,
+        help=(
+            "Directory containing historical Robo-Dopamine runs. "
+            "The latest usable fused result is selected independently per rollout."
+        ),
     )
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--annotations", default=str(DEFAULT_ANNOTATIONS))
