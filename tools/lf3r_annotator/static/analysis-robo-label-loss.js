@@ -33,6 +33,63 @@
     var varText = num(variance, 4);
     return meanText + " / var " + varText;
   }
+  async function fetchJson(url, options) {
+    var response = await fetch(url, options || { cache: "no-store" });
+    var text = await response.text();
+    var payload = null;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (_error) {
+      var compact = text.replace(/\s+/g, " ").trim().slice(0, 180);
+      throw new Error(
+        "HTTP " + response.status + " from " + url
+        + " returned non-JSON"
+        + (compact ? ": " + compact : "")
+      );
+    }
+    if (!response.ok) {
+      throw new Error(
+        (payload && payload.error)
+        || ("HTTP " + response.status + " from " + url)
+      );
+    }
+    return payload;
+  }
+
+  async function readAnalysisJob(jobId) {
+    var directError = null;
+    try {
+      var direct = await fetchJson(
+        "/api/analysis-jobs/" + encodeURIComponent(jobId),
+        { cache: "no-store" }
+      );
+      if (direct && direct.job) return direct.job;
+      directError = new Error("Direct analysis-job response did not contain job");
+    } catch (error) {
+      directError = error;
+    }
+
+    try {
+      var listing = await fetchJson(
+        "/api/jobs?job_type=analysis",
+        { cache: "no-store" }
+      );
+      var jobs = (listing.jobs || []).filter(function (job) {
+        return String(job.job_id || "") === String(jobId);
+      });
+      if (jobs.length) return jobs[0];
+    } catch (fallbackError) {
+      throw new Error(
+        "Direct job lookup failed (" + directError.message
+        + "); fallback job list also failed (" + fallbackError.message + ")"
+      );
+    }
+    throw new Error(
+      "Analysis job " + jobId + " was not found. Direct lookup: "
+      + directError.message
+    );
+  }
+
   function active() {
     return state.job && ["queued", "running"].indexOf(state.job.status) !== -1;
   }
@@ -186,9 +243,10 @@
     if (state.snapshotLoading) return;
     state.snapshotLoading = true;
     try {
-      var response = await fetch("/api/analysis/robo-label-loss", { cache: "no-store" });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not load label/loss snapshot");
+      var payload = await fetchJson(
+        "/api/analysis/robo-label-loss",
+        { cache: "no-store" }
+      );
       state.snapshot = payload.label_loss || {
         available: false,
         message: "Empty label/loss analysis response"
@@ -206,12 +264,11 @@
 
   async function loadLog(jobId) {
     try {
-      var response = await fetch(
+      var payload = await fetchJson(
         "/api/analysis-jobs/" + encodeURIComponent(jobId) + "/log?tail=260",
         { cache: "no-store" }
       );
-      var payload = await response.json();
-      if (response.ok && state.job && state.job.job_id === jobId) {
+      if (state.job && state.job.job_id === jobId) {
         var log = node("analysisLabelLossLog");
         var nextText = payload.log ? payload.log.text : "";
         if (log && log.textContent !== nextText) log.textContent = nextText;
@@ -223,13 +280,7 @@
     if (state.polling) return;
     state.polling = true;
     try {
-      var response = await fetch(
-        "/api/analysis-jobs/" + encodeURIComponent(jobId),
-        { cache: "no-store" }
-      );
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not read label/loss job");
-      var job = payload.job;
+      var job = await readAnalysisJob(jobId);
       if (!job || job.analysis_kind !== "robo_bilstm_label_loss_ablation") return;
       state.job = job;
       badge(job.status);
@@ -313,13 +364,11 @@
     updateButton();
 
     try {
-      var response = await fetch("/api/analysis/run", {
+      var body = await fetchJson("/api/analysis/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      var body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Could not start label/loss ablation");
       state.job = body.job;
       badge(state.job.status);
       await loadLog(state.job.job_id);
@@ -334,9 +383,10 @@
 
   async function recoverLatestJob() {
     try {
-      var response = await fetch("/api/jobs?job_type=analysis", { cache: "no-store" });
-      var payload = await response.json();
-      if (!response.ok) return;
+      var payload = await fetchJson(
+        "/api/jobs?job_type=analysis",
+        { cache: "no-store" }
+      );
       var jobs = (payload.jobs || []).filter(function (job) {
         return job.analysis_kind === "robo_bilstm_label_loss_ablation";
       });
