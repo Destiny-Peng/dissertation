@@ -4760,6 +4760,7 @@ class AnalysisJobService:
         allowed_fields = {
             "analysis_kind", "runs", "output_label", "device", "repeats",
             "epochs", "patience", "learning_rate", "weight_decay", "grad_clip",
+            "success_ratios",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -4803,6 +4804,42 @@ class AnalysisJobService:
         repeats = self._integer(payload.get("repeats", 5), "repeats", 1, 50)
         epochs = self._integer(payload.get("epochs", 300), "epochs", 1, 5000)
         patience = self._integer(payload.get("patience", 35), "patience", 1, 1000)
+
+        raw_success_ratios = payload.get("success_ratios", "0.5,1,2")
+        if isinstance(raw_success_ratios, str):
+            ratio_parts = [
+                part.strip()
+                for part in raw_success_ratios.split(",")
+                if part.strip()
+            ]
+        elif isinstance(raw_success_ratios, list):
+            ratio_parts = list(raw_success_ratios)
+        else:
+            raise ValidationError(
+                "success_ratios must be a comma-separated string or array"
+            )
+        if not ratio_parts:
+            raise ValidationError("success_ratios must contain at least one value")
+        success_ratios: list[float] = []
+        seen_ratios: set[float] = set()
+        for raw_ratio in ratio_parts:
+            try:
+                ratio = float(raw_ratio)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    "success_ratios must contain only numeric values"
+                ) from exc
+            if not math.isfinite(ratio) or ratio <= 0 or ratio > 20:
+                raise ValidationError(
+                    "each success ratio must be finite, > 0, and <= 20"
+                )
+            if ratio not in seen_ratios:
+                seen_ratios.add(ratio)
+                success_ratios.append(ratio)
+        if len(success_ratios) > 16:
+            raise ValidationError("success_ratios accepts at most 16 unique values")
+        success_ratios.sort()
+        success_ratios_arg = ",".join(f"{ratio:g}" for ratio in success_ratios)
         try:
             learning_rate = float(payload.get("learning_rate", 0.003))
             weight_decay = float(payload.get("weight_decay", 1e-4))
@@ -4841,6 +4878,7 @@ class AnalysisJobService:
             "--learning-rate", str(learning_rate),
             "--weight-decay", str(weight_decay),
             "--grad-clip", str(grad_clip),
+            "--success-ratios", success_ratios_arg,
         ]
         self.robo_localization_head_root.mkdir(parents=True, exist_ok=True)
         self.log_root.mkdir(parents=True, exist_ok=True)
@@ -4865,6 +4903,7 @@ class AnalysisJobService:
                     "learning_rate": learning_rate,
                     "weight_decay": weight_decay,
                     "grad_clip": grad_clip,
+                    "success_ratios": success_ratios,
                 },
                 "command": command,
                 "output_dir": self._relative(output_final),
