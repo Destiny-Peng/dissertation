@@ -35,7 +35,7 @@
         loadScript("/static/workspace-legacy.js?v=analysis-job-ownership-v2-20260921", function () {
           loadScript("/static/analysis-robo-hop.js?v=isolated-run-catalog-v6-20260921", function () {
             loadScript("/static/analysis-robo-bilstm.js?v=latest-per-rollout-v5-20260921", function () {
-              loadScript("/static/analysis-robo-label-loss.js?v=weighted-multievent-v2-20260921");
+              loadScript("/static/analysis-robo-label-loss.js?v=weighted-multievent-v3-20260921");
             });
           });
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
