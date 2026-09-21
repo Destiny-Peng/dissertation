@@ -18,6 +18,8 @@ SAFE_FEATURE_ARGS=()
 RESOLUTION_ARGS=()
 RENDER_RESOLUTION=""
 RECORD_RESOLUTION=""
+VIDEO_VIEW_MODE="single_view"
+VIDEO_VIEW_ARGS=()
 while (($# > 0)); do
   case "$1" in
     --log-safe-features)
@@ -29,6 +31,16 @@ while (($# > 0)); do
       [[ $# -ge 2 ]] || { echo "--render-resolution requires a value" >&2; exit 2; }
       RENDER_RESOLUTION="$2"
       RESOLUTION_ARGS+=(--render-resolution "$2")
+      shift 2
+      ;;
+    --video-view-mode)
+      [[ $# -ge 2 ]] || { echo "--video-view-mode requires a value" >&2; exit 2; }
+      VIDEO_VIEW_MODE="$2"
+      if [[ "$VIDEO_VIEW_MODE" != "single_view" && "$VIDEO_VIEW_MODE" != "libero_three_view" ]]; then
+        echo "--video-view-mode must be single_view or libero_three_view" >&2
+        exit 2
+      fi
+      VIDEO_VIEW_ARGS+=(--video-view-mode "$VIDEO_VIEW_MODE")
       shift 2
       ;;
     --record-resolution)
@@ -78,12 +90,13 @@ echo "TASK_RANGE start=$TASK_START end=$TASK_END trials=$TRIALS" | tee -a "$LOG_
 echo "GPU_SELECTION=user_managed gpu=$GPU_ID" | tee -a "$LOG_FILE"
 echo "SAFE_FEATURES=$SAFE_FEATURE_MODE" | tee -a "$LOG_FILE"
 echo "RESOLUTION render=${RENDER_RESOLUTION:-suite-default} record=${RECORD_RESOLUTION:-suite-default} policy=224" | tee -a "$LOG_FILE"
+echo "VIDEO_VIEW_MODE=$VIDEO_VIEW_MODE" | tee -a "$LOG_FILE"
 echo "ROBOSUITE_LOG_PATH=$ROBOSUITE_LOG_FILE" | tee -a "$LOG_FILE"
 
 set -o pipefail
 env CUDA_VISIBLE_DEVICES="$GPU_ID" MUJOCO_GL=egl PYOPENGL_PLATFORM=egl LIBERO_CONFIG_PATH="$CACHE/libero" PYTHONPATH="$REPOS/safe-openvla:$REPOS/LIBERO" WANDB_DISABLED=true ROBOSUITE_LOG_PATH="$ROBOSUITE_LOG_FILE" TOKENIZERS_PARALLELISM=false \
   "$LF3R_ENV_OPENVLA/bin/python" "$PROJECT_ROOT/tools/lf3r_annotator/run_openvla_libero10_natural.py" \
   --task-suite libero_spatial --task-start "$TASK_START" --task-end "$TASK_END" --trials "$TRIALS" --run-note "$RUN_NOTE" --seed "$SEED" \
-  "${SAFE_FEATURE_ARGS[@]}" "${RESOLUTION_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
+  "${SAFE_FEATURE_ARGS[@]}" "${VIDEO_VIEW_ARGS[@]}" "${RESOLUTION_ARGS[@]}" 2>&1 | tee -a "$LOG_FILE"
 python3 "$PROJECT_ROOT/tools/lf3r_annotator/build_manifest.py" | tee -a "$LOG_FILE"
 echo "NATURAL_LIBERO_SPATIAL_NATIVE_GENERATION_OK run_note=$RUN_NOTE" | tee -a "$LOG_FILE"
