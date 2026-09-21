@@ -1842,9 +1842,10 @@ function updateBaselineBatchSelection() {
     } else if (!coverage) {
       coverageText = "existing-result coverage unavailable; ";
     } else {
-      coverageText = coverage.missing_valid_result_rollouts + " without valid result / "
-        + coverage.matched_rollouts + " total; "
-        + coverage.valid_result_rollouts + " existing valid result(s) skipped; ";
+      coverageText = coverage.missing_valid_result_rollouts + " complete annotation(s) without valid result / "
+        + coverage.complete_annotation_rollouts + " complete; "
+        + coverage.valid_result_rollouts + " existing valid result(s) skipped; "
+        + coverage.incomplete_annotation_rollouts + " in-progress/unreviewed skipped; ";
     }
   }
   if (baselineBatchUsesWorkers()) {
