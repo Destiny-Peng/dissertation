@@ -46,7 +46,14 @@ DEFAULT_MANIFEST = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.js
 DEFAULT_ANNOTATIONS = PROJECT_ROOT / "annotations/failure_annotations/v1/records"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "outputs/robo_dopamine_localization_head"
 DEFAULT_BASELINE_ROOT = PROJECT_ROOT / "outputs/robo_dopamine_incremental_hop"
-MODEL_NAMES = ("linear_probe", "tiny_mlp", "tiny_cnn")
+MODEL_NAMES = (
+    "linear_probe",
+    "tiny_mlp",
+    "tiny_cnn",
+    "tiny_bilstm_h16",
+    "tiny_bilstm_h32",
+)
+SEQUENCE_MODEL_NAMES = {"tiny_bilstm_h16", "tiny_bilstm_h32"}
 METRIC_NAMES = (
     "in_interval_rate",
     "within_1",
@@ -144,6 +151,13 @@ def build_dataset(
             "causal_index": causal,
             "observable_index": observable,
             "progress": np.asarray(signal["progress"], dtype=np.float64),
+            "sequence": np.stack(
+                [
+                    np.asarray(signal["progress"], dtype=np.float64),
+                    np.asarray(signal["hops"], dtype=np.float64),
+                ],
+                axis=1,
+            ),
         }
     return result
 
@@ -529,6 +543,313 @@ class TinyCNN(BaseHead):
 
     def logits(self, x: np.ndarray) -> np.ndarray:
         return self._forward(x)[3]
+
+
+
+def sequence_standardization_stats(
+    dataset: Mapping[str, Mapping[str, Any]],
+    rollout_ids: Sequence[str],
+) -> tuple[np.ndarray, np.ndarray]:
+    sequences = [
+        np.asarray(dataset[rollout_id]["sequence"], dtype=np.float64)
+        for rollout_id in rollout_ids
+    ]
+    if not sequences:
+        raise ValueError("empty rollout selection")
+    merged = np.concatenate(sequences, axis=0)
+    mean = merged.mean(axis=0, keepdims=True)
+    std = merged.std(axis=0, keepdims=True)
+    std = np.where(std < 1e-8, 1.0, std)
+    return mean, std
+
+
+class TinyBiLSTM:
+    """One-layer bidirectional LSTM over an entire rollout sequence."""
+
+    def __init__(
+        self,
+        *,
+        seed: int,
+        epochs: int,
+        patience: int,
+        hidden: int,
+    ) -> None:
+        self.rng = np.random.default_rng(seed)
+        self.epochs = epochs
+        self.patience = patience
+        self.hidden = hidden
+        self.input_dim = 2
+        self.params: dict[str, np.ndarray] = {}
+
+    def _init_params(self) -> None:
+        joint = self.input_dim + self.hidden
+        scale = math.sqrt(1.0 / max(1, joint))
+        self.params = {
+            "wf": self.rng.normal(
+                0.0, scale, size=(joint, 4 * self.hidden)
+            ),
+            "bf": np.zeros(4 * self.hidden, dtype=np.float64),
+            "wb": self.rng.normal(
+                0.0, scale, size=(joint, 4 * self.hidden)
+            ),
+            "bb": np.zeros(4 * self.hidden, dtype=np.float64),
+            "wo": self.rng.normal(
+                0.0,
+                math.sqrt(1.0 / max(1, 2 * self.hidden)),
+                size=(2 * self.hidden,),
+            ),
+            "bo": np.zeros(1, dtype=np.float64),
+        }
+        # A mildly positive forget bias is the only LSTM-specific
+        # stabilization used here; there is no architecture search.
+        self.params["bf"][self.hidden : 2 * self.hidden] = 1.0
+        self.params["bb"][self.hidden : 2 * self.hidden] = 1.0
+
+    def _direction_forward(
+        self,
+        x: np.ndarray,
+        w: np.ndarray,
+        b: np.ndarray,
+    ) -> tuple[np.ndarray, list[tuple[np.ndarray, ...]]]:
+        h = np.zeros(self.hidden, dtype=np.float64)
+        cell = np.zeros(self.hidden, dtype=np.float64)
+        outputs = np.zeros((len(x), self.hidden), dtype=np.float64)
+        cache: list[tuple[np.ndarray, ...]] = []
+        for index in range(len(x)):
+            previous_h = h
+            previous_cell = cell
+            joined = np.concatenate([x[index], previous_h])
+            gates = joined @ w + b
+            i = _sigmoid(gates[0 : self.hidden])
+            f = _sigmoid(gates[self.hidden : 2 * self.hidden])
+            o = _sigmoid(gates[2 * self.hidden : 3 * self.hidden])
+            g = np.tanh(gates[3 * self.hidden :])
+            cell = f * previous_cell + i * g
+            h = o * np.tanh(cell)
+            outputs[index] = h
+            cache.append(
+                (joined, i, f, o, g, previous_cell, cell)
+            )
+        return outputs, cache
+
+    def _direction_backward(
+        self,
+        dh: np.ndarray,
+        cache: Sequence[tuple[np.ndarray, ...]],
+        w: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        grad_w = np.zeros_like(w)
+        grad_b = np.zeros(4 * self.hidden, dtype=np.float64)
+        next_h = np.zeros(self.hidden, dtype=np.float64)
+        next_cell = np.zeros(self.hidden, dtype=np.float64)
+        for index in range(len(cache) - 1, -1, -1):
+            joined, i, f, o, g, previous_cell, cell = cache[index]
+            total_h = dh[index] + next_h
+            tanh_cell = np.tanh(cell)
+            d_o = total_h * tanh_cell
+            d_cell = (
+                total_h * o * (1.0 - tanh_cell * tanh_cell)
+                + next_cell
+            )
+            d_f = d_cell * previous_cell
+            d_previous_cell = d_cell * f
+            d_i = d_cell * g
+            d_g = d_cell * i
+            d_gates = np.concatenate(
+                [
+                    d_i * i * (1.0 - i),
+                    d_f * f * (1.0 - f),
+                    d_o * o * (1.0 - o),
+                    d_g * (1.0 - g * g),
+                ]
+            )
+            grad_w += np.outer(joined, d_gates)
+            grad_b += d_gates
+            d_joined = w @ d_gates
+            next_h = d_joined[self.input_dim :]
+            next_cell = d_previous_cell
+        return grad_w, grad_b
+
+    def _forward(
+        self,
+        x: np.ndarray,
+        *,
+        with_cache: bool,
+    ) -> tuple[
+        np.ndarray,
+        tuple[
+            list[tuple[np.ndarray, ...]],
+            list[tuple[np.ndarray, ...]],
+            np.ndarray,
+            np.ndarray,
+        ] | None,
+    ]:
+        forward_h, forward_cache = self._direction_forward(
+            x,
+            self.params["wf"],
+            self.params["bf"],
+        )
+        reversed_h, backward_cache = self._direction_forward(
+            x[::-1],
+            self.params["wb"],
+            self.params["bb"],
+        )
+        backward_h = reversed_h[::-1]
+        joined_h = np.concatenate([forward_h, backward_h], axis=1)
+        logits = joined_h @ self.params["wo"] + self.params["bo"][0]
+        if not with_cache:
+            return logits, None
+        return logits, (
+            forward_cache,
+            backward_cache,
+            forward_h,
+            backward_h,
+        )
+
+    def _loss(
+        self,
+        sequences: Sequence[np.ndarray],
+        labels: Sequence[np.ndarray],
+        pos_weight: float,
+    ) -> float:
+        weighted_loss = 0.0
+        total_weight = 0.0
+        for x, y in zip(sequences, labels):
+            logits, _ = self._forward(x, with_cache=False)
+            weights = np.where(y > 0.5, pos_weight, 1.0)
+            losses = (
+                np.maximum(logits, 0.0)
+                - logits * y
+                + np.log1p(np.exp(-np.abs(logits)))
+            )
+            weighted_loss += float(np.sum(weights * losses))
+            total_weight += float(np.sum(weights))
+        return weighted_loss / max(1e-12, total_weight)
+
+    def fit_sequences(
+        self,
+        train_sequences: Sequence[np.ndarray],
+        train_labels: Sequence[np.ndarray],
+        val_sequences: Sequence[np.ndarray],
+        val_labels: Sequence[np.ndarray],
+    ) -> dict[str, Any]:
+        self._init_params()
+        all_train_labels = np.concatenate(train_labels)
+        pos_weight = _pos_weight(all_train_labels)
+        train_weight = sum(
+            float(np.sum(np.where(y > 0.5, pos_weight, 1.0)))
+            for y in train_labels
+        )
+        optimizer = Adam(self.params, lr=0.003)
+        best_loss = math.inf
+        best_params = None
+        best_epoch = 0
+        stale = 0
+
+        for epoch in range(1, self.epochs + 1):
+            grads = {
+                key: np.zeros_like(value)
+                for key, value in self.params.items()
+            }
+            for x, y in zip(train_sequences, train_labels):
+                logits, cache = self._forward(x, with_cache=True)
+                assert cache is not None
+                forward_cache, backward_cache, forward_h, backward_h = cache
+                weights = np.where(y > 0.5, pos_weight, 1.0)
+                d_logits = (
+                    weights * (_sigmoid(logits) - y)
+                    / max(1e-12, train_weight)
+                )
+                joined_h = np.concatenate(
+                    [forward_h, backward_h],
+                    axis=1,
+                )
+                grads["wo"] += joined_h.T @ d_logits
+                grads["bo"][0] += float(np.sum(d_logits))
+
+                d_joined = d_logits[:, None] * self.params["wo"][None, :]
+                d_forward = d_joined[:, : self.hidden]
+                d_backward = d_joined[:, self.hidden :]
+
+                grad_wf, grad_bf = self._direction_backward(
+                    d_forward,
+                    forward_cache,
+                    self.params["wf"],
+                )
+                # backward_cache is indexed in reversed-time order.
+                grad_wb, grad_bb = self._direction_backward(
+                    d_backward[::-1],
+                    backward_cache,
+                    self.params["wb"],
+                )
+                grads["wf"] += grad_wf
+                grads["bf"] += grad_bf
+                grads["wb"] += grad_wb
+                grads["bb"] += grad_bb
+
+            for key in ("wf", "wb", "wo"):
+                grads[key] += 1e-4 * self.params[key]
+            grad_norm = math.sqrt(
+                sum(float(np.sum(grad * grad)) for grad in grads.values())
+            )
+            if grad_norm > 5.0:
+                scale = 5.0 / grad_norm
+                for grad in grads.values():
+                    grad *= scale
+            optimizer.step(self.params, grads)
+
+            val_loss = self._loss(
+                val_sequences,
+                val_labels,
+                pos_weight,
+            )
+            if val_loss < best_loss - 1e-7:
+                best_loss = val_loss
+                best_params = {
+                    key: value.copy()
+                    for key, value in self.params.items()
+                }
+                best_epoch = epoch
+                stale = 0
+            else:
+                stale += 1
+                if stale >= self.patience:
+                    break
+
+        if best_params is not None:
+            self.params = best_params
+        return {
+            "best_val_bce": best_loss,
+            "best_epoch": best_epoch,
+            "pos_weight": pos_weight,
+            "hidden": self.hidden,
+            "sequence_model": True,
+        }
+
+    def logits_sequence(self, x: np.ndarray) -> np.ndarray:
+        logits, _ = self._forward(x, with_cache=False)
+        return logits
+
+
+def make_sequence_model(
+    name: str,
+    *,
+    seed: int,
+    epochs: int,
+    patience: int,
+) -> TinyBiLSTM:
+    hidden_by_name = {
+        "tiny_bilstm_h16": 16,
+        "tiny_bilstm_h32": 32,
+    }
+    if name not in hidden_by_name:
+        raise ValueError(f"unknown sequence model: {name}")
+    return TinyBiLSTM(
+        seed=seed,
+        epochs=epochs,
+        patience=patience,
+        hidden=hidden_by_name[name],
+    )
 
 
 def make_model(
@@ -1165,6 +1486,132 @@ def train_and_evaluate_model(
     return metrics, predictions, training
 
 
+
+def train_and_evaluate_sequence_model(
+    name: str,
+    dataset: Mapping[str, Mapping[str, Any]],
+    train_ids: Sequence[str],
+    val_ids: Sequence[str],
+    test_ids: Sequence[str],
+    *,
+    seed: int,
+    epochs: int,
+    patience: int,
+    split: Mapping[str, Any],
+    train_size_label: str,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
+    mean, std = sequence_standardization_stats(dataset, train_ids)
+
+    def normalized(ids: Sequence[str]) -> list[np.ndarray]:
+        return [
+            (
+                np.asarray(dataset[rollout_id]["sequence"], dtype=np.float64)
+                - mean
+            ) / std
+            for rollout_id in ids
+        ]
+
+    train_sequences = normalized(train_ids)
+    val_sequences = normalized(val_ids)
+    train_labels = [
+        np.asarray(dataset[rollout_id]["labels"], dtype=np.float64)
+        for rollout_id in train_ids
+    ]
+    val_labels = [
+        np.asarray(dataset[rollout_id]["labels"], dtype=np.float64)
+        for rollout_id in val_ids
+    ]
+
+    model = make_sequence_model(
+        name,
+        seed=seed,
+        epochs=epochs,
+        patience=patience,
+    )
+    training = model.fit_sequences(
+        train_sequences,
+        train_labels,
+        val_sequences,
+        val_labels,
+    )
+
+    predictions: list[dict[str, Any]] = []
+    for rollout_id in test_ids:
+        sequence = (
+            np.asarray(dataset[rollout_id]["sequence"], dtype=np.float64)
+            - mean
+        ) / std
+        logits = model.logits_sequence(sequence)
+        prediction = int(np.argmax(logits))
+        row = prediction_row(
+            dataset,
+            rollout_id,
+            prediction,
+            float(logits[prediction]),
+        )
+        row.update(
+            {
+                "split_kind": split["kind"],
+                "split_id": split["split_id"],
+                "method": name,
+                "train_size": train_size_label,
+                "candidate_key": None,
+            }
+        )
+        predictions.append(row)
+
+    metrics = metric_summary(predictions)
+    metrics.update(
+        {
+            "split_kind": split["kind"],
+            "split_id": split["split_id"],
+            "held_out_task": split.get("held_out_task"),
+            "method": name,
+            "train_size": train_size_label,
+            "train_rollout_n": len(train_ids),
+            "val_rollout_n": len(val_ids),
+            "test_rollout_n": len(test_ids),
+            "prediction_coverage": 1.0,
+            "candidate_key": None,
+            "best_epoch": training["best_epoch"],
+            "best_val_bce": training["best_val_bce"],
+            "pos_weight": training["pos_weight"],
+        }
+    )
+    return metrics, predictions, training
+
+
+def train_and_evaluate_any_model(
+    name: str,
+    dataset: Mapping[str, Mapping[str, Any]],
+    train_ids: Sequence[str],
+    val_ids: Sequence[str],
+    test_ids: Sequence[str],
+    **kwargs: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    if name in SEQUENCE_MODEL_NAMES:
+        return train_and_evaluate_sequence_model(
+            name,
+            dataset,
+            train_ids,
+            val_ids,
+            test_ids,
+            **kwargs,
+        )
+    return train_and_evaluate_model(
+        name,
+        dataset,
+        train_ids,
+        val_ids,
+        test_ids,
+        **kwargs,
+    )
+
+
 def aggregate_rows(
     rows: Sequence[Mapping[str, Any]],
     group_fields: Sequence[str],
@@ -1378,11 +1825,10 @@ def conclusion_text(
             "reliable saturation-versus-data-limited call."
         )
     lines.append(
-        "BiGRU is intentionally gated in this probe. It becomes a "
-        "justified next ablation only if the tiny CNN shows a repeatable "
-        "gain over the MLP/linear probe, indicating that learned "
-        "temporal structure rather than merely nonlinear pointwise "
-        "features is helping."
+        "The probe now includes tiny one-layer BiLSTMs with hidden sizes "
+        "16 and 32. These consume the full rollout sequence rather than "
+        "the local symmetric window, directly testing whether longer "
+        "offline temporal context improves changepoint localization."
     )
     return "\n\n".join(lines) + "\n"
 
@@ -1557,7 +2003,7 @@ def analyze(args: argparse.Namespace) -> Path:
                 MODEL_NAMES
             ):
                 metrics, rows, training = (
-                    train_and_evaluate_model(
+                    train_and_evaluate_any_model(
                         model_name,
                         dataset,
                         train_ids,
@@ -1650,7 +2096,7 @@ def analyze(args: argparse.Namespace) -> Path:
             MODEL_NAMES
         ):
             metrics, rows, training = (
-                train_and_evaluate_model(
+                train_and_evaluate_any_model(
                     model_name,
                     dataset,
                     split["train"],
@@ -1831,9 +2277,13 @@ def analyze(args: argparse.Namespace) -> Path:
                 "1D conv over local progress/hop context, "
                 "filters=8, kernel=3, position-aware readout"
             ),
-            "tiny_bigru": (
-                "not run in this probe; gated on evidence "
-                "that temporal CNN beats simpler heads"
+            "tiny_bilstm_h16": (
+                "1-layer bidirectional LSTM over full rollout sequence, "
+                "hidden=16 per direction"
+            ),
+            "tiny_bilstm_h32": (
+                "1-layer bidirectional LSTM over full rollout sequence, "
+                "hidden=32 per direction"
             ),
         },
         "features": {
@@ -1842,7 +2292,10 @@ def analyze(args: argparse.Namespace) -> Path:
                 "fused_hop",
             ],
             "context_radius": args.context_radius,
-            "context_mode": "symmetric offline",
+            "context_mode": (
+                "local symmetric windows for linear/MLP/CNN; "
+                "full normalized rollout sequence for BiLSTM"
+            ),
             "standardization": (
                 "train-rollout timesteps only, "
                 "per signal channel"
@@ -1855,7 +2308,8 @@ def analyze(args: argparse.Namespace) -> Path:
                 "positive-class-weighted BCE"
             ),
             "optimizer": (
-                "Adam implemented in NumPy"
+                "Adam implemented in NumPy; BiLSTM uses full-sequence "
+                "BPTT with global-norm gradient clipping at 5"
             ),
             "random_split_repeats": args.repeats,
             "learning_curve_requested": [
