@@ -145,33 +145,60 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertFalse(val & test)
         self.assertEqual(train | val | test, set(dataset))
 
-    def test_success_selection_prefers_failure_train_tasks(self) -> None:
-        failures = self.failure_dataset()
-        successes = self.success_dataset()
-        failure_train = ["f00", "f03", "f06"]
-        selected, mode = probe.select_success_training_ids(
+    def test_success_ratio_subsets_are_nested_and_same_task_first(self) -> None:
+        failures = self.failure_dataset(30)
+        successes = self.success_dataset(30)
+        failure_train = ["f00", "f03", "f06", "f09", "f12"]
+        subsets, meta = probe.build_success_ratio_subsets(
             successes,
             failures,
             failure_train,
+            seed=1701,
         )
-        self.assertEqual(mode, "same_task_only")
-        self.assertTrue(selected)
+        self.assertEqual(len(subsets[0.0]), 0)
+        self.assertEqual(len(subsets[0.5]), 2)
+        self.assertEqual(len(subsets[1.0]), 5)
+        self.assertEqual(len(subsets[2.0]), 10)
+        self.assertTrue(set(subsets[0.5]) <= set(subsets[1.0]))
+        self.assertTrue(set(subsets[1.0]) <= set(subsets[2.0]))
+        same_task_n = meta["same_task_available_n"]
+        prefix = subsets[2.0][: min(same_task_n, len(subsets[2.0]))]
         self.assertTrue(
-            all(successes[rid]["task_key"] == "libero_10:task0" for rid in selected)
+            all(successes[rid]["task_key"] == "libero_10:task0" for rid in prefix)
         )
 
-    def test_task_holdout_excludes_success_from_heldout_task(self) -> None:
-        failures = self.failure_dataset()
-        successes = self.success_dataset()
-        failure_train = ["f01", "f02", "f04", "f05"]
-        selected, _ = probe.select_success_training_ids(
+    def test_success_ratio_floor_matches_requested_example(self) -> None:
+        failures = self.failure_dataset(30)
+        successes = self.success_dataset(60)
+        failure_train = [f"f{index:02d}" for index in range(25)]
+        subsets, _ = probe.build_success_ratio_subsets(
             successes,
             failures,
             failure_train,
+            seed=17,
+        )
+        self.assertEqual(len(subsets[0.0]), 0)
+        self.assertEqual(len(subsets[0.5]), 12)
+        self.assertEqual(len(subsets[1.0]), 25)
+        self.assertEqual(len(subsets[2.0]), 50)
+
+    def test_task_holdout_excludes_success_from_heldout_task(self) -> None:
+        failures = self.failure_dataset(18)
+        successes = self.success_dataset(18)
+        failure_train = ["f01", "f02", "f04", "f05", "f07", "f08"]
+        subsets, _ = probe.build_success_ratio_subsets(
+            successes,
+            failures,
+            failure_train,
+            seed=17,
             held_out_task="libero_10:task0",
         )
         self.assertTrue(
-            all(successes[rid]["task_key"] != "libero_10:task0" for rid in selected)
+            all(
+                successes[rid]["task_key"] != "libero_10:task0"
+                for ids in subsets.values()
+                for rid in ids
+            )
         )
 
     def test_bilstm_forward_shape(self) -> None:
@@ -197,22 +224,26 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         np.testing.assert_allclose(std_a, std_b)
         self.assertEqual(pos_a, pos_b)
 
-    def test_failure_only_vs_success_uses_same_failure_split(self) -> None:
-        failures = self.failure_dataset(12)
-        successes = self.success_dataset(6)
+    def test_success_ratio_ablation_keeps_failure_split_fixed(self) -> None:
+        failures = self.failure_dataset(18)
+        successes = self.success_dataset(18)
         split = probe.rollout_split(
             failures,
             seed=17,
             train_fraction=0.70,
             val_fraction=0.15,
         )
-        success_ids, _ = probe.select_success_training_ids(
+        subsets, _ = probe.build_success_ratio_subsets(
             successes,
             failures,
             split["train"],
+            seed=1701,
         )
         self.assertTrue(set(split["train"]).isdisjoint(split["test"]))
-        self.assertTrue(set(success_ids).isdisjoint(split["test"]))
+        self.assertTrue(set(split["val"]).isdisjoint(split["test"]))
+        self.assertEqual(probe.SUCCESS_RATIOS, (0.0, 0.5, 1.0, 2.0))
+        self.assertTrue(set(subsets[0.5]) <= set(subsets[1.0]))
+        self.assertTrue(set(subsets[1.0]) <= set(subsets[2.0]))
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
