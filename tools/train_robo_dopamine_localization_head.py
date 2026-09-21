@@ -51,7 +51,38 @@ DEFAULT_MANIFEST = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.js
 DEFAULT_ANNOTATIONS = PROJECT_ROOT / "annotations/failure_annotations/v1/records"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "outputs/robo_dopamine_localization_head"
 MODEL_NAMES = ("tiny_bilstm_h16", "tiny_bilstm_h32")
-SUCCESS_RATIOS = (0.0, 0.5, 1.0, 2.0)
+DEFAULT_SUCCESS_RATIOS = (0.5, 1.0, 2.0)
+
+
+def parse_success_ratios(value: str | Sequence[float]) -> tuple[float, ...]:
+    if isinstance(value, str):
+        raw_values = [part.strip() for part in value.split(",") if part.strip()]
+        if not raw_values:
+            raise ValueError("--success-ratios must contain at least one positive ratio")
+        try:
+            parsed = [float(part) for part in raw_values]
+        except ValueError as exc:
+            raise ValueError(
+                "--success-ratios must be a comma-separated list of numbers"
+            ) from exc
+    else:
+        parsed = [float(item) for item in value]
+
+    nonzero: list[float] = []
+    seen: set[float] = set()
+    for ratio in parsed:
+        if not math.isfinite(ratio) or ratio <= 0:
+            raise ValueError("--success-ratios values must be finite and > 0")
+        if ratio > 20:
+            raise ValueError("--success-ratios values must be <= 20")
+        if ratio not in seen:
+            seen.add(ratio)
+            nonzero.append(ratio)
+    if len(nonzero) > 16:
+        raise ValueError("--success-ratios accepts at most 16 unique values")
+    return (0.0, *sorted(nonzero))
+
+
 def log(message: str) -> None:
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
@@ -288,6 +319,7 @@ def build_success_ratio_subsets(
     *,
     seed: int,
     held_out_task: str | None = None,
+    success_ratios: Sequence[float] = (0.0, *DEFAULT_SUCCESS_RATIOS),
 ) -> tuple[dict[float, list[str]], dict[str, Any]]:
     allowed = [
         rollout_id
@@ -317,7 +349,7 @@ def build_success_ratio_subsets(
 
     subsets: dict[float, list[str]] = {}
     requested_counts: dict[str, int] = {}
-    for ratio in SUCCESS_RATIOS:
+    for ratio in success_ratios:
         requested = int(len(failure_train_ids) * ratio)
         requested_counts[str(ratio)] = requested
         subsets[ratio] = ordered[: min(requested, len(ordered))]
@@ -883,7 +915,8 @@ def analyze(args: argparse.Namespace) -> Path:
     log(
         "Starting BiLSTM success-negative ablation "
         f"run_root={project_relative(run_root)} device={args.device} "
-        f"repeats={args.repeats} epochs={args.epochs} patience={args.patience}"
+        f"repeats={args.repeats} epochs={args.epochs} patience={args.patience} "
+        f"success_ratios={','.join(str(value) for value in args.success_ratios)}"
     )
     log("Loading saved fused Robo-Dopamine signals and annotations")
     manifest = load_manifest(manifest_path)
@@ -943,6 +976,7 @@ def analyze(args: argparse.Namespace) -> Path:
             failure_dataset,
             split["train"],
             seed=int(split["seed"]) * 100 + 31,
+            success_ratios=args.success_ratios,
         )
         split_records.append(
             {
@@ -1006,6 +1040,7 @@ def analyze(args: argparse.Namespace) -> Path:
             split["train"],
             seed=args.seed * 10000 + split_index * 100 + 31,
             held_out_task=str(split["held_out_task"]),
+            success_ratios=args.success_ratios,
         )
         task_split_records.append(
             {
@@ -1114,7 +1149,7 @@ def analyze(args: argparse.Namespace) -> Path:
                 "tiny_bilstm_h16": "1-layer bidirectional LSTM, hidden=16 per direction",
                 "tiny_bilstm_h32": "1-layer bidirectional LSTM, hidden=32 per direction",
             },
-            "success_ratios": list(SUCCESS_RATIOS),
+            "success_ratios": list(args.success_ratios),
             "training_settings": (
                 "clean-success all-negative rollout count is "
                 "int(failure_train_n * success_ratio)"
@@ -1185,6 +1220,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--grad-clip", type=float, default=5.0)
     parser.add_argument(
+        "--success-ratios",
+        default="0.5,1,2",
+        help=(
+            "Comma-separated positive success/failure ratios. "
+            "The 0x failure-only baseline is always added automatically."
+        ),
+    )
+    parser.add_argument(
         "--device",
         default="auto",
         help="PyTorch device: auto, cpu, cuda, cuda:0, ...",
@@ -1194,6 +1237,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    args.success_ratios = parse_success_ratios(args.success_ratios)
     if args.repeats < 1:
         raise ValueError("--repeats must be >= 1")
     if not (0.0 < args.train_fraction < 1.0):
