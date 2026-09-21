@@ -95,7 +95,7 @@ class NonAnalysisToolTests(unittest.TestCase):
 
     def test_manifest_rebuild_keeps_default_roots_and_appends_extras(self):
         command = tools.rebuild_manifest_command(
-            {"extra_scan_roots": ["tools", "outputs/openvla_libero"]}
+            {"extra_scan_roots": ["tools"]}
         )
         roots = [
             Path(command[index + 1]).resolve()
@@ -132,6 +132,8 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("Rebuild manifest + refresh", source)
         self.assertIn("await loadRollouts(preferredId)", source)
         self.assertIn("await loadRolloutOptions()", source)
+        self.assertIn("lf3r.runs.extraManifestScanRoots", source)
+        self.assertIn("Manifest rebuild failed:", source)
 
 
 if __name__ == "__main__":
