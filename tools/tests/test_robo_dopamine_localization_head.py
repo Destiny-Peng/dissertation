@@ -14,11 +14,11 @@ from unittest import mock
 import numpy as np
 import torch
 
-from robo_incremental_hop import io as hop_io
-
 TOOLS_DIR = Path(__file__).resolve().parents[1]
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
+
+from robo_incremental_hop import io as hop_io
 
 SCRIPT = TOOLS_DIR / "train_robo_dopamine_localization_head.py"
 SPEC = importlib.util.spec_from_file_location("robo_localization_head_probe", SCRIPT)
