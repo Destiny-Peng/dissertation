@@ -54,6 +54,10 @@ class MultiPerspectiveTests(unittest.TestCase):
                     }[eval_mode])
                     prediction = official / "pred_vllm.json"
                     prediction.write_text(json.dumps(rows), encoding="utf-8")
+                    cache = official / ".cache" / "cam_high"
+                    cache.mkdir(parents=True, exist_ok=True)
+                    (cache / "frame_000004.png").write_bytes(b"png")
+                    (official / "keep.txt").write_text("keep", encoding="utf-8")
                     return str(official)
 
             args = type("Args", (), {
@@ -85,6 +89,11 @@ class MultiPerspectiveTests(unittest.TestCase):
             fused = json.loads(Path(result["fused_model_output"]).read_text())
             for row, expected in zip(fused, [0.2, 0.3, 0.4]):
                 self.assertAlmostEqual(row["progress"], expected)
+            for mode in PERSPECTIVE_MODES:
+                official = output_dir / f"official_{mode}"
+                self.assertTrue((official / "pred_vllm.json").is_file())
+                self.assertTrue((official / "keep.txt").is_file())
+                self.assertFalse((official / ".cache").exists())
 
     def test_modes_are_normalized_in_official_order(self) -> None:
         self.assertEqual(
