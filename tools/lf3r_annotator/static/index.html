@@ -562,14 +562,15 @@
       </section>
 
       <section id="analysisTabOverview" class="analysis-tab-panel" data-analysis-panel="overview">
-        <section class="analysis-card analysis-run-card" aria-labelledby="analysisRunTitle">
-          <div class="analysis-card-heading">
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisRunTitle">
+          <summary class="analysis-run-summary">
             <div>
               <p class="eyebrow">TEMPORAL ANALYSIS RUNNER</p>
               <h3 id="analysisRunTitle">Run temporal analysis</h3>
+              <small>Baseline-aligned temporal diagnostics</small>
             </div>
             <span id="analysisRunBadge" class="analysis-badge">Idle</span>
-          </div>
+          </summary>
           <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a
             run for each method and keep the default LIBERO-10 scope for a fair comparison.</p>
           <p id="analysisEnvironmentStatus" class="analysis-run-selection" role="status">Checking the dedicated Analysis
@@ -623,16 +624,17 @@
           <pre id="analysisRunLog" class="job-log" aria-label="Latest temporal analysis log"></pre>
           <div id="analysisRunJobs" class="persistent-job-list" aria-live="polite"
             aria-label="Persistent temporal analysis jobs"></div>
-        </section>
+        </details>
 
-        <section class="analysis-card analysis-run-card" aria-labelledby="analysisHopTitle">
-          <div class="analysis-card-heading">
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisHopTitle">
+          <summary class="analysis-run-summary">
             <div>
               <p class="eyebrow">ROBO-DOPAMINE FUSED HOP</p>
               <h3 id="analysisHopTitle">Failure detection and ensemble analysis</h3>
+              <small>Sweep, ensemble, and offline localization</small>
             </div>
             <span id="analysisHopBadge" class="analysis-badge">Idle</span>
-          </div>
+          </summary>
           <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
             <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
             events use rollout-start detection latency. The detector is searched as
@@ -674,7 +676,7 @@
           <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
           <div id="analysisHopResults" class="analysis-table-wrap"></div>
           <div id="analysisHopArtifacts" class="analysis-provenance"></div>
-        </section>
+        </details>
 
         <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
         <section class="analysis-card primary-analysis-card" aria-labelledby="analysisConclusionTitle">
