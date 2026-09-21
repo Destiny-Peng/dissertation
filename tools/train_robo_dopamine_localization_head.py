@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """BiLSTM-only failure-localization ablation on saved Robo-Dopamine fused signals.
 
-Compare failure-only training with failure + clean-success negative training.
+Measure the effect of clean-success negative-data ratio while keeping the
+BiLSTM, loss, failure split, normalization, and evaluation fixed.
 Robo-Dopamine is never rerun. Splits are strictly rollout-level.
 """
 
@@ -50,7 +51,7 @@ DEFAULT_MANIFEST = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.js
 DEFAULT_ANNOTATIONS = PROJECT_ROOT / "annotations/failure_annotations/v1/records"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "outputs/robo_dopamine_localization_head"
 MODEL_NAMES = ("tiny_bilstm_h16", "tiny_bilstm_h32")
-TRAINING_SETTINGS = ("failure_only", "failure_plus_success")
+SUCCESS_RATIOS = (0.0, 0.5, 1.0, 2.0)
 def log(message: str) -> None:
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
@@ -276,28 +277,60 @@ def task_splits(
     return result
 
 
-def select_success_training_ids(
+def success_ratio_label(ratio: float) -> str:
+    return ("success_ratio_" + str(ratio).replace(".", "p")).replace("p0", "")
+
+
+def build_success_ratio_subsets(
     success_dataset: Mapping[str, Mapping[str, Any]],
     failure_dataset: Mapping[str, Mapping[str, Any]],
     failure_train_ids: Sequence[str],
     *,
+    seed: int,
     held_out_task: str | None = None,
-) -> tuple[list[str], str]:
+) -> tuple[dict[float, list[str]], dict[str, Any]]:
     allowed = [
         rollout_id
         for rollout_id in sorted(success_dataset)
         if held_out_task is None
         or _task(success_dataset, rollout_id) != held_out_task
     ]
-    train_tasks = {_task(failure_dataset, rollout_id) for rollout_id in failure_train_ids}
+    train_tasks = {
+        _task(failure_dataset, rollout_id)
+        for rollout_id in failure_train_ids
+    }
     same_task = [
         rollout_id
         for rollout_id in allowed
         if _task(success_dataset, rollout_id) in train_tasks
     ]
-    if same_task:
-        return same_task, "same_task_only"
-    return allowed, "fallback_all_nonheldout_success"
+    fallback = [
+        rollout_id
+        for rollout_id in allowed
+        if rollout_id not in set(same_task)
+    ]
+
+    rng = random.Random(seed)
+    rng.shuffle(same_task)
+    rng.shuffle(fallback)
+    ordered = same_task + fallback
+
+    subsets: dict[float, list[str]] = {}
+    requested_counts: dict[str, int] = {}
+    for ratio in SUCCESS_RATIOS:
+        requested = int(len(failure_train_ids) * ratio)
+        requested_counts[str(ratio)] = requested
+        subsets[ratio] = ordered[: min(requested, len(ordered))]
+
+    return subsets, {
+        "sampling": "nested_same_task_first_random_prefix",
+        "seed": seed,
+        "failure_train_n": len(failure_train_ids),
+        "same_task_available_n": len(same_task),
+        "fallback_available_n": len(fallback),
+        "total_available_n": len(ordered),
+        "requested_success_n_by_ratio": requested_counts,
+    }
 
 
 def standardization_stats(
@@ -600,12 +633,13 @@ def evaluate_model(
 
 def run_one_setting(
     *,
-    setting: str,
+    success_ratio: float,
     model_name: str,
     failure_dataset: Mapping[str, Mapping[str, Any]],
     success_dataset: Mapping[str, Mapping[str, Any]],
     split: Mapping[str, Any],
     success_train_ids: Sequence[str],
+    requested_success_n: int,
     seed: int,
     args: argparse.Namespace,
     device: torch.device,
@@ -619,11 +653,8 @@ def run_one_setting(
         failure_dataset, failure_train_ids
     )
 
-    added_success_ids = (
-        list(success_train_ids)
-        if setting == "failure_plus_success"
-        else []
-    )
+    added_success_ids = list(success_train_ids)
+    setting = success_ratio_label(success_ratio)
     model, training = train_bilstm(
         hidden=hidden,
         failure_dataset=failure_dataset,
@@ -661,6 +692,8 @@ def run_one_setting(
                 "held_out_task": split.get("held_out_task"),
                 "model": model_name,
                 "training_setting": setting,
+                "success_ratio": success_ratio,
+                "requested_success_n": requested_success_n,
                 "failure_train_n": len(failure_train_ids),
                 "success_train_n": len(added_success_ids),
             }
@@ -681,6 +714,8 @@ def run_one_setting(
             "held_out_task": split.get("held_out_task"),
             "model": model_name,
             "training_setting": setting,
+            "success_ratio": success_ratio,
+            "requested_success_n": requested_success_n,
             "failure_train_n": len(failure_train_ids),
             "success_train_n": len(added_success_ids),
             "val_failure_n": len(split["val"]),
@@ -725,34 +760,37 @@ def aggregate_rows(
 
 
 def ablation_deltas(summary: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    by_model = {
+    baselines = {
         str(row["model"]): row
         for row in summary
-        if row.get("training_setting") == "failure_only"
-    }
-    augmented = {
-        str(row["model"]): row
-        for row in summary
-        if row.get("training_setting") == "failure_plus_success"
+        if float(row.get("success_ratio") or 0.0) == 0.0
     }
     rows: list[dict[str, Any]] = []
-    for model in sorted(set(by_model) & set(augmented)):
-        base = by_model[model]
-        new = augmented[model]
-        row: dict[str, Any] = {"model": model}
+    for current in summary:
+        ratio = float(current.get("success_ratio") or 0.0)
+        if ratio == 0.0:
+            continue
+        model = str(current["model"])
+        base = baselines.get(model)
+        if base is None:
+            continue
+        row: dict[str, Any] = {
+            "model": model,
+            "success_ratio": ratio,
+            "success_train_n_mean": current.get("success_train_n_mean"),
+        }
         for metric in METRIC_NAMES:
             base_value = base.get(f"{metric}_mean")
-            new_value = new.get(f"{metric}_mean")
-            row[f"{metric}_failure_only"] = base_value
-            row[f"{metric}_failure_plus_success"] = new_value
-            row[f"{metric}_delta"] = (
+            new_value = current.get(f"{metric}_mean")
+            row[f"{metric}_ratio0"] = base_value
+            row[f"{metric}_current"] = new_value
+            row[f"{metric}_delta_vs_ratio0"] = (
                 float(new_value) - float(base_value)
                 if base_value is not None and new_value is not None
                 else None
             )
         rows.append(row)
     return rows
-
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -781,35 +819,39 @@ def conclusion_text(
     delta_rows: Sequence[Mapping[str, Any]],
 ) -> str:
     lines = [
-        "# Success-negative BiLSTM ablation",
+        "# Success-ratio BiLSTM ablation",
         "",
-        "The controlled comparison changes only whether clean-success rollouts are "
-        "added as all-negative training sequences. Failure splits, validation/test "
-        "failures, BiLSTM architecture, seeds, normalization, positive-class "
-        "weight, optimizer, and evaluation protocol are shared.",
+        "Only the amount of clean-success all-negative training data changes. "
+        "Ratios are 0, 0.5x, 1x, and 2x relative to the number of failure "
+        "training rollouts in each repeat. Sampling is deterministic, nested, "
+        "and same-task-first. Loss, normalization, model architecture, failure "
+        "split, optimizer, and evaluation remain fixed.",
         "",
     ]
     for row in delta_rows:
-        before_delta = row.get("before_interval_rate_delta")
-        hit_delta = row.get("in_interval_rate_delta")
-        mae_delta = row.get("mae_samples_delta")
+        before_delta = row.get("before_interval_rate_delta_vs_ratio0")
+        hit_delta = row.get("in_interval_rate_delta_vs_ratio0")
+        mae_delta = row.get("mae_samples_delta_vs_ratio0")
         lines.append(
-            f"- **{row['model']}**: before-interval Δ={before_delta:+.4f}, "
+            f"- **{row['model']} @ {row['success_ratio']}x**: "
+            f"before-interval Δ={before_delta:+.4f}, "
             f"in-interval Δ={hit_delta:+.4f}, MAE Δ={mae_delta:+.4f}."
             if None not in (before_delta, hit_delta, mae_delta)
-            else f"- **{row['model']}**: insufficient paired summary values."
+            else (
+                f"- **{row['model']} @ {row['success_ratio']}x**: "
+                "insufficient paired summary values."
+            )
         )
     lines.extend(
         [
             "",
-            "A useful hard-negative effect should primarily appear as a lower "
-            "before-interval rate without a compensating rise in late localization "
-            "or a degradation in interval hit rate.",
+            "The main diagnostic is whether before-interval error improves at a "
+            "small success ratio and then degrades as success negatives dominate, "
+            "or instead degrades immediately from the first non-zero ratio.",
             "",
         ]
     )
     return "\n".join(lines)
-
 
 def analyze(args: argparse.Namespace) -> Path:
     run_root = ensure_within_project(resolve_project_path(args.run_root), "run root")
@@ -891,38 +933,46 @@ def analyze(args: argparse.Namespace) -> Path:
     split_records: list[dict[str, Any]] = []
 
     for split_index, split in enumerate(random_splits):
-        success_ids, selection_mode = select_success_training_ids(
+        success_subsets, sampling = build_success_ratio_subsets(
             success_dataset,
             failure_dataset,
             split["train"],
+            seed=int(split["seed"]) * 100 + 31,
         )
         split_records.append(
             {
                 **split,
-                "success_train_ids": success_ids,
-                "success_selection": selection_mode,
+                "success_subsets": {
+                    str(ratio): ids for ratio, ids in success_subsets.items()
+                },
+                "success_sampling": sampling,
             }
         )
         log(
             f"{split['split_id']} prepared: failure_train={len(split['train'])} "
             f"val={len(split['val'])} test={len(split['test'])} "
-            f"success_candidates={len(success_ids)} selection={selection_mode}"
+            f"same_task_success={sampling['same_task_available_n']} "
+            f"fallback_success={sampling['fallback_available_n']}"
         )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = int(split["seed"]) * 1000 + model_index
-            for setting in TRAINING_SETTINGS:
+            for ratio in SUCCESS_RATIOS:
+                success_ids = success_subsets[ratio]
+                requested_success_n = int(len(split["train"]) * ratio)
+                setting = success_ratio_label(ratio)
                 log(
                     f"{split['split_id']} {model_name} {setting} start "
                     f"failure_train={len(split['train'])} "
-                    f"success_train={len(success_ids) if setting == 'failure_plus_success' else 0}"
+                    f"success_train={len(success_ids)}/{requested_success_n}"
                 )
                 metrics, rows, training = run_one_setting(
-                    setting=setting,
+                    success_ratio=ratio,
                     model_name=model_name,
                     failure_dataset=failure_dataset,
                     success_dataset=success_dataset,
                     split=split,
                     success_train_ids=success_ids,
+                    requested_success_n=requested_success_n,
                     seed=shared_seed,
                     args=args,
                     device=device,
@@ -934,50 +984,58 @@ def analyze(args: argparse.Namespace) -> Path:
                         "split_id": split["split_id"],
                         "model": model_name,
                         "training_setting": setting,
+                        "success_ratio": ratio,
+                        "requested_success_n": requested_success_n,
                         "failure_train_ids": list(split["train"]),
-                        "success_train_ids": (
-                            success_ids if setting == "failure_plus_success" else []
-                        ),
-                        "success_selection": selection_mode,
+                        "success_train_ids": success_ids,
+                        "success_sampling": sampling,
                         **training,
                     }
                 )
 
     task_split_records: list[dict[str, Any]] = []
     for split_index, split in enumerate(heldout_splits):
-        success_ids, selection_mode = select_success_training_ids(
+        success_subsets, sampling = build_success_ratio_subsets(
             success_dataset,
             failure_dataset,
             split["train"],
+            seed=args.seed * 10000 + split_index * 100 + 31,
             held_out_task=str(split["held_out_task"]),
         )
         task_split_records.append(
             {
                 **split,
-                "success_train_ids": success_ids,
-                "success_selection": selection_mode,
+                "success_subsets": {
+                    str(ratio): ids for ratio, ids in success_subsets.items()
+                },
+                "success_sampling": sampling,
             }
         )
         log(
             f"{split['split_id']} prepared: failure_train={len(split['train'])} "
             f"val={len(split['val'])} test={len(split['test'])} "
-            f"success_candidates={len(success_ids)} selection={selection_mode}"
+            f"same_task_success={sampling['same_task_available_n']} "
+            f"fallback_success={sampling['fallback_available_n']}"
         )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = args.seed * 10000 + split_index * 100 + model_index
-            for setting in TRAINING_SETTINGS:
+            for ratio in SUCCESS_RATIOS:
+                success_ids = success_subsets[ratio]
+                requested_success_n = int(len(split["train"]) * ratio)
+                setting = success_ratio_label(ratio)
                 log(
                     f"{split['split_id']} {model_name} {setting} start "
                     f"failure_train={len(split['train'])} "
-                    f"success_train={len(success_ids) if setting == 'failure_plus_success' else 0}"
+                    f"success_train={len(success_ids)}/{requested_success_n}"
                 )
                 metrics, rows, training = run_one_setting(
-                    setting=setting,
+                    success_ratio=ratio,
                     model_name=model_name,
                     failure_dataset=failure_dataset,
                     success_dataset=success_dataset,
                     split=split,
                     success_train_ids=success_ids,
+                    requested_success_n=requested_success_n,
                     seed=shared_seed,
                     args=args,
                     device=device,
@@ -989,20 +1047,22 @@ def analyze(args: argparse.Namespace) -> Path:
                         "split_id": split["split_id"],
                         "model": model_name,
                         "training_setting": setting,
+                        "success_ratio": ratio,
+                        "requested_success_n": requested_success_n,
                         "failure_train_ids": list(split["train"]),
-                        "success_train_ids": (
-                            success_ids if setting == "failure_plus_success" else []
-                        ),
-                        "success_selection": selection_mode,
+                        "success_train_ids": success_ids,
+                        "success_sampling": sampling,
                         **training,
                     }
                 )
 
     random_summary = aggregate_rows(
-        detailed_metrics, ["model", "training_setting"]
+        detailed_metrics, ["model", "success_ratio", "training_setting"]
     )
     task_summary = (
-        aggregate_rows(task_metrics, ["model", "training_setting"])
+        aggregate_rows(
+            task_metrics, ["model", "success_ratio", "training_setting"]
+        )
         if task_metrics
         else []
     )
@@ -1018,7 +1078,7 @@ def analyze(args: argparse.Namespace) -> Path:
     write_json(
         output_dir / "split_manifest.json",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "run_root": project_relative(run_root),
             "failure_rollout_n": len(failure_dataset),
             "clean_success_rollout_n": len(success_dataset),
@@ -1049,12 +1109,11 @@ def analyze(args: argparse.Namespace) -> Path:
                 "tiny_bilstm_h16": "1-layer bidirectional LSTM, hidden=16 per direction",
                 "tiny_bilstm_h32": "1-layer bidirectional LSTM, hidden=32 per direction",
             },
-            "training_settings": {
-                "failure_only": "failure train rollouts only",
-                "failure_plus_success": (
-                    "same failure train rollouts plus clean-success all-negative sequences"
-                ),
-            },
+            "success_ratios": list(SUCCESS_RATIOS),
+            "training_settings": (
+                "clean-success all-negative rollout count is "
+                "int(failure_train_n * success_ratio)"
+            ),
             "controls": {
                 "normalization": (
                     "fit on failure-train sequences only and shared between both settings"
@@ -1064,9 +1123,9 @@ def analyze(args: argparse.Namespace) -> Path:
                 ),
                 "validation": "failure validation rollouts only",
                 "test": "failure test rollouts only",
-                "success_preference": (
-                    "use clean successes from failure-train tasks when available; "
-                    "task-held-out success from the held-out task is excluded"
+                "success_sampling": (
+                    "deterministic nested random prefixes; same-task successes first, "
+                    "then non-held-out fallback successes if required"
                 ),
                 "prediction": "rollout-global argmax of per-timestep BiLSTM score",
                 "loss": "positive-class-weighted BCE, unchanged",
