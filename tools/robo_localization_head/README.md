@@ -231,6 +231,18 @@ Evaluation uses the nearest valid interval, so hitting any annotated failure
 interval counts as in-interval. `first_event_in_interval_rate` is also reported
 separately to show whether the model actually prefers the earliest event.
 
+### WebUI
+
+The Analysis page exposes this experiment as a separate **Label / loss localization ablation** card.
+It uses the same persistent tmux Analysis job infrastructure as the other Robo-Dopamine analyses.
+The form exposes device, event-decay `tau_event`, repeats, optimizer/training settings, distance/ranking
+loss weights, ranking margin, and the asymmetric-follow-up gate. The completed snapshot renders the
+dataset composition, best configuration, label table, and loss table with mean and variance across
+repeats, and exposes all artifacts for download.
+
+The WebUI backend uses `analysis_kind=robo_bilstm_label_loss_ablation` and always points the runner at
+the full `outputs/baselines` pool so each rollout uses its latest usable fused result.
+
 ## Outputs
 
 - `label_ablation.csv`
