@@ -5,6 +5,8 @@
     scope: "libero_10",
     runs: [],
     job: null,
+    snapshot: null,
+    snapshotLoading: false,
     loadingRuns: false,
     polling: false,
     intervalRanking: {
@@ -462,7 +464,8 @@
     var artifacts = node("analysisHopArtifacts");
     if (!host || !artifacts) return;
     var snapshot = window.workspaceState && workspaceState.analysisSnapshot;
-    var hop = snapshot && (snapshot.robo_hop || snapshot.robo_incremental_hop);
+    var hop = hopState.snapshot
+      || (snapshot && (snapshot.robo_hop || snapshot.robo_incremental_hop));
     if (!hop || !hop.available) {
       host.innerHTML = '<p class="analysis-empty">' + esc(
         (hop && hop.message) || "No completed Robo-Dopamine fused-hop failure analysis snapshot yet."
@@ -562,6 +565,31 @@
     if (!activeJob()) badge("complete");
   }
 
+  async function loadSnapshot() {
+    if (hopState.snapshotLoading) return hopState.snapshot;
+    hopState.snapshotLoading = true;
+    try {
+      var response = await fetch("/api/analysis/robo-hop", { cache: "no-store" });
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load fused-hop analysis snapshot");
+      }
+      hopState.snapshot = payload.robo_hop || {
+        available: false,
+        message: "Empty fused-hop analysis response"
+      };
+    } catch (error) {
+      hopState.snapshot = {
+        available: false,
+        message: "Fused-hop snapshot error: " + error.message
+      };
+    } finally {
+      hopState.snapshotLoading = false;
+      renderSnapshot();
+    }
+    return hopState.snapshot;
+  }
+
   async function loadLog(jobId) {
     try {
       var response = await fetch(
@@ -605,6 +633,7 @@
       }
       if (job.status === "complete") {
         status("Fused-hop failure analysis complete · " + (job.output_dir || "snapshot ready"), "");
+        await loadSnapshot();
         if (typeof window.workspaceLoadAnalysis === "function") {
           await window.workspaceLoadAnalysis(true);
         }
@@ -725,6 +754,7 @@
     }
     loadRuns();
     recoverLatestJob();
+    loadSnapshot();
     renderSnapshot();
     updateButton();
   }
