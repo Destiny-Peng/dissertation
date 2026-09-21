@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import torch
+
+from robo_incremental_hop import io as hop_io
 
 TOOLS_DIR = Path(__file__).resolve().parents[1]
 if str(TOOLS_DIR) not in sys.path:
@@ -255,6 +260,73 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             probe.parse_success_ratios("0,-1")
+
+    def test_latest_signal_pool_prefers_newest_and_falls_back(self) -> None:
+        outputs_root = TOOLS_DIR.parent / "outputs"
+        outputs_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="lf3r-latest-pool-", dir=outputs_root
+        ) as temp_dir:
+            pool = Path(temp_dir)
+            old_run = pool / "old"
+            new_run = pool / "new"
+            for run in (old_run, new_run):
+                for rollout_id in ("r1", "r2"):
+                    path = run / "raw" / rollout_id / "worker_result.json"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("{}", encoding="utf-8")
+
+            old_time = 1_700_000_000
+            new_time = old_time + 100
+            for rollout_id in ("r1", "r2"):
+                os.utime(
+                    old_run / "raw" / rollout_id / "worker_result.json",
+                    (old_time, old_time),
+                )
+                os.utime(
+                    new_run / "raw" / rollout_id / "worker_result.json",
+                    (new_time, new_time),
+                )
+
+            def completed(run_root):
+                return ["r1", "r2"], [str(run_root / "jobs.jsonl")]
+
+            def load_signal(run_root, rollout_id, signal_mode):
+                self.assertEqual(signal_mode, "fused")
+                if run_root == new_run and rollout_id == "r2":
+                    raise FileNotFoundError("new r2 fused output missing")
+                return {
+                    "rollout_id": rollout_id,
+                    "frames": [0, 1],
+                    "progress": [0.0, 1.0],
+                    "hops": [0.0, 0.1],
+                }
+
+            with mock.patch.object(
+                hop_io,
+                "discover_robo_dopamine_run_roots",
+                return_value=[old_run, new_run],
+            ), mock.patch.object(
+                hop_io,
+                "completed_rollout_ids",
+                side_effect=completed,
+            ), mock.patch.object(
+                hop_io,
+                "load_signal",
+                side_effect=load_signal,
+            ):
+                signals, selected, provenance = hop_io.latest_usable_signals(
+                    pool, "fused"
+                )
+
+            self.assertEqual(set(signals), {"r1", "r2"})
+            self.assertEqual(selected["r1"], new_run)
+            self.assertEqual(selected["r2"], old_run)
+            self.assertEqual(
+                provenance["selection_mode"],
+                "latest_usable_signal_per_rollout",
+            )
+            self.assertEqual(len(provenance["rejected_newer_candidates"]), 1)
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
