@@ -337,7 +337,7 @@ TOOL_LABELS = {
     "safe_validate": "Validate SAFE checkpoint",
     "robo_interval_sweep": "Robo-Dopamine interval sweep",
     "validate_variants": "Validate instruction variants",
-    "rebuild_manifest": "Rescan rollout manifest",
+    "rebuild_manifest": "Import / rescan rollout manifest",
     "validate_baselines": "Validate baseline pipelines",
 }
 
