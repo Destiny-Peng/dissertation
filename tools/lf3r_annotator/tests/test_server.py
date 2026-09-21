@@ -853,12 +853,98 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             log = json.load(response)["log"]
         self.assertEqual(log["job_id"], job["job_id"])
 
+    def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
+        self.seed_baseline_outputs()
+
+        second_video = self.root / "outputs" / "sample2.mp4"
+        second_video.write_bytes(b"second-video")
+        second = {
+            **self.rollout,
+            "id": "sample-rollout-2",
+            "episode_index": 1,
+            "video_path": "outputs/sample2.mp4",
+        }
+        manifest = self.root / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps(self.rollout) + "\n" + json.dumps(second) + "\n",
+            encoding="utf-8",
+        )
+
+        with self.request(
+            "/api/baselines/result-coverage?baseline=safe&scope=libero_10&condition=full_instruction"
+        ) as response:
+            coverage = json.load(response)
+        self.assertEqual(coverage["matched_rollouts"], 2)
+        self.assertEqual(coverage["valid_result_rollouts"], 1)
+        self.assertEqual(coverage["missing_valid_result_rollouts"], 1)
+        self.assertEqual(coverage["valid_source_rollout_ids"], ["sample-rollout"])
+        self.assertEqual(coverage["missing_source_rollout_ids"], ["sample-rollout-2"])
+
+        # A run can mention a rollout but still be invalid if its raw output is
+        # missing/unparseable; such a rollout must remain eligible.
+        safe_output = (
+            self.root
+            / "outputs"
+            / "baselines"
+            / "safe_test"
+            / "raw"
+            / "sample-rollout"
+            / "safe_features.csv"
+        )
+        safe_output.unlink()
+        self.app.baselines.rebuild_run_index()
+        with self.request(
+            "/api/baselines/result-coverage?baseline=safe&scope=libero_10&condition=full_instruction"
+        ) as response:
+            invalid_coverage = json.load(response)
+        self.assertEqual(invalid_coverage["valid_result_rollouts"], 0)
+        self.assertCountEqual(
+            invalid_coverage["missing_source_rollout_ids"],
+            ["sample-rollout", "sample-rollout-2"],
+        )
+
+        # Restore one valid prior result and verify the authoritative batch
+        # selection forwards only the genuinely missing rollout ID.
+        safe_output.parent.mkdir(parents=True, exist_ok=True)
+        safe_output.write_text(
+            "action_timestep,max_token_prob,avg_token_prob\n10,0.9,0.8\n",
+            encoding="utf-8",
+        )
+        self.app.baselines.rebuild_run_index()
+        runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# filtered batch fake runner\n", encoding="utf-8")
+
+        with self.request(
+            "/api/baselines/run-batch",
+            {
+                "baseline": "safe",
+                "scope": "libero_10",
+                "gpu": "0",
+                "result_filter": "missing_valid",
+                "parallel_workers": 1,
+                "start_index": 0,
+            },
+        ) as response:
+            job = json.load(response)["job"]
+        self.assertEqual(job["result_filter"], "missing_valid")
+        self.assertEqual(job["scope_rollouts_before_result_filter"], 2)
+        self.assertEqual(job["valid_result_rollouts_skipped"], 1)
+        self.assertEqual(job["selected_rollouts"], 1)
+        rollout_flags = [
+            job["command"][index + 1]
+            for index, token in enumerate(job["command"][:-1])
+            if token == "--rollout-id"
+        ]
+        self.assertEqual(rollout_flags, ["sample-rollout-2"])
+
     def test_batch_validation_and_baseline_concurrency(self) -> None:
         invalid_payloads = [
             {"baseline": "safe", "scope": "libero_10", "gpu": "0,x"},
             {"baseline": "safe", "scope": "libero_10", "gpu": "0", "memory_utilization": True},
             {"baseline": "safe", "scope": "libero_10", "gpu": "0", "options": {"model_path": "bad"}},
             {"baseline": "safe", "scope": "not-a-scope", "gpu": "0"},
+            {"baseline": "safe", "scope": "libero_10", "gpu": "0", "result_filter": "unknown"},
             {"baseline": "safe", "scope": "libero_10", "gpu": "0", "unexpected": 1},
         ]
         for payload in invalid_payloads:
