@@ -1975,6 +1975,10 @@ class AnalysisService:
         }
 
 
+    def robo_hop_response(self) -> dict[str, Any]:
+        """Return the latest Robo-Dopamine fused-hop snapshot directly."""
+        return self._robo_hop_response()
+
     def response(self, compact: bool = True) -> dict[str, Any]:
         payload = self._full_response()
         return self._compact_response(payload) if compact else payload
@@ -5464,6 +5468,12 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 self.json_response(
                     HTTPStatus.OK,
                     {"analysis": self.app.analysis.response(compact=compact)},
+                )
+                return
+            if path == "/api/analysis/robo-hop":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"robo_hop": self.app.analysis.robo_hop_response()},
                 )
                 return
             if path == "/api/analysis/details":
