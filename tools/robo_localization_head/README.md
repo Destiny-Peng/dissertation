@@ -1,7 +1,9 @@
 # Robo-Dopamine BiLSTM success-negative ablation
 
 This experiment uses only saved Robo-Dopamine fused progress/hop. It never reruns
-Robo-Dopamine.
+Robo-Dopamine. The default evaluation source is the complete historical
+Robo-Dopamine output pool: for each rollout, the newest usable fused result is
+selected independently.
 
 ## Question
 
@@ -100,7 +102,9 @@ environment is the intended default:
 ~~~bash
 source ./project_env.sh
 
-"$LF3R_ROBODOPAMINE_PYTHON"   tools/train_robo_dopamine_localization_head.py   --run-root outputs/baselines/<completed-fused-robo-run>   --device auto
+"$LF3R_ROBODOPAMINE_PYTHON" tools/train_robo_dopamine_localization_head.py \
+  --run-pool-root outputs/baselines \
+  --device auto
 ~~~
 
 `--device auto` uses CUDA when available and otherwise falls back to CPU.
@@ -132,3 +136,17 @@ Defaults preserve the current BiLSTM training setup:
 The primary diagnostic is the shape of `before_interval_rate` across the four
 ratios: whether a small amount of success helps and too much hurts, or whether
 performance degrades immediately once success negatives are introduced.
+
+
+## Result-pool selection
+
+With `--run-pool-root`, the evaluator recursively discovers completed
+full-instruction Robo-Dopamine runs. For each rollout ID it orders completed
+candidates by that rollout's `worker_result.json` modification time and selects
+the newest candidate with a usable fused signal. If the newest completed
+candidate lacks a fused output, it falls back to the next newest usable fused
+candidate for that rollout.
+
+This means a newly rerun partial batch is automatically merged with older
+results for rollouts that were not rerun. `--run-root` remains available only
+for legacy single-directory evaluation.
