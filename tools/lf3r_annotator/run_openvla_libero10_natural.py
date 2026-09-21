@@ -7,6 +7,7 @@ import argparse
 import importlib.machinery
 import logging
 import os
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -115,6 +116,15 @@ def parse_args() -> argparse.Namespace:
         help="Square replay-video resolution; defaults to the suite configuration",
     )
     parser.add_argument(
+        "--video-view-mode",
+        choices=("single_view", "libero_three_view"),
+        default="single_view",
+        help=(
+            "Recording mode. libero_three_view keeps the canonical single-view rollout "
+            "and adds a post-run agent/side/wrist composite review video."
+        ),
+    )
+    parser.add_argument(
         "--log-safe-features",
         action="store_true",
         help=(
@@ -184,6 +194,7 @@ def main() -> None:
         f"LF3R_RESOLUTION render={render_resolution} policy=224 record={record_resolution}"
     )
     print(f"LF3R_SAFE_FEATURES enabled={args.log_safe_features}")
+    print(f"LF3R_VIDEO_VIEW_MODE mode={args.video_view_mode}")
     print(f"LF3R_ROBOSUITE_LOG path={os.environ.get('ROBOSUITE_LOG_PATH', '/tmp/robosuite.log')}")
     sys.argv = [
         "run_libero_eval.py",
@@ -217,6 +228,26 @@ def main() -> None:
         for npz_path, metadata_path in sidecars:
             print(f"LF3R_SAFE_FEATURES_NUMERIC path={npz_path}")
             print(f"LF3R_SAFE_FEATURES_METADATA path={metadata_path}")
+
+    if args.video_view_mode == "libero_three_view":
+        run_output_dir = output_root / args.run_note / args.task_suite
+        multiview_script = PROJECT_ROOT / "tools" / "lf3r_annotator" / "generate_libero_multiview.py"
+        subprocess.run(
+            [
+                sys.executable,
+                str(multiview_script),
+                "--run-dir",
+                str(run_output_dir),
+                "--task-suite",
+                args.task_suite,
+                "--record-resolution",
+                str(record_resolution),
+                "--fps",
+                "30",
+            ],
+            cwd=str(PROJECT_ROOT),
+            check=True,
+        )
 
 
 if __name__ == "__main__":
