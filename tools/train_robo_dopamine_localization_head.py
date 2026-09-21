@@ -49,6 +49,11 @@ DEFAULT_ANNOTATIONS = PROJECT_ROOT / "annotations/failure_annotations/v1/records
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "outputs/robo_dopamine_localization_head"
 MODEL_NAMES = ("tiny_bilstm_h16", "tiny_bilstm_h32")
 TRAINING_SETTINGS = ("failure_only", "failure_plus_success")
+def log(message: str) -> None:
+    timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
+
+
 METRIC_NAMES = (
     "in_interval_rate",
     "within_1",
@@ -395,6 +400,7 @@ def train_bilstm(
     weight_decay: float,
     grad_clip: float,
     device: torch.device,
+    progress_label: str,
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     set_seed(seed)
     model = TinyBiLSTM(hidden).to(device)
@@ -471,6 +477,12 @@ def train_bilstm(
                 )
                 val_denominator += float(weights.sum().cpu())
         val_loss = val_numerator / max(1e-12, val_denominator)
+        if epoch == 1 or epoch % 25 == 0:
+            log(
+                f"{progress_label} epoch={epoch}/{epochs} "
+                f"train_bce={float(loss.detach().cpu()):.6f} "
+                f"val_bce={val_loss:.6f} best={best_loss:.6f}"
+            )
 
         if val_loss < best_loss - 1e-7:
             best_loss = val_loss
@@ -483,6 +495,10 @@ def train_bilstm(
         else:
             stale += 1
             if stale >= patience:
+                log(
+                    f"{progress_label} early_stop epoch={epoch} "
+                    f"best_epoch={best_epoch} best_val_bce={best_loss:.6f}"
+                )
                 break
 
     if best_state is not None:
@@ -623,6 +639,9 @@ def run_one_setting(
         weight_decay=args.weight_decay,
         grad_clip=args.grad_clip,
         device=device,
+        progress_label=(
+            f"{split['split_id']} {model_name} {setting}"
+        ),
     )
     rows = evaluate_model(
         model,
@@ -645,6 +664,14 @@ def run_one_setting(
             }
         )
     metrics = metric_summary(rows)
+    log(
+        f"{split['split_id']} {model_name} {setting} complete "
+        f"best_epoch={training['best_epoch']} "
+        f"best_val_bce={training['best_val_bce']:.6f} "
+        f"in_interval={metrics['in_interval_rate']:.3f} "
+        f"before={metrics['before_interval_rate']:.3f} "
+        f"after={metrics['after_interval_rate']:.3f}"
+    )
     metrics.update(
         {
             "split_kind": split["kind"],
@@ -804,6 +831,12 @@ def analyze(args: argparse.Namespace) -> Path:
         raise FileExistsError(f"Output directory is not empty: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    log(
+        "Starting BiLSTM success-negative ablation "
+        f"run_root={project_relative(run_root)} device={args.device} "
+        f"repeats={args.repeats} epochs={args.epochs} patience={args.patience}"
+    )
+    log("Loading saved fused Robo-Dopamine signals and annotations")
     manifest = load_manifest(manifest_path)
     signals, events, _no_event_failures, clean_rollouts, provenance = build_base_records(
         run_root,
@@ -824,6 +857,10 @@ def analyze(args: argparse.Namespace) -> Path:
             "No clean-success rollout has a usable saved fused signal; "
             "the requested ablation cannot be run."
         )
+    log(
+        f"Dataset ready: failure_rollouts={len(failure_dataset)} "
+        f"clean_success_rollouts={len(success_dataset)}"
+    )
 
     random_splits = [
         rollout_split(
@@ -841,6 +878,10 @@ def analyze(args: argparse.Namespace) -> Path:
     )
 
     device = resolve_device(args.device)
+    log(
+        f"PyTorch device resolved to {device}; torch={torch.__version__}; "
+        f"cuda_available={torch.cuda.is_available()}"
+    )
     detailed_metrics: list[dict[str, Any]] = []
     task_metrics: list[dict[str, Any]] = []
     predictions: list[dict[str, Any]] = []
@@ -860,9 +901,19 @@ def analyze(args: argparse.Namespace) -> Path:
                 "success_selection": selection_mode,
             }
         )
+        log(
+            f"{split['split_id']} prepared: failure_train={len(split['train'])} "
+            f"val={len(split['val'])} test={len(split['test'])} "
+            f"success_candidates={len(success_ids)} selection={selection_mode}"
+        )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = int(split["seed"]) * 1000 + model_index
             for setting in TRAINING_SETTINGS:
+                log(
+                    f"{split['split_id']} {model_name} {setting} start "
+                    f"failure_train={len(split['train'])} "
+                    f"success_train={len(success_ids) if setting == 'failure_plus_success' else 0}"
+                )
                 metrics, rows, training = run_one_setting(
                     setting=setting,
                     model_name=model_name,
@@ -905,9 +956,19 @@ def analyze(args: argparse.Namespace) -> Path:
                 "success_selection": selection_mode,
             }
         )
+        log(
+            f"{split['split_id']} prepared: failure_train={len(split['train'])} "
+            f"val={len(split['val'])} test={len(split['test'])} "
+            f"success_candidates={len(success_ids)} selection={selection_mode}"
+        )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = args.seed * 10000 + split_index * 100 + model_index
             for setting in TRAINING_SETTINGS:
+                log(
+                    f"{split['split_id']} {model_name} {setting} start "
+                    f"failure_train={len(split['train'])} "
+                    f"success_train={len(success_ids) if setting == 'failure_plus_success' else 0}"
+                )
                 metrics, rows, training = run_one_setting(
                     setting=setting,
                     model_name=model_name,
@@ -1033,7 +1094,7 @@ def analyze(args: argparse.Namespace) -> Path:
             ],
         },
     )
-    print(f"Wrote BiLSTM success-negative ablation to {output_dir}")
+    log(f"Wrote BiLSTM success-negative ablation to {output_dir}")
     return output_dir
 
 
