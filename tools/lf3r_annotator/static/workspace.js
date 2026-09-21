@@ -32,8 +32,8 @@
       /* Install the queue cap before the large legacy workspace script. */
       loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v3-20260916");
       loadScript("/static/manifest-support-v2.js?v=manual-transcode-v1-20260916", function () {
-        loadScript("/static/workspace-legacy.js?v=robo-hop-analysis-20260918", function () {
-          loadScript("/static/analysis-robo-hop.js?v=robo-hop-snapshot-v4-20260921", function () {
+        loadScript("/static/workspace-legacy.js?v=analysis-job-ownership-v2-20260921", function () {
+          loadScript("/static/analysis-robo-hop.js?v=decoupled-render-v5-20260921", function () {
             loadScript("/static/analysis-robo-bilstm.js?v=bilstm-success-ratio-v2-20260921");
           });
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
