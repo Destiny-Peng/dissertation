@@ -1837,8 +1837,10 @@ function updateBaselineBatchSelection() {
   ) ? state.baselineBatchCoverage : null;
   var coverageText = "";
   if (resultFilter === "missing_valid") {
-    if (state.baselineBatchCoverageLoading || !coverage) {
+    if (state.baselineBatchCoverageLoading) {
       coverageText = "checking existing results; ";
+    } else if (!coverage) {
+      coverageText = "existing-result coverage unavailable; ";
     } else {
       coverageText = coverage.missing_valid_result_rollouts + " without valid result / "
         + coverage.matched_rollouts + " total; "
@@ -2435,10 +2437,26 @@ function installEvents() {
   });
   byId("baselineBatchMethod").addEventListener("change", function () {
     updateBaselineBatchAdvancedFields();
-    baselineBatchCoverageChanged();
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      updateBaselineBatchSelection();
+    }
   });
-  byId("baselineBatchScope").addEventListener("change", baselineBatchCoverageChanged);
-  byId("baselineBatchCondition").addEventListener("change", baselineBatchCoverageChanged);
+  byId("baselineBatchScope").addEventListener("change", function () {
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      baselineBatchScopeChanged();
+    }
+  });
+  byId("baselineBatchCondition").addEventListener("change", function () {
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      baselineBatchScopeChanged();
+    }
+  });
   byId("baselineBatchResultFilter").addEventListener("change", baselineBatchCoverageChanged);
   byId("baselineBatchStartIndex").addEventListener("input", baselineBatchRangeChanged);
   byId("baselineBatchLimit").addEventListener("input", updateBaselineBatchSelection);
