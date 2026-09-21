@@ -26,6 +26,13 @@
     var n = Number(value);
     return Number.isFinite(n) ? (100 * n).toFixed(1) + "%" : "n/a";
   }
+  function meanVar(row, metric, asPercent) {
+    var mean = row[metric + "_mean"];
+    var variance = row[metric + "_variance"];
+    var meanText = asPercent ? pct(mean) : num(mean);
+    var varText = num(variance, 4);
+    return meanText + " / var " + varText;
+  }
   function active() {
     return state.job && ["queued", "running"].indexOf(state.job.status) !== -1;
   }
@@ -59,7 +66,7 @@
       html += '<tr>';
       columns.forEach(function (column) {
         var value = row[column.key];
-        var rendered = column.render ? esc(column.render(value)) : esc(value);
+        var rendered = column.render ? esc(column.render(value, row)) : esc(value);
         html += '<td' + (column.numeric ? ' class="numeric"' : '') + '>' + rendered + '</td>';
       });
       html += '</tr>';
@@ -106,6 +113,9 @@
       + '<article class="analysis-result-cell"><small>Event decay τ</small><strong>'
       + esc(num(dataset.tau_event_native_samples, 1))
       + '</strong><span>native samples</span></article>'
+      + '<article class="analysis-result-cell"><small>Events / rollout</small><strong>'
+      + esc(JSON.stringify(dataset.events_per_rollout || {}))
+      + '</strong><span>count distribution after pseudo-event construction</span></article>'
       + '</div></section>';
 
     html += '<section class="analysis-result-section"><h4>Best configuration</h4>'
@@ -126,32 +136,34 @@
     html += '<section class="analysis-result-section"><h4>Label ablation</h4>'
       + table(labelRows, [
         { key: "label_config", label: "Label" },
-        { key: "in_interval_rate_mean", label: "In interval", numeric: true, render: pct },
-        { key: "first_event_in_interval_rate_mean", label: "First event", numeric: true, render: pct },
-        { key: "within_1_mean", label: "±1", numeric: true, render: pct },
-        { key: "within_3_mean", label: "±3", numeric: true, render: pct },
-        { key: "within_5_mean", label: "±5", numeric: true, render: pct },
-        { key: "before_interval_rate_mean", label: "Before", numeric: true, render: pct },
-        { key: "after_interval_rate_mean", label: "After", numeric: true, render: pct },
-        { key: "median_absolute_interval_error_samples_mean", label: "Median |err|", numeric: true, render: num },
-        { key: "mae_samples_mean", label: "MAE", numeric: true, render: num },
-        { key: "mse_samples_mean", label: "MSE", numeric: true, render: num }
+        { key: "repeat_n", label: "Repeats", numeric: true },
+        { key: "in_interval_rate_mean", label: "In interval (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "in_interval_rate", true); } },
+        { key: "first_event_in_interval_rate_mean", label: "First event (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "first_event_in_interval_rate", true); } },
+        { key: "within_1_mean", label: "±1 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_1", true); } },
+        { key: "within_3_mean", label: "±3 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_3", true); } },
+        { key: "within_5_mean", label: "±5 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_5", true); } },
+        { key: "before_interval_rate_mean", label: "Before (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "before_interval_rate", true); } },
+        { key: "after_interval_rate_mean", label: "After (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "after_interval_rate", true); } },
+        { key: "median_absolute_interval_error_samples_mean", label: "Median |err| (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "median_absolute_interval_error_samples", false); } },
+        { key: "mae_samples_mean", label: "MAE (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "mae_samples", false); } },
+        { key: "mse_samples_mean", label: "MSE (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "mse_samples", false); } }
       ]) + '</section>';
 
     html += '<section class="analysis-result-section"><h4>Loss ablation</h4>'
       + table(lossRows, [
         { key: "loss", label: "Loss" },
         { key: "label_config", label: "Label" },
-        { key: "in_interval_rate_mean", label: "In interval", numeric: true, render: pct },
-        { key: "first_event_in_interval_rate_mean", label: "First event", numeric: true, render: pct },
-        { key: "within_1_mean", label: "±1", numeric: true, render: pct },
-        { key: "within_3_mean", label: "±3", numeric: true, render: pct },
-        { key: "within_5_mean", label: "±5", numeric: true, render: pct },
-        { key: "before_interval_rate_mean", label: "Before", numeric: true, render: pct },
-        { key: "after_interval_rate_mean", label: "After", numeric: true, render: pct },
-        { key: "median_absolute_interval_error_samples_mean", label: "Median |err|", numeric: true, render: num },
-        { key: "mae_samples_mean", label: "MAE", numeric: true, render: num },
-        { key: "mse_samples_mean", label: "MSE", numeric: true, render: num }
+        { key: "repeat_n", label: "Repeats", numeric: true },
+        { key: "in_interval_rate_mean", label: "In interval (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "in_interval_rate", true); } },
+        { key: "first_event_in_interval_rate_mean", label: "First event (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "first_event_in_interval_rate", true); } },
+        { key: "within_1_mean", label: "±1 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_1", true); } },
+        { key: "within_3_mean", label: "±3 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_3", true); } },
+        { key: "within_5_mean", label: "±5 (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "within_5", true); } },
+        { key: "before_interval_rate_mean", label: "Before (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "before_interval_rate", true); } },
+        { key: "after_interval_rate_mean", label: "After (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "after_interval_rate", true); } },
+        { key: "median_absolute_interval_error_samples_mean", label: "Median |err| (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "median_absolute_interval_error_samples", false); } },
+        { key: "mae_samples_mean", label: "MAE (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "mae_samples", false); } },
+        { key: "mse_samples_mean", label: "MSE (mean / var)", numeric: true, render: function (_v, row) { return meanVar(row, "mse_samples", false); } }
       ]) + '</section>';
 
     host.innerHTML = html;
