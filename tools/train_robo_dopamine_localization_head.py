@@ -995,7 +995,7 @@ def analyze(args: argparse.Namespace) -> Path:
         )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = int(split["seed"]) * 1000 + model_index
-            for ratio in SUCCESS_RATIOS:
+            for ratio in args.success_ratios:
                 success_ids = success_subsets[ratio]
                 requested_success_n = int(len(split["train"]) * ratio)
                 setting = success_ratio_label(ratio)
@@ -1059,7 +1059,7 @@ def analyze(args: argparse.Namespace) -> Path:
         )
         for model_index, model_name in enumerate(MODEL_NAMES):
             shared_seed = args.seed * 10000 + split_index * 100 + model_index
-            for ratio in SUCCESS_RATIOS:
+            for ratio in args.success_ratios:
                 success_ids = success_subsets[ratio]
                 requested_success_n = int(len(split["train"]) * ratio)
                 setting = success_ratio_label(ratio)
