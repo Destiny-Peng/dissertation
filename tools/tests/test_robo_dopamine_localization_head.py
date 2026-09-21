@@ -178,6 +178,33 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertEqual(winner, ("good",))
         self.assertAlmostEqual(metrics["in_interval_rate"], 1.0)
 
+    def test_baseline_selection_does_not_reward_partial_coverage(self) -> None:
+        dataset = self.synthetic_dataset(6)
+        val_ids = ["r00", "r01"]
+        bank = {
+            ("partial_perfect",): {"r00": 4},
+            ("full",): {"r00": 4, "r01": 2},
+        }
+        winner, metrics = probe.choose_baseline_candidate(
+            bank,
+            dataset,
+            val_ids,
+        )
+        self.assertEqual(winner, ("full",))
+        self.assertAlmostEqual(metrics["coverage"], 1.0)
+        self.assertAlmostEqual(metrics["coverage_floor"], 1.0)
+
+    def test_learning_curve_subsets_are_nested_for_same_seed(self) -> None:
+        dataset = self.synthetic_dataset(30)
+        ids = sorted(dataset)
+        ten = set(probe.training_subset(dataset, ids, 10, seed=1707))
+        twenty = set(probe.training_subset(dataset, ids, 20, seed=1707))
+        thirty = set(probe.training_subset(dataset, ids, 30, seed=1707))
+        self.assertEqual(len(ten), 10)
+        self.assertEqual(len(twenty), 20)
+        self.assertTrue(ten < twenty)
+        self.assertTrue(twenty <= thirty)
+
 
 if __name__ == "__main__":
     unittest.main()
