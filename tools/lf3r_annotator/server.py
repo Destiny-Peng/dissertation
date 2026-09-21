@@ -4771,19 +4771,11 @@ class AnalysisJobService:
                 "Robo-Dopamine PyTorch Python is unavailable: "
                 + self._relative(self.robo_python)
             )
-        check = subprocess.run(
-            [str(self.robo_python), "-c", "import torch, numpy; print(torch.__version__)"],
-            cwd=str(self.project_root),
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-        if check.returncode != 0:
-            raise AnalysisEnvironmentError(
-                "Robo-Dopamine environment cannot import torch: "
-                + (check.stderr or check.stdout)[-1200:]
-            )
+        # Do not synchronously import torch in the HTTP request path. On some
+        # servers the first PyTorch/CUDA import is slow enough to outlive a
+        # frontend request or subprocess timeout. The tmux training process is
+        # the authoritative environment check; any import/CUDA error is kept in
+        # its persistent log instead of dropping the POST connection.
 
         raw_runs = payload.get("runs")
         if not isinstance(raw_runs, dict):
@@ -5975,6 +5967,11 @@ class LF3RHandler(BaseHTTPRequestHandler):
             self.json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
         except (ValidationError, json.JSONDecodeError) as exc:
             self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+        except subprocess.SubprocessError as exc:
+            self.json_error(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "Subprocess check failed: " + str(exc),
+            )
         except OSError as exc:
             self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
