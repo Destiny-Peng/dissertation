@@ -2,10 +2,8 @@
 
 (function installBiLstmAblationUi() {
   var state = {
-    runs: [],
     job: null,
     snapshot: null,
-    loadingRuns: false,
     snapshotLoading: false,
     polling: false
   };
@@ -47,67 +45,10 @@
   }
   function updateButton() {
     var button = node("analysisBiLstmRunButton");
-    var select = node("analysisBiLstmRun");
-    if (!button || !select) return;
-    button.disabled = state.loadingRuns || active() || !select.value;
-  }
-  function runLabel(run) {
-    if (typeof window.workspaceRunLabel === "function") return window.workspaceRunLabel(run);
-    return (run.run_root || "unknown run") + " · "
-      + (run.run_rollout_count || run.selected_rollouts || 0) + " rollout(s)";
+    if (!button) return;
+    button.disabled = active();
   }
 
-  function populateRuns() {
-    var select = node("analysisBiLstmRun");
-    if (!select) return;
-    var choices = (state.runs || []).filter(function (run) {
-      return run.baseline === "robo_dopamine"
-        && ["complete", "complete_with_errors"].indexOf(run.status) !== -1
-        && Number(run.fused_scope_rollout_count || run.fused_rollout_count || 0) > 0;
-    });
-    var previous = select.value;
-    if (!choices.length) {
-      select.innerHTML = '<option value="">No compatible completed Robo-Dopamine run</option>';
-      select.disabled = true;
-      status("No completed Robo-Dopamine run with saved fused-hop outputs was found.", "warning");
-    } else {
-      select.innerHTML = choices.map(function (run) {
-        return '<option value="' + esc(run.run_root) + '">' + esc(runLabel(run)) + '</option>';
-      }).join("");
-      select.disabled = false;
-      if (choices.some(function (run) { return run.run_root === previous; })) {
-        select.value = previous;
-      }
-      status(
-        choices.length + " compatible Robo-Dopamine run(s). Training reuses saved fused progress/hop only.",
-        ""
-      );
-    }
-    updateButton();
-  }
-
-  async function loadRuns() {
-    state.loadingRuns = true;
-    updateButton();
-    try {
-      var response = await fetch(
-        "/api/baselines/runs?scope=all",
-        { cache: "no-store" }
-      );
-      var payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Could not discover Robo-Dopamine runs");
-      }
-      state.runs = Array.isArray(payload.runs) ? payload.runs : [];
-      populateRuns();
-    } catch (error) {
-      state.runs = [];
-      status("Run discovery failed: " + error.message, "error");
-    } finally {
-      state.loadingRuns = false;
-      updateButton();
-    }
-  }
 
   function renderSnapshot() {
     var host = node("analysisBiLstmResults");
@@ -251,7 +192,8 @@
       await loadLog(jobId);
       if (["queued", "running"].indexOf(job.status) !== -1) {
         status(
-          "BiLSTM training " + job.status + " · " + (job.parameters.device || "auto")
+          "BiLSTM training " + job.status + " · latest fused per rollout · "
+          + (job.parameters.device || "auto")
           + " · ratios 0," + ((job.parameters.success_ratios || []).join(",") || "?")
           + " · repeats " + (job.parameters.repeats || "?"),
           ""
@@ -302,12 +244,7 @@
 
   async function start(event) {
     if (event) event.preventDefault();
-    var run = node("analysisBiLstmRun").value;
     var label = node("analysisBiLstmOutputLabel").value.trim();
-    if (!run) {
-      status("Select a completed Robo-Dopamine run.", "warning");
-      return;
-    }
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(label)) {
       status("Invalid output label.", "error");
       return;
@@ -322,7 +259,6 @@
     }
     var payload = {
       analysis_kind: "robo_bilstm_success_ablation",
-      runs: { robo_dopamine: run },
       output_label: label,
       device: node("analysisBiLstmDevice").value,
       success_ratios: successRatios,
@@ -379,8 +315,6 @@
     var form = node("analysisBiLstmForm");
     if (!form) return;
     form.addEventListener("submit", start);
-    node("analysisBiLstmRun").addEventListener("change", updateButton);
-    loadRuns();
     recoverLatestJob();
     loadSnapshot();
     updateButton();
