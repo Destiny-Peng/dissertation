@@ -125,7 +125,14 @@ def _baseline_command_with_dynamic_suite(
     if instruction_condition is None and len(args) > 6:
         instruction_condition = args[6]
     instruction_condition = str(instruction_condition or "full_instruction")
-    if instruction_condition != "full_instruction" or scope in _RESERVED_SCOPES:
+    # Base command already emitted an explicit rollout-ID selection for
+    # instruction variants or result-coverage filtering. Do not replace it
+    # with the entire dynamic suite here.
+    if (
+        instruction_condition != "full_instruction"
+        or scope in _RESERVED_SCOPES
+        or kwargs.get("rollout_ids") is not None
+    ):
         return command
 
     # A suite scope is defined by the actual selected manifest records, not by a
