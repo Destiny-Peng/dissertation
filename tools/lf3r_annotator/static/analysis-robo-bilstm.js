@@ -90,13 +90,15 @@
     state.loadingRuns = true;
     updateButton();
     try {
-      if (typeof window.workspaceLoadBaselineRuns !== "function") {
-        throw new Error("Shared baseline run catalog is unavailable");
+      var response = await fetch(
+        "/api/baselines/runs?scope=all",
+        { cache: "no-store" }
+      );
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not discover Robo-Dopamine runs");
       }
-      await window.workspaceLoadBaselineRuns("all", false);
-      state.runs = (
-        window.workspaceState && Array.isArray(window.workspaceState.baselineRuns)
-      ) ? window.workspaceState.baselineRuns : [];
+      state.runs = Array.isArray(payload.runs) ? payload.runs : [];
       populateRuns();
     } catch (error) {
       state.runs = [];
@@ -226,7 +228,8 @@
       var payload = await response.json();
       if (response.ok && state.job && state.job.job_id === jobId) {
         var log = node("analysisBiLstmLog");
-        if (log) log.textContent = payload.log ? payload.log.text : "";
+        var nextText = payload.log ? payload.log.text : "";
+        if (log && log.textContent !== nextText) log.textContent = nextText;
       }
     } catch (_error) {}
   }
