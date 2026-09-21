@@ -49,6 +49,19 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                     [0.0, 0.1, 0.2, 0.3, 0.8, 0.5, 0.4, 0.3, 0.2],
                     dtype=np.float64,
                 ),
+                "sequence": np.stack(
+                    [
+                        np.asarray(
+                            [0.0, 0.1, 0.2, 0.3, 0.8, 0.5, 0.4, 0.3, 0.2],
+                            dtype=np.float64,
+                        ),
+                        np.asarray(
+                            [0.2, 0.2, 0.2, 0.2, -0.4, -0.4, 0.2, 0.2, 0.2],
+                            dtype=np.float64,
+                        ),
+                    ],
+                    axis=1,
+                ),
             }
         return dataset
 
@@ -134,7 +147,11 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         xv = rng.normal(size=(100, 2, 7))
         yv = (xv[:, 1, 3] < -0.2).astype(np.float64)
 
-        for index, name in enumerate(probe.MODEL_NAMES):
+        local_models = [
+            name for name in probe.MODEL_NAMES
+            if name not in probe.SEQUENCE_MODEL_NAMES
+        ]
+        for index, name in enumerate(local_models):
             model = probe.make_model(
                 name,
                 seed=10 + index,
