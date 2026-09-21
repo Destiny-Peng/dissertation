@@ -310,7 +310,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         for marker in [
             "run_rollout_ids",
             "partial_compatible",
+            "_complete_annotation_records",
             "_valid_result_rollout_ids",
+            "complete_annotation_rollouts",
+            "incomplete_annotation_rollouts",
             "BASELINE_RESULT_FILTERS",
             "missing_valid",
             "localization_event_metrics",
