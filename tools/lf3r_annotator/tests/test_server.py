@@ -937,6 +937,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             if token == "--rollout-id"
         ]
         self.assertEqual(rollout_flags, ["sample-rollout-2"])
+        final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
 
     def test_batch_validation_and_baseline_concurrency(self) -> None:
         invalid_payloads = [
