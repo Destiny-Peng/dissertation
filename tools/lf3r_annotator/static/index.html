@@ -674,9 +674,18 @@
             <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run fused-hop analysis</button>
           </form>
           <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
+        </details>
+
+        <section class="analysis-card analysis-result-card" aria-labelledby="analysisHopResultsTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE ANALYSIS RESULTS</p>
+              <h3 id="analysisHopResultsTitle">Latest fused-hop sweep snapshot</h3>
+            </div>
+          </div>
           <div id="analysisHopResults" class="analysis-table-wrap"></div>
           <div id="analysisHopArtifacts" class="analysis-provenance"></div>
-        </details>
+        </section>
 
         <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
         <section class="analysis-card primary-analysis-card" aria-labelledby="analysisConclusionTitle">
