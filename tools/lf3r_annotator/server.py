@@ -955,26 +955,78 @@ class AnalysisService:
             "controls": tables["controls"],
         }
 
-    def _latest_robo_hop_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
-        if not self.robo_hop_root.is_dir():
-            return None
-        candidates = []
-        for metadata_path in self.robo_hop_root.glob("*/metadata.json"):
-            directory = metadata_path.parent
-            if not all((directory / name).is_file() for name in ROBO_HOP_REQUIRED_FILES):
-                continue
-            try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            signal = metadata.get("signal") or {}
-            if signal.get("name") not in {
+    @staticmethod
+    def _is_robo_hop_metadata(metadata: Mapping[str, Any]) -> bool:
+        """Recognize this analysis semantically instead of by one display label."""
+        script = str(metadata.get("script") or "")
+        signal = metadata.get("signal") or {}
+        signal_name = str(signal.get("name") or "")
+        return (
+            script.endswith("tools/analyze_robo_dopamine_incremental_hop.py")
+            or signal_name in {
                 "Robo-Dopamine incremental hop",
                 "Robo-Dopamine four-mode hop comparison",
                 "Robo-Dopamine fused hop failure detection",
-            }:
+            }
+            or (
+                "Robo-Dopamine" in signal_name
+                and "hop" in signal_name.lower()
+                and isinstance(metadata.get("input"), dict)
+            )
+        )
+
+    def _robo_hop_snapshot_candidates(
+        self,
+    ) -> tuple[list[tuple[float, Path, dict[str, Any]]], dict[str, Any]]:
+        diagnostics: dict[str, Any] = {
+            "root": self._relative(self.robo_hop_root),
+            "metadata_found": 0,
+            "invalid_metadata": 0,
+            "wrong_analysis_type": 0,
+            "incomplete_artifacts": [],
+        }
+        if not self.robo_hop_root.is_dir():
+            diagnostics["root_missing"] = True
+            return [], diagnostics
+
+        candidates: list[tuple[float, Path, dict[str, Any]]] = []
+        # Include finalized top-level snapshots and complete web-job outputs.
+        # metadata.json is written only after the analysis tables, so a nested
+        # .web_jobs/<id>/output directory with the complete required artifact
+        # set is safe to render even if server finalization/move was interrupted.
+        for metadata_path in self.robo_hop_root.rglob("metadata.json"):
+            diagnostics["metadata_found"] += 1
+            directory = metadata_path.parent
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                diagnostics["invalid_metadata"] += 1
                 continue
-            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+            if not isinstance(metadata, dict) or not self._is_robo_hop_metadata(metadata):
+                diagnostics["wrong_analysis_type"] += 1
+                continue
+            missing = [
+                name
+                for name in ROBO_HOP_REQUIRED_FILES
+                if not (directory / name).is_file()
+            ]
+            if missing:
+                diagnostics["incomplete_artifacts"].append({
+                    "directory": self._relative(directory),
+                    "missing": missing,
+                })
+                continue
+            try:
+                mtime = metadata_path.stat().st_mtime
+            except OSError:
+                continue
+            candidates.append((mtime, directory, metadata))
+
+        diagnostics["eligible_snapshots"] = len(candidates)
+        return candidates, diagnostics
+
+    def _latest_robo_hop_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
+        candidates, _diagnostics = self._robo_hop_snapshot_candidates()
         if not candidates:
             return None
         _, directory, metadata = max(candidates, key=lambda item: item[0])
@@ -983,12 +1035,36 @@ class AnalysisService:
     def _robo_hop_response(self) -> dict[str, Any]:
         selected = self._latest_robo_hop_snapshot()
         if selected is None:
+            _candidates, discovery = self._robo_hop_snapshot_candidates()
+            details: list[str] = []
+            if discovery.get("root_missing"):
+                details.append("analysis output root does not exist")
+            metadata_found = int(discovery.get("metadata_found") or 0)
+            if metadata_found:
+                details.append(f"{metadata_found} metadata file(s) discovered")
+            incomplete = discovery.get("incomplete_artifacts") or []
+            if incomplete:
+                preview = incomplete[0]
+                missing = ", ".join(preview.get("missing") or [])
+                details.append(
+                    f"incomplete snapshot {preview.get('directory')}: missing {missing}"
+                )
+                if len(incomplete) > 1:
+                    details.append(f"{len(incomplete) - 1} additional incomplete snapshot(s)")
+            wrong_type = int(discovery.get("wrong_analysis_type") or 0)
+            if wrong_type:
+                details.append(f"{wrong_type} metadata file(s) belong to another analysis type")
+            invalid = int(discovery.get("invalid_metadata") or 0)
+            if invalid:
+                details.append(f"{invalid} invalid metadata file(s)")
+            suffix = (" · " + " · ".join(details)) if details else ""
             return {
                 "available": False,
                 "message": (
-                    "No complete Robo-Dopamine fused-hop failure analysis found under "
-                    "outputs/robo_dopamine_incremental_hop."
+                    "No complete Robo-Dopamine fused-hop failure analysis snapshot found."
+                    + suffix
                 ),
+                "discovery": discovery,
             }
         directory, metadata = selected
         metadata_path = directory / "metadata.json"
