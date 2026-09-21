@@ -93,6 +93,28 @@ class NonAnalysisToolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tools.robo_interval_sweep_command({})
 
+    def test_manifest_rebuild_keeps_default_roots_and_appends_extras(self):
+        command = tools.rebuild_manifest_command(
+            {"extra_scan_roots": ["tools", "outputs/openvla_libero"]}
+        )
+        roots = [
+            Path(command[index + 1]).resolve()
+            for index, token in enumerate(command[:-1])
+            if token == "--scan-root"
+        ]
+        expected_defaults = [path.resolve() for path in tools.DEFAULT_MANIFEST_SCAN_ROOTS]
+        for path in expected_defaults:
+            self.assertIn(path, roots)
+        self.assertIn((tools.PROJECT_ROOT / "tools").resolve(), roots)
+        self.assertEqual(len(roots), len(set(roots)))
+        self.assertEqual(roots[: len(expected_defaults)], expected_defaults)
+
+    def test_manifest_rebuild_rejects_missing_extra_root(self):
+        with self.assertRaisesRegex(ValueError, "scan root does not exist"):
+            tools.rebuild_manifest_command(
+                {"extra_scan_roots": ["outputs/definitely-not-a-real-rollout-root"]}
+            )
+
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
