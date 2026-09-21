@@ -398,10 +398,22 @@ def train_bilstm(
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     set_seed(seed)
     model = TinyBiLSTM(hidden).to(device)
+    weight_params = [
+        parameter
+        for name, parameter in model.named_parameters()
+        if "bias" not in name
+    ]
+    bias_params = [
+        parameter
+        for name, parameter in model.named_parameters()
+        if "bias" in name
+    ]
     optimizer = torch.optim.Adam(
-        model.parameters(),
+        [
+            {"params": weight_params, "weight_decay": weight_decay},
+            {"params": bias_params, "weight_decay": 0.0},
+        ],
         lr=learning_rate,
-        weight_decay=weight_decay,
     )
     pos_weight_tensor = torch.tensor(pos_weight, dtype=torch.float32, device=device)
 
