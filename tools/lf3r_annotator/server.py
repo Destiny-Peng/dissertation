@@ -4787,14 +4787,11 @@ class AnalysisJobService:
         )
         if metadata.get("status") not in BASELINE_RUN_STATUSES:
             raise ValidationError("Selected Robo-Dopamine run is not complete")
-        _run_ids, signal_ids_by_mode, _four = self.baselines._run_inventory(
-            run_path, "robo_dopamine"
-        )
-        if not signal_ids_by_mode.get("fused"):
-            raise ValidationError(
-                "Selected Robo-Dopamine run contains no saved fused-hop outputs"
-            )
 
+        # Keep the HTTP request path lightweight, like baseline run submission:
+        # validate only the selected run metadata here, then launch tmux. The
+        # training script owns fused-output/data/PyTorch validation and writes
+        # any failure into the persistent log for the WebUI to tail.
         label = str(payload.get("output_label") or "web_bilstm_success_ablation").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
             raise ValidationError(
