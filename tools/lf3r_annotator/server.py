@@ -61,6 +61,7 @@ BASELINE_LABELS = {
     "densereward": "DenseReward",
 }
 BASELINE_RUN_STATUSES = {"complete", "complete_with_errors"}
+BASELINE_RESULT_FILTERS = {"all", "missing_valid"}
 INSTRUCTION_VARIANT_CONDITIONS = ("full_instruction", "subtask_a", "subtask_b")
 INSTRUCTION_VARIANT_LABELS = {
     "full_instruction": "Full instruction",
@@ -2747,6 +2748,108 @@ class BaselineService:
             if record["id"] in by_source
         ]
 
+
+    @staticmethod
+    def _validate_result_filter(value: Any) -> str:
+        result_filter = str(value or "all").strip()
+        if result_filter not in BASELINE_RESULT_FILTERS:
+            raise ValidationError(
+                "result_filter must be one of: " + ", ".join(sorted(BASELINE_RESULT_FILTERS))
+            )
+        return result_filter
+
+    @staticmethod
+    def _source_rollout_id(record: dict[str, Any], condition: str) -> str:
+        if condition == "full_instruction":
+            return str(record["id"])
+        return str(
+            record.get("source_rollout_id")
+            or record.get("source_id")
+            or record["id"]
+        )
+
+    def _valid_result_rollout_ids(
+        self,
+        baseline: str,
+        condition: str,
+        records: list[dict[str, Any]],
+    ) -> set[str]:
+        """Return record IDs with at least one parseable completed baseline output."""
+        if baseline not in BASELINE_METHODS:
+            raise ValidationError("Invalid baseline method")
+        condition = validate_instruction_condition(condition)
+        allowed_conditions = (
+            {condition, "unknown"} if condition == "full_instruction" else {condition}
+        )
+        remaining = {str(record["id"]): record for record in records}
+        valid: set[str] = set()
+        for run_path, metadata in self._run_candidates(baseline):
+            if self._run_instruction_condition(metadata) not in allowed_conditions:
+                continue
+            completed_ids = run_rollout_ids(run_path)
+            if not completed_ids:
+                continue
+            run_summary = self._run_summary(run_path, metadata)
+            for rollout_id in list(remaining):
+                if rollout_id not in completed_ids:
+                    continue
+                record = remaining[rollout_id]
+                try:
+                    self._read_method(
+                        baseline,
+                        run_path,
+                        record,
+                        dict(run_summary),
+                    )
+                except (
+                    FileNotFoundError,
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    json.JSONDecodeError,
+                ):
+                    continue
+                valid.add(rollout_id)
+                remaining.pop(rollout_id, None)
+            if not remaining:
+                break
+        return valid
+
+    def result_coverage(
+        self,
+        baseline: Any,
+        scope: Any = "libero_10",
+        condition: Any = "full_instruction",
+    ) -> dict[str, Any]:
+        baseline = str(baseline or "")
+        if baseline not in BASELINE_METHODS:
+            raise ValidationError("Invalid baseline method")
+        scope = validate_run_scope(scope)
+        condition = validate_instruction_condition(condition)
+        records = self._condition_records(condition, scope)
+        valid_ids = self._valid_result_rollout_ids(baseline, condition, records)
+        valid_source_ids = [
+            self._source_rollout_id(record, condition)
+            for record in records
+            if str(record["id"]) in valid_ids
+        ]
+        missing_source_ids = [
+            self._source_rollout_id(record, condition)
+            for record in records
+            if str(record["id"]) not in valid_ids
+        ]
+        return {
+            "baseline": baseline,
+            "scope": scope,
+            "condition": condition,
+            "matched_rollouts": len(records),
+            "valid_result_rollouts": len(valid_source_ids),
+            "missing_valid_result_rollouts": len(missing_source_ids),
+            "valid_source_rollout_ids": valid_source_ids,
+            "missing_source_rollout_ids": missing_source_ids,
+        }
+
     def _variant_record_for_source(
         self,
         source_rollout_id: str,
@@ -3103,14 +3206,13 @@ class BaselineService:
             "--vllm-free-memory-fraction", str(utilization),
             "--continue-on-error",
         ]
-        if instruction_condition != "full_instruction":
-            # Variant rows use the diagnostic partition. Restrict the runner
-            # to the source-scope IDs selected above so a LIBERO-suite
-            # request cannot expand to every row in the combined variant
-            # manifest. Positional ranges remain scope-relative after this
-            # explicit ID filter.
+        if rollout_ids is not None:
+            # Explicit rollout IDs define the authoritative pre-range selection.
+            # This is used both for instruction variants and for the
+            # missing-valid-result batch filter, so positional worker ranges
+            # remain relative to the filtered rollout list.
             command.extend(["--partition", "all"])
-            for rollout_id in rollout_ids or []:
+            for rollout_id in rollout_ids:
                 command.extend(["--rollout-id", str(rollout_id)])
         elif scope in {"libero_10", "libero_spatial"}:
             command.extend(["--partition", "natural_observation", "--task-suite", scope])
@@ -3329,6 +3431,7 @@ class BaselineService:
         allowed_fields = {
             "baseline", "scope", "gpu", "memory_utilization", "start_index", "end_index",
             "limit", "parallel_workers", "workers", "options", "instruction_condition",
+            "result_filter",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -3340,9 +3443,28 @@ class BaselineService:
             payload.get("instruction_condition", "full_instruction")
         )
         scope = validate_run_scope(payload.get("scope"))
+        result_filter = self._validate_result_filter(payload.get("result_filter", "all"))
         records = self._condition_records(instruction_condition, scope)
+        scope_record_count = len(records)
         if not records:
             raise ValidationError(f"No rollouts matched scope {scope}")
+        valid_result_ids: set[str] = set()
+        if result_filter == "missing_valid":
+            valid_result_ids = self._valid_result_rollout_ids(
+                baseline,
+                instruction_condition,
+                records,
+            )
+            records = [
+                record
+                for record in records
+                if str(record["id"]) not in valid_result_ids
+            ]
+            if not records:
+                raise ValidationError(
+                    f"Every rollout matched by scope {scope} already has a valid "
+                    f"{baseline} result for {instruction_condition}"
+                )
         gpu = self._validate_gpu(payload.get("gpu", "0"))
         if isinstance(payload.get("memory_utilization", 0.80), bool):
             raise ValidationError("memory_utilization must be a number")
@@ -3428,7 +3550,10 @@ class BaselineService:
                 instruction_condition=instruction_condition,
                 rollout_ids=(
                     [str(record["id"]) for record in records]
-                    if instruction_condition != "full_instruction"
+                    if (
+                        instruction_condition != "full_instruction"
+                        or result_filter == "missing_valid"
+                    )
                     else None
                 ),
             )
@@ -3451,6 +3576,11 @@ class BaselineService:
                 manifest_path=self._manifest_for_condition(instruction_condition),
             )
             job["options"] = options
+            job["result_filter"] = result_filter
+            job["scope_rollouts_before_result_filter"] = scope_record_count
+            job["valid_result_rollouts_skipped"] = (
+                len(valid_result_ids) if result_filter == "missing_valid" else 0
+            )
             job["start_index"] = start_index
             job["end_index"] = total_end
             job["limit"] = limit if (end_index is None and not use_worker_plan) else None
@@ -4613,6 +4743,19 @@ class LF3RHandler(BaseHTTPRequestHandler):
                         )
                     records.append(enriched)
                 self.json_response(HTTPStatus.OK, {"rollouts": records})
+                return
+            if path == "/api/baselines/result-coverage":
+                baseline = query.get("baseline", [""])[0]
+                scope = query.get("scope", ["libero_10"])[0]
+                condition = query.get("condition", ["full_instruction"])[0]
+                self.json_response(
+                    HTTPStatus.OK,
+                    self.app.baselines.result_coverage(
+                        baseline,
+                        scope,
+                        condition,
+                    ),
+                )
                 return
             if path == "/api/baselines/runs":
                 scope = query.get("scope", ["libero_10"])[0]

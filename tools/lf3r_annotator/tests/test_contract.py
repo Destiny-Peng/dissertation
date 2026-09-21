@@ -53,6 +53,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "baselineBatchMethod",
             "baselineBatchScope",
             "baselineBatchCondition",
+            "baselineBatchResultFilter",
             "baselineBatchGpu",
             "baselineBatchMemoryUtilization",
             "baselineBatchStartIndex",
@@ -92,9 +93,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertNotIn('id="baselineMemoryUtilization"', html)
         self.assertIn("first_environment_timestep", javascript)
         self.assertIn("sessionStorage", javascript)
-        for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
+        for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/baselines/result-coverage", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
             self.assertIn(endpoint, frontend_javascript)
-        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "rolloutGenerationVideoViewMode", "render_resolution", "record_resolution", "video_view_mode", "libero_three_view", "task_suite", "libero_spatial", "renderResolution", "recordResolution", "instruction_variants", "instructionCondition", "baselineBatchCondition", "instruction_condition", "run_source_rollout_ids", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_", "relative_value", "relative temporal displacement"]:
+        for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "rolloutGenerationVideoViewMode", "render_resolution", "record_resolution", "video_view_mode", "libero_three_view", "task_suite", "libero_spatial", "renderResolution", "recordResolution", "instruction_variants", "instructionCondition", "baselineBatchCondition", "baselineBatchResultFilter", "instruction_condition", "result_filter", "missing_valid", "run_source_rollout_ids", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_", "relative_value", "relative temporal displacement"]:
             self.assertIn(marker, javascript)
 
         for marker in [
@@ -289,12 +290,23 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('multiple size="5"', html)
         for endpoint in [
             'path == "/api/settings"', 'path == "/api/analysis"',
-            'path == "/api/baselines/runs"', '"/api/baselines/run-batch"',
+            'path == "/api/baselines/runs"', 'path == "/api/baselines/result-coverage"', '"/api/baselines/run-batch"',
             '"/api/analysis/run"', 'analysis-jobs', 'rollout-jobs', '"/api/rollouts/generate"', '"/api/jobs"', 'worker_assignments', 'parallel_workers', 'CHANGEPOINT_TABLE_FILES', 'changepoint_summary.csv', 'comparison_with_full_136_20260827', 'primary_analysis_type', 'event_triggered_available', 'EVENT_TRIGGERED_TABLE_FILES', 'event_triggered_curves.csv', 'os.replace(temp_name, self.path)'
         ]:
             self.assertIn(endpoint, server)
-        for marker in ["run_rollout_ids", "partial_compatible", "localization_event_metrics", "localization_summary"]:
+        for marker in [
+            "run_rollout_ids",
+            "partial_compatible",
+            "_valid_result_rollout_ids",
+            "BASELINE_RESULT_FILTERS",
+            "missing_valid",
+            "localization_event_metrics",
+            "localization_summary",
+        ]:
             self.assertIn(marker, server)
+
+        server_v3 = (TOOL_ROOT / "server_entry_v3.py").read_text(encoding="utf-8")
+        self.assertIn('kwargs.get("rollout_ids") is not None', server_v3)
         for marker in [
             "--font-scale",
             "--review-font-scale",
@@ -324,7 +336,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         help_path = TOOL_ROOT / "static/parameter_help.json"
         help_data = json.loads(help_path.read_text(encoding="utf-8"))
         for section, keys in {
-            "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
+            "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "result_filter", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
             "rollout": ["task_suite", "gpu", "task_start", "task_end", "trials", "seed", "run_note", "log_safe_features", "render_resolution", "record_resolution", "video_view_mode"],
             "settings": ["font_scale", "review_font_scale", "analysis_font_scale", "control_font_scale"],
         }.items():

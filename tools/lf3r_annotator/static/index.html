@@ -320,6 +320,12 @@
               <option value="subtask_b">B</option>
             </select>
           </label>
+          <label data-cli-help="baseline.result_filter"><span>Existing result filter</span>
+            <select id="baselineBatchResultFilter">
+              <option value="all" selected>All matching rollouts</option>
+              <option value="missing_valid">No valid baseline run result</option>
+            </select>
+          </label>
           <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text"
               inputmode="numeric" value="0" maxlength="31"></label>
           <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input

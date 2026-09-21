@@ -20,6 +20,10 @@ var state = {
   baselineRunSelections: {},
   baselineRunAll: {},
   baselineRunNotice: "",
+  baselineBatchCoverage: null,
+  baselineBatchCoverageKey: null,
+  baselineBatchCoverageRequest: 0,
+  baselineBatchCoverageLoading: false,
   baselineJob: null,
   baselineBatchJob: null,
   baselineBatchJobs: {},
@@ -1561,7 +1565,7 @@ function baselineBatchIsRynnValue() {
   return Boolean(method && method.value === "rynnvalue");
 }
 
-function baselineBatchScopeRecords() {
+function baselineBatchUnfilteredScopeRecords() {
   var scope = byId("baselineBatchScope");
   if (!scope) return [];
   var conditionNode = byId("baselineBatchCondition");
@@ -1571,6 +1575,97 @@ function baselineBatchScopeRecords() {
     if (condition === "full_instruction") return true;
     return Boolean(record.instruction_variants && record.instruction_variants[condition]);
   });
+}
+
+function baselineBatchResultFilterValue() {
+  var node = byId("baselineBatchResultFilter");
+  return node ? (node.value || "all") : "all";
+}
+
+function baselineBatchCoverageKey() {
+  var method = byId("baselineBatchMethod");
+  var scope = byId("baselineBatchScope");
+  var condition = byId("baselineBatchCondition");
+  return [
+    method ? method.value : "",
+    scope ? scope.value : "",
+    condition ? condition.value : "full_instruction"
+  ].join("::");
+}
+
+function baselineBatchScopeRecords() {
+  var records = baselineBatchUnfilteredScopeRecords();
+  if (baselineBatchResultFilterValue() !== "missing_valid") return records;
+  var key = baselineBatchCoverageKey();
+  var coverage = state.baselineBatchCoverage;
+  if (!coverage || state.baselineBatchCoverageKey !== key) return [];
+  var missing = {};
+  (coverage.missing_source_rollout_ids || []).forEach(function (rolloutId) {
+    missing[String(rolloutId)] = true;
+  });
+  return records.filter(function (record) {
+    return Boolean(missing[String(record.id)]);
+  });
+}
+
+async function loadBaselineBatchCoverage(force) {
+  if (baselineBatchResultFilterValue() !== "missing_valid") {
+    state.baselineBatchCoverage = null;
+    state.baselineBatchCoverageKey = null;
+    state.baselineBatchCoverageLoading = false;
+    return null;
+  }
+  var key = baselineBatchCoverageKey();
+  if (!force && state.baselineBatchCoverage && state.baselineBatchCoverageKey === key) {
+    return state.baselineBatchCoverage;
+  }
+  var requestId = ++state.baselineBatchCoverageRequest;
+  var method = byId("baselineBatchMethod").value;
+  var scope = byId("baselineBatchScope").value;
+  var condition = byId("baselineBatchCondition").value || "full_instruction";
+  state.baselineBatchCoverageLoading = true;
+  var note = byId("baselineBatchSelection");
+  if (note) note.textContent = "Checking existing " + method + " results…";
+  try {
+    var response = await fetch(
+      "/api/baselines/result-coverage?baseline=" + encodeURIComponent(method)
+      + "&scope=" + encodeURIComponent(scope)
+      + "&condition=" + encodeURIComponent(condition),
+      { cache: "no-store" }
+    );
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not inspect baseline result coverage");
+    if (requestId !== state.baselineBatchCoverageRequest || key !== baselineBatchCoverageKey()) return null;
+    var previousIds = state.baselineBatchCoverage && state.baselineBatchCoverageKey === key
+      ? JSON.stringify(state.baselineBatchCoverage.missing_source_rollout_ids || [])
+      : null;
+    var nextIds = JSON.stringify(payload.missing_source_rollout_ids || []);
+    state.baselineBatchCoverage = payload;
+    state.baselineBatchCoverageKey = key;
+    state.baselineBatchCoverageLoading = false;
+    if (previousIds !== nextIds) baselineBatchScopeChanged();
+    else updateBaselineBatchSelection();
+    return payload;
+  } catch (error) {
+    if (requestId !== state.baselineBatchCoverageRequest) return null;
+    state.baselineBatchCoverage = null;
+    state.baselineBatchCoverageKey = key;
+    state.baselineBatchCoverageLoading = false;
+    setBaselineBatchStatus("Baseline result filter error: " + error.message, "error");
+    updateBaselineBatchSelection();
+    return null;
+  }
+}
+
+function baselineBatchCoverageChanged() {
+  state.baselineBatchCoverage = null;
+  state.baselineBatchCoverageKey = null;
+  state.baselineBatchCoverageRequest += 1;
+  if (baselineBatchResultFilterValue() === "missing_valid") {
+    loadBaselineBatchCoverage(true);
+  } else {
+    baselineBatchScopeChanged();
+  }
 }
 
 function baselineBatchNumber(value) {
@@ -1735,11 +1830,28 @@ function updateBaselineBatchSelection() {
   var condition = conditionNode ? conditionNode.value : (state.instructionCondition || "full_instruction");
   var conditionLabel = instructionConditionLabel(condition);
   var label = BASELINE_BATCH_SCOPE_LABELS[scope.value] || scope.value;
+  var resultFilter = baselineBatchResultFilterValue();
+  var coverage = (
+    resultFilter === "missing_valid"
+    && state.baselineBatchCoverageKey === baselineBatchCoverageKey()
+  ) ? state.baselineBatchCoverage : null;
+  var coverageText = "";
+  if (resultFilter === "missing_valid") {
+    if (state.baselineBatchCoverageLoading) {
+      coverageText = "checking existing results; ";
+    } else if (!coverage) {
+      coverageText = "existing-result coverage unavailable; ";
+    } else {
+      coverageText = coverage.missing_valid_result_rollouts + " without valid result / "
+        + coverage.matched_rollouts + " total; "
+        + coverage.valid_result_rollouts + " existing valid result(s) skipped; ";
+    }
+  }
   if (baselineBatchUsesWorkers()) {
     var summary = baselineBatchWorkerSummary();
     var rangeText = summary.range.start == null || summary.range.end == null
       ? "invalid total range" : "total [" + summary.range.start + "," + summary.range.end + ")";
-    note.textContent = conditionLabel + " · " + label + ": " + matched + " rollout(s) available; " + rangeText
+    note.textContent = conditionLabel + " · " + label + ": " + coverageText + matched + " rollout(s) available; " + rangeText
       + "; unique execution " + summary.unique + ". "
       + (summary.overlap.length ? "Overlap " + summary.overlap.length + ". " : "No overlap. ")
       + (summary.gaps.length ? "Gap " + summary.gaps.length + ". " : "No gap. ")
@@ -1756,7 +1868,7 @@ function updateBaselineBatchSelection() {
     return;
   }
   var selected = baselineBatchSelectionRecords().length;
-  note.textContent = conditionLabel + " · " + label + ": " + matched + " rollout(s) available; " + selected + " selected after index/limit.";
+  note.textContent = conditionLabel + " · " + label + ": " + coverageText + matched + " rollout(s) available; " + selected + " selected after index/limit.";
   button.disabled = selected === 0 || state.baselineBatchSubmitting;
 }
 
@@ -1867,6 +1979,7 @@ async function startBaselineBatch(event) {
   var method = byId("baselineBatchMethod").value;
   var scope = byId("baselineBatchScope").value;
   var condition = byId("baselineBatchCondition").value || "full_instruction";
+  var resultFilter = baselineBatchResultFilterValue();
   var memory = Number(byId("baselineBatchMemoryUtilization").value);
   readBaselineBatchWorkers();
   var range = baselineBatchTotalRange();
@@ -1910,6 +2023,7 @@ async function startBaselineBatch(event) {
       baseline: method,
       scope: scope,
       instruction_condition: condition,
+      result_filter: resultFilter,
       gpu: gpu,
       memory_utilization: memory,
       start_index: range.start,
@@ -2321,9 +2435,29 @@ function installEvents() {
     var button = event.target.closest("[data-run-baseline]");
     if (button) startBaselineRun(button.dataset.runBaseline);
   });
-  byId("baselineBatchMethod").addEventListener("change", updateBaselineBatchAdvancedFields);
-  byId("baselineBatchScope").addEventListener("change", baselineBatchScopeChanged);
-  byId("baselineBatchCondition").addEventListener("change", baselineBatchScopeChanged);
+  byId("baselineBatchMethod").addEventListener("change", function () {
+    updateBaselineBatchAdvancedFields();
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      updateBaselineBatchSelection();
+    }
+  });
+  byId("baselineBatchScope").addEventListener("change", function () {
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      baselineBatchScopeChanged();
+    }
+  });
+  byId("baselineBatchCondition").addEventListener("change", function () {
+    if (baselineBatchResultFilterValue() === "missing_valid") {
+      baselineBatchCoverageChanged();
+    } else {
+      baselineBatchScopeChanged();
+    }
+  });
+  byId("baselineBatchResultFilter").addEventListener("change", baselineBatchCoverageChanged);
   byId("baselineBatchStartIndex").addEventListener("input", baselineBatchRangeChanged);
   byId("baselineBatchLimit").addEventListener("input", updateBaselineBatchSelection);
   byId("baselineBatchEndIndex").addEventListener("input", baselineBatchRangeChanged);
