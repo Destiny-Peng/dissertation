@@ -2190,9 +2190,11 @@ class BaselineService:
         manifest_path: Path,
         coordinator: JobCoordinator | None = None,
         tmux: TmuxJobSupervisor | None = None,
+        annotation_store: AnnotationStore | None = None,
     ) -> None:
         self.project_root = project_root.resolve()
         self.manifest_path = manifest_path.resolve()
+        self.annotation_store = annotation_store
         self.baseline_root = self.project_root / "outputs" / "baselines"
         self.web_output_root = self.baseline_root / "web_runs"
         self.variant_manifest_path = (
@@ -2768,6 +2770,26 @@ class BaselineService:
             or record["id"]
         )
 
+    def _complete_annotation_records(
+        self,
+        records: list[dict[str, Any]],
+        condition: str,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Keep only source rollouts whose annotation review_status is complete."""
+        condition = validate_instruction_condition(condition)
+        if self.annotation_store is None:
+            raise ValidationError("Annotation store is unavailable for result filtering")
+        complete: list[dict[str, Any]] = []
+        incomplete_source_ids: list[str] = []
+        for record in records:
+            source_id = self._source_rollout_id(record, condition)
+            annotation = self.annotation_store.read(source_id)
+            if annotation and annotation.get("review_status") == "complete":
+                complete.append(record)
+            else:
+                incomplete_source_ids.append(source_id)
+        return complete, incomplete_source_ids
+
     def _valid_result_rollout_ids(
         self,
         baseline: str,
@@ -2827,7 +2849,11 @@ class BaselineService:
             raise ValidationError("Invalid baseline method")
         scope = validate_run_scope(scope)
         condition = validate_instruction_condition(condition)
-        records = self._condition_records(condition, scope)
+        scope_records = self._condition_records(condition, scope)
+        records, incomplete_source_ids = self._complete_annotation_records(
+            scope_records,
+            condition,
+        )
         valid_ids = self._valid_result_rollout_ids(baseline, condition, records)
         valid_source_ids = [
             self._source_rollout_id(record, condition)
@@ -2843,7 +2869,11 @@ class BaselineService:
             "baseline": baseline,
             "scope": scope,
             "condition": condition,
+            "scope_rollouts": len(scope_records),
             "matched_rollouts": len(records),
+            "complete_annotation_rollouts": len(records),
+            "incomplete_annotation_rollouts": len(incomplete_source_ids),
+            "incomplete_source_rollout_ids": incomplete_source_ids,
             "valid_result_rollouts": len(valid_source_ids),
             "missing_valid_result_rollouts": len(missing_source_ids),
             "valid_source_rollout_ids": valid_source_ids,
@@ -3449,7 +3479,19 @@ class BaselineService:
         if not records:
             raise ValidationError(f"No rollouts matched scope {scope}")
         valid_result_ids: set[str] = set()
+        incomplete_source_ids: list[str] = []
+        complete_annotation_count = scope_record_count
         if result_filter == "missing_valid":
+            records, incomplete_source_ids = self._complete_annotation_records(
+                records,
+                instruction_condition,
+            )
+            complete_annotation_count = len(records)
+            if not records:
+                raise ValidationError(
+                    f"No complete annotations matched scope {scope} for "
+                    f"{instruction_condition}"
+                )
             valid_result_ids = self._valid_result_rollout_ids(
                 baseline,
                 instruction_condition,
@@ -3462,8 +3504,8 @@ class BaselineService:
             ]
             if not records:
                 raise ValidationError(
-                    f"Every rollout matched by scope {scope} already has a valid "
-                    f"{baseline} result for {instruction_condition}"
+                    f"Every complete annotation matched by scope {scope} already has "
+                    f"a valid {baseline} result for {instruction_condition}"
                 )
         gpu = self._validate_gpu(payload.get("gpu", "0"))
         if isinstance(payload.get("memory_utilization", 0.80), bool):
@@ -3578,6 +3620,10 @@ class BaselineService:
             job["options"] = options
             job["result_filter"] = result_filter
             job["scope_rollouts_before_result_filter"] = scope_record_count
+            job["complete_annotation_rollouts"] = complete_annotation_count
+            job["incomplete_annotation_rollouts_skipped"] = (
+                len(incomplete_source_ids) if result_filter == "missing_valid" else 0
+            )
             job["valid_result_rollouts_skipped"] = (
                 len(valid_result_ids) if result_filter == "missing_valid" else 0
             )
@@ -4502,7 +4548,11 @@ class LF3RApplication:
         self.job_coordinator = JobCoordinator()
         self.tmux = TmuxJobSupervisor(self.project_root, tmux_binary=tmux_binary)
         self.baselines = BaselineService(
-            self.project_root, self.manifest_path, self.job_coordinator, self.tmux
+            self.project_root,
+            self.manifest_path,
+            self.job_coordinator,
+            self.tmux,
+            annotation_store=self.store,
         )
         configured_analysis_python = (
             Path(os.environ["LF3R_ANALYSIS_PYTHON"]).expanduser()
