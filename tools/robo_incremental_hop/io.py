@@ -723,6 +723,10 @@ def build_base_records(
                     "task_id": task_id,
                     "task_description": description,
                     "outcome": outcome,
+                    "failure_type": str(
+                        annotation.get("failure_type")
+                        or "timeout_no_progress"
+                    ),
                 }
             )
 
