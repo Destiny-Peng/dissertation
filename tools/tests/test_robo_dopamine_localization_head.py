@@ -147,6 +147,33 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             self.assertTrue(np.isfinite(logits).all())
             self.assertGreater(training["best_epoch"], 0)
 
+
+    def test_bilstm_uses_full_rollout_sequence(self) -> None:
+        dataset = self.synthetic_dataset(8)
+        train_ids = ["r00", "r01", "r02", "r03"]
+        val_ids = ["r04", "r05"]
+        test_ids = ["r06", "r07"]
+        metrics, rows, training = probe.train_and_evaluate_sequence_model(
+            "tiny_bilstm_h16",
+            dataset,
+            train_ids,
+            val_ids,
+            test_ids,
+            seed=23,
+            epochs=8,
+            patience=4,
+            split={
+                "kind": "rollout_random",
+                "split_id": "synthetic",
+            },
+            train_size_label="4",
+        )
+        self.assertEqual(metrics["test_rollout_n"], 2)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(training["sequence_model"])
+        self.assertEqual(training["hidden"], 16)
+        self.assertTrue(all(np.isfinite(row["prediction_score"]) for row in rows))
+
     def test_interval_metrics_match_requested_definition(self) -> None:
         dataset = self.synthetic_dataset(1)
         rows = [
