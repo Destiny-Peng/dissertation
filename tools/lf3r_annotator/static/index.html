@@ -691,10 +691,11 @@
           </p>
           <form id="analysisBiLstmForm" class="analysis-run-form">
             <div class="analysis-run-grid">
-              <label><span>Robo-Dopamine run</span>
-                <select id="analysisBiLstmRun"><option value="">Loading compatible runs...</option></select>
-                <small class="analysis-run-field-help">Completed run with saved fused-hop outputs.</small>
-              </label>
+              <div class="analysis-run-field">
+                <span>Robo-Dopamine source</span>
+                <strong>Latest fused result per rollout</strong>
+                <small class="analysis-run-field-help">Scans all completed full-instruction Robo-Dopamine output directories and uses each rollout's newest usable fused result.</small>
+              </div>
               <label><span>Device</span>
                 <select id="analysisBiLstmDevice">
                   <option value="auto" selected>auto (CUDA if available)</option>
@@ -731,7 +732,7 @@
                   pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
               </label>
             </div>
-            <p id="analysisBiLstmSelection" class="analysis-run-selection">Select a completed Robo-Dopamine run.</p>
+            <p id="analysisBiLstmSelection" class="analysis-run-selection">All completed Robo-Dopamine runs are pooled; each rollout uses its latest usable fused result.</p>
             <button id="analysisBiLstmRunButton" class="save-button" type="submit" disabled>
               Train BiLSTM ablation
             </button>
