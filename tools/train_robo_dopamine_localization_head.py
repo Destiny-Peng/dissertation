@@ -855,11 +855,18 @@ def conclusion_text(
     random_summary: Sequence[Mapping[str, Any]],
     delta_rows: Sequence[Mapping[str, Any]],
 ) -> str:
+    ratios = sorted(
+        {
+            float(row.get("success_ratio") or 0.0)
+            for row in random_summary
+        }
+    )
+    ratio_text = ", ".join(f"{ratio:g}x" for ratio in ratios)
     lines = [
         "# Success-ratio BiLSTM ablation",
         "",
         "Only the amount of clean-success all-negative training data changes. "
-        "Ratios are 0, 0.5x, 1x, and 2x relative to the number of failure "
+        f"This run uses ratios {ratio_text} relative to the number of failure "
         "training rollouts in each repeat. Sampling is deterministic, nested, "
         "and same-task-first. Loss, normalization, model architecture, failure "
         "split, optimizer, and evaluation remain fixed.",
