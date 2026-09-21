@@ -11,16 +11,12 @@ failure interval?
 
 ## Controlled comparison
 
-Four success-to-failure training ratios are run on exactly the same
-failure-rollout split:
+The 0x failure-only baseline is always run. Non-zero success-to-failure ratios
+are configurable with `--success-ratios` and default to `0.5,1,2`.
 
-1. `0x`
-2. `0.5x`
-3. `1x`
-4. `2x`
-
-The success target count is `int(failure_train_n * ratio)`, so with 25 failure
-training rollouts the targets are 0, 12, 25, and 50 success rollouts.
+For example, with 25 failure training rollouts, the default target counts are
+0, 12, 25, and 50 success rollouts. A custom run such as
+`--success-ratios 0.25,0.5,1.5` runs 0x, 0.25x, 0.5x, and 1.5x.
 
 Failure rollouts use the existing interval target:
 
@@ -118,6 +114,7 @@ Defaults preserve the current BiLSTM training setup:
 - weight decay: 1e-4
 - gradient clipping: 5
 - repeats: 5
+- success ratios: 0.5, 1, 2 (configurable; 0x always included)
 
 ## Outputs
 
