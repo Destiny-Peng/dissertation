@@ -911,6 +911,20 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(incomplete_coverage["missing_valid_result_rollouts"], 0)
         self.assertEqual(incomplete_coverage["incomplete_source_rollout_ids"], ["sample-rollout-2"])
 
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(
+                "/api/baselines/run-batch",
+                {
+                    "baseline": "safe",
+                    "scope": "libero_10",
+                    "gpu": "0",
+                    "result_filter": "missing_valid",
+                    "parallel_workers": 1,
+                    "start_index": 0,
+                },
+            )
+        self.assertEqual(caught.exception.code, 400)
+
         annotate(second, "complete")
 
         # A run can mention a rollout but still be invalid if its raw output is
