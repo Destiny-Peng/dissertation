@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -84,6 +85,26 @@ def official_source_revision(repo: Path) -> str | None:
     return result.stdout.strip() or None
 
 
+def cleanup_official_frame_cache(output_dir: Path) -> tuple[int, int]:
+    """Remove Robo-Dopamine's extracted image cache after predictions are durable."""
+    cache_dir = output_dir / ".cache"
+    if not cache_dir.exists():
+        return 0, 0
+    if not cache_dir.is_dir():
+        raise RuntimeError(
+            f"Expected Robo-Dopamine frame cache to be a directory: {cache_dir}"
+        )
+    files = sum(1 for path in cache_dir.rglob("*") if path.is_file())
+    directories = sum(1 for path in cache_dir.rglob("*") if path.is_dir())
+    shutil.rmtree(cache_dir)
+    print(
+        f"ROBODOPAMINE_CACHE_CLEANUP dir={cache_dir} "
+        f"files={files} directories={directories}",
+        flush=True,
+    )
+    return files, directories
+
+
 def _run_official_mode(
     *,
     model: Any,
@@ -115,6 +136,7 @@ def _run_official_mode(
         raise RuntimeError(
             f"Robo-Dopamine {eval_mode} mode did not write raw predictions: {prediction}"
         )
+    cleanup_official_frame_cache(output_path)
     return prediction, time.perf_counter() - started
 
 

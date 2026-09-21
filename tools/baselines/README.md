@@ -164,7 +164,7 @@ Each rollout writes `raw/<rollout-id>/densereward_raw.jsonl` and `worker_result.
 | `--robo-eval-mode MODE`   | `fused`                   | `--eval-mode MODE`   | `fused` runs `incremental`, `forward`, and `backward` with one persistent model and averages their native progress outputs. Explicit `forward`, `incremental`, or `backward` retains the single-perspective compatibility mode. |
 | `--goal-image PATH`       | `examples/blank_goal.png` | `--goal-image PATH`  | Goal/reference image for the official pipeline. If omitted, the blank goal image is used. The wrapper passes the same LF3R video for all three camera streams because LF3R supplies one view.                                                                                                                                                    |
 
-Robo-Dopamine writes the official `pred_vllm.json` under its native timestamped output subdirectory and records that location in `worker_result.json`.
+Robo-Dopamine writes the official `pred_vllm.json` under its native timestamped output subdirectory and records that location in `worker_result.json`. The official pipeline also materializes sampled camera frames under that subdirectory's `.cache/`; LF3R removes this extracted-frame cache immediately after `pred_vllm.json` is confirmed present. Prediction JSON, optional rendered video, and wrapper-derived fused JSON/CSV/plots are retained. The image-path strings inside `pred_vllm.json` remain unchanged and are used only for native frame-index provenance by LF3R analysis.
 
 ### Robo-Dopamine persistent execution and resume
 
