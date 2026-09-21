@@ -241,9 +241,20 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         )
         self.assertTrue(set(split["train"]).isdisjoint(split["test"]))
         self.assertTrue(set(split["val"]).isdisjoint(split["test"]))
-        self.assertEqual(probe.SUCCESS_RATIOS, (0.0, 0.5, 1.0, 2.0))
+        self.assertEqual(
+            probe.parse_success_ratios("0.5,1,2"),
+            (0.0, 0.5, 1.0, 2.0),
+        )
         self.assertTrue(set(subsets[0.5]) <= set(subsets[1.0]))
         self.assertTrue(set(subsets[1.0]) <= set(subsets[2.0]))
+
+    def test_success_ratio_parser_is_configurable(self) -> None:
+        self.assertEqual(
+            probe.parse_success_ratios("1.5,0.25,0.5,0.5"),
+            (0.0, 0.25, 0.5, 1.5),
+        )
+        with self.assertRaises(ValueError):
+            probe.parse_success_ratios("0,-1")
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
