@@ -5,16 +5,22 @@ Robo-Dopamine.
 
 ## Question
 
-Does adding clean successful trajectories as all-negative training data provide
-useful hard negatives for failure localization, especially by reducing
-predictions that occur before the annotated failure interval?
+How does the amount of clean successful all-negative training data affect
+failure localization, especially early false localization before the annotated
+failure interval?
 
 ## Controlled comparison
 
-Two training settings are run on exactly the same failure-rollout split:
+Four success-to-failure training ratios are run on exactly the same
+failure-rollout split:
 
-1. `failure_only`
-2. `failure_plus_success`
+1. `0x`
+2. `0.5x`
+3. `1x`
+4. `2x`
+
+The success target count is `int(failure_train_n * ratio)`, so with 25 failure
+training rollouts the targets are 0, 12, 25, and 50 success rollouts.
 
 Failure rollouts use the existing interval target:
 
@@ -56,12 +62,15 @@ detector, extra loss, or new model family is trained in this experiment.
 
 ## Success rollout selection
 
-For each repeat, clean successes from tasks represented in the failure-training
-split are preferred. If none exist, the script falls back to all eligible clean
-successes.
+For each repeat, the script creates one deterministic random ordering of
+eligible clean successes. Same-task successes are shuffled first, followed by a
+shuffled fallback pool from other allowed tasks. The 0.5x, 1x, and 2x settings
+take nested prefixes from this same ordering, so increasing the ratio does not
+replace previously selected success rollouts.
 
 For task-held-out evaluation, successes from the held-out task are always
-excluded from training.
+excluded. If fewer successes exist than requested, all available rollouts are
+used and both requested and actual counts are reported.
 
 There is no timestep-level split. Rollout IDs are never shared between failure
 train/validation/test partitions.
@@ -112,8 +121,8 @@ Defaults preserve the current BiLSTM training setup:
 
 ## Outputs
 
-- `ablation_comparison.csv`: aggregate failure-only vs failure+success metrics
-- `ablation_delta.csv`: direct metric deltas for each hidden size
+- `ablation_comparison.csv`: aggregate metrics for 0x / 0.5x / 1x / 2x
+- `ablation_delta.csv`: each non-zero ratio compared directly against 0x
 - `per_split_metrics.csv`: repeat-level metrics and failure/success train counts
 - `per_rollout_predictions.csv`
 - `task_held_out_metrics.csv`
@@ -123,6 +132,6 @@ Defaults preserve the current BiLSTM training setup:
 - `conclusion.md`
 - `metadata.json`
 
-The primary signal to inspect is whether `failure_plus_success` lowers
-`before_interval_rate` without increasing late predictions or damaging
-in-interval localization.
+The primary diagnostic is the shape of `before_interval_rate` across the four
+ratios: whether a small amount of success helps and too much hurts, or whether
+performance degrades immediately once success negatives are introduced.
