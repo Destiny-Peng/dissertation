@@ -748,7 +748,12 @@ def aggregate_rows(
             ]
             out[f"{metric}_mean"] = float(np.mean(values)) if values else None
             out[f"{metric}_variance"] = float(np.var(values)) if values else None
-        for count_field in ("failure_train_n", "success_train_n", "test_failure_n"):
+        for count_field in (
+            "failure_train_n",
+            "requested_success_n",
+            "success_train_n",
+            "test_failure_n",
+        ):
             values = [
                 float(row[count_field])
                 for row in group
@@ -1093,7 +1098,7 @@ def analyze(args: argparse.Namespace) -> Path:
     write_json(
         output_dir / "metadata.json",
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "analysis": "robo_dopamine_bilstm_success_negative_ablation",
             "analysis_mode": "saved-output PyTorch training; no Robo-Dopamine inference",
