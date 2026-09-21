@@ -175,7 +175,14 @@
 
     var baselineScope = byId("baselineBatchScope");
     var baselineResult = replaceScopeSelect(baselineScope, rows, baselineScope && baselineScope.value);
-    if (baselineResult.changed && typeof window.baselineBatchScopeChanged === "function") {
+    var resultFilter = byId("baselineBatchResultFilter");
+    if (
+      resultFilter
+      && resultFilter.value === "missing_valid"
+      && typeof window.baselineBatchCoverageChanged === "function"
+    ) {
+      window.baselineBatchCoverageChanged();
+    } else if (baselineResult.changed && typeof window.baselineBatchScopeChanged === "function") {
       window.baselineBatchScopeChanged();
     } else if (typeof window.updateBaselineBatchSelection === "function") {
       window.updateBaselineBatchSelection();
