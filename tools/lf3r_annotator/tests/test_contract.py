@@ -416,6 +416,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "first_event_in_interval_rate_mean",
             "pseudo_no_event_frame0_rollout_n",
             "recoverLatestJob",
+            "fetchJson",
+            "readAnalysisJob",
+            "/api/jobs?job_type=analysis",
+            "returned non-JSON",
         ]:
             self.assertIn(marker, label_loss_analysis)
         self.assertNotIn("workspaceLoadBaselineRuns", label_loss_analysis)
