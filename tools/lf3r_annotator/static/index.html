@@ -680,14 +680,13 @@
           <summary class="analysis-run-summary">
             <div>
               <p class="eyebrow">ROBO-DOPAMINE BILSTM</p>
-              <h3 id="analysisBiLstmTitle">Success-negative localization ablation</h3>
-              <small>h16 / h32 · failure-only vs failure + clean success</small>
+              <h3 id="analysisBiLstmTitle">Success-ratio localization ablation</h3>
+              <small>h16 / h32 · 0× / 0.5× / 1× / 2× clean success</small>
             </div>
             <span id="analysisBiLstmBadge" class="analysis-badge">Idle</span>
           </summary>
           <p class="analysis-run-help">
-            Train only the two PyTorch BiLSTM localization heads on existing saved fused progress/hop.
-            Clean successes are added only as all-negative training sequences. Robo-Dopamine is not rerun.
+            Train only the two PyTorch BiLSTM localization heads on existing saved fused progress/hop.\n            Clean successes are added as all-negative sequences at 0× / 0.5× / 1× / 2× the failure-training count. Robo-Dopamine is not rerun.
           </p>
           <form id="analysisBiLstmForm" class="analysis-run-form">
             <div class="analysis-run-grid">
@@ -739,7 +738,7 @@
           <div class="analysis-card-heading">
             <div>
               <p class="eyebrow">BILSTM ABLATION RESULTS</p>
-              <h3 id="analysisBiLstmResultsTitle">Failure-only vs failure + success</h3>
+              <h3 id="analysisBiLstmResultsTitle">Success-ratio trend</h3>
             </div>
           </div>
           <div id="analysisBiLstmResults" class="analysis-table-wrap"></div>
