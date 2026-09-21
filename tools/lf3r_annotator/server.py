@@ -1009,6 +1009,7 @@ class AnalysisService:
         best_configs = self._read_csv(directory / ROBO_HOP_TABLE_FILES["best_configs"])
         sweep_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["sweep_summary"])
         recovery_results = self._read_csv(directory / ROBO_HOP_TABLE_FILES["recovery_results"])
+        breakdown_summary = self._read_csv(directory / ROBO_HOP_TABLE_FILES["breakdown_summary"])
         ensemble_sweep_path = directory / ROBO_HOP_TABLE_FILES["ensemble_sweep"]
         ensemble_selected_path = directory / ROBO_HOP_TABLE_FILES["ensemble_selected"]
         ensemble_failure_path = (
@@ -1092,6 +1093,7 @@ class AnalysisService:
             "selected_configs": selected_configs,
             "sweep_summary": sweep_summary,
             "recovery_results": recovery_results,
+            "breakdown_summary": breakdown_summary,
             "ensemble_sweep": ensemble_sweep,
             "ensemble_selected": ensemble_selected,
             "ensemble_by_failure_type": ensemble_by_failure_type,
