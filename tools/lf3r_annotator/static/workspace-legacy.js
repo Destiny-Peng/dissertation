@@ -2078,8 +2078,12 @@ function workspaceJobIsActive(job) {
   return job && (job.status === "queued" || job.status === "running");
 }
 
+function workspaceIsTemporalAnalysisJob(job) {
+  return Boolean(job && job.job_type === "analysis" && !job.analysis_kind);
+}
+
 function workspaceJobChanged(job) {
-  if (!job || job.job_type !== "analysis" || job.analysis_kind === "robo_incremental_hop") return;
+  if (!workspaceIsTemporalAnalysisJob(job)) return;
   var previous = workspaceState.analysisRunJobs[job.job_id];
   workspaceState.analysisRunJobs[job.job_id] = job;
   var current = workspaceState.analysisRunJob;
@@ -2109,14 +2113,10 @@ function workspaceJobChanged(job) {
 }
 
 function workspaceJobsChanged(jobs) {
-  (jobs || []).filter(function (job) {
-    return job.job_type === "analysis" && job.analysis_kind !== "robo_incremental_hop";
-  }).forEach(function (job) {
+  (jobs || []).filter(workspaceIsTemporalAnalysisJob).forEach(function (job) {
     workspaceJobChanged(job);
   });
-  var analysisJobs = (jobs || []).filter(function (job) {
-    return job.job_type === "analysis" && job.analysis_kind !== "robo_incremental_hop";
-  });
+  var analysisJobs = (jobs || []).filter(workspaceIsTemporalAnalysisJob);
   if (!workspaceState.analysisRunJob && analysisJobs.length) {
     workspaceState.analysisRunJob = analysisJobs[0];
   }
