@@ -20,6 +20,10 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TOOL_JOB_TYPE = "project_tool"
+DEFAULT_MANIFEST_SCAN_ROOTS = (
+    PROJECT_ROOT / "outputs/openvla_libero",
+    PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
+)
 
 
 def project_path(value: str | Path) -> Path:
@@ -270,11 +274,39 @@ def validate_instruction_variants_command(_: dict[str, Any]) -> list[str]:
     ]
 
 
-def rebuild_manifest_command(_: dict[str, Any]) -> list[str]:
-    return [
+def rebuild_manifest_command(payload: dict[str, Any]) -> list[str]:
+    command = [
         "/usr/bin/python3",
         str(PROJECT_ROOT / "tools/lf3r_annotator/build_manifest.py"),
     ]
+    roots: list[Path] = list(DEFAULT_MANIFEST_SCAN_ROOTS)
+    raw_extra = payload.get("extra_scan_roots") or []
+    if isinstance(raw_extra, str):
+        raw_extra = [
+            value.strip()
+            for value in raw_extra.replace(",", "\n").splitlines()
+            if value.strip()
+        ]
+    if not isinstance(raw_extra, list):
+        raise ValueError("extra_scan_roots must be a list of project-local directories")
+
+    seen = {path.resolve() for path in roots}
+    for value in raw_extra:
+        text = str(value).strip()
+        if not text:
+            continue
+        path = project_path(text)
+        if not path.is_dir():
+            raise ValueError(f"scan root does not exist or is not a directory: {text}")
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(resolved)
+
+    for root in roots:
+        command.extend(["--scan-root", str(root)])
+    return command
 
 
 def baseline_pipeline_validation_command(payload: dict[str, Any]) -> list[str]:
