@@ -370,6 +370,93 @@
   }
 
 
+
+  function resultCell(label, value, note) {
+    return '<div class="analysis-result-cell">'
+      + '<span>' + esc(label) + '</span>'
+      + '<strong>' + esc(value) + '</strong>'
+      + (note ? '<small>' + esc(note) + '</small>' : '')
+      + '</div>';
+  }
+
+  function renderSweepSummary(hop) {
+    var selected = (hop.selected_configs || []).filter(function (row) {
+      return String(row.selection_status || "selected") === "selected";
+    });
+    var ensemble = (hop.ensemble_selected || []).filter(function (row) {
+      return String(row.selection_status || "") === "selected";
+    });
+    var sweep = hop.sweep_summary || [];
+    var breakdown = hop.breakdown_summary || [];
+    var html = '<section class="analysis-subsection analysis-sweep-summary">'
+      + '<div class="analysis-subsection-heading"><div><h4>Sweep results</h4>'
+      + '<p class="analysis-card-note">Compact view of the completed detector sweep. Full CSV artifacts remain downloadable below.</p></div>'
+      + '<span class="analysis-badge ok">Complete</span></div>'
+      + '<div class="analysis-result-grid">'
+      + resultCell("Configs evaluated", String(sweep.length || hop.detector_config_n || 0), "single-detector sweep rows")
+      + resultCell("Selected configs", String(selected.length), "after clean-FPR constraints")
+      + resultCell("Selected ensembles", String(ensemble.length), "OR combinations")
+      + resultCell("Signal modes", (hop.signal_modes || []).join(", ") || "fused", "")
+      + '</div>';
+
+    if (selected.length) {
+      html += '<details class="analysis-result-details"><summary>Selected detector configs (' + selected.length + ')</summary>'
+        + '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
+        + '<th>Family</th><th>Constraint</th><th>Parameters</th><th>Grasp R@10</th><th>Grasp eventual</th>'
+        + '<th>Failure coverage</th><th>Clean FPR</th><th>Median delay</th>'
+        + '</tr></thead><tbody>';
+      selected.forEach(function (row) {
+        html += '<tr><td>' + esc(familyLabel(row.detector_family)) + '</td>'
+          + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint)) + '</td>'
+          + '<td><small>' + esc(configParameters(row)) + '</small></td>'
+          + '<td class="numeric">' + esc(percent(row.grasp_recall_at_10)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.overall_failed_rollout_coverage)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.grasp_median_delay_samples)) + '</td></tr>';
+      });
+      html += '</tbody></table></div></details>';
+    }
+
+    if (ensemble.length) {
+      html += '<details class="analysis-result-details"><summary>Selected OR ensembles (' + ensemble.length + ')</summary>'
+        + '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
+        + '<th>Target</th><th>Constraint</th><th>Detector A</th><th>Detector B</th>'
+        + '<th>Grasp R@10</th><th>Grasp eventual</th><th>Failure coverage</th><th>Clean FPR</th>'
+        + '</tr></thead><tbody>';
+      ensemble.forEach(function (row) {
+        html += '<tr><td>' + esc(String(row.selection_target || "").replace(/_/g, " ")) + '</td>'
+          + '<td class="numeric">≤ ' + esc(percent(row.clean_fpr_constraint)) + '</td>'
+          + '<td>' + esc(familyLabel(row.detector_a_family)) + '<br><small>' + esc(ensembleParameters(row, "a")) + '</small></td>'
+          + '<td>' + esc(familyLabel(row.detector_b_family)) + '<br><small>' + esc(ensembleParameters(row, "b")) + '</small></td>'
+          + '<td class="numeric">' + esc(percent(row.grasp_recall_at_10)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(percent(row.grasp_recall_eventual)) + '</strong></td>'
+          + '<td class="numeric">' + esc(percent(row.overall_failed_rollout_coverage)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.clean_rollout_fpr)) + '</td></tr>';
+      });
+      html += '</tbody></table></div></details>';
+    }
+
+    if (breakdown.length) {
+      html += '<details class="analysis-result-details"><summary>Failure-type breakdown (' + breakdown.length + ' rows)</summary>'
+        + '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
+        + '<th>Family</th><th>Failure type</th><th>N</th><th>Recall@3</th><th>Recall@10</th><th>Eventual</th><th>Median delay</th>'
+        + '</tr></thead><tbody>';
+      breakdown.slice(0, 60).forEach(function (row) {
+        html += '<tr><td>' + esc(familyLabel(row.detector_family)) + '</td>'
+          + '<td>' + esc(String(row.failure_type || "").replace(/_/g, " ")) + '</td>'
+          + '<td class="numeric">' + esc(row.event_n == null ? "n/a" : row.event_n) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_3)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_at_10)) + '</td>'
+          + '<td class="numeric">' + esc(percent(row.event_recall_eventual)) + '</td>'
+          + '<td class="numeric">' + esc(number(row.median_delay_samples)) + '</td></tr>';
+      });
+      html += '</tbody></table></div></details>';
+    }
+
+    return html + '</section>';
+  }
+
   function renderSnapshot() {
     var host = node("analysisHopResults");
     var artifacts = node("analysisHopArtifacts");
@@ -383,7 +470,7 @@
       return;
     }
 
-    var html = "";
+    var html = renderSweepSummary(hop);
 
     var intervalRows = hop.interval_localization_rows || [];
     if (intervalRows.length) {
@@ -407,7 +494,7 @@
       ];
       var intervalViewRows = sortedRankingRows(intervalRows, hopState.intervalRanking);
       html += '<section class="analysis-subsection">'
-        + '<h4>Failed-rollout interval localization · [causal, observable]</h4>'
+        + '<div class="analysis-subsection-heading"><div><h4>Failed-rollout interval localization · [causal, observable]</h4></div></div>'
         + '<p class="analysis-card-note">Offline selector keeps every positive episode start, scores s by median(hop[s-L:s]) − median(hop[s:s+R]), and chooses the maximum. Compare it directly with the original first trigger and earliest global fused-progress argmax. Predictions inside [causal onset, observable onset] have zero error.</p>'
         + rankingControlsHtml("analysisHopIntervalRank", hopState.intervalRanking, intervalPopulations, intervalSortOptions)
         + '<table class="analysis-table"><caption>'
