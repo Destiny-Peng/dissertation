@@ -445,9 +445,11 @@ class TinyCNN(BaseHead):
             + self.params["bc"][None, None, :]
         )
         activation = np.maximum(conv, 0.0)
-        pooled = activation.mean(axis=1)
-        logits = pooled @ self.params["wo"] + self.params["bo"][0]
-        return windows, conv, pooled, logits
+        logits = (
+            np.einsum("npf,pf->n", activation, self.params["wo"])
+            + self.params["bo"][0]
+        )
+        return windows, conv, activation, logits
 
     def fit(
         self,
@@ -467,7 +469,7 @@ class TinyCNN(BaseHead):
             "wo": self.rng.normal(
                 0.0,
                 math.sqrt(2.0 / self.filters),
-                size=(self.filters,),
+                size=(x.shape[2] - self.kernel + 1, self.filters),
             ),
             "bo": np.zeros(1, dtype=np.float64),
         }
@@ -478,18 +480,20 @@ class TinyCNN(BaseHead):
         best_epoch = 0
         stale = 0
         for epoch in range(1, self.epochs + 1):
-            windows, conv, pooled, logits = self._forward(x)
+            windows, conv, activation, logits = self._forward(x)
             probability = _sigmoid(logits)
             sample_weight = np.where(y > 0.5, pos_weight, 1.0)
             dz = (
                 sample_weight * (probability - y)
                 / max(1e-12, float(np.sum(sample_weight)))
             )
-            dpool = dz[:, None] * self.params["wo"][None, :]
-            dactivation = dpool[:, None, :] / conv.shape[1]
+            dactivation = dz[:, None, None] * self.params["wo"][None, :, :]
             dconv = dactivation * (conv > 0.0)
             grads = {
-                "wo": pooled.T @ dz + 1e-4 * self.params["wo"],
+                "wo": (
+                    np.einsum("n,npf->pf", dz, activation)
+                    + 1e-4 * self.params["wo"]
+                ),
                 "bo": np.asarray([np.sum(dz)], dtype=np.float64),
                 "wc": (
                     np.einsum("npf,npck->fck", dconv, windows)
@@ -1505,10 +1509,7 @@ def analyze(args: argparse.Namespace) -> Path:
                 dataset,
                 split["train"],
                 requested,
-                seed=(
-                    int(split["seed"]) * 100
-                    + (requested or 999)
-                ),
+                seed=int(split["seed"]) * 100 + 7,
             )
             label = (
                 "all"
@@ -1791,7 +1792,7 @@ def analyze(args: argparse.Namespace) -> Path:
             ),
             "tiny_cnn": (
                 "1D conv over local progress/hop context, "
-                "filters=8, kernel=3, mean pool"
+                "filters=8, kernel=3, position-aware readout"
             ),
             "tiny_bigru": (
                 "not run in this probe; gated on evidence "
