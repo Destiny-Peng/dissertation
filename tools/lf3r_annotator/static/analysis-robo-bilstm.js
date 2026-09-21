@@ -114,46 +114,49 @@
     var snapshot = state.snapshot;
     if (!snapshot || !snapshot.available) {
       host.innerHTML = '<p class="analysis-empty">'
-        + esc((snapshot && snapshot.message) || "No completed BiLSTM success-negative training snapshot yet.")
+        + esc((snapshot && snapshot.message) || "No completed BiLSTM success-ratio snapshot yet.")
         + '</p>';
       artifacts.innerHTML = "";
       if (!active()) badge("Idle");
       return;
     }
 
-    var comparison = snapshot.comparison || [];
-    var delta = snapshot.delta || [];
-    var html = '<div class="analysis-result-grid">';
-    ["tiny_bilstm_h16", "tiny_bilstm_h32"].forEach(function (model) {
-      var base = comparison.find(function (row) {
-        return row.model === model && row.training_setting === "failure_only";
-      });
-      var aug = comparison.find(function (row) {
-        return row.model === model && row.training_setting === "failure_plus_success";
-      });
-      if (!base || !aug) return;
-      var beforeDelta = Number(aug.before_interval_rate_mean) - Number(base.before_interval_rate_mean);
-      html += '<article class="analysis-result-cell"><small>' + esc(model) + '</small>'
-        + '<strong>' + esc(pct(aug.in_interval_rate_mean)) + '</strong>'
-        + '<span>in interval with success negatives</span>'
-        + '<span>before: ' + esc(pct(base.before_interval_rate_mean))
-        + ' → ' + esc(pct(aug.before_interval_rate_mean))
-        + ' (' + (beforeDelta >= 0 ? "+" : "") + esc(pct(beforeDelta)) + ')</span></article>';
+    var comparison = (snapshot.comparison || []).slice().sort(function (a, b) {
+      var modelOrder = String(a.model).localeCompare(String(b.model));
+      if (modelOrder) return modelOrder;
+      return Number(a.success_ratio || 0) - Number(b.success_ratio || 0);
     });
-    html += '</div>';
+    var delta = snapshot.delta || [];
+    var html = "";
+
+    ["tiny_bilstm_h16", "tiny_bilstm_h32"].forEach(function (model) {
+      var rows = comparison.filter(function (row) { return row.model === model; });
+      if (!rows.length) return;
+      html += '<section class="analysis-result-section"><h4><code>' + esc(model) + '</code> success-ratio trend</h4>'
+        + '<div class="analysis-result-grid">';
+      rows.forEach(function (row) {
+        html += '<article class="analysis-result-cell"><small>' + esc(num(row.success_ratio, 1)) + '× success</small>'
+          + '<strong>' + esc(pct(row.before_interval_rate_mean)) + '</strong>'
+          + '<span>before interval</span>'
+          + '<span>in interval ' + esc(pct(row.in_interval_rate_mean)) + '</span>'
+          + '<span>success n≈' + esc(num(row.success_train_n_mean, 1))
+          + ' / failure n≈' + esc(num(row.failure_train_n_mean, 1)) + '</span></article>';
+      });
+      html += '</div></section>';
+    });
 
     if (comparison.length) {
       html += '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
-        + '<th>Model</th><th>Training</th><th>Failure train</th><th>Success train</th>'
+        + '<th>Model</th><th>Success ratio</th><th>Failure train</th><th>Success train</th>'
         + '<th>In interval</th><th>±1</th><th>±3</th><th>±5</th>'
         + '<th>Before</th><th>After</th><th>Median |err|</th><th>MAE</th><th>MSE</th>'
         + '</tr></thead><tbody>';
       comparison.forEach(function (row) {
         html += '<tr><td><code>' + esc(row.model) + '</code></td>'
-          + '<td>' + esc(String(row.training_setting || "").replace(/_/g, " ")) + '</td>'
+          + '<td class="numeric"><strong>' + esc(num(row.success_ratio, 1)) + '×</strong></td>'
           + '<td class="numeric">' + esc(num(row.failure_train_n_mean, 1)) + '</td>'
           + '<td class="numeric">' + esc(num(row.success_train_n_mean, 1)) + '</td>'
-          + '<td class="numeric"><strong>' + esc(pct(row.in_interval_rate_mean)) + '</strong></td>'
+          + '<td class="numeric">' + esc(pct(row.in_interval_rate_mean)) + '</td>'
           + '<td class="numeric">' + esc(pct(row.within_1_mean)) + '</td>'
           + '<td class="numeric">' + esc(pct(row.within_3_mean)) + '</td>'
           + '<td class="numeric">' + esc(pct(row.within_5_mean)) + '</td>'
@@ -167,17 +170,18 @@
     }
 
     if (delta.length) {
-      html += '<details class="analysis-result-details"><summary>Direct failure+success − failure-only deltas</summary>'
+      html += '<details class="analysis-result-details"><summary>Each non-zero ratio − 0× baseline</summary>'
         + '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
-        + '<th>Model</th><th>Δ in interval</th><th>Δ before</th><th>Δ after</th><th>Δ MAE</th><th>Δ MSE</th>'
+        + '<th>Model</th><th>Ratio</th><th>Δ in interval</th><th>Δ before</th><th>Δ after</th><th>Δ MAE</th><th>Δ MSE</th>'
         + '</tr></thead><tbody>';
       delta.forEach(function (row) {
         html += '<tr><td><code>' + esc(row.model) + '</code></td>'
-          + '<td class="numeric">' + esc(pct(row.in_interval_rate_delta)) + '</td>'
-          + '<td class="numeric"><strong>' + esc(pct(row.before_interval_rate_delta)) + '</strong></td>'
-          + '<td class="numeric">' + esc(pct(row.after_interval_rate_delta)) + '</td>'
-          + '<td class="numeric">' + esc(num(row.mae_samples_delta)) + '</td>'
-          + '<td class="numeric">' + esc(num(row.mse_samples_delta)) + '</td></tr>';
+          + '<td class="numeric">' + esc(num(row.success_ratio, 1)) + '×</td>'
+          + '<td class="numeric">' + esc(pct(row.in_interval_rate_delta_vs_ratio0)) + '</td>'
+          + '<td class="numeric"><strong>' + esc(pct(row.before_interval_rate_delta_vs_ratio0)) + '</strong></td>'
+          + '<td class="numeric">' + esc(pct(row.after_interval_rate_delta_vs_ratio0)) + '</td>'
+          + '<td class="numeric">' + esc(num(row.mae_samples_delta_vs_ratio0)) + '</td>'
+          + '<td class="numeric">' + esc(num(row.mse_samples_delta_vs_ratio0)) + '</td></tr>';
       });
       html += '</tbody></table></div></details>';
     }
@@ -186,7 +190,7 @@
     var source = snapshot.source || {};
     var links = (snapshot.artifacts || []).map(function (item) {
       return '<a class="analysis-download-link" href="' + esc(item.url) + '" download>'
-        + '<strong>' + esc(item.name) + '</strong><small>BiLSTM ablation</small></a>';
+        + '<strong>' + esc(item.name) + '</strong><small>BiLSTM success-ratio ablation</small></a>';
     }).join("");
     artifacts.innerHTML = '<p>Latest snapshot: ' + esc(source.directory || "unknown")
       + ' · ' + esc(source.generated_at || "unknown time") + '</p>'
@@ -256,7 +260,7 @@
         return;
       }
       if (job.status === "complete") {
-        status("BiLSTM success-negative ablation complete · " + (job.output_dir || ""), "");
+        status("BiLSTM success-ratio ablation complete · " + (job.output_dir || ""), "");
         await loadSnapshot();
       } else {
         status("BiLSTM training failed; inspect the log.", "error");
@@ -296,7 +300,7 @@
     };
 
     badge("queued");
-    status("Starting PyTorch BiLSTM success-negative ablation…", "");
+    status("Starting PyTorch BiLSTM success-ratio ablation…", "");
     var log = node("analysisBiLstmLog");
     if (log) log.textContent = "";
     updateButton();
