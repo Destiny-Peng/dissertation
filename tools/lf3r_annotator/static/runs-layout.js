@@ -356,6 +356,18 @@
   var manifestRebuildBefore = {};
   var manifestRefreshHandled = {};
 
+  var manifestExtraRootsNode = document.getElementById("rebuildManifestExtraRoots");
+  if (manifestExtraRootsNode) {
+    try {
+      manifestExtraRootsNode.value = localStorage.getItem("lf3r.runs.extraManifestScanRoots") || "";
+    } catch (_) {}
+    manifestExtraRootsNode.addEventListener("input", function () {
+      try {
+        localStorage.setItem("lf3r.runs.extraManifestScanRoots", manifestExtraRootsNode.value);
+      } catch (_) {}
+    });
+  }
+
   function activityNodes() {
     return [
       {
@@ -416,6 +428,17 @@
         if (nodes.log) nodes.log.textContent = logText;
       });
       await refreshToolJobs();
+      if (
+        job.action === "rebuild_manifest"
+        && job.status === "failed"
+        && !manifestRefreshHandled[job.job_id]
+      ) {
+        manifestRefreshHandled[job.job_id] = true;
+        var failedSummary = document.getElementById("rebuildManifestSummary");
+        if (failedSummary) {
+          failedSummary.textContent = "Manifest rebuild failed: " + (job.error || "see project-tool log");
+        }
+      }
       if (
         job.action === "rebuild_manifest"
         && job.status === "complete"
