@@ -252,6 +252,7 @@
       if (["queued", "running"].indexOf(job.status) !== -1) {
         status(
           "BiLSTM training " + job.status + " · " + (job.parameters.device || "auto")
+          + " · ratios 0," + ((job.parameters.success_ratios || []).join(",") || "?")
           + " · repeats " + (job.parameters.repeats || "?"),
           ""
         );
@@ -277,6 +278,28 @@
     }
   }
 
+  function parseSuccessRatiosInput() {
+    var raw = node("analysisBiLstmSuccessRatios").value.trim();
+    var parts = raw.split(",").map(function (value) { return value.trim(); }).filter(Boolean);
+    if (!parts.length) throw new Error("Enter at least one positive success ratio.");
+    var seen = {};
+    var values = [];
+    parts.forEach(function (part) {
+      var value = Number(part);
+      if (!Number.isFinite(value) || value <= 0 || value > 20) {
+        throw new Error("Success ratios must be numeric values > 0 and <= 20.");
+      }
+      var key = String(value);
+      if (!seen[key]) {
+        seen[key] = true;
+        values.push(value);
+      }
+    });
+    if (values.length > 16) throw new Error("Use at most 16 unique success ratios.");
+    values.sort(function (a, b) { return a - b; });
+    return values;
+  }
+
   async function start(event) {
     if (event) event.preventDefault();
     var run = node("analysisBiLstmRun").value;
@@ -289,11 +312,20 @@
       status("Invalid output label.", "error");
       return;
     }
+    var successRatios;
+    try {
+      successRatios = parseSuccessRatiosInput();
+    } catch (error) {
+      status(error.message, "error");
+      node("analysisBiLstmSuccessRatios").focus();
+      return;
+    }
     var payload = {
       analysis_kind: "robo_bilstm_success_ablation",
       runs: { robo_dopamine: run },
       output_label: label,
       device: node("analysisBiLstmDevice").value,
+      success_ratios: successRatios,
       repeats: Number(node("analysisBiLstmRepeats").value),
       epochs: Number(node("analysisBiLstmEpochs").value),
       patience: Number(node("analysisBiLstmPatience").value),
