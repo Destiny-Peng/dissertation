@@ -21,10 +21,12 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+print("[BiLSTM] process started; importing PyTorch...", flush=True)
 try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
+    print(f"[BiLSTM] PyTorch import complete: {torch.__version__}", flush=True)
 except ImportError as exc:
     raise SystemExit(
         "PyTorch is required. Run this probe with an LF3R environment that "
