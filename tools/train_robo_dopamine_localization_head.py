@@ -784,10 +784,28 @@ def discover_baseline_artifacts(
     explicit: str | None,
 ) -> Path | None:
     if explicit:
-        return ensure_within_project(
+        directory = ensure_within_project(
             resolve_project_path(explicit),
             "baseline analysis dir",
         )
+        metadata_path = directory / "metadata.json"
+        diagnostics_path = directory / "offline_localization_diagnostics.csv"
+        ranking_path = directory / "interval_localization_ranking.csv"
+        if not metadata_path.is_file() or not diagnostics_path.is_file() or not ranking_path.is_file():
+            raise FileNotFoundError(
+                "Explicit baseline analysis must contain metadata.json, "
+                "interval_localization_ranking.csv, and "
+                "offline_localization_diagnostics.csv"
+            )
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        expected = project_relative(run_root)
+        actual = str((metadata.get("input") or {}).get("run_root") or "")
+        if actual != expected:
+            raise ValueError(
+                "Baseline analysis run_root does not match requested Robo-Dopamine run: "
+                f"{actual!r} != {expected!r}"
+            )
+        return directory
     expected = project_relative(run_root)
     candidates: list[tuple[float, Path]] = []
     if DEFAULT_BASELINE_ROOT.is_dir():
@@ -979,8 +997,27 @@ def choose_baseline_candidate(
         )
     if not scored:
         return None, {"coverage": 0.0}
-    scored.sort(key=lambda item: item[:5])
-    winner = scored[0]
+    max_coverage = max(float(item[5]["coverage"]) for item in scored)
+    coverage_floor = (
+        1.0
+        if any(float(item[5]["coverage"]) >= 1.0 - 1e-12 for item in scored)
+        else max_coverage
+    )
+    eligible = [
+        item
+        for item in scored
+        if float(item[5]["coverage"]) >= coverage_floor - 1e-12
+    ]
+    eligible.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+            item[2],
+            item[4],
+        )
+    )
+    winner = eligible[0]
+    winner[5]["coverage_floor"] = coverage_floor
     return winner[4], winner[5]
 
 
