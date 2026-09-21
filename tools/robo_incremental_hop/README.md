@@ -66,3 +66,14 @@ Use `--selection` to restrict a superset run to requested rollout IDs and
 `--no-plots` to skip plotting. Existing legacy sweep/recovery artifacts are
 still written for compatibility, but the interval-localization view is based on
 the offline post-processing described above.
+
+
+## Lightweight learned-head probe
+
+The follow-up learned localization experiment is implemented by
+`tools/train_robo_dopamine_localization_head.py` and documented in
+`tools/robo_localization_head/README.md`. It consumes the same saved fused
+progress/hop and interval annotations, uses strict rollout/task splits, and
+compares small NumPy linear/MLP/CNN heads against this module's first-trigger,
+offline changepoint, and global fused-progress baselines. It does not rerun or
+modify Robo-Dopamine.
