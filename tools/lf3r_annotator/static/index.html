@@ -681,13 +681,13 @@
             <div>
               <p class="eyebrow">ROBO-DOPAMINE BILSTM</p>
               <h3 id="analysisBiLstmTitle">Success-ratio localization ablation</h3>
-              <small>h16 / h32 · 0× / 0.5× / 1× / 2× clean success</small>
+              <small>h16 / h32 · configurable clean-success ratios</small>
             </div>
             <span id="analysisBiLstmBadge" class="analysis-badge">Idle</span>
           </summary>
           <p class="analysis-run-help">
             Train only the two PyTorch BiLSTM localization heads on existing saved fused progress/hop.
-            Clean successes are added as all-negative sequences at 0× / 0.5× / 1× / 2× the failure-training count. Robo-Dopamine is not rerun.
+            Clean successes are added as all-negative sequences at configurable ratios of the failure-training count. The 0× failure-only baseline is always included. Robo-Dopamine is not rerun.
           </p>
           <form id="analysisBiLstmForm" class="analysis-run-form">
             <div class="analysis-run-grid">
@@ -703,6 +703,10 @@
                   <option value="cuda:1">cuda:1</option>
                   <option value="cpu">cpu</option>
                 </select>
+              </label>
+              <label><span>Success ratios</span>
+                <input id="analysisBiLstmSuccessRatios" type="text" value="0.5,1,2" inputmode="decimal">
+                <small class="analysis-run-field-help">Comma-separated positive ratios. 0× baseline is added automatically.</small>
               </label>
               <label><span>Repeats</span>
                 <input id="analysisBiLstmRepeats" type="number" value="5" min="1" max="50" step="1">
