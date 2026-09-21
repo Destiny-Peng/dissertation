@@ -725,16 +725,6 @@
     } catch (_error) {}
   }
 
-  function patchSnapshotRenderer() {
-    if (typeof window.workspaceRenderSnapshot !== "function") return;
-    var previous = window.workspaceRenderSnapshot;
-    window.workspaceRenderSnapshot = function () {
-      var result = previous.apply(this, arguments);
-      renderSnapshot();
-      return result;
-    };
-  }
-
   function init() {
     var form = node("analysisHopForm");
     var scope = node("analysisHopScope");
@@ -743,15 +733,6 @@
     form.addEventListener("submit", start);
     scope.addEventListener("change", loadRuns);
     run.addEventListener("change", updateButton);
-    patchSnapshotRenderer();
-    if (typeof window.workspaceRenderAnalysisRunPanel === "function") {
-      var previousRunPanel = window.workspaceRenderAnalysisRunPanel;
-      window.workspaceRenderAnalysisRunPanel = function () {
-        var result = previousRunPanel.apply(this, arguments);
-        updateButton();
-        return result;
-      };
-    }
     loadRuns();
     recoverLatestJob();
     loadSnapshot();
