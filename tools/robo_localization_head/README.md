@@ -150,3 +150,101 @@ candidate for that rollout.
 This means a newly rerun partial batch is automatically merged with older
 results for rollouts that were not rerun. `--run-root` remains available only
 for legacy single-directory evaluation.
+
+
+# BiLSTM label/loss ablation
+
+The label/loss experiment is implemented separately from the success-negative
+ablation so the existing WebUI experiment remains reproducible.
+
+Runner:
+
+~~~bash
+source ./project_env.sh
+
+"$LF3R_ROBODOPAMINE_PYTHON" tools/train_robo_dopamine_label_loss_ablation.py \
+  --run-pool-root outputs/baselines \
+  --device auto
+~~~
+
+It is failure-only and fixes the model to the h16 one-layer bidirectional LSTM.
+Robo-Dopamine inference is never rerun.
+
+## Multi-event target
+
+Every valid event in a terminal-failure rollout is retained. Events are mapped
+onto the saved fused native-sample grid and sorted by causal onset. Event
+importance decays relative to the first event:
+
+`w_k = exp(-(causal_index_k - causal_index_1) / tau_event)`
+
+The default is `tau_event=20` native samples. The first event therefore always
+has weight 1. Later events remain valid supervision but receive lower weight.
+
+For the hard target, an event interval has amplitude `w_k`. For Gaussian
+targets, the interval plateau and both Gaussian tails are multiplied by
+`w_k`. Multiple event targets are combined using timestep-wise maximum, never
+sum.
+
+A terminal-failure rollout with no annotated event is retained as
+`pseudo_no_event_frame0` with causal=observable=0, mapped to the first
+available fused native sample.
+
+## Label step
+
+The controlled BCE comparison is:
+
+- hard weighted interval
+- symmetric Gaussian sigma 1 / 2 / 3 / 5 native samples
+
+If the best symmetric Gaussian strictly improves both mean in-interval rate and
+mean MAE over the hard weighted baseline, the runner additionally evaluates:
+
+- pre/post = 3/1
+- pre/post = 2/1
+- pre/post = 1/3
+
+All label settings share exactly the same rollout splits, normalization,
+positive-class weight source, model initialization seed, optimizer and
+hyperparameters.
+
+## Loss step
+
+The best label setting is then compared with:
+
+- BCE
+- temporal-softmax CE
+- temporal-softmax CE + interval-distance
+- temporal-softmax CE + squared interval-distance
+- temporal-softmax CE + ranking
+- temporal-softmax CE + interval-distance + ranking
+
+Temporal-softmax uses the normalized weighted timestep target. Distance is the
+distance to the nearest valid event interval, normalized by sequence length.
+Ranking compares the event-weighted interval score against the background
+score. The BCE result for the selected label is reused directly from the label
+step and is not retrained.
+
+Prediction is always the global argmax over the full failed rollout.
+
+Evaluation uses the nearest valid interval, so hitting any annotated failure
+interval counts as in-interval. `first_event_in_interval_rate` is also reported
+separately to show whether the model actually prefers the earliest event.
+
+## Outputs
+
+- `label_ablation.csv`
+- `loss_ablation.csv`
+- `per_split_metrics.csv`
+- `per_rollout_predictions.csv`
+- `dataset_targets.csv`
+- `dataset_target_summary.json`
+- `training_records.json`
+- `split_manifest.json`
+- `best_configuration.json`
+- `best_configuration.md`
+- `metadata.json`
+
+The historical first-event-only hard-label run is not reused as the new hard
+baseline because the target population has changed: all valid events are now
+retained and eventless terminal failures are included.
