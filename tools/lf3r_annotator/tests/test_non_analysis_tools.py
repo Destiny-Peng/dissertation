@@ -124,6 +124,15 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertEqual(tmux.handler[0], tools.TOOL_JOB_TYPE)
         self.assertIn("--check-only", tmux.submitted[1])
 
+    def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
+        source = (HERE / "static" / "runs-layout.js").read_text(encoding="utf-8")
+        self.assertIn("rebuildManifestExtraRoots", source)
+        self.assertIn("extra_scan_roots", source)
+        self.assertIn("Default scan roots · always included", source)
+        self.assertIn("Rebuild manifest + refresh", source)
+        self.assertIn("await loadRollouts(preferredId)", source)
+        self.assertIn("await loadRolloutOptions()", source)
+
 
 if __name__ == "__main__":
     unittest.main()
