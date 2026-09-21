@@ -433,8 +433,26 @@ class TinyBiLSTM(nn.Module):
         )
         self.head = nn.Linear(2 * hidden, 1)
 
-    def forward(self, sequence: torch.Tensor) -> torch.Tensor:
-        encoded, _ = self.lstm(sequence)
+    def forward(
+        self,
+        sequence: torch.Tensor,
+        lengths: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if lengths is None:
+            encoded, _ = self.lstm(sequence)
+        else:
+            packed = nn.utils.rnn.pack_padded_sequence(
+                sequence,
+                lengths.detach().cpu(),
+                batch_first=True,
+                enforce_sorted=False,
+            )
+            packed_encoded, _ = self.lstm(packed)
+            encoded, _ = nn.utils.rnn.pad_packed_sequence(
+                packed_encoded,
+                batch_first=True,
+                total_length=sequence.shape[1],
+            )
         return self.head(encoded).squeeze(-1)
 
 
@@ -455,18 +473,70 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def normalized_tensor(
-    row: Mapping[str, Any],
+def prepare_tensor_dataset(
+    dataset: Mapping[str, Mapping[str, Any]],
     mean: np.ndarray,
     std: np.ndarray,
+) -> dict[str, dict[str, torch.Tensor]]:
+    prepared: dict[str, dict[str, torch.Tensor]] = {}
+    for rollout_id, row in dataset.items():
+        sequence = (
+            np.asarray(row["sequence"], dtype=np.float32) - mean
+        ) / std
+        labels = np.asarray(row["labels"], dtype=np.float32)
+        prepared[rollout_id] = {
+            "sequence": torch.from_numpy(sequence),
+            "labels": torch.from_numpy(labels),
+        }
+    return prepared
+
+
+def collate_rollout_batch(
+    prepared: Mapping[str, Mapping[str, torch.Tensor]],
+    rollout_ids: Sequence[str],
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    sequence = (np.asarray(row["sequence"], dtype=np.float32) - mean) / std
-    labels = np.asarray(row["labels"], dtype=np.float32)
-    return (
-        torch.from_numpy(sequence).unsqueeze(0).to(device),
-        torch.from_numpy(labels).unsqueeze(0).to(device),
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if not rollout_ids:
+        raise ValueError("cannot collate an empty rollout batch")
+    sequences = [prepared[rollout_id]["sequence"] for rollout_id in rollout_ids]
+    labels = [prepared[rollout_id]["labels"] for rollout_id in rollout_ids]
+    lengths = torch.tensor(
+        [int(sequence.shape[0]) for sequence in sequences],
+        dtype=torch.long,
     )
+    padded_sequence = nn.utils.rnn.pad_sequence(
+        sequences,
+        batch_first=True,
+        padding_value=0.0,
+    )
+    padded_labels = nn.utils.rnn.pad_sequence(
+        labels,
+        batch_first=True,
+        padding_value=0.0,
+    )
+    non_blocking = device.type == "cuda"
+    return (
+        padded_sequence.to(device, non_blocking=non_blocking),
+        padded_labels.to(device, non_blocking=non_blocking),
+        lengths.to(device, non_blocking=non_blocking),
+    )
+
+
+def rollout_batches(
+    rollout_ids: Sequence[str],
+    batch_size: int,
+    *,
+    rng: random.Random | None = None,
+) -> list[list[str]]:
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    ids = list(rollout_ids)
+    if rng is not None:
+        rng.shuffle(ids)
+    return [
+        ids[index : index + batch_size]
+        for index in range(0, len(ids), batch_size)
+    ]
 
 
 def _logmeanexp(values: torch.Tensor) -> torch.Tensor:
@@ -484,8 +554,12 @@ def loss_value(
     ranking_weight: float,
     ranking_margin: float,
 ) -> torch.Tensor:
-    logits = logits.squeeze(0)
-    labels = labels.squeeze(0)
+    if logits.ndim == 2 and logits.shape[0] == 1:
+        logits = logits[0]
+    if labels.ndim == 2 and labels.shape[0] == 1:
+        labels = labels[0]
+    if logits.ndim != 1 or labels.ndim != 1:
+        raise ValueError("loss_value expects one rollout of 1D logits/labels")
     if loss_name == "bce":
         return F.binary_cross_entropy_with_logits(
             logits,
@@ -575,6 +649,7 @@ def train_bilstm(
     learning_rate: float,
     weight_decay: float,
     grad_clip: float,
+    batch_size: int,
     distance_weight: float,
     ranking_weight: float,
     ranking_margin: float,
@@ -582,6 +657,7 @@ def train_bilstm(
     progress_label: str,
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     set_seed(seed)
+    prepared = prepare_tensor_dataset(dataset, mean, std)
     model = TinyBiLSTM(hidden=16).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters()
@@ -601,6 +677,35 @@ def train_bilstm(
     pos_weight_tensor = torch.tensor(
         pos_weight, dtype=torch.float32, device=device
     )
+    effective_train_batch = min(batch_size, max(1, len(train_ids)))
+    effective_val_batch = min(batch_size, max(1, len(val_ids)))
+    optimizer_steps_per_epoch = math.ceil(
+        len(train_ids) / effective_train_batch
+    )
+    shuffle_rng = random.Random(seed + 7919)
+
+    def per_rollout_batch_losses(
+        batch_ids: Sequence[str],
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        lengths: torch.Tensor,
+    ) -> list[torch.Tensor]:
+        values: list[torch.Tensor] = []
+        for batch_index, rollout_id in enumerate(batch_ids):
+            length = int(lengths[batch_index].item())
+            values.append(
+                loss_value(
+                    logits[batch_index, :length],
+                    dataset[rollout_id],
+                    labels[batch_index, :length],
+                    loss_name=loss_name,
+                    pos_weight=pos_weight_tensor,
+                    distance_weight=distance_weight,
+                    ranking_weight=ranking_weight,
+                    ranking_margin=ranking_margin,
+                )
+            )
+        return values
 
     best_loss = math.inf
     best_state: dict[str, torch.Tensor] | None = None
@@ -608,54 +713,65 @@ def train_bilstm(
     stale = 0
     for epoch in range(1, epochs + 1):
         model.train()
-        optimizer.zero_grad(set_to_none=True)
         train_loss_sum = 0.0
-        train_count = max(1, len(train_ids))
-        for rollout_id in train_ids:
-            row = dataset[rollout_id]
-            x, y = normalized_tensor(row, mean, std, device)
-            logits = model(x)
-            row_loss = loss_value(
-                logits,
-                row,
-                y,
-                loss_name=loss_name,
-                pos_weight=pos_weight_tensor,
-                distance_weight=distance_weight,
-                ranking_weight=ranking_weight,
-                ranking_margin=ranking_margin,
+        train_seen = 0
+        train_batches = rollout_batches(
+            train_ids,
+            effective_train_batch,
+            rng=shuffle_rng,
+        )
+        for batch_ids in train_batches:
+            optimizer.zero_grad(set_to_none=True)
+            x, y, lengths = collate_rollout_batch(
+                prepared,
+                batch_ids,
+                device,
             )
-            (row_loss / train_count).backward()
-            train_loss_sum += float(row_loss.detach().cpu())
-        loss_value_for_log = train_loss_sum / train_count
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        optimizer.step()
+            logits = model(x, lengths)
+            row_losses = per_rollout_batch_losses(
+                batch_ids,
+                logits,
+                y,
+                lengths,
+            )
+            batch_loss = torch.stack(row_losses).mean()
+            batch_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+            train_loss_sum += sum(
+                float(value.detach().cpu()) for value in row_losses
+            )
+            train_seen += len(row_losses)
+        loss_value_for_log = train_loss_sum / max(1, train_seen)
 
         model.eval()
         val_losses: list[float] = []
         with torch.no_grad():
-            for rollout_id in val_ids:
-                row = dataset[rollout_id]
-                x, y = normalized_tensor(row, mean, std, device)
-                logits = model(x)
-                val_losses.append(
-                    float(
-                        loss_value(
-                            logits,
-                            row,
-                            y,
-                            loss_name=loss_name,
-                            pos_weight=pos_weight_tensor,
-                            distance_weight=distance_weight,
-                            ranking_weight=ranking_weight,
-                            ranking_margin=ranking_margin,
-                        ).cpu()
+            for batch_ids in rollout_batches(
+                val_ids,
+                effective_val_batch,
+            ):
+                x, y, lengths = collate_rollout_batch(
+                    prepared,
+                    batch_ids,
+                    device,
+                )
+                logits = model(x, lengths)
+                val_losses.extend(
+                    float(value.cpu())
+                    for value in per_rollout_batch_losses(
+                        batch_ids,
+                        logits,
+                        y,
+                        lengths,
                     )
                 )
         val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
         if epoch == 1 or epoch % 25 == 0:
             log(
                 f"{progress_label} epoch={epoch}/{epochs} "
+                f"batch={effective_train_batch} "
+                f"steps={optimizer_steps_per_epoch} "
                 f"train_loss={loss_value_for_log:.6f} "
                 f"val_loss={val_loss:.6f} best={best_loss:.6f}"
             )
@@ -681,8 +797,11 @@ def train_bilstm(
         "loss_name": loss_name,
         "failure_train_n": len(train_ids),
         "device": str(device),
+        "batch_size": batch_size,
+        "effective_train_batch_size": effective_train_batch,
+        "effective_val_batch_size": effective_val_batch,
+        "optimizer_steps_per_epoch": optimizer_steps_per_epoch,
     }
-
 
 def interval_error(prediction: int, causal: int, observable: int) -> int:
     if prediction < causal:
@@ -766,24 +885,33 @@ def evaluate_model(
     mean: np.ndarray,
     std: np.ndarray,
     device: torch.device,
+    batch_size: int,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    prepared = prepare_tensor_dataset(dataset, mean, std)
+    effective_batch = min(batch_size, max(1, len(test_ids)))
     model.eval()
     with torch.no_grad():
-        for rollout_id in test_ids:
-            x, _ = normalized_tensor(dataset[rollout_id], mean, std, device)
-            logits = model(x).squeeze(0)
-            prediction = int(torch.argmax(logits).item())
-            rows.append(
-                prediction_row(
-                    dataset,
-                    rollout_id,
-                    prediction,
-                    float(logits[prediction].item()),
-                )
+        for batch_ids in rollout_batches(test_ids, effective_batch):
+            x, _labels, lengths = collate_rollout_batch(
+                prepared,
+                batch_ids,
+                device,
             )
+            logits = model(x, lengths)
+            for batch_index, rollout_id in enumerate(batch_ids):
+                length = int(lengths[batch_index].item())
+                valid_logits = logits[batch_index, :length]
+                prediction = int(torch.argmax(valid_logits).item())
+                rows.append(
+                    prediction_row(
+                        dataset,
+                        rollout_id,
+                        prediction,
+                        float(valid_logits[prediction].item()),
+                    )
+                )
     return rows
-
 
 def run_setting(
     *,
@@ -814,6 +942,7 @@ def run_setting(
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         grad_clip=args.grad_clip,
+        batch_size=args.batch_size,
         distance_weight=args.distance_weight,
         ranking_weight=args.ranking_weight,
         ranking_margin=args.ranking_margin,
@@ -821,7 +950,13 @@ def run_setting(
         progress_label=progress_label,
     )
     rows = evaluate_model(
-        model, dataset, split["test"], mean, std, device
+        model,
+        dataset,
+        split["test"],
+        mean,
+        std,
+        device,
+        args.batch_size,
     )
     for row in rows:
         row.update(
@@ -843,6 +978,9 @@ def run_setting(
             "best_epoch": training["best_epoch"],
             "best_val_loss": training["best_val_loss"],
             "pos_weight": training["pos_weight"],
+            "batch_size": training["batch_size"],
+            "effective_train_batch_size": training["effective_train_batch_size"],
+            "optimizer_steps_per_epoch": training["optimizer_steps_per_epoch"],
         }
     )
     log(
@@ -1019,7 +1157,8 @@ def analyze(args: argparse.Namespace) -> Path:
     log(
         "Starting BiLSTM h16 label/loss ablation "
         f"source={project_relative(source_root)} repeats={args.repeats} "
-        f"tau_event={args.tau_event} device={args.device}"
+        f"tau_event={args.tau_event} batch_size={args.batch_size} "
+        f"device={args.device}"
     )
     manifest = load_manifest(manifest_path)
     signals, events, no_event_failures, _clean, provenance = build_base_records(
@@ -1230,6 +1369,7 @@ def analyze(args: argparse.Namespace) -> Path:
                 f"- Best label: **{best_label_name}**",
                 f"- Best loss: **{best_loss_summary['loss']}**",
                 f"- Event decay tau: **{args.tau_event:g} native samples**",
+                f"- Batch size: **{args.batch_size} rollouts**",
                 f"- Asymmetric follow-up ran: **{run_asymmetric}**",
                 "",
                 "Selection order is highest mean in-interval rate, then lowest "
@@ -1288,6 +1428,11 @@ def analyze(args: argparse.Namespace) -> Path:
                 "learning_rate": args.learning_rate,
                 "weight_decay": args.weight_decay,
                 "grad_clip": args.grad_clip,
+                "batch_size": args.batch_size,
+                "batching": (
+                    "variable-length rollout mini-batches using "
+                    "pack_padded_sequence; rollout-weighted mean loss"
+                ),
                 "repeats": args.repeats,
                 "seed": args.seed,
                 "train_fraction": args.train_fraction,
@@ -1344,6 +1489,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--grad-clip", type=float, default=5.0)
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="Number of variable-length rollout sequences per optimizer step.",
+    )
+    parser.add_argument(
         "--tau-event",
         type=float,
         default=20.0,
@@ -1375,6 +1526,8 @@ def main() -> int:
         raise ValueError("--val-fraction must be between 0 and 1")
     if args.epochs < 1 or args.patience < 1:
         raise ValueError("--epochs and --patience must be >= 1")
+    if args.batch_size < 1 or args.batch_size > 128:
+        raise ValueError("--batch-size must be between 1 and 128")
     if args.tau_event <= 0 or not math.isfinite(args.tau_event):
         raise ValueError("--tau-event must be finite and > 0")
     for name in ("distance_weight", "ranking_weight", "ranking_margin"):
