@@ -736,9 +736,6 @@ class AnalysisService:
         self.robo_label_loss_root = (
             self.project_root / "outputs" / "robo_dopamine_label_loss_ablation"
         )
-        self.robo_label_loss_root = (
-            self.project_root / "outputs" / "robo_dopamine_label_loss_ablation"
-        )
 
     def _relative(self, path: Path) -> str:
         try:
