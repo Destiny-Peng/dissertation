@@ -59,7 +59,7 @@
       html += '<tr>';
       columns.forEach(function (column) {
         var value = row[column.key];
-        var rendered = column.render ? column.render(value, row) : esc(value);
+        var rendered = column.render ? esc(column.render(value)) : esc(value);
         html += '<td' + (column.numeric ? ' class="numeric"' : '') + '>' + rendered + '</td>';
       });
       html += '</tr>';
