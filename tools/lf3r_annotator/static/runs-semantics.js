@@ -63,19 +63,26 @@
     var suiteNode = document.getElementById("rolloutGenerationSuite");
     var renderNode = document.getElementById("rolloutGenerationRenderResolution");
     var recordNode = document.getElementById("rolloutGenerationRecordResolution");
+    var viewNode = document.getElementById("rolloutGenerationVideoViewMode");
     var suiteName = suiteNode && suiteNode.value === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
     var render = renderNode ? renderNode.value : "?";
     var record = recordNode ? recordNode.value : "?";
+    var multiview = viewNode && viewNode.value === "libero_three_view";
     description.textContent = "Uses the existing OpenVLA " + suiteName
       + " checkpoint. Render is " + render + "x" + render
       + ", record is " + record + "x" + record
-      + ", and policy preprocessing remains 224x224. GPU selection is manual; no GPU memory/utilization admission gate is applied.";
+      + ", and policy preprocessing remains 224x224. "
+      + (multiview
+        ? "After inference, LF3R replays the recorded actions without the model and writes an additional agent + side + wrist review video. "
+        : "Only the canonical single-view replay video is written. ")
+      + "GPU selection is manual; no GPU memory/utilization admission gate is applied.";
   }
 
-  ["rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution"].forEach(function (id) {
+  ["rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "rolloutGenerationVideoViewMode"].forEach(function (id) {
     var node = document.getElementById(id);
     if (!node) return;
-    node.addEventListener(id === "rolloutGenerationSuite" ? "change" : "input", updateGenerationDescription);
+    var eventName = (id === "rolloutGenerationSuite" || id === "rolloutGenerationVideoViewMode") ? "change" : "input";
+    node.addEventListener(eventName, updateGenerationDescription);
   });
   updateGenerationDescription();
 
