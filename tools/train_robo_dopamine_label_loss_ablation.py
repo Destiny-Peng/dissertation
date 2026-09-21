@@ -609,25 +609,25 @@ def train_bilstm(
     for epoch in range(1, epochs + 1):
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        train_losses: list[torch.Tensor] = []
+        train_loss_sum = 0.0
+        train_count = max(1, len(train_ids))
         for rollout_id in train_ids:
             row = dataset[rollout_id]
             x, y = normalized_tensor(row, mean, std, device)
             logits = model(x)
-            train_losses.append(
-                loss_value(
-                    logits,
-                    row,
-                    y,
-                    loss_name=loss_name,
-                    pos_weight=pos_weight_tensor,
-                    distance_weight=distance_weight,
-                    ranking_weight=ranking_weight,
-                    ranking_margin=ranking_margin,
-                )
+            row_loss = loss_value(
+                logits,
+                row,
+                y,
+                loss_name=loss_name,
+                pos_weight=pos_weight_tensor,
+                distance_weight=distance_weight,
+                ranking_weight=ranking_weight,
+                ranking_margin=ranking_margin,
             )
-        loss = torch.stack(train_losses).mean()
-        loss.backward()
+            (row_loss / train_count).backward()
+            train_loss_sum += float(row_loss.detach().cpu())
+        loss_value_for_log = train_loss_sum / train_count
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
@@ -656,7 +656,7 @@ def train_bilstm(
         if epoch == 1 or epoch % 25 == 0:
             log(
                 f"{progress_label} epoch={epoch}/{epochs} "
-                f"train_loss={float(loss.detach().cpu()):.6f} "
+                f"train_loss={loss_value_for_log:.6f} "
                 f"val_loss={val_loss:.6f} best={best_loss:.6f}"
             )
         if val_loss < best_loss - 1e-7:
