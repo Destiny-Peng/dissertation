@@ -1,125 +1,128 @@
-# Lightweight Robo-Dopamine failure-localization head
+# Robo-Dopamine BiLSTM success-negative ablation
 
-This probe trains small temporal heads on **already saved** Robo-Dopamine fused
-progress/hop. It never reruns Robo-Dopamine and does not modify the GRM.
+This experiment uses only saved Robo-Dopamine fused progress/hop. It never reruns
+Robo-Dopamine.
 
-## Target
+## Question
 
-The primary target is the first eligible event on each \`terminal_failure\`
-rollout. Ground truth is the native-sample interval corresponding to
+Does adding clean successful trajectories as all-negative training data provide
+useful hard negatives for failure localization, especially by reducing
+predictions that occur before the annotated failure interval?
 
-\`[causal_onset_frame, observable_onset_frame]\`.
+## Controlled comparison
 
-Every native sample inside that interval is positive; all other samples in the
-same failed rollout are negative. A trained head produces one score per native
-sample and the final cut point is the rollout-global \`argmax(score)\`.
+Two training settings are run on exactly the same failure-rollout split:
 
-Using one primary interval per failed rollout keeps the training target
-consistent with the one-cut-point output. Multi-event analysis remains a
-separate diagnostic problem.
+1. `failure_only`
+2. `failure_plus_success`
 
-## Input
+Failure rollouts use the existing interval target:
 
-Each timestep receives a short symmetric offline context around fused progress
-and fused hop. Default context radius is 3 native samples, so each example is a
-\`2 x 7\` window. Edge samples use edge padding. Mean/std normalization is fit
-from **training rollouts only**.
+- positive inside `[causal_onset, observable_onset]`
+- negative everywhere else
+
+Clean-success rollouts are negative at every timestep.
+
+Validation and test contain failure rollouts only. Success trajectories are used
+only as extra training negatives.
+
+For a clean ablation, the following are computed from the failure-training
+rollouts and then shared by both settings:
+
+- fused progress/hop normalization
+- positive-class weight
+
+The BiLSTM seed, optimizer, learning rate, weight decay, epochs, patience,
+gradient clipping, failure train/validation/test split, and evaluation protocol
+are also identical between the two settings.
 
 ## Models
 
-The default probe compares progressively:
+Only two models are trained:
 
-1. \`linear_probe\`: weighted logistic regression;
-2. \`tiny_mlp\`: one hidden ReLU layer with 16 units;
-3. \`tiny_cnn\`: 8 learned 1D filters with kernel 3 and a position-aware readout.
+- `tiny_bilstm_h16`: one bidirectional LSTM layer, hidden 16 per direction
+- `tiny_bilstm_h32`: one bidirectional LSTM layer, hidden 32 per direction
 
-All three are implemented with NumPy and run in the existing CPU Analysis
-environment. No PyTorch/CUDA dependency is added.
+Input is the complete native sequence `T x 2`:
 
-A BiGRU is intentionally gated rather than added automatically. It is worth a
-follow-up only if the CNN repeatedly improves over the linear/MLP probes,
-indicating that learned temporal structure is helping.
+- fused progress
+- fused hop
 
-## Splits
+The output is one score per native timestep and the predicted cut is the
+rollout-global `argmax(score)`.
 
-No timestep-level split is allowed.
+The implementation uses PyTorch. No linear probe, MLP, CNN, handcrafted
+detector, extra loss, or new model family is trained in this experiment.
 
-For ordinary evaluation the script creates repeated rollout-level
-train/validation/test splits, stratified as far as the small dataset permits by
-task and failure type. Model fitting and feature normalization use train only;
-early stopping and handcrafted-baseline selection use validation only; test is
-untouched until final evaluation.
+## Success rollout selection
 
-Learning-curve subsets are nested within each split and use 10, 20, 30 (when
-available), and all train rollouts. Repeated rollout-level splits are aggregated
-with mean and variance.
+For each repeat, clean successes from tasks represented in the failure-training
+split are preferred. If none exist, the script falls back to all eligible clean
+successes.
 
-Task-held-out evaluation is also produced for tasks with at least two eligible
-failed rollouts by default. The held-out task is used only as test data.
+For task-held-out evaluation, successes from the held-out task are always
+excluded from training.
 
-## Baselines
-
-The learned heads are compared with:
-
-- best existing handcrafted first-trigger rule;
-- existing offline max-change-score changepoint baseline;
-- earliest rollout-global fused-progress argmax.
-
-Existing fused-hop analysis artifacts are reused when available. For the first
-two baselines, the candidate rule/config is selected on validation rollouts and
-then frozen for test. If compatible artifacts are missing, the script may
-recompute the existing detector sweep from saved fused-hop signals only; this is
-CPU post-processing and still does not rerun Robo-Dopamine.
+There is no timestep-level split. Rollout IDs are never shared between failure
+train/validation/test partitions.
 
 ## Metrics
 
-All localization errors are in native samples relative to the GT interval:
+The same interval-error definition is retained:
 
-- before causal onset: \`prediction - causal\`;
-- inside interval: \`0\`;
-- after observable onset: \`prediction - observable\`.
+- prediction before causal onset: `prediction - causal`
+- prediction inside the interval: `0`
+- prediction after observable onset: `prediction - observable`
 
-Reported metrics are in-interval rate, within +/-1 / +/-3 / +/-5 samples,
-before/after interval, median absolute interval error, MAE, and MSE.
+Reported metrics:
+
+- in-interval rate
+- within +/-1 / +/-3 / +/-5 samples
+- before-interval rate
+- after-interval rate
+- median absolute interval error
+- MAE
+- MSE
+
+Every repeat also reports the number of failure and clean-success training
+rollouts.
 
 ## Run
 
-From the repository root:
+Use a project-local environment that already has PyTorch. The Robo-Dopamine
+environment is the intended default:
 
 ~~~bash
 source ./project_env.sh
 
-conda_envs/LF3R-ananlyse/bin/python \
-  tools/train_robo_dopamine_localization_head.py \
-  --run-root outputs/baselines/<completed-fused-robo-run>
+"$LF3R_ROBODOPAMINE_PYTHON"   tools/train_robo_dopamine_localization_head.py   --run-root outputs/baselines/<completed-fused-robo-run>   --device auto
 ~~~
 
-To bind comparison to a specific completed handcrafted/offline analysis, add:
+`--device auto` uses CUDA when available and otherwise falls back to CPU.
 
-~~~text
---baseline-analysis-dir outputs/robo_dopamine_incremental_hop/<run>
-~~~
+Defaults preserve the current BiLSTM training setup:
 
-Default probe controls include \`--context-radius 3\`, \`--repeats 5\`,
-\`--epochs 300\`, \`--patience 35\`, and \`--min-task-test-rollouts 2\`.
+- hidden: 16 and 32
+- epochs: 300
+- patience: 35
+- learning rate: 0.003
+- weight decay: 1e-4
+- gradient clipping: 5
+- repeats: 5
 
 ## Outputs
 
-Each run writes:
+- `ablation_comparison.csv`: aggregate failure-only vs failure+success metrics
+- `ablation_delta.csv`: direct metric deltas for each hidden size
+- `per_split_metrics.csv`: repeat-level metrics and failure/success train counts
+- `per_rollout_predictions.csv`
+- `task_held_out_metrics.csv`
+- `task_held_out_summary.csv`
+- `training_records.json`: exact rollout IDs used for each training run
+- `split_manifest.json`
+- `conclusion.md`
+- `metadata.json`
 
-- \`model_comparison.csv\`
-- \`learning_curve.csv\`
-- \`per_rollout_predictions.csv\`
-- \`split_manifest.json\`
-- \`per_split_metrics.csv\`
-- \`task_held_out_metrics.csv\`
-- \`task_held_out_summary.csv\`
-- \`training_records.json\`
-- \`conclusion.md\`
-- \`metadata.json\`
-
-\`conclusion.md\` intentionally answers only this probe question: whether the
-lightweight temporal head beats the existing signal-level rules under strict
-rollout/task splits, and whether the observed learning curve still looks
-data-limited. Richer GRM hidden features are a next experiment, not part of this
-one.
+The primary signal to inspect is whether `failure_plus_success` lowers
+`before_interval_rate` without increasing late predictions or damaging
+in-interval localization.

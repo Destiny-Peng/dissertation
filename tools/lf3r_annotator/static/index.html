@@ -676,6 +676,76 @@
           <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
         </details>
 
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisBiLstmTitle">
+          <summary class="analysis-run-summary">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE BILSTM</p>
+              <h3 id="analysisBiLstmTitle">Success-negative localization ablation</h3>
+              <small>h16 / h32 · failure-only vs failure + clean success</small>
+            </div>
+            <span id="analysisBiLstmBadge" class="analysis-badge">Idle</span>
+          </summary>
+          <p class="analysis-run-help">
+            Train only the two PyTorch BiLSTM localization heads on existing saved fused progress/hop.
+            Clean successes are added only as all-negative training sequences. Robo-Dopamine is not rerun.
+          </p>
+          <form id="analysisBiLstmForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Robo-Dopamine run</span>
+                <select id="analysisBiLstmRun"><option value="">Loading compatible runs...</option></select>
+                <small class="analysis-run-field-help">Completed run with saved fused-hop outputs.</small>
+              </label>
+              <label><span>Device</span>
+                <select id="analysisBiLstmDevice">
+                  <option value="auto" selected>auto (CUDA if available)</option>
+                  <option value="cuda">cuda</option>
+                  <option value="cuda:0">cuda:0</option>
+                  <option value="cuda:1">cuda:1</option>
+                  <option value="cpu">cpu</option>
+                </select>
+              </label>
+              <label><span>Repeats</span>
+                <input id="analysisBiLstmRepeats" type="number" value="5" min="1" max="50" step="1">
+              </label>
+              <label><span>Epochs</span>
+                <input id="analysisBiLstmEpochs" type="number" value="300" min="1" max="5000" step="1">
+              </label>
+              <label><span>Patience</span>
+                <input id="analysisBiLstmPatience" type="number" value="35" min="1" max="1000" step="1">
+              </label>
+              <label><span>Learning rate</span>
+                <input id="analysisBiLstmLearningRate" type="number" value="0.003" min="0.000001" step="0.0001">
+              </label>
+              <label><span>Weight decay</span>
+                <input id="analysisBiLstmWeightDecay" type="number" value="0.0001" min="0" step="0.0001">
+              </label>
+              <label><span>Gradient clip</span>
+                <input id="analysisBiLstmGradClip" type="number" value="5" min="0.01" step="0.1">
+              </label>
+              <label><span>Output label</span>
+                <input id="analysisBiLstmOutputLabel" type="text" value="web_bilstm_success_ablation" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+            </div>
+            <p id="analysisBiLstmSelection" class="analysis-run-selection">Select a completed Robo-Dopamine run.</p>
+            <button id="analysisBiLstmRunButton" class="save-button" type="submit" disabled>
+              Train BiLSTM ablation
+            </button>
+          </form>
+          <pre id="analysisBiLstmLog" class="job-log" aria-label="Latest BiLSTM training log"></pre>
+        </details>
+
+        <section class="analysis-card analysis-result-card" aria-labelledby="analysisBiLstmResultsTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">BILSTM ABLATION RESULTS</p>
+              <h3 id="analysisBiLstmResultsTitle">Failure-only vs failure + success</h3>
+            </div>
+          </div>
+          <div id="analysisBiLstmResults" class="analysis-table-wrap"></div>
+          <div id="analysisBiLstmArtifacts" class="analysis-provenance"></div>
+        </section>
+
         <section class="analysis-card analysis-result-card" aria-labelledby="analysisHopResultsTitle">
           <div class="analysis-card-heading">
             <div>
@@ -1178,7 +1248,7 @@
   </main>
 
   <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
-  <script src="/static/workspace.js?v=procvlm-external-history-20260918" defer></script>
+  <script src="/static/workspace.js?v=bilstm-success-ablation-v1-20260921" defer></script>
 </body>
 
 </html>
