@@ -157,6 +157,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
+        label_loss_analysis = (TOOL_ROOT / "static/analysis-robo-label-loss.js").read_text(encoding="utf-8")
         server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
 
@@ -201,6 +202,26 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisHopLog",
             "analysisHopResults",
             "analysisHopArtifacts",
+            "analysisLabelLossForm",
+            "analysisLabelLossDevice",
+            "analysisLabelLossTauEvent",
+            "analysisLabelLossRepeats",
+            "analysisLabelLossEpochs",
+            "analysisLabelLossPatience",
+            "analysisLabelLossLearningRate",
+            "analysisLabelLossWeightDecay",
+            "analysisLabelLossGradClip",
+            "analysisLabelLossDistanceWeight",
+            "analysisLabelLossRankingWeight",
+            "analysisLabelLossRankingMargin",
+            "analysisLabelLossAsymmetric",
+            "analysisLabelLossOutputLabel",
+            "analysisLabelLossRunButton",
+            "analysisLabelLossBadge",
+            "analysisLabelLossSelection",
+            "analysisLabelLossLog",
+            "analysisLabelLossResults",
+            "analysisLabelLossArtifacts",
             "analysisSnapshotMethod",
             "analysisSnapshotOutcome",
             "analysisSnapshotTask",
@@ -268,6 +289,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             self.assertIn('id="' + element_id + '"', html)
         self.assertIn('/static/workspace.js', html)
         self.assertIn('/static/analysis-robo-hop.js', workspace)
+        self.assertIn('/static/analysis-robo-label-loss.js', workspace)
         for marker in [
             "/api/settings",
             "/api/analysis",
@@ -303,6 +325,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('multiple size="5"', html)
         for endpoint in [
             'path == "/api/settings"', 'path == "/api/analysis"',
+            'path == "/api/analysis/robo-label-loss"',
             'path == "/api/baselines/runs"', 'path == "/api/baselines/result-coverage"', '"/api/baselines/run-batch"',
             '"/api/analysis/run"', 'analysis-jobs', 'rollout-jobs', '"/api/rollouts/generate"', '"/api/jobs"', 'worker_assignments', 'parallel_workers', 'CHANGEPOINT_TABLE_FILES', 'changepoint_summary.csv', 'comparison_with_full_136_20260827', 'primary_analysis_type', 'event_triggered_available', 'EVENT_TRIGGERED_TABLE_FILES', 'event_triggered_curves.csv', 'os.replace(temp_name, self.path)'
         ]:
@@ -320,6 +343,11 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "localization_summary",
             "ROBO_HOP_REQUIRED_FILES",
             "ROBO_HOP_EXTENDED_FILES",
+            "ROBO_LABEL_LOSS_REQUIRED_FILES",
+            "start_robo_label_loss_run",
+            "robo_bilstm_label_loss_ablation",
+            "robo_label_loss_response",
+            "robo_label_loss_artifact_path",
             "start_robo_hop_run",
             "robo_hop_comparison",
             "fused_scope_rollout_count",
@@ -374,6 +402,23 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "workspaceLoadAnalysis(true)",
         ]:
             self.assertIn(marker, hop_analysis)
+        for marker in [
+            'analysis_kind: "robo_bilstm_label_loss_ablation"',
+            "/api/analysis/run",
+            "/api/analysis/robo-label-loss",
+            "analysisLabelLossRunButton",
+            "analysisLabelLossTauEvent",
+            "analysisLabelLossDistanceWeight",
+            "analysisLabelLossRankingWeight",
+            "analysisLabelLossRankingMargin",
+            "label_ablation",
+            "loss_ablation",
+            "first_event_in_interval_rate_mean",
+            "pseudo_no_event_frame0_rollout_n",
+            "recoverLatestJob",
+        ]:
+            self.assertIn(marker, label_loss_analysis)
+        self.assertNotIn("workspaceLoadBaselineRuns", label_loss_analysis)
         self.assertNotIn("modeOrder", hop_analysis)
         self.assertNotIn("pairwise_overlap", hop_analysis)
         for obsolete in [

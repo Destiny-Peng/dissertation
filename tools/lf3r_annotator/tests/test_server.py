@@ -1320,6 +1320,192 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertTrue(analysis["available"])
         self.assertEqual(analysis["source"]["selection_count"], 1)
 
+    def test_label_loss_ablation_web_job_and_snapshot(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.analysis_jobs.robo_python = Path(sys.executable)
+        script = self.root / "tools" / "train_robo_dopamine_label_loss_ablation.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import csv
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', type=Path, required=True)
+args = parser.parse_known_args()[0]
+out = args.output_dir
+out.mkdir(parents=True, exist_ok=True)
+
+metadata = {
+    'analysis': 'robo_dopamine_bilstm_label_loss_ablation',
+    'generated_at': '2026-09-21T00:00:00+00:00',
+    'source_root': 'outputs/baselines',
+    'selection_mode': 'latest_usable_signal_per_rollout',
+}
+(out / 'metadata.json').write_text(json.dumps(metadata), encoding='utf-8')
+
+label_fields = [
+    'label_config', 'loss', 'repeat_n', 'in_interval_rate_mean',
+    'first_event_in_interval_rate_mean', 'within_1_mean', 'within_3_mean',
+    'within_5_mean', 'before_interval_rate_mean', 'after_interval_rate_mean',
+    'median_absolute_interval_error_samples_mean', 'mae_samples_mean',
+    'mse_samples_mean'
+]
+with (out / 'label_ablation.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=label_fields)
+    writer.writeheader()
+    writer.writerow({
+        'label_config': 'hard_weighted_interval',
+        'loss': 'bce',
+        'repeat_n': 1,
+        'in_interval_rate_mean': 0.5,
+        'first_event_in_interval_rate_mean': 0.5,
+        'within_1_mean': 0.5,
+        'within_3_mean': 1.0,
+        'within_5_mean': 1.0,
+        'before_interval_rate_mean': 0.25,
+        'after_interval_rate_mean': 0.25,
+        'median_absolute_interval_error_samples_mean': 1.0,
+        'mae_samples_mean': 1.0,
+        'mse_samples_mean': 2.0,
+    })
+with (out / 'loss_ablation.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=label_fields)
+    writer.writeheader()
+    writer.writerow({
+        'label_config': 'gaussian_sigma_2',
+        'loss': 'temporal_softmax_ce',
+        'repeat_n': 1,
+        'in_interval_rate_mean': 0.75,
+        'first_event_in_interval_rate_mean': 0.5,
+        'within_1_mean': 0.75,
+        'within_3_mean': 1.0,
+        'within_5_mean': 1.0,
+        'before_interval_rate_mean': 0.0,
+        'after_interval_rate_mean': 0.25,
+        'median_absolute_interval_error_samples_mean': 0.0,
+        'mae_samples_mean': 0.5,
+        'mse_samples_mean': 1.0,
+    })
+
+(out / 'per_split_metrics.csv').write_text(
+    'split_id,label_config,loss,in_interval_rate\nseed17,gaussian_sigma_2,temporal_softmax_ce,0.75\n',
+    encoding='utf-8'
+)
+(out / 'per_rollout_predictions.csv').write_text(
+    'rollout_id,predicted_index,in_interval\nsample-rollout,0,true\n',
+    encoding='utf-8'
+)
+(out / 'dataset_targets.csv').write_text(
+    'rollout_id,event_count,pseudo_event_n\nsample-rollout,1,1\n',
+    encoding='utf-8'
+)
+(out / 'dataset_target_summary.json').write_text(json.dumps({
+    'failure_rollout_n': 4,
+    'annotated_failure_event_n': 5,
+    'multi_event_rollout_n': 1,
+    'pseudo_no_event_frame0_rollout_n': 1,
+    'tau_event_native_samples': 20,
+}), encoding='utf-8')
+(out / 'training_records.json').write_text('[]', encoding='utf-8')
+(out / 'split_manifest.json').write_text(json.dumps({
+    'random_splits': [{'split_id': 'seed17'}]
+}), encoding='utf-8')
+(out / 'best_configuration.json').write_text(json.dumps({
+    'best_label': {
+        'label_config': 'gaussian_sigma_2',
+        'in_interval_rate_mean': 0.75,
+        'mae_samples_mean': 0.5,
+    },
+    'best_loss': {
+        'label_config': 'gaussian_sigma_2',
+        'loss': 'temporal_softmax_ce',
+        'in_interval_rate_mean': 0.75,
+        'mae_samples_mean': 0.5,
+    },
+    'asymmetric_followup_ran': False,
+}), encoding='utf-8')
+(out / 'best_configuration.md').write_text(
+    '# fake best configuration\n',
+    encoding='utf-8'
+)
+print('fake label loss ablation complete')
+""",
+            encoding="utf-8",
+        )
+
+        with self.request(
+            "/api/analysis/run",
+            {
+                "analysis_kind": "robo_bilstm_label_loss_ablation",
+                "output_label": "web_test_label_loss",
+                "device": "cpu",
+                "repeats": 1,
+                "epochs": 2,
+                "patience": 1,
+                "learning_rate": 0.003,
+                "weight_decay": 0.0001,
+                "grad_clip": 5.0,
+                "tau_event": 20.0,
+                "distance_weight": 1.0,
+                "ranking_weight": 1.0,
+                "ranking_margin": 1.0,
+                "run_asymmetric_if_soft_improves": True,
+            },
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+
+        self.assertEqual(
+            job["analysis_kind"],
+            "robo_bilstm_label_loss_ablation",
+        )
+        self.assertEqual(job["parameters"]["model"], "tiny_bilstm_h16")
+        self.assertEqual(job["parameters"]["training_population"], "failure_only")
+        self.assertEqual(job["parameters"]["tau_event"], 20.0)
+        self.assertIn("--tau-event", job["command"])
+        self.assertIn("--run-asymmetric-if-soft-improves", job["command"])
+
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        self.assertIn(
+            "robo_dopamine_label_loss_ablation",
+            final["output_dir"],
+        )
+
+        with self.request("/api/analysis/robo-label-loss") as response:
+            snapshot = json.load(response)["label_loss"]
+        self.assertTrue(snapshot["available"])
+        self.assertEqual(len(snapshot["label_ablation"]), 1)
+        self.assertEqual(len(snapshot["loss_ablation"]), 1)
+        self.assertEqual(
+            snapshot["dataset_summary"]["pseudo_no_event_frame0_rollout_n"],
+            1,
+        )
+        self.assertEqual(
+            snapshot["best_configuration"]["best_loss"]["loss"],
+            "temporal_softmax_ce",
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "loss_ablation.csv"
+                for item in snapshot["artifacts"]
+            )
+        )
+
+        with self.request(
+            "/api/analysis/robo-label-loss/artifacts/loss_ablation.csv"
+        ) as response:
+            artifact_text = response.read().decode("utf-8")
+        self.assertIn("temporal_softmax_ce", artifact_text)
+
+        with self.request(
+            "/api/analysis-jobs/" + job["job_id"] + "/log?tail=20"
+        ) as response:
+            log = json.load(response)["log"]
+        self.assertIn("fake label loss ablation complete", log["text"])
+
     def test_robo_hop_analysis_uses_fused_saved_output_only(self) -> None:
         self.install_fake_robo_hop_analyzer()
         roots = self.seed_analysis_runs()

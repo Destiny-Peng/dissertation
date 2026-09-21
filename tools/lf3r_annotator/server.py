@@ -223,6 +223,19 @@ ROBO_LOCALIZATION_HEAD_REQUIRED_FILES = (
     "split_manifest.json",
     "conclusion.md",
 )
+ROBO_LABEL_LOSS_REQUIRED_FILES = (
+    "metadata.json",
+    "label_ablation.csv",
+    "loss_ablation.csv",
+    "per_split_metrics.csv",
+    "per_rollout_predictions.csv",
+    "dataset_targets.csv",
+    "dataset_target_summary.json",
+    "training_records.json",
+    "split_manifest.json",
+    "best_configuration.json",
+    "best_configuration.md",
+)
 
 ROBO_HOP_EXTENDED_FILES = (
     "no_event_failure_results.csv",
@@ -719,6 +732,9 @@ class AnalysisService:
         )
         self.robo_localization_head_root = (
             self.project_root / "outputs" / "robo_dopamine_localization_head"
+        )
+        self.robo_label_loss_root = (
+            self.project_root / "outputs" / "robo_dopamine_label_loss_ablation"
         )
 
     def _relative(self, path: Path) -> str:
@@ -2053,6 +2069,87 @@ class AnalysisService:
         if name not in ROBO_LOCALIZATION_HEAD_REQUIRED_FILES:
             raise ValidationError("Unsupported localization-head artifact")
         selected = self._latest_robo_localization_head_snapshot()
+        if selected is None:
+            raise FileNotFoundError(name)
+        directory, _metadata = selected
+        path = (directory / name).resolve()
+        path.relative_to(directory.resolve())
+        if not path.is_file():
+            raise FileNotFoundError(name)
+        return path
+
+    def _latest_robo_label_loss_snapshot(
+        self,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        root = self.robo_label_loss_root
+        if not root.is_dir():
+            return None
+        candidates: list[tuple[float, Path, dict[str, Any]]] = []
+        for metadata_path in root.rglob("metadata.json"):
+            directory = metadata_path.parent
+            if not all(
+                (directory / name).is_file()
+                for name in ROBO_LABEL_LOSS_REQUIRED_FILES
+            ):
+                continue
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if metadata.get("analysis") != "robo_dopamine_bilstm_label_loss_ablation":
+                continue
+            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+        if not candidates:
+            return None
+        _, directory, metadata = max(candidates, key=lambda item: item[0])
+        return directory, metadata
+
+    def robo_label_loss_response(self) -> dict[str, Any]:
+        selected = self._latest_robo_label_loss_snapshot()
+        if selected is None:
+            return {
+                "available": False,
+                "message": "No completed BiLSTM label/loss ablation snapshot yet.",
+            }
+        directory, metadata = selected
+        summary_path = directory / "dataset_target_summary.json"
+        best_path = directory / "best_configuration.json"
+        try:
+            dataset_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            dataset_summary = {}
+        try:
+            best_configuration = json.loads(best_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            best_configuration = {}
+        return {
+            "available": True,
+            "source": {
+                "directory": self._relative(directory),
+                "generated_at": metadata.get("generated_at"),
+                "source_root": metadata.get("source_root"),
+                "selection_mode": metadata.get("selection_mode"),
+            },
+            "metadata": metadata,
+            "dataset_summary": dataset_summary,
+            "best_configuration": best_configuration,
+            "label_ablation": self._read_csv(directory / "label_ablation.csv"),
+            "loss_ablation": self._read_csv(directory / "loss_ablation.csv"),
+            "per_split": self._read_csv(directory / "per_split_metrics.csv"),
+            "artifacts": [
+                {
+                    "name": name,
+                    "url": "/api/analysis/robo-label-loss/artifacts/" + name,
+                }
+                for name in ROBO_LABEL_LOSS_REQUIRED_FILES
+                if (directory / name).is_file()
+            ],
+        }
+
+    def robo_label_loss_artifact_path(self, name: str) -> Path:
+        if name not in ROBO_LABEL_LOSS_REQUIRED_FILES:
+            raise ValidationError("Unsupported label/loss ablation artifact")
+        selected = self._latest_robo_label_loss_snapshot()
         if selected is None:
             raise FileNotFoundError(name)
         directory, _metadata = selected
@@ -4591,6 +4688,9 @@ class AnalysisJobService:
         self.robo_localization_head_root = (
             self.project_root / "outputs" / "robo_dopamine_localization_head"
         )
+        self.robo_label_loss_root = (
+            self.project_root / "outputs" / "robo_dopamine_label_loss_ablation"
+        )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
             analysis_python
@@ -5110,11 +5210,194 @@ class AnalysisJobService:
             raise
         return dict(job)
 
+    def start_robo_label_loss_run(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        allowed_fields = {
+            "analysis_kind", "output_label", "device", "repeats", "epochs",
+            "patience", "learning_rate", "weight_decay", "grad_clip",
+            "tau_event", "distance_weight", "ranking_weight", "ranking_margin",
+            "run_asymmetric_if_soft_improves",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise ValidationError(
+                "Unknown label/loss ablation field(s): "
+                + ", ".join(sorted(unknown_fields))
+            )
+        if not self.robo_python.is_file() or not os.access(self.robo_python, os.X_OK):
+            raise AnalysisEnvironmentError(
+                "Robo-Dopamine PyTorch Python is unavailable: "
+                + self._relative(self.robo_python)
+            )
+        pool_root = self.baselines.baseline_root
+        if not pool_root.is_dir():
+            raise ValidationError("Baseline output pool does not exist")
+
+        label = str(
+            payload.get("output_label") or "web_bilstm_label_loss"
+        ).strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
+            raise ValidationError(
+                "output_label must contain only letters, numbers, dot, underscore, or hyphen"
+            )
+        device = str(payload.get("device") or "auto").strip()
+        if not re.fullmatch(r"(auto|cpu|cuda(?::\d+)?)", device):
+            raise ValidationError("device must be auto, cpu, cuda, or cuda:N")
+        repeats = self._integer(payload.get("repeats", 5), "repeats", 1, 50)
+        epochs = self._integer(payload.get("epochs", 300), "epochs", 1, 5000)
+        patience = self._integer(payload.get("patience", 35), "patience", 1, 1000)
+        try:
+            learning_rate = float(payload.get("learning_rate", 0.003))
+            weight_decay = float(payload.get("weight_decay", 1e-4))
+            grad_clip = float(payload.get("grad_clip", 5.0))
+            tau_event = float(payload.get("tau_event", 20.0))
+            distance_weight = float(payload.get("distance_weight", 1.0))
+            ranking_weight = float(payload.get("ranking_weight", 1.0))
+            ranking_margin = float(payload.get("ranking_margin", 1.0))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Label/loss numeric parameters are invalid") from exc
+        numeric = {
+            "learning_rate": learning_rate,
+            "weight_decay": weight_decay,
+            "grad_clip": grad_clip,
+            "tau_event": tau_event,
+            "distance_weight": distance_weight,
+            "ranking_weight": ranking_weight,
+            "ranking_margin": ranking_margin,
+        }
+        if any(not math.isfinite(value) for value in numeric.values()):
+            raise ValidationError("Label/loss numeric parameters must be finite")
+        if learning_rate <= 0 or grad_clip <= 0 or tau_event <= 0:
+            raise ValidationError(
+                "learning_rate, grad_clip, and tau_event must be > 0"
+            )
+        if weight_decay < 0 or distance_weight < 0 or ranking_weight < 0 or ranking_margin < 0:
+            raise ValidationError(
+                "weight_decay and loss weights/margin must be >= 0"
+            )
+        run_asymmetric = payload.get("run_asymmetric_if_soft_improves", True)
+        if not isinstance(run_asymmetric, bool):
+            raise ValidationError(
+                "run_asymmetric_if_soft_improves must be boolean"
+            )
+
+        script = (
+            self.project_root
+            / "tools"
+            / "train_robo_dopamine_label_loss_ablation.py"
+        )
+        if not script.is_file():
+            raise ValidationError("BiLSTM label/loss ablation script is missing")
+
+        job_id = "analysis-label-loss-" + uuid.uuid4().hex[:12]
+        workspace = self.robo_label_loss_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.robo_label_loss_root / (
+            "web_"
+            + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_"
+            + label
+            + "_"
+            + job_id[-8:]
+        )
+        command = [
+            str(self.robo_python),
+            str(script),
+            "--run-pool-root", str(pool_root),
+            "--manifest", str(self.manifest_path),
+            "--annotations", str(self.annotation_root / "records"),
+            "--output-dir", str(output_temp),
+            "--device", device,
+            "--repeats", str(repeats),
+            "--epochs", str(epochs),
+            "--patience", str(patience),
+            "--learning-rate", str(learning_rate),
+            "--weight-decay", str(weight_decay),
+            "--grad-clip", str(grad_clip),
+            "--tau-event", str(tau_event),
+            "--distance-weight", str(distance_weight),
+            "--ranking-weight", str(ranking_weight),
+            "--ranking-margin", str(ranking_margin),
+        ]
+        command.append(
+            "--run-asymmetric-if-soft-improves"
+            if run_asymmetric
+            else "--no-run-asymmetric-if-soft-improves"
+        )
+
+        self.robo_label_loss_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        (self.robo_label_loss_root / ".web_jobs").mkdir(
+            parents=True, exist_ok=True
+        )
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            workspace.mkdir(parents=True, exist_ok=False)
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "robo_bilstm_label_loss_ablation",
+                "status": "queued",
+                "selected_rollouts": 0,
+                "runs": {
+                    "robo_dopamine_pool": self._relative(pool_root)
+                },
+                "parameters": {
+                    "device": device,
+                    "repeats": repeats,
+                    "epochs": epochs,
+                    "patience": patience,
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "grad_clip": grad_clip,
+                    "tau_event": tau_event,
+                    "distance_weight": distance_weight,
+                    "ranking_weight": ranking_weight,
+                    "ranking_margin": ranking_margin,
+                    "run_asymmetric_if_soft_improves": run_asymmetric,
+                    "result_selection": "latest_usable_fused_per_rollout",
+                    "run_pool_root": self._relative(pool_root),
+                    "model": "tiny_bilstm_h16",
+                    "training_population": "failure_only",
+                },
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.robo_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job,
+                command,
+                self.log_root / f"{job_id}.log",
+                interpreter=str(self.robo_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
         if payload.get("analysis_kind") == "robo_bilstm_success_ablation":
             return self.start_robo_localization_head_run(payload)
+        if payload.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
+            return self.start_robo_label_loss_run(payload)
         if payload.get("analysis_kind") in {
             "robo_incremental_hop",
             "robo_hop_comparison",
@@ -5267,6 +5550,11 @@ class AnalysisJobService:
                     missing_message = (
                         "BiLSTM localization-head training completed without all required artifacts"
                     )
+                elif job.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
+                    required = ROBO_LABEL_LOSS_REQUIRED_FILES
+                    missing_message = (
+                        "BiLSTM label/loss ablation completed without all required artifacts"
+                    )
                 elif job.get("analysis_kind") in {
                     "robo_incremental_hop",
                     "robo_hop_comparison",
@@ -5299,6 +5587,8 @@ class AnalysisJobService:
                 job["status"] = "failed"
                 if job.get("analysis_kind") == "robo_bilstm_success_ablation":
                     label = "BiLSTM localization-head training"
+                elif job.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
+                    label = "BiLSTM label/loss ablation"
                 else:
                     label = (
                         "Robo-Dopamine hop comparison"
@@ -5974,6 +6264,28 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     self.json_error(
                         HTTPStatus.NOT_FOUND,
                         "Localization-head artifact is unavailable",
+                    )
+                    return
+                self.file_response(artifact)
+                return
+            if path == "/api/analysis/robo-label-loss":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {
+                        "label_loss": (
+                            self.app.analysis.robo_label_loss_response()
+                        )
+                    },
+                )
+                return
+            if path.startswith("/api/analysis/robo-label-loss/artifacts/"):
+                name = path.rsplit("/", 1)[-1]
+                try:
+                    artifact = self.app.analysis.robo_label_loss_artifact_path(name)
+                except FileNotFoundError:
+                    self.json_error(
+                        HTTPStatus.NOT_FOUND,
+                        "Label/loss ablation artifact is unavailable",
                     )
                     return
                 self.file_response(artifact)
