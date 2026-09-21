@@ -320,6 +320,12 @@
               <option value="subtask_b">B</option>
             </select>
           </label>
+          <label data-cli-help="baseline.result_filter"><span>Existing result filter</span>
+            <select id="baselineBatchResultFilter">
+              <option value="all" selected>All matching rollouts</option>
+              <option value="missing_valid">No valid baseline run result</option>
+            </select>
+          </label>
           <label data-cli-help="baseline.gpu"><span>GPU IDs</span><input id="baselineBatchGpu" type="text"
               inputmode="numeric" value="0" maxlength="31"></label>
           <label data-cli-help="baseline.vllm_free_memory_fraction"><span>Free-memory fraction</span><input
@@ -464,6 +470,10 @@
           <label data-cli-help="rollout.task_suite"><span>Task suite / output</span><select id="rolloutGenerationSuite">
               <option value="libero_10">LIBERO-10 natural (existing output)</option>
               <option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option>
+            </select></label>
+          <label data-cli-help="rollout.video_view_mode"><span>Review video</span><select id="rolloutGenerationVideoViewMode">
+              <option value="single_view" selected>Single view (canonical)</option>
+              <option value="libero_three_view">LIBERO 3-view (agent + side + wrist)</option>
             </select></label>
           <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input
               id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
