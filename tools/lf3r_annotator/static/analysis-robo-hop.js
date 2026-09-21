@@ -464,7 +464,9 @@
     var snapshot = window.workspaceState && workspaceState.analysisSnapshot;
     var hop = snapshot && (snapshot.robo_hop || snapshot.robo_incremental_hop);
     if (!hop || !hop.available) {
-      host.innerHTML = '<p class="analysis-empty">No completed Robo-Dopamine fused-hop failure analysis snapshot yet.</p>';
+      host.innerHTML = '<p class="analysis-empty">' + esc(
+        (hop && hop.message) || "No completed Robo-Dopamine fused-hop failure analysis snapshot yet."
+      ) + '</p>';
       artifacts.innerHTML = "";
       if (!activeJob()) badge("idle");
       return;
