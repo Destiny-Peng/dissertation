@@ -17,6 +17,12 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn('server.BaselineService._run_candidates = _progressive_run_candidates', source)
         self.assertIn('server.BaselineService._read_method = _read_only_completed_progressive_rollout', source)
 
+        base_source = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
+        self.assertIn("def _valid_result_rollout_ids(", base_source)
+        self.assertIn("for run_path, metadata in self._run_candidates(baseline):", base_source)
+        self.assertIn("completed_ids = run_rollout_ids(run_path)", base_source)
+        self.assertIn("self._read_method(", base_source)
+
     def test_frontend_refreshes_catalog_when_completed_count_advances(self) -> None:
         script = (TOOL_ROOT / "static/progressive-baseline-results.js").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
