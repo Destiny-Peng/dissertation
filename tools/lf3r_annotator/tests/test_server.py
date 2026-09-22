@@ -1444,6 +1444,7 @@ print('fake label loss ablation complete')
                 "repeats": 1,
                 "epochs": 2,
                 "patience": 1,
+                "batch_size": 32,
                 "learning_rate": 0.003,
                 "weight_decay": 0.0001,
                 "grad_clip": 5.0,
@@ -1463,7 +1464,11 @@ print('fake label loss ablation complete')
         )
         self.assertEqual(job["parameters"]["model"], "tiny_bilstm_h16")
         self.assertEqual(job["parameters"]["training_population"], "failure_only")
+        self.assertEqual(job["parameters"]["batch_size"], 32)
         self.assertEqual(job["parameters"]["tau_event"], 20.0)
+        self.assertIn("--batch-size", job["command"])
+        batch_index = job["command"].index("--batch-size")
+        self.assertEqual(job["command"][batch_index + 1], "32")
         self.assertIn("--tau-event", job["command"])
         self.assertIn("--run-asymmetric-if-soft-improves", job["command"])
 
