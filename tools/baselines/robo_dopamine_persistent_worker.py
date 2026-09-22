@@ -654,6 +654,10 @@ def run_persistent_jobs(
     )
     init_started = time.perf_counter()
     try:
+        if args.localization_checkpoint is not None:
+            # Validate and cache the tiny CPU head before paying the vLLM
+            # initialization cost.
+            _load_localization_checkpoint(args.localization_checkpoint)
         model = initialize_model(args)
     except BaseException as error:
         init_seconds = time.perf_counter() - init_started
@@ -732,7 +736,17 @@ def run_persistent_jobs(
                 result_metadata = {
                     key: value
                     for key, value in returned.items()
-                    if key in {"official_output_dir", "raw_model_output", "worker_result_path", "eval_modes", "perspective_outputs", "fused_model_output", "mode_seconds", "fusion"}
+                    if key in {
+                        "official_output_dir",
+                        "raw_model_output",
+                        "worker_result_path",
+                        "eval_modes",
+                        "perspective_outputs",
+                        "fused_model_output",
+                        "mode_seconds",
+                        "fusion",
+                        "localization_prediction",
+                    }
                 }
             prediction_value = result_metadata.get("raw_model_output")
             prediction = (
