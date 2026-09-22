@@ -5564,6 +5564,141 @@ class AnalysisJobService:
         rows.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
         return {"available": bool(rows), "runs": rows[:50]}
 
+    def localization_result_detail(self, run_name: str) -> dict[str, Any]:
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", run_name):
+            raise ValidationError("Invalid localization run id")
+        directory = self.localization_root / run_name
+        metadata_path = directory / "metadata.json"
+        summary_path = directory / "summary.csv"
+        manifest_path = directory / "experiment_manifest.json"
+        if not metadata_path.is_file() or not summary_path.is_file():
+            raise FileNotFoundError(run_name)
+
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValidationError("Localization metadata is unreadable") from exc
+
+        manifest: dict[str, Any] = {"stages": []}
+        if manifest_path.is_file():
+            try:
+                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    manifest = loaded
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        best_by_stage: dict[str, str] = {}
+        stage_meta: dict[str, dict[str, Any]] = {}
+        for raw_stage in manifest.get("stages") or []:
+            if not isinstance(raw_stage, dict):
+                continue
+            stage_name = str(raw_stage.get("stage") or "")
+            if not stage_name:
+                continue
+            best_id = str(raw_stage.get("best_config_id") or "")
+            if best_id:
+                best_by_stage[stage_name] = best_id
+            stage_meta[stage_name] = {
+                "stage": stage_name,
+                "best_config_id": best_id or None,
+                "selector": raw_stage.get("selector") or {},
+                "configuration_count": raw_stage.get("configuration_count"),
+                "parallel_workers": raw_stage.get("parallel_workers"),
+            }
+
+        numeric_fields = {
+            "repeat_n",
+            "in_interval_rate_mean", "in_interval_rate_variance",
+            "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance",
+            "within_1_mean", "within_1_variance",
+            "within_3_mean", "within_3_variance",
+            "within_5_mean", "within_5_variance",
+            "before_interval_rate_mean", "before_interval_rate_variance",
+            "after_interval_rate_mean", "after_interval_rate_variance",
+            "median_absolute_interval_error_samples_mean",
+            "median_absolute_interval_error_samples_variance",
+            "mae_samples_mean", "mae_samples_variance",
+            "mse_samples_mean", "mse_samples_variance",
+            "target.sigma_pre", "target.sigma_post", "target.tau_event",
+            "model.hidden", "loss.distance_weight", "loss.ranking_weight",
+            "loss.ranking_margin", "training.batch_size",
+            "training.parallel_workers", "training.learning_rate",
+            "training.weight_decay", "training.grad_clip",
+            "training.epochs", "training.patience",
+        }
+
+        rows: list[dict[str, Any]] = []
+        with summary_path.open("r", newline="", encoding="utf-8") as handle:
+            for raw in csv.DictReader(handle):
+                row: dict[str, Any] = dict(raw)
+                for field in numeric_fields:
+                    value = row.get(field)
+                    if value in (None, ""):
+                        row[field] = None
+                        continue
+                    try:
+                        number = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    row[field] = int(number) if number.is_integer() else number
+
+                stage = str(row.get("stage") or "main")
+                config_id = str(row.get("config_id") or "")
+                target_kind = str(row.get("target.kind") or "")
+                loss_name = str(row.get("loss.name") or "")
+                hidden = row.get("model.hidden")
+                sigma_pre = row.get("target.sigma_pre")
+                sigma_post = row.get("target.sigma_post")
+                label_parts = [config_id]
+                if target_kind:
+                    target_label = target_kind
+                    if target_kind == "gaussian" and sigma_pre is not None and sigma_post is not None:
+                        target_label += f" σ={sigma_pre}/{sigma_post}"
+                    label_parts.append(target_label)
+                if loss_name:
+                    label_parts.append(loss_name)
+                if hidden is not None:
+                    label_parts.append(f"h{hidden}")
+                row["label"] = " · ".join(part for part in label_parts if part)
+                row["best"] = best_by_stage.get(stage) == config_id
+                rows.append(row)
+
+        stage_order: list[str] = []
+        for raw_stage in manifest.get("stages") or []:
+            if isinstance(raw_stage, dict):
+                stage_name = str(raw_stage.get("stage") or "")
+                if stage_name and stage_name not in stage_order:
+                    stage_order.append(stage_name)
+        for row in rows:
+            stage_name = str(row.get("stage") or "main")
+            if stage_name not in stage_order:
+                stage_order.append(stage_name)
+
+        stages = []
+        for stage_name in stage_order:
+            stage_rows = [row for row in rows if str(row.get("stage") or "main") == stage_name]
+            meta = stage_meta.get(stage_name, {
+                "stage": stage_name,
+                "best_config_id": best_by_stage.get(stage_name),
+                "selector": {},
+                "configuration_count": len(stage_rows),
+                "parallel_workers": None,
+            })
+            stages.append({**meta, "rows": stage_rows})
+
+        return {
+            "run_id": run_name,
+            "name": metadata.get("name"),
+            "generated_at": metadata.get("generated_at"),
+            "configuration_count": metadata.get("configuration_count"),
+            "training_run_count": metadata.get("training_run_count"),
+            "checkpoint_count": metadata.get("checkpoint_count"),
+            "all_failure_prediction_count": metadata.get("all_failure_prediction_count"),
+            "challenge_available": (directory / "all_failure_predictions.csv").is_file(),
+            "stages": stages,
+        }
+
     def localization_challenge_sets(self) -> list[dict[str, Any]]:
         self.localization_challenge_root.mkdir(parents=True, exist_ok=True)
         rows: list[dict[str, Any]] = []
