@@ -5549,6 +5549,11 @@ class AnalysisJobService:
         name = str(spec.get("name") or "localization_experiment").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name):
             raise ValidationError("Invalid experiment name")
+        if not self.robo_python.is_file() or not os.access(self.robo_python, os.X_OK):
+            raise AnalysisEnvironmentError(
+                "Robo-Dopamine PyTorch Python is unavailable: "
+                + self._relative(self.robo_python)
+            )
         pool_root = self.baselines.baseline_root
         if not pool_root.is_dir():
             raise ValidationError("Baseline output pool does not exist")
