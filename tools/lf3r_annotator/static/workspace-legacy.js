@@ -133,7 +133,7 @@ var workspaceState = {
     event_group: "terminal_failure",
     scale: "all"
   },
-  analysisTab: "overview",
+  analysisTab: "localization",
   analysisDetails: {
     kind: "changepoint_events",
     page: 1,
@@ -3786,16 +3786,16 @@ function workspaceParseRoute() {
   var parts = raw.split("/");
   var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
   if (view === "review") view = "annotate";
-  var analysisTabs = ["overview", "comparison", "failures", "events", "signals", "archive"];
-  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "overview";
+  var analysisTabs = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
+  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "localization";
   var id = ["annotate", "results"].indexOf(view) !== -1 && parts.length > 1 && parts[1]
     ? decodeURIComponent(parts.slice(1).join("/")) : null;
   return { view: view, id: id, analysisTab: analysisTab, hash: hash };
 }
 
 function workspaceRenderAnalysisTabs(tab) {
-  var allowed = ["overview", "comparison", "failures", "events", "signals", "archive"];
-  if (allowed.indexOf(tab) === -1) tab = "overview";
+  var allowed = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
+  if (allowed.indexOf(tab) === -1) tab = "localization";
   workspaceState.analysisTab = tab;
   document.querySelectorAll("[data-analysis-panel]").forEach(function (panel) {
     panel.classList.toggle("hidden", panel.dataset.analysisPanel !== tab);
@@ -3833,11 +3833,15 @@ function workspaceRenderRoute() {
     }
   } else if (route.view === "analysis") {
     workspaceRenderAnalysisTabs(route.analysisTab);
-    workspaceRenderLiveAnalysis();
-    workspaceRenderAnalysisRunPanel();
-    workspaceLoadAnalysisEnvironment();
-    workspaceLoadAnalysis(false);
-    workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
+    if (route.analysisTab === "localization") {
+      if (typeof window.localizationLabRefresh === "function") window.localizationLabRefresh();
+    } else {
+      workspaceRenderLiveAnalysis();
+      workspaceRenderAnalysisRunPanel();
+      workspaceLoadAnalysisEnvironment();
+      workspaceLoadAnalysis(false);
+      workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
+    }
   } else if (route.view === "settings") {
     workspaceLoadSettings();
   }
