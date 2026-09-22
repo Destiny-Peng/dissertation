@@ -136,9 +136,11 @@
     var row = document.createElement("div");
     row.className = "localization-sweep-row";
     row.innerHTML =
-      '<select data-sweep-path>' + paramOptions(definition.path) + '</select>'
-      + '<input data-sweep-values type="text" value="' + esc(formatValues(definition.values)) + '">'
-      + '<button type="button" class="ghost-button" data-remove-sweep>Remove</button>';
+      '<label class="localization-control"><span>Parameter</span>'
+      + '<select data-sweep-path>' + paramOptions(definition.path) + '</select></label>'
+      + '<label class="localization-control"><span>Values</span>'
+      + '<input data-sweep-values type="text" value="' + esc(formatValues(definition.values)) + '"></label>'
+      + '<button type="button" class="ghost-button localization-sweep-remove" data-remove-sweep>Remove</button>';
     row.querySelector("[data-remove-sweep]").addEventListener("click", function () {
       row.remove();
       refreshPreview();
