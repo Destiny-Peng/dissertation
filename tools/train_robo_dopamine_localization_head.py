@@ -38,6 +38,8 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
+from robo_localization_head import core as localization_core
+
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -466,120 +468,64 @@ def train_bilstm(
     learning_rate: float,
     weight_decay: float,
     grad_clip: float,
+    batch_size: int,
     device: torch.device,
     progress_label: str,
-) -> tuple[TinyBiLSTM, dict[str, Any]]:
-    set_seed(seed)
-    model = TinyBiLSTM(hidden).to(device)
-    weight_params = [
-        parameter
-        for name, parameter in model.named_parameters()
-        if "bias" not in name
-    ]
-    bias_params = [
-        parameter
-        for name, parameter in model.named_parameters()
-        if "bias" in name
-    ]
-    optimizer = torch.optim.Adam(
-        [
-            {"params": weight_params, "weight_decay": weight_decay},
-            {"params": bias_params, "weight_decay": 0.0},
-        ],
-        lr=learning_rate,
+) -> tuple[localization_core.TinyBiLSTM, dict[str, Any]]:
+    """Run success-negative training on the shared minibatch trainer."""
+    overlap = set(failure_dataset) & set(success_dataset)
+    if overlap:
+        raise ValueError(f"failure/success rollout ID overlap: {sorted(overlap)[:3]}")
+    dataset = {**failure_dataset, **success_dataset}
+    train_ids = [*failure_train_ids, *success_train_ids]
+
+    def row_loss(
+        logits: torch.Tensor,
+        _row: Mapping[str, Any],
+        labels: torch.Tensor,
+        pos_weight_tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        per_timestep = F.binary_cross_entropy_with_logits(
+            logits,
+            labels,
+            pos_weight=pos_weight_tensor,
+            reduction="none",
+        )
+        weights = torch.where(
+            labels > 0.5,
+            pos_weight_tensor,
+            torch.ones_like(labels),
+        )
+        return per_timestep.sum() / weights.sum().clamp_min(1e-12)
+
+    model, training = localization_core.train_bilstm(
+        dataset=dataset,
+        train_ids=train_ids,
+        val_ids=val_ids,
+        mean=mean,
+        std=std,
+        hidden=hidden,
+        pos_weight=pos_weight,
+        seed=seed,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        grad_clip=grad_clip,
+        batch_size=batch_size,
+        device=device,
+        row_loss_fn=row_loss,
+        progress_label=progress_label,
+        logger=log,
     )
-    pos_weight_tensor = torch.tensor(pos_weight, dtype=torch.float32, device=device)
-
-    train_rows = [
-        failure_dataset[rollout_id] for rollout_id in failure_train_ids
-    ] + [
-        success_dataset[rollout_id] for rollout_id in success_train_ids
-    ]
-
-    best_loss = math.inf
-    best_state: dict[str, torch.Tensor] | None = None
-    best_epoch = 0
-    stale = 0
-
-    for epoch in range(1, epochs + 1):
-        model.train()
-        optimizer.zero_grad(set_to_none=True)
-        loss_numerator = torch.zeros((), dtype=torch.float32, device=device)
-        loss_denominator = 0.0
-        for row in train_rows:
-            x, y = _normalized_tensor(row, mean, std, device)
-            logits = model(x)
-            per_timestep = F.binary_cross_entropy_with_logits(
-                logits,
-                y,
-                pos_weight=pos_weight_tensor,
-                reduction="none",
-            )
-            loss_numerator = loss_numerator + per_timestep.sum()
-            weights = torch.where(y > 0.5, pos_weight_tensor, torch.ones_like(y))
-            loss_denominator += float(weights.sum().detach().cpu())
-        loss = loss_numerator / max(1e-12, loss_denominator)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        optimizer.step()
-
-        model.eval()
-        val_numerator = 0.0
-        val_denominator = 0.0
-        with torch.no_grad():
-            for rollout_id in val_ids:
-                x, y = _normalized_tensor(
-                    failure_dataset[rollout_id], mean, std, device
-                )
-                logits = model(x)
-                per_timestep = F.binary_cross_entropy_with_logits(
-                    logits,
-                    y,
-                    pos_weight=pos_weight_tensor,
-                    reduction="none",
-                )
-                val_numerator += float(per_timestep.sum().cpu())
-                weights = torch.where(
-                    y > 0.5, pos_weight_tensor, torch.ones_like(y)
-                )
-                val_denominator += float(weights.sum().cpu())
-        val_loss = val_numerator / max(1e-12, val_denominator)
-        if epoch == 1 or epoch % 25 == 0:
-            log(
-                f"{progress_label} epoch={epoch}/{epochs} "
-                f"train_bce={float(loss.detach().cpu()):.6f} "
-                f"val_bce={val_loss:.6f} best={best_loss:.6f}"
-            )
-
-        if val_loss < best_loss - 1e-7:
-            best_loss = val_loss
-            best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
-            }
-            best_epoch = epoch
-            stale = 0
-        else:
-            stale += 1
-            if stale >= patience:
-                log(
-                    f"{progress_label} early_stop epoch={epoch} "
-                    f"best_epoch={best_epoch} best_val_bce={best_loss:.6f}"
-                )
-                break
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    return model, {
-        "best_val_bce": best_loss,
-        "best_epoch": best_epoch,
-        "pos_weight": pos_weight,
-        "hidden": hidden,
-        "failure_train_n": len(failure_train_ids),
-        "success_train_n": len(success_train_ids),
-        "device": str(device),
-    }
-
+    training.update(
+        {
+            "best_val_bce": training["best_val_loss"],
+            "failure_train_n": len(failure_train_ids),
+            "success_train_n": len(success_train_ids),
+        }
+    )
+    return model, training
 
 def interval_error(prediction: int, causal: int, observable: int) -> int:
     if prediction < causal:
@@ -642,26 +588,36 @@ def metric_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def evaluate_model(
-    model: TinyBiLSTM,
+    model: localization_core.TinyBiLSTM,
     dataset: Mapping[str, Mapping[str, Any]],
     test_ids: Sequence[str],
     mean: np.ndarray,
     std: np.ndarray,
     device: torch.device,
+    batch_size: int,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    model.eval()
-    with torch.no_grad():
-        for rollout_id in test_ids:
-            x, _ = _normalized_tensor(dataset[rollout_id], mean, std, device)
-            logits = model(x).squeeze(0)
-            prediction = int(torch.argmax(logits).item())
-            score = float(logits[prediction].item())
-            rows.append(
-                prediction_row(dataset, rollout_id, prediction, score)
+    logits_by_rollout = localization_core.batched_logits(
+        model,
+        dataset,
+        test_ids,
+        mean,
+        std,
+        device,
+        batch_size,
+    )
+    for rollout_id in test_ids:
+        logits = logits_by_rollout[rollout_id]
+        prediction = int(torch.argmax(logits).item())
+        rows.append(
+            prediction_row(
+                dataset,
+                rollout_id,
+                prediction,
+                float(logits[prediction].item()),
             )
+        )
     return rows
-
 
 def run_one_setting(
     *,
@@ -703,6 +659,7 @@ def run_one_setting(
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         grad_clip=args.grad_clip,
+        batch_size=args.batch_size,
         device=device,
         progress_label=(
             f"{split['split_id']} {model_name} {setting}"
@@ -715,6 +672,7 @@ def run_one_setting(
         mean,
         std,
         device,
+        args.batch_size,
     )
     for row in rows:
         row.update(
@@ -935,7 +893,7 @@ def analyze(args: argparse.Namespace) -> Path:
         "Starting BiLSTM success-negative ablation "
         f"source_root={project_relative(source_root)} "
         f"selection={'latest-per-rollout' if latest_per_rollout else 'single-run'} "
-        f"device={args.device} "
+        f"device={args.device} batch_size={args.batch_size} "
         f"repeats={args.repeats} epochs={args.epochs} patience={args.patience} "
         f"success_ratios={','.join(str(value) for value in args.success_ratios)}"
     )
@@ -1263,6 +1221,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--grad-clip", type=float, default=5.0)
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Number of variable-length rollout sequences per optimizer step.",
+    )
+    parser.add_argument(
         "--success-ratios",
         default="0.5,1,2",
         help=(
@@ -1283,6 +1247,8 @@ def main() -> int:
     args.success_ratios = parse_success_ratios(args.success_ratios)
     if args.repeats < 1:
         raise ValueError("--repeats must be >= 1")
+    if args.batch_size < 1 or args.batch_size > 128:
+        raise ValueError("--batch-size must be between 1 and 128")
     if not (0.0 < args.train_fraction < 1.0):
         raise ValueError("--train-fraction must be between 0 and 1")
     if not (0.0 < args.val_fraction < 1.0):
