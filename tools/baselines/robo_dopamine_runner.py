@@ -164,6 +164,11 @@ def build_worker_command(
         "--eval-mode", args.robo_eval_mode,
         "--memory-budget-json", json.dumps(memory_budget, ensure_ascii=False, separators=(",", ":")),
     ]
+    if getattr(args, "robo_localization_ckpt", None) is not None:
+        command.extend([
+            "--localization-checkpoint",
+            str(Path(args.robo_localization_ckpt).resolve()),
+        ])
     requested_modes = getattr(args, "robo_eval_modes", None)
     if requested_modes:
         command.extend(["--eval-modes", *requested_modes])
@@ -413,6 +418,11 @@ def run_persistent(
         robo_dopamine_engine_command=command,
         robo_dopamine_engine_memory_budget=memory_budget,
         selected_rollouts=len(specs),
+        robo_localization_checkpoint=(
+            str(Path(args.robo_localization_ckpt).resolve())
+            if getattr(args, "robo_localization_ckpt", None) is not None
+            else None
+        ),
     )
     memory_history = list(metadata.get("robo_dopamine_memory_budgets", []))
     memory_history.append(memory_budget)
