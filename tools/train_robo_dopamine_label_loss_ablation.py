@@ -40,6 +40,14 @@ if str(TOOLS_DIR) not in sys.path:
 
 from robo_localization_head import core as localization_core
 
+# Compatibility names used by existing tests and downstream imports.
+_onset_anchor = localization_core.onset_anchor
+_sequence = localization_core.sequence_from_signal
+rollout_split = localization_core.rollout_split
+standardization_stats = localization_core.standardization_stats
+TinyBiLSTM = localization_core.TinyBiLSTM
+resolve_device = localization_core.resolve_device
+
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -80,23 +88,6 @@ METRIC_NAMES = (
 def log(message: str) -> None:
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
-
-
-def _onset_anchor(frames: Sequence[int], frame: int) -> int | None:
-    return next(
-        (index for index, value in enumerate(frames) if int(value) >= int(frame)),
-        None,
-    )
-
-
-def _sequence(signal: Mapping[str, Any]) -> np.ndarray:
-    progress = np.asarray(signal["progress"], dtype=np.float32)
-    hops = np.asarray(signal["hops"], dtype=np.float32)
-    if progress.ndim != 1 or hops.ndim != 1 or len(progress) != len(hops):
-        raise ValueError("progress/hops must be same-length 1D arrays")
-    if len(progress) == 0:
-        raise ValueError("empty fused signal")
-    return np.stack([progress, hops], axis=1)
 
 
 def _distance_to_intervals(length: int, intervals: Sequence[tuple[int, int]]) -> np.ndarray:
@@ -332,79 +323,6 @@ def _task(dataset: Mapping[str, Mapping[str, Any]], rollout_id: str) -> str:
     return str(dataset[rollout_id].get("task_key") or "")
 
 
-def rollout_split(
-    dataset: Mapping[str, Mapping[str, Any]],
-    *,
-    seed: int,
-    train_fraction: float,
-    val_fraction: float,
-) -> dict[str, Any]:
-    by_task: dict[str, list[str]] = defaultdict(list)
-    for rollout_id in sorted(dataset):
-        by_task[_task(dataset, rollout_id)].append(rollout_id)
-
-    rng = random.Random(seed)
-    train: list[str] = []
-    val: list[str] = []
-    test: list[str] = []
-    for task in sorted(by_task):
-        ids = list(by_task[task])
-        rng.shuffle(ids)
-        count = len(ids)
-        if count == 1:
-            train.extend(ids)
-            continue
-        if count == 2:
-            train.append(ids[0])
-            test.append(ids[1])
-            continue
-        train_n = max(1, min(count - 2, int(round(count * train_fraction))))
-        val_n = max(1, min(count - train_n - 1, int(round(count * val_fraction))))
-        train.extend(ids[:train_n])
-        val.extend(ids[train_n : train_n + val_n])
-        test.extend(ids[train_n + val_n :])
-
-    all_ids = set(dataset)
-    train_set, val_set, test_set = set(train), set(val), set(test)
-    train_set.update(all_ids - train_set - val_set - test_set)
-    target_min = 1 if len(all_ids) < 12 else 2
-    for target in (val_set, test_set):
-        while len(target) < target_min and len(train_set) > target_min + 2:
-            rollout_id = sorted(train_set)[0]
-            train_set.remove(rollout_id)
-            target.add(rollout_id)
-
-    if train_set & val_set or train_set & test_set or val_set & test_set:
-        raise AssertionError("rollout split overlap")
-    if train_set | val_set | test_set != all_ids:
-        raise AssertionError("rollout split does not cover dataset")
-    return {
-        "split_id": f"random_seed_{seed}",
-        "kind": "rollout_random",
-        "seed": seed,
-        "train": sorted(train_set),
-        "val": sorted(val_set),
-        "test": sorted(test_set),
-    }
-
-
-def standardization_stats(
-    dataset: Mapping[str, Mapping[str, Any]],
-    rollout_ids: Sequence[str],
-) -> tuple[np.ndarray, np.ndarray]:
-    sequences = [
-        np.asarray(dataset[rollout_id]["sequence"], dtype=np.float32)
-        for rollout_id in rollout_ids
-    ]
-    if not sequences:
-        raise ValueError("empty rollout selection")
-    merged = np.concatenate(sequences, axis=0)
-    mean = merged.mean(axis=0, keepdims=True)
-    std = merged.std(axis=0, keepdims=True)
-    std = np.where(std < 1e-8, 1.0, std)
-    return mean.astype(np.float32), std.astype(np.float32)
-
-
 def positive_weight_from_support(
     dataset: Mapping[str, Mapping[str, Any]],
     rollout_ids: Sequence[str],
@@ -420,125 +338,6 @@ def positive_weight_from_support(
     if positive <= 0:
         raise ValueError("failure training split contains no positive interval samples")
     return min(20.0, max(1.0, negative / positive))
-
-
-class TinyBiLSTM(nn.Module):
-    def __init__(self, hidden: int = 16) -> None:
-        super().__init__()
-        self.hidden = hidden
-        self.lstm = nn.LSTM(
-            input_size=2,
-            hidden_size=hidden,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.head = nn.Linear(2 * hidden, 1)
-
-    def forward(
-        self,
-        sequence: torch.Tensor,
-        lengths: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        if lengths is None:
-            encoded, _ = self.lstm(sequence)
-        else:
-            packed = nn.utils.rnn.pack_padded_sequence(
-                sequence,
-                lengths.detach().cpu(),
-                batch_first=True,
-                enforce_sorted=False,
-            )
-            packed_encoded, _ = self.lstm(packed)
-            encoded, _ = nn.utils.rnn.pad_packed_sequence(
-                packed_encoded,
-                batch_first=True,
-                total_length=sequence.shape[1],
-            )
-        return self.head(encoded).squeeze(-1)
-
-
-def resolve_device(requested: str) -> torch.device:
-    if requested == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device(requested)
-    if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA was requested but torch.cuda.is_available() is false")
-    return device
-
-
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def prepare_tensor_dataset(
-    dataset: Mapping[str, Mapping[str, Any]],
-    mean: np.ndarray,
-    std: np.ndarray,
-) -> dict[str, dict[str, torch.Tensor]]:
-    prepared: dict[str, dict[str, torch.Tensor]] = {}
-    for rollout_id, row in dataset.items():
-        sequence = (
-            np.asarray(row["sequence"], dtype=np.float32) - mean
-        ) / std
-        labels = np.asarray(row["labels"], dtype=np.float32)
-        prepared[rollout_id] = {
-            "sequence": torch.from_numpy(sequence),
-            "labels": torch.from_numpy(labels),
-        }
-    return prepared
-
-
-def collate_rollout_batch(
-    prepared: Mapping[str, Mapping[str, torch.Tensor]],
-    rollout_ids: Sequence[str],
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    if not rollout_ids:
-        raise ValueError("cannot collate an empty rollout batch")
-    sequences = [prepared[rollout_id]["sequence"] for rollout_id in rollout_ids]
-    labels = [prepared[rollout_id]["labels"] for rollout_id in rollout_ids]
-    lengths = torch.tensor(
-        [int(sequence.shape[0]) for sequence in sequences],
-        dtype=torch.long,
-    )
-    padded_sequence = nn.utils.rnn.pad_sequence(
-        sequences,
-        batch_first=True,
-        padding_value=0.0,
-    )
-    padded_labels = nn.utils.rnn.pad_sequence(
-        labels,
-        batch_first=True,
-        padding_value=0.0,
-    )
-    non_blocking = device.type == "cuda"
-    return (
-        padded_sequence.to(device, non_blocking=non_blocking),
-        padded_labels.to(device, non_blocking=non_blocking),
-        lengths.to(device, non_blocking=non_blocking),
-    )
-
-
-def rollout_batches(
-    rollout_ids: Sequence[str],
-    batch_size: int,
-    *,
-    rng: random.Random | None = None,
-) -> list[list[str]]:
-    if batch_size < 1:
-        raise ValueError("batch_size must be >= 1")
-    ids = list(rollout_ids)
-    if rng is not None:
-        rng.shuffle(ids)
-    return [
-        ids[index : index + batch_size]
-        for index in range(0, len(ids), batch_size)
-    ]
 
 
 def _logmeanexp(values: torch.Tensor) -> torch.Tensor:
