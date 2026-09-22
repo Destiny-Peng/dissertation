@@ -5813,6 +5813,70 @@ class AnalysisJobService:
         if any(config_id not in available_configs for config_id in config_ids):
             raise ValidationError("Unknown config id in challenge selection")
 
+        ranked_rows: list[dict[str, Any]] = []
+        all_rollout_ids = sorted({
+            str(row["rollout_id"])
+            for row in challenge["rows"]
+            if str(row["config_id"]) in config_ids
+        })
+        for rollout_id in all_rollout_ids:
+            per_config_rank = [
+                rows_by_key.get((config_id, rollout_id))
+                for config_id in config_ids
+            ]
+            if any(row is None for row in per_config_rank):
+                continue
+            concrete_rows = [row for row in per_config_rank if row is not None]
+            persistent = all(
+                bool(row[
+                    "all_repeats_failed_within_3"
+                    if criterion == "outside_3"
+                    else "all_repeats_failed_interval"
+                ])
+                for row in concrete_rows
+            )
+            first_rank = concrete_rows[0]
+            ranked_rows.append({
+                "rollout_id": rollout_id,
+                "persistent_across_selected_configs": persistent,
+                "repeat_count": min(int(row["repeat_count"]) for row in concrete_rows),
+                "in_interval_success_rate": sum(
+                    float(row["in_interval_success_rate"]) for row in concrete_rows
+                ) / len(concrete_rows),
+                "within_3_success_rate": sum(
+                    float(row["within_3_success_rate"]) for row in concrete_rows
+                ) / len(concrete_rows),
+                "median_absolute_interval_error": sum(
+                    float(row["median_absolute_interval_error"]) for row in concrete_rows
+                ) / len(concrete_rows),
+                "mean_absolute_interval_error": sum(
+                    float(row["mean_absolute_interval_error"]) for row in concrete_rows
+                ) / len(concrete_rows),
+                "worst_absolute_interval_error": max(
+                    float(row["worst_absolute_interval_error"]) for row in concrete_rows
+                ),
+                "train_exposure_rate": sum(
+                    float(row["train_exposure_rate"]) for row in concrete_rows
+                ) / len(concrete_rows),
+                "forced_train_rate": sum(
+                    float(row.get("forced_train_rate") or 0.0) for row in concrete_rows
+                ) / len(concrete_rows),
+                "task_id": first_rank.get("task_id"),
+                "primary_failure_type": first_rank.get("primary_failure_type"),
+                "multi_event": first_rank.get("multi_event"),
+                "recovery_like": first_rank.get("recovery_like"),
+            })
+        ranked_rows.sort(key=lambda row: (
+            float(row["within_3_success_rate"]),
+            float(row["in_interval_success_rate"]),
+            -float(row["median_absolute_interval_error"]),
+            -float(row["mean_absolute_interval_error"]),
+            -float(row["worst_absolute_interval_error"]),
+            str(row["rollout_id"]),
+        ))
+        for rank, row in enumerate(ranked_rows, start=1):
+            row["rank"] = rank
+
         entries: list[dict[str, Any]] = []
         for rollout_id in rollout_ids:
             per_config = []
@@ -5864,6 +5928,8 @@ class AnalysisJobService:
             "criterion": criterion,
             "rollout_ids": list(rollout_ids),
             "entries": entries,
+            "ranked_hard_cases_csv": f"{name}_ranked_hard_cases.csv",
+            "challenge_csv": f"{name}.csv",
             "composition": {
                 "size": len(entries),
                 "tasks": task_counts,
@@ -5891,6 +5957,20 @@ class AnalysisJobService:
                     key: entry.get(key)
                     for key in writer.fieldnames or []
                 })
+
+        ranked_path = self.localization_challenge_root / f"{name}_ranked_hard_cases.csv"
+        ranked_fields = [
+            "rank", "rollout_id", "persistent_across_selected_configs", "repeat_count",
+            "in_interval_success_rate", "within_3_success_rate",
+            "median_absolute_interval_error", "mean_absolute_interval_error",
+            "worst_absolute_interval_error", "train_exposure_rate", "forced_train_rate",
+            "task_id", "primary_failure_type", "multi_event", "recovery_like",
+        ]
+        with ranked_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=ranked_fields)
+            writer.writeheader()
+            for row in ranked_rows:
+                writer.writerow({key: row.get(key) for key in ranked_fields})
         return manifest
 
     def localization_artifact(self, run_name: str, artifact_name: str) -> Path:
