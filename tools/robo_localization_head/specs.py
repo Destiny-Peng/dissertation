@@ -214,14 +214,17 @@ def expand(
 
     combinations = list(itertools.product(*values)) if values else [()]
     variant_rows = list(variants or [])
-    if not variant_rows:
-        variant_rows = [{"name": "base", "set": {}}]
 
     result: list[dict[str, Any]] = []
     for combination in combinations:
         swept = copy.deepcopy(dict(base))
         for path, value in zip(paths, combination):
             set_path(swept, path, value)
+
+        if not variant_rows:
+            result.append(swept)
+            continue
+
         for variant in variant_rows:
             if not isinstance(variant, Mapping):
                 raise ValueError("each variant must be an object")
