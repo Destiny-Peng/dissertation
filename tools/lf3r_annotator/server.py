@@ -5407,7 +5407,7 @@ class AnalysisJobService:
             "model": {"hidden": 16},
             "loss": {"name": "bce", "distance_weight": 1.0, "ranking_weight": 1.0, "ranking_margin": 1.0},
             "training": {
-                "device": "auto", "batch_size": 32, "epochs": 300, "patience": 35,
+                "device": "auto", "batch_size": 32, "parallel_workers": 4, "epochs": 300, "patience": 35,
                 "learning_rate": 0.003, "weight_decay": 0.0001, "grad_clip": 5.0,
                 "seed": 17, "train_fraction": 0.70, "val_fraction": 0.15,
             },
