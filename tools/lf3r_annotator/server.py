@@ -99,7 +99,7 @@ BASELINE_METHOD_OPTION_FIELDS = {
     },
     "robo_dopamine": {
         "model_path", "dtype", "tensor_parallel_size", "robo_frame_interval",
-        "robo_batch_size", "robo_eval_mode", "goal_image",
+        "robo_batch_size", "robo_eval_mode", "goal_image", "robo_localization_ckpt",
         "render_video", "validate_environment", "dry_run",
     },
     "densereward": {
@@ -133,6 +133,7 @@ BASELINE_ADVANCED_FIELDS = {
     "robo_batch_size",
     "robo_eval_mode",
     "goal_image",
+    "robo_localization_ckpt",
     "densereward_frame_interval",
     "densereward_max_new_tokens",
     "render_video",
@@ -4169,6 +4170,7 @@ class BaselineService:
             "robo_batch_size": "--robo-batch-size",
             "robo_eval_mode": "--robo-eval-mode",
             "goal_image": "--goal-image",
+            "robo_localization_ckpt": "--robo-localization-ckpt",
             "densereward_frame_interval": "--densereward-frame-interval",
             "densereward_max_new_tokens": "--densereward-max-new-tokens",
         }
