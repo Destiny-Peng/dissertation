@@ -3207,7 +3207,56 @@ class BaselineService:
             })
             raw_frames.append(raw_frame)
         files = [result_path, prediction_path, *perspective_paths]
-        return self._pack("robo_dopamine", run_summary, samples, files, raw_frames, {"_total_frames": total_frames, "kind": "model_scores_and_progress"})
+        extra: dict[str, Any] = {
+            "_total_frames": total_frames,
+            "kind": "model_scores_and_progress",
+        }
+        localization = result.get("localization_prediction")
+        if isinstance(localization, dict):
+            localization = dict(localization)
+            output_value = localization.get("output_path")
+            if output_value:
+                localization_path = self._project_path(str(output_value))
+                if localization_path.is_file():
+                    files.append(localization_path)
+                    try:
+                        detailed = json.loads(
+                            localization_path.read_text(encoding="utf-8")
+                        )
+                    except (OSError, json.JSONDecodeError):
+                        detailed = None
+                    if isinstance(detailed, dict):
+                        localization.update({
+                            key: detailed.get(key)
+                            for key in (
+                                "predicted_index",
+                                "predicted_frame",
+                                "predicted_logit",
+                                "predicted_sigmoid",
+                                "checkpoint",
+                                "checkpoint_stage",
+                                "checkpoint_config_id",
+                                "checkpoint_repeat",
+                                "checkpoint_seed",
+                                "frame_count",
+                            )
+                            if detailed.get(key) is not None
+                        })
+            predicted_frame = localization.get("predicted_frame")
+            if predicted_frame is not None:
+                localization["predicted_frame"] = min(
+                    max(int(predicted_frame), 0),
+                    total_frames - 1,
+                )
+                extra["localization_prediction"] = localization
+        return self._pack(
+            "robo_dopamine",
+            run_summary,
+            samples,
+            files,
+            raw_frames,
+            extra,
+        )
 
     
     def _read_densereward(self, run_path: Path, rollout: dict[str, Any], run_summary: dict[str, Any]) -> dict[str, Any]:
