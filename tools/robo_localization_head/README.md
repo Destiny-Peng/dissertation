@@ -12,6 +12,7 @@ An experiment spec contains:
 
 - a fixed base configuration;
 - zero or more Cartesian sweep dimensions;
+- zero or more coupled variants for parameters that must move together;
 - a repeat count;
 - optionally, sequential stages.
 
@@ -30,8 +31,8 @@ Analysis -> Localization Lab
 
 Localization Lab contains:
 
-- **Experiment Builder**: fixed parameters, sweep dimensions, stages, run estimate,
-  JSON preview, and launch;
+- **Experiment Builder**: fixed parameters, sweep dimensions, coupled target variants,
+  parallel workers, stages, run estimate, JSON preview, and launch;
 - **Runs**: current job log and completed experiment outputs;
 - **Presets**: built-in and project-local reusable experiment specs.
 
@@ -64,8 +65,8 @@ The implementation is intentionally split by research primitive:
 - `losses.py`: BCE and temporal-softmax loss variants.
 - `metrics.py`: interval localization metrics.
 - `specs.py`: experiment schema, validation, sweep expansion, built-in presets.
-- `spec_runner.py`: stage execution, repeated training, best-config inheritance,
-  and artifact writing.
+- `spec_runner.py`: stage execution, repeated training, parallel config workers,
+  best-config inheritance, and artifact writing.
 
 Robo-Dopamine inference is never rerun by Localization Lab.
 
@@ -102,10 +103,23 @@ Each completed experiment contains:
 The WebUI currently exposes convenient sweep controls for:
 
 - training population / success ratio;
-- complete target config, target kind, sigma pre/post, event-decay tau;
+- target kind, sigma pre/post, and event-decay tau;
 - BiLSTM hidden size;
 - loss name and loss weights;
 - batch size, learning rate, weight decay, and gradient clipping.
 
 The JSON spec format itself is intentionally more general, so additional primitive
 parameters can be exposed later without creating another experiment runner.
+
+
+## Parallel training
+
+`training.parallel_workers` controls how many independent configurations in the
+same stage may train concurrently. The default is `4` and the supported range is
+`1..8`. CUDA workers share one process/context and use separate CUDA streams, which
+is appropriate for the very small localization BiLSTM. Set it to `1` for strictly
+serial execution.
+
+The minibatch path keeps sequence lengths on CPU for packed-sequence bookkeeping and
+reduces training/validation loss statistics with one host synchronization per batch
+instead of one synchronization per rollout.
