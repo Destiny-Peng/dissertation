@@ -38,6 +38,8 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
+from robo_localization_head import core as localization_core
+
 from robo_incremental_hop.io import (
     PROJECT_ROOT,
     build_base_records,
@@ -655,153 +657,53 @@ def train_bilstm(
     ranking_margin: float,
     device: torch.device,
     progress_label: str,
-) -> tuple[TinyBiLSTM, dict[str, Any]]:
-    set_seed(seed)
-    prepared = prepare_tensor_dataset(dataset, mean, std)
-    model = TinyBiLSTM(hidden=16).to(device)
-    weight_params = [
-        parameter for name, parameter in model.named_parameters()
-        if "bias" not in name
-    ]
-    bias_params = [
-        parameter for name, parameter in model.named_parameters()
-        if "bias" in name
-    ]
-    optimizer = torch.optim.Adam(
-        [
-            {"params": weight_params, "weight_decay": weight_decay},
-            {"params": bias_params, "weight_decay": 0.0},
-        ],
-        lr=learning_rate,
-    )
-    pos_weight_tensor = torch.tensor(
-        pos_weight, dtype=torch.float32, device=device
-    )
-    effective_train_batch = min(batch_size, max(1, len(train_ids)))
-    effective_val_batch = min(batch_size, max(1, len(val_ids)))
-    optimizer_steps_per_epoch = math.ceil(
-        len(train_ids) / effective_train_batch
-    )
-    shuffle_rng = random.Random(seed + 7919)
+) -> tuple[localization_core.TinyBiLSTM, dict[str, Any]]:
+    """Experiment adapter around the shared variable-length minibatch trainer."""
 
-    def per_rollout_batch_losses(
-        batch_ids: Sequence[str],
+    def row_loss(
         logits: torch.Tensor,
+        row: Mapping[str, Any],
         labels: torch.Tensor,
-        lengths: torch.Tensor,
-    ) -> list[torch.Tensor]:
-        values: list[torch.Tensor] = []
-        for batch_index, rollout_id in enumerate(batch_ids):
-            length = int(lengths[batch_index].item())
-            values.append(
-                loss_value(
-                    logits[batch_index, :length],
-                    dataset[rollout_id],
-                    labels[batch_index, :length],
-                    loss_name=loss_name,
-                    pos_weight=pos_weight_tensor,
-                    distance_weight=distance_weight,
-                    ranking_weight=ranking_weight,
-                    ranking_margin=ranking_margin,
-                )
-            )
-        return values
-
-    best_loss = math.inf
-    best_state: dict[str, torch.Tensor] | None = None
-    best_epoch = 0
-    stale = 0
-    for epoch in range(1, epochs + 1):
-        model.train()
-        train_loss_sum = 0.0
-        train_seen = 0
-        train_batches = rollout_batches(
-            train_ids,
-            effective_train_batch,
-            rng=shuffle_rng,
+        pos_weight_tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        return loss_value(
+            logits,
+            row,
+            labels,
+            loss_name=loss_name,
+            pos_weight=pos_weight_tensor,
+            distance_weight=distance_weight,
+            ranking_weight=ranking_weight,
+            ranking_margin=ranking_margin,
         )
-        for batch_ids in train_batches:
-            optimizer.zero_grad(set_to_none=True)
-            x, y, lengths = collate_rollout_batch(
-                prepared,
-                batch_ids,
-                device,
-            )
-            logits = model(x, lengths)
-            row_losses = per_rollout_batch_losses(
-                batch_ids,
-                logits,
-                y,
-                lengths,
-            )
-            batch_loss = torch.stack(row_losses).mean()
-            batch_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            optimizer.step()
-            train_loss_sum += sum(
-                float(value.detach().cpu()) for value in row_losses
-            )
-            train_seen += len(row_losses)
-        loss_value_for_log = train_loss_sum / max(1, train_seen)
 
-        model.eval()
-        val_losses: list[float] = []
-        with torch.no_grad():
-            for batch_ids in rollout_batches(
-                val_ids,
-                effective_val_batch,
-            ):
-                x, y, lengths = collate_rollout_batch(
-                    prepared,
-                    batch_ids,
-                    device,
-                )
-                logits = model(x, lengths)
-                val_losses.extend(
-                    float(value.cpu())
-                    for value in per_rollout_batch_losses(
-                        batch_ids,
-                        logits,
-                        y,
-                        lengths,
-                    )
-                )
-        val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
-        if epoch == 1 or epoch % 25 == 0:
-            log(
-                f"{progress_label} epoch={epoch}/{epochs} "
-                f"batch={effective_train_batch} "
-                f"steps={optimizer_steps_per_epoch} "
-                f"train_loss={loss_value_for_log:.6f} "
-                f"val_loss={val_loss:.6f} best={best_loss:.6f}"
-            )
-        if val_loss < best_loss - 1e-7:
-            best_loss = val_loss
-            best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
-            }
-            best_epoch = epoch
-            stale = 0
-        else:
-            stale += 1
-            if stale >= patience:
-                break
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    return model, {
-        "best_val_loss": best_loss,
-        "best_epoch": best_epoch,
-        "pos_weight": pos_weight,
-        "loss_name": loss_name,
-        "failure_train_n": len(train_ids),
-        "device": str(device),
-        "batch_size": batch_size,
-        "effective_train_batch_size": effective_train_batch,
-        "effective_val_batch_size": effective_val_batch,
-        "optimizer_steps_per_epoch": optimizer_steps_per_epoch,
-    }
+    model, training = localization_core.train_bilstm(
+        dataset=dataset,
+        train_ids=train_ids,
+        val_ids=val_ids,
+        mean=mean,
+        std=std,
+        hidden=16,
+        pos_weight=pos_weight,
+        seed=seed,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        grad_clip=grad_clip,
+        batch_size=batch_size,
+        device=device,
+        row_loss_fn=row_loss,
+        progress_label=progress_label,
+        logger=log,
+    )
+    training.update(
+        {
+            "loss_name": loss_name,
+            "failure_train_n": len(train_ids),
+        }
+    )
+    return model, training
 
 def interval_error(prediction: int, causal: int, observable: int) -> int:
     if prediction < causal:
@@ -879,7 +781,7 @@ def metric_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def evaluate_model(
-    model: TinyBiLSTM,
+    model: localization_core.TinyBiLSTM,
     dataset: Mapping[str, Mapping[str, Any]],
     test_ids: Sequence[str],
     mean: np.ndarray,
@@ -888,29 +790,26 @@ def evaluate_model(
     batch_size: int,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    prepared = prepare_tensor_dataset(dataset, mean, std)
-    effective_batch = min(batch_size, max(1, len(test_ids)))
-    model.eval()
-    with torch.no_grad():
-        for batch_ids in rollout_batches(test_ids, effective_batch):
-            x, _labels, lengths = collate_rollout_batch(
-                prepared,
-                batch_ids,
-                device,
+    logits_by_rollout = localization_core.batched_logits(
+        model,
+        dataset,
+        test_ids,
+        mean,
+        std,
+        device,
+        batch_size,
+    )
+    for rollout_id in test_ids:
+        valid_logits = logits_by_rollout[rollout_id]
+        prediction = int(torch.argmax(valid_logits).item())
+        rows.append(
+            prediction_row(
+                dataset,
+                rollout_id,
+                prediction,
+                float(valid_logits[prediction].item()),
             )
-            logits = model(x, lengths)
-            for batch_index, rollout_id in enumerate(batch_ids):
-                length = int(lengths[batch_index].item())
-                valid_logits = logits[batch_index, :length]
-                prediction = int(torch.argmax(valid_logits).item())
-                rows.append(
-                    prediction_row(
-                        dataset,
-                        rollout_id,
-                        prediction,
-                        float(valid_logits[prediction].item()),
-                    )
-                )
+        )
     return rows
 
 def run_setting(
