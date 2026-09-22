@@ -22,16 +22,24 @@ def main() -> int:
     parser.add_argument(
         "--experiment",
         choices=tuple(EXPERIMENTS),
-        required=True,
+        required=False,
         help="Localization experiment preset.",
     )
     parser.add_argument("-h", "--help", action="store_true")
     known, remaining = parser.parse_known_args()
     if known.help:
+        if known.experiment is None:
+            parser.print_help()
+            print("\nExperiments:")
+            for preset in EXPERIMENTS.values():
+                print(f"  {preset.name:16s} {preset.description}")
+            return 0
         preset = EXPERIMENTS[known.experiment]
         module = __import__(preset.module)
         module.build_parser().print_help()
         return 0
+    if known.experiment is None:
+        parser.error("--experiment is required")
     return run_experiment(known.experiment, remaining)
 
 
