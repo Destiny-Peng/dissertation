@@ -52,26 +52,50 @@ class LocalizationSpecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             specs.validate_config(config)
 
-    def test_whole_target_sweep_replaces_target(self) -> None:
+    def test_coupled_target_variants_move_together(self) -> None:
+        variants = [
+            {
+                "name": "hard",
+                "set": {
+                    "target.kind": "hard",
+                    "target.sigma_pre": 3.0,
+                    "target.sigma_post": 3.0,
+                    "target.tau_event": 20.0,
+                },
+            },
+            {
+                "name": "gaussian_asymmetric",
+                "set": {
+                    "target.kind": "gaussian",
+                    "target.sigma_pre": 3.0,
+                    "target.sigma_post": 1.0,
+                    "target.tau_event": 20.0,
+                },
+            },
+        ]
+        configs = specs.expand(specs.DEFAULT_BASE, [], variants)
+        self.assertEqual(len(configs), 2)
+        self.assertEqual(configs[0]["target"]["kind"], "hard")
+        self.assertEqual(configs[1]["target"]["kind"], "gaussian")
+        self.assertEqual(configs[1]["target"]["sigma_post"], 1.0)
+
+    def test_independent_sweep_crosses_coupled_variants(self) -> None:
         configs = specs.expand(
             specs.DEFAULT_BASE,
+            [{"path": "model.hidden", "values": [16, 32]}],
             [
+                {"name": "hard", "set": {"target.kind": "hard"}},
                 {
-                    "path": "target",
-                    "values": [
-                        {"kind": "hard", "tau_event": 20.0},
-                        {
-                            "kind": "gaussian",
-                            "sigma_pre": 3.0,
-                            "sigma_post": 1.0,
-                            "tau_event": 20.0,
-                        },
-                    ],
-                }
+                    "name": "gaussian_sigma_3",
+                    "set": {
+                        "target.kind": "gaussian",
+                        "target.sigma_pre": 3.0,
+                        "target.sigma_post": 3.0,
+                    },
+                },
             ],
         )
-        self.assertEqual(configs[0]["target"]["kind"], "hard")
-        self.assertEqual(configs[1]["target"]["sigma_post"], 1.0)
+        self.assertEqual(len(configs), 4)
 
 
 if __name__ == "__main__":
