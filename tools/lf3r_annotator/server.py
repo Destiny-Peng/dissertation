@@ -5415,7 +5415,7 @@ class AnalysisJobService:
         return {
             "bilstm_default": {
                 "schema_version": 1, "name": "bilstm_default", "base": base,
-                "sweep": [], "stages": [], "repeats": 5, "builtin": True,
+                "sweep": [], "variants": [], "stages": [], "repeats": 5, "builtin": True,
             },
             "label_loss_default": {
                 "schema_version": 1, "name": "label_loss_default", "base": base,
@@ -5423,13 +5423,29 @@ class AnalysisJobService:
                 "stages": [
                     {
                         "name": "label_selection",
-                        "sweep": [{"path": "target", "values": [
-                            {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 1.0, "sigma_post": 1.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 2.0, "sigma_post": 2.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 5.0, "sigma_post": 5.0, "tau_event": 20.0},
-                        ]}],
+                        "sweep": [],
+                        "variants": [
+                            {"name": "hard", "set": {
+                                "target.kind": "hard", "target.sigma_pre": 3.0,
+                                "target.sigma_post": 3.0, "target.tau_event": 20.0,
+                            }},
+                            {"name": "gaussian_sigma_1", "set": {
+                                "target.kind": "gaussian", "target.sigma_pre": 1.0,
+                                "target.sigma_post": 1.0, "target.tau_event": 20.0,
+                            }},
+                            {"name": "gaussian_sigma_2", "set": {
+                                "target.kind": "gaussian", "target.sigma_pre": 2.0,
+                                "target.sigma_post": 2.0, "target.tau_event": 20.0,
+                            }},
+                            {"name": "gaussian_sigma_3", "set": {
+                                "target.kind": "gaussian", "target.sigma_pre": 3.0,
+                                "target.sigma_post": 3.0, "target.tau_event": 20.0,
+                            }},
+                            {"name": "gaussian_sigma_5", "set": {
+                                "target.kind": "gaussian", "target.sigma_pre": 5.0,
+                                "target.sigma_post": 5.0, "target.tau_event": 20.0,
+                            }},
+                        ],
                         "select": {"metric": "in_interval_rate_mean", "mode": "max", "tie_breakers": [
                             {"metric": "mae_samples_mean", "mode": "min"},
                             {"metric": "mse_samples_mean", "mode": "min"},
@@ -5437,6 +5453,7 @@ class AnalysisJobService:
                     },
                     {
                         "name": "loss_selection",
+                        "variants": [],
                         "sweep": [{"path": "loss.name", "values": [
                             "bce", "temporal_softmax_ce", "temporal_softmax_ce_distance",
                             "temporal_softmax_ce_squared_distance", "temporal_softmax_ce_ranking",
@@ -5456,6 +5473,7 @@ class AnalysisJobService:
                     {"path": "data.success_ratio", "values": [0.0, 0.5, 1.0, 2.0]},
                     {"path": "model.hidden", "values": [16, 32]},
                 ],
+                "variants": [],
                 "stages": [], "repeats": 5, "builtin": True,
             },
         }
