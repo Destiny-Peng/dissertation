@@ -200,6 +200,13 @@
       "description": "Optional global override. When omitted for LIBERO-10, each rollout automatically uses outputs/robodopamine_goal/libero-10-task{task_id}.jpg based on its manifest task_id. Missing task-specific files are treated as an error rather than silently falling back to blank. Non-LIBERO-10 runs retain the upstream blank goal fallback.",
       "forwarded_as": "per-rollout --goal-image PATH through the persistent job plan"
     },
+    "robo_localization_ckpt": {
+      "cli": "--robo-localization-ckpt PATH",
+      "default": "unset",
+      "applies_to": "Robo-Dopamine fused mode",
+      "description": "Optional saved LF3R BiLSTM localization checkpoint. After fused Robo-Dopamine progress/hop is produced, the tiny head runs on CPU and predicts one localization frame. The checkpoint must be a project-local .pt/.pth file produced by Localization Lab.",
+      "forwarded_as": "persistent worker --localization-checkpoint PATH"
+    },
     "densereward_frame_interval": {
       "cli": "--densereward-frame-interval N",
       "default": "1",

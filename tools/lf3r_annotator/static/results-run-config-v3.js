@@ -83,7 +83,8 @@
         { key: "model_path", label: "Model path", type: "text", placeholder: "Use configured checkpoint" },
         { key: "dtype", label: "Dtype", type: "text", defaultValue: "bf16" },
         { key: "tensor_parallel_size", label: "Tensor parallel size", type: "number", defaultValue: 1, min: 1 },
-        { key: "goal_image", label: "Goal image override", type: "text", placeholder: "Leave empty for LIBERO-10 task-specific goal" }
+        { key: "goal_image", label: "Goal image override", type: "text", placeholder: "Leave empty for LIBERO-10 task-specific goal" },
+        { key: "robo_localization_ckpt", label: "Localization checkpoint", type: "text", placeholder: "outputs/robo_localization/.../repeat_XX.pt" }
       ],
       execution: [
         { key: "render_video", label: "Render baseline video", type: "checkbox", defaultValue: false }

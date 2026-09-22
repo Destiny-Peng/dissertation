@@ -1225,6 +1225,52 @@ function toggleEvaluationSignal(button) {
   });
 }
 
+function renderLocalizationPredictionMarker(method, result, domain) {
+  if (method !== "robo_dopamine" || !result || !result.localization_prediction) return "";
+  var prediction = result.localization_prediction;
+  var frame = Number(prediction.predicted_frame);
+  if (!Number.isFinite(frame)) return "";
+  var clamped = Math.max(0, Math.min(domain, frame));
+  var left = clamped / Math.max(1, domain) * 100;
+  var checkpoint = String(prediction.checkpoint || "");
+  var configId = prediction.checkpoint_config_id == null
+    ? ""
+    : String(prediction.checkpoint_config_id);
+  var repeat = prediction.checkpoint_repeat == null
+    ? ""
+    : String(prediction.checkpoint_repeat);
+  var title = "Localization checkpoint prediction: frame " + Math.round(frame);
+  if (configId) title += " · " + configId;
+  if (repeat) title += " · repeat " + repeat;
+  if (checkpoint) title += " · " + checkpoint;
+  return '<span class="evaluation-localization-pin" style="left:' + left.toFixed(4)
+    + '%" title="' + escapeHtml(title) + '"><span>f'
+    + escapeHtml(Math.round(frame)) + '</span></span>';
+}
+
+function renderLocalizationPredictionSummary(method, result) {
+  if (method !== "robo_dopamine" || !result || !result.localization_prediction) return "";
+  var prediction = result.localization_prediction;
+  var frame = Number(prediction.predicted_frame);
+  if (!Number.isFinite(frame)) return "";
+  var details = [];
+  if (prediction.checkpoint_config_id != null && prediction.checkpoint_config_id !== "") {
+    details.push(String(prediction.checkpoint_config_id));
+  }
+  if (prediction.checkpoint_repeat != null && prediction.checkpoint_repeat !== "") {
+    details.push("repeat " + String(prediction.checkpoint_repeat));
+  }
+  var checkpoint = String(prediction.checkpoint || "");
+  var shortCheckpoint = checkpoint ? checkpoint.split("/").slice(-3).join("/") : "";
+  return '<div class="evaluation-localization-summary">'
+    + '<span class="evaluation-localization-summary-label">Localization point</span>'
+    + '<strong>Frame ' + escapeHtml(Math.round(frame)) + '</strong>'
+    + (details.length ? '<span>' + escapeHtml(details.join(" · ")) + '</span>' : "")
+    + (shortCheckpoint ? '<small title="' + escapeHtml(checkpoint) + '">'
+      + escapeHtml(shortCheckpoint) + '</small>' : "")
+    + '</div>';
+}
+
 function renderSignalChart(method, result, record) {
   var samples = (result.samples || []).filter(function (sample) {
     return sample && Number.isFinite(Number(sample.frame)) && sample.signals;
@@ -1268,7 +1314,9 @@ function renderSignalChart(method, result, record) {
       + '<path d="M0 8H100 M0 47.5H100 M0 87H100" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
       + '<polyline fill="none" stroke="' + colors[i % colors.length] + '" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + points + '"/></svg>'
       + '<div class="evaluation-chart-markers" data-evaluation-onset-markers data-frame-max="' + domain + '">'
-      + renderEvaluationOnsetMarkers(record, domain) + '</div><div class="signal-playhead" data-signal-playhead style="left:'
+      + renderEvaluationOnsetMarkers(record, domain)
+      + renderLocalizationPredictionMarker(method, result, domain)
+      + '</div><div class="signal-playhead" data-signal-playhead style="left:'
       + (Math.max(0, Math.min(domain, currentFrame())) / domain * 100) + '%"></div></div></div></div>'
       + '<div class="signal-frame-axis"><span>0</span><span>video frame</span><span>' + domain + '</span></div></section>';
   }).join('');
@@ -1438,7 +1486,8 @@ function renderEvaluationCard(method, result, record) {
     : '<span class="evaluation-meta">Condition view only</span>';
   var body = renderBaselineRunControls(method, result, record);
   if (available) {
-    body += renderSignalChart(method, result, record)
+    body += renderLocalizationPredictionSummary(method, result)
+      + renderSignalChart(method, result, record)
       + '<div class="evaluation-current">'
       + '<div class="evaluation-current-body">'
       + '<pre class="evaluation-output" data-current-output>No output at this frame.</pre></div></div>'

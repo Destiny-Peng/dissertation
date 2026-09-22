@@ -164,6 +164,11 @@ def build_worker_command(
         "--eval-mode", args.robo_eval_mode,
         "--memory-budget-json", json.dumps(memory_budget, ensure_ascii=False, separators=(",", ":")),
     ]
+    if getattr(args, "robo_localization_ckpt", None) is not None:
+        command.extend([
+            "--localization-checkpoint",
+            str(Path(args.robo_localization_ckpt).resolve()),
+        ])
     requested_modes = getattr(args, "robo_eval_modes", None)
     if requested_modes:
         command.extend(["--eval-modes", *requested_modes])
@@ -413,6 +418,11 @@ def run_persistent(
         robo_dopamine_engine_command=command,
         robo_dopamine_engine_memory_budget=memory_budget,
         selected_rollouts=len(specs),
+        robo_localization_checkpoint=(
+            str(Path(args.robo_localization_ckpt).resolve())
+            if getattr(args, "robo_localization_ckpt", None) is not None
+            else None
+        ),
     )
     memory_history = list(metadata.get("robo_dopamine_memory_budgets", []))
     memory_history.append(memory_budget)
@@ -526,6 +536,23 @@ def resume_run(args: argparse.Namespace) -> int:
     args.robo_eval_modes = list(stored_modes) if stored_modes else None
     stored_goal = stored_arguments.get("goal_image")
     args.goal_image = Path(stored_goal).expanduser().resolve() if stored_goal else None
+    stored_localization = (
+        metadata.get("robo_localization_checkpoint")
+        or stored_arguments.get("robo_localization_ckpt")
+    )
+    args.robo_localization_ckpt = (
+        Path(stored_localization).expanduser().resolve()
+        if stored_localization
+        else None
+    )
+    if (
+        args.robo_localization_ckpt is not None
+        and not args.robo_localization_ckpt.is_file()
+    ):
+        raise FileNotFoundError(
+            "Localization checkpoint from resumed run does not exist: "
+            f"{args.robo_localization_ckpt}"
+        )
     args.render_video = bool(stored_arguments.get("render_video", False))
     args.dry_run = False
 

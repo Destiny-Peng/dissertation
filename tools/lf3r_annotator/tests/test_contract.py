@@ -131,6 +131,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("baselineBatchUsesWorkers", javascript)
         self.assertIn("parallel_workers", javascript)
         self.assertIn("workers", javascript)
+        self.assertIn('data-batch-option="robo_localization_ckpt"', html)
+        self.assertIn("renderLocalizationPredictionMarker", javascript)
+        self.assertIn("renderLocalizationPredictionSummary", javascript)
         for method in ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"]:
             self.assertIn('value="' + method + '"', html)
 
@@ -150,6 +153,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             ".persistent-job-workers",
             ".batch-resource-warning",
             ".evaluation-run-controls",
+            ".evaluation-localization-summary",
+            ".evaluation-localization-pin",
         ]:
             self.assertIn(marker, styles)
 

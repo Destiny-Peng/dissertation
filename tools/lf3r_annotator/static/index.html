@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LF3R Failure Review</title>
   <meta name="description" content="Local annotation workspace for LF3R robot failure rollouts">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=robo-localization-point-v1-20260922">
 </head>
 
 <body>
@@ -437,6 +437,9 @@
             <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image
                 override (optional)</span><input data-batch-option="goal_image" type="text"
                 placeholder="Leave empty: LIBERO-10 uses task-specific goal"></label>
+            <label data-batch-methods="robo_dopamine"><span>Localization checkpoint (optional)</span><input
+                data-batch-option="robo_localization_ckpt" type="text"
+                placeholder="outputs/robo_localization/.../repeat_XX.pt"></label>
           </div>
           <div class="batch-check-grid">
             <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render
@@ -1472,8 +1475,8 @@
 
   <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v8-20260922">
   <script src="/static/localization-lab.js?v=localization-lab-v9-20260922" defer></script>
-  <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
-  <script src="/static/workspace.js?v=label-loss-webui-v3-20260921" defer></script>
+  <script src="/static/app.js?v=robo-localization-point-v1-20260922" defer></script>
+  <script src="/static/workspace.js?v=robo-localization-ckpt-v1-20260922" defer></script>
 </body>
 
 </html>
