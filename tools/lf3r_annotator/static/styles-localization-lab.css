@@ -167,3 +167,60 @@
   align-self: start;
 }
 
+.localization-variant-section,
+.localization-stage-subsection {
+  margin-top: 1rem;
+  padding-top: .85rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.localization-subsection-title {
+  margin: 0 0 .55rem;
+  font-size: .75rem;
+  font-weight: 650;
+}
+
+.localization-target-variant-list {
+  display: grid;
+  gap: .65rem;
+  margin: .7rem 0;
+}
+
+.localization-target-variant-row {
+  display: grid;
+  grid-template-columns:
+    minmax(9rem, 1.25fr)
+    minmax(8rem, 1fr)
+    minmax(6rem, .75fr)
+    minmax(6rem, .75fr)
+    minmax(6rem, .75fr)
+    auto;
+  gap: .6rem;
+  align-items: end;
+}
+
+.localization-target-variant-row .localization-control {
+  min-width: 0;
+}
+
+.localization-variant-remove {
+  min-height: 36px;
+}
+
+@media (max-width: 1000px) {
+  .localization-target-variant-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .localization-variant-remove {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .localization-target-variant-row {
+    grid-template-columns: 1fr;
+  }
+}
+
