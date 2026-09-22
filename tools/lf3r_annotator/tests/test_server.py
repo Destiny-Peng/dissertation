@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import tempfile
 import time
 import threading
@@ -352,6 +353,27 @@ class ServerTest(unittest.TestCase):
                 {"baseline": "not-a-baseline", "gpu": "0", "memory_utilization": 0.65},
             )
         self.assertEqual(caught.exception.code, 400)
+
+    def test_control_prefixed_http_requestline_is_recovered(self) -> None:
+        address = ("127.0.0.1", self.server.server_port)
+        with socket.create_connection(address, timeout=3) as client:
+            client.sendall(
+                b"\x09"
+                + (b"\x00" * 12)
+                + b"GET /api/health HTTP/1.1\r\n"
+                + b"Host: 127.0.0.1\r\n"
+                + b"Connection: close\r\n"
+                + b"\r\n"
+            )
+            chunks = []
+            while True:
+                data = client.recv(65536)
+                if not data:
+                    break
+                chunks.append(data)
+        response = b"".join(chunks)
+        self.assertIn(b" 200 ", response.split(b"\r\n", 1)[0])
+        self.assertIn(b'"status": "ok"', response)
 
     def test_health_manifest_and_range_video(self) -> None:
         with self.request("/api/health") as response:

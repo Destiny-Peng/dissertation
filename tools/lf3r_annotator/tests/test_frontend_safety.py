@@ -85,6 +85,13 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("modelLabel.parentNode !== core", procvlm)
         self.assertIn("core.insertBefore(modelLabel, modeLabel.nextSibling)", procvlm)
 
+    def test_workspace_retries_transient_script_load_failures(self) -> None:
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        self.assertIn("if (retry < 1)", workspace)
+        self.assertIn("lf3r_retry=", workspace)
+        self.assertIn("continuing with remaining enhancements", workspace)
+        self.assertIn("if (onload) onload();", workspace)
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")

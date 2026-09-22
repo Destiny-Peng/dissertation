@@ -1,13 +1,26 @@
 "use strict";
 
 (function loadWorkspaceWithEnhancements() {
-  function loadScript(src, onload) {
+  function loadScript(src, onload, attempt) {
+    var retry = Number(attempt || 0);
     var script = document.createElement("script");
     script.src = src;
     script.async = false;
-    script.onload = onload || null;
+    script.onload = function () {
+      if (onload) onload();
+    };
     script.onerror = function () {
-      console.error("LF3R WebUI could not load " + src);
+      script.remove();
+      if (retry < 1) {
+        console.warn("LF3R WebUI retrying failed script " + src);
+        var separator = src.indexOf("?") === -1 ? "?" : "&";
+        window.setTimeout(function () {
+          loadScript(src + separator + "lf3r_retry=" + Date.now(), onload, retry + 1);
+        }, 80);
+        return;
+      }
+      console.error("LF3R WebUI could not load " + src + " after retry; continuing with remaining enhancements.");
+      if (onload) onload();
     };
     document.head.appendChild(script);
   }
