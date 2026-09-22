@@ -629,6 +629,10 @@
                 <label><span>Batch size</span>
                   <input id="localizationBatchSize" type="number" min="1" max="128" value="32" step="1">
                 </label>
+                <label><span>Parallel workers</span>
+                  <input id="localizationParallelWorkers" type="number" min="1" max="8" value="4" step="1">
+                  <small class="analysis-run-field-help">1–8 independent configs per stage; 4 recommended for this tiny BiLSTM.</small>
+                </label>
               </div>
               <details class="analysis-result-details">
                 <summary>Advanced training settings</summary>
@@ -1361,7 +1365,7 @@
   </main>
 
   <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v4-20260922">
-  <script src="/static/localization-lab.js?v=localization-lab-v3-20260922" defer></script>
+  <script src="/static/localization-lab.js?v=localization-lab-v4-20260922" defer></script>
   <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
   <script src="/static/workspace.js?v=label-loss-webui-v3-20260921" defer></script>
 </body>
