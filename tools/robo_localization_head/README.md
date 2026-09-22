@@ -1,4 +1,26 @@
-# Robo-Dopamine BiLSTM success-negative ablation
+# Robo-Dopamine BiLSTM localization training
+
+The localization experiments now share one training core in `robo_localization_head/core.py`:
+variable-length rollout mini-batching, packed BiLSTM forward, optimizer/early stopping,
+normalization, rollout splits, and batched inference. Experiment files keep only their
+research-specific target, loss, sampling, and reporting logic.
+
+Preferred unified entry point:
+
+~~~bash
+source ./project_env.sh
+
+"$LF3R_ROBODOPAMINE_PYTHON" tools/train_robo_localization.py \\
+  --experiment label_loss \\
+  --run-pool-root outputs/baselines \\
+  --device auto \\
+  --batch-size 32
+~~~
+
+Use `--experiment success_negative` for the clean-success negative-data ablation.
+The two historical runner filenames remain valid compatibility entry points.
+
+## Success-negative ablation
 
 This experiment uses only saved Robo-Dopamine fused progress/hop. It never reruns
 Robo-Dopamine. The default evaluation source is the complete historical
