@@ -5556,6 +5556,7 @@ class AnalysisJobService:
         if not script.is_file():
             raise ValidationError("Localization trainer is missing")
         job_id = "analysis-localization-" + uuid.uuid4().hex[:12]
+        self.localization_root.mkdir(parents=True, exist_ok=True)
         workspace = self.localization_root / ".web_jobs" / job_id
         output_temp = workspace / "output"
         output_final = self.localization_root / (
@@ -6410,6 +6411,7 @@ class LF3RApplication:
 class LF3RHandler(BaseHTTPRequestHandler):
     app: LF3RApplication
     server_version = "LF3RAnnotator/1.0"
+    protocol_version = "HTTP/1.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         super().log_message(fmt, *args)
@@ -6420,7 +6422,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         self.wfile.write(body)
 
     def json_error(self, status: int, message: str) -> None:
@@ -6434,7 +6438,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Disposition", 'attachment; filename="' + path.name + '"')
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         self.wfile.write(body)
 
     def do_GET(self) -> None:
@@ -6461,6 +6467,31 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/settings":
                 self.json_response(HTTPStatus.OK, self.app.settings.response())
+                return
+            if path == "/api/analysis/localization/presets":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"presets": self.app.analysis_jobs.localization_presets()},
+                )
+                return
+            if path == "/api/analysis/localization":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"localization": self.app.analysis_jobs.localization_results()},
+                )
+                return
+            if path.startswith("/api/analysis/localization/artifacts/"):
+                relative = path[len("/api/analysis/localization/artifacts/"):]
+                parts = relative.split("/", 1)
+                if len(parts) != 2:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Localization artifact not found")
+                    return
+                try:
+                    artifact = self.app.analysis_jobs.localization_artifact(parts[0], parts[1])
+                except FileNotFoundError:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Localization artifact not found")
+                    return
+                self.file_response(artifact)
                 return
             if path == "/api/analysis":
                 requested_view = (query.get("view", ["dashboard"])[0] or "dashboard").lower()
@@ -6805,6 +6836,30 @@ class LF3RHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             path = unquote(urlparse(self.path).path)
+            if path in {
+                "/api/analysis/localization/run",
+                "/api/analysis/localization/presets/save",
+                "/api/analysis/localization/presets/delete",
+            }:
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    self.json_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
+                    return
+                if length <= 0 or length > 1_000_000:
+                    self.json_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Invalid request size")
+                    return
+                payload = json.loads(self.rfile.read(length))
+                if path == "/api/analysis/localization/run":
+                    job = self.app.analysis_jobs.start_localization_spec_run(payload)
+                    self.json_response(HTTPStatus.ACCEPTED, {"job": job})
+                elif path.endswith("/save"):
+                    preset = self.app.analysis_jobs.save_localization_preset(payload)
+                    self.json_response(HTTPStatus.OK, {"preset": preset})
+                else:
+                    result = self.app.analysis_jobs.delete_localization_preset(payload)
+                    self.json_response(HTTPStatus.OK, result)
+                return
             if path in {"/api/baselines/run-batch", "/api/analysis/run", "/api/rollouts/generate"}:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -6891,7 +6946,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", f"{content_type}; charset=utf-8" if content_type.startswith("text/") else content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         self.wfile.write(body)
 
     def serve_video(self, path: Path) -> None:
@@ -6926,7 +6983,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         if status == HTTPStatus.PARTIAL_CONTENT:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         with path.open("rb") as handle:
             handle.seek(start)
             remaining = length
