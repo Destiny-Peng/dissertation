@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
 import json
 import math
@@ -249,6 +250,54 @@ def _run_configuration(
     return summary, predictions, records
 
 
+def _run_configuration_concurrent(
+    *,
+    config: Mapping[str, Any],
+    config_id: str,
+    stage_name: str,
+    repeats: int,
+    signals: Mapping[str, Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+    no_event_failures: Sequence[Mapping[str, Any]],
+    clean_rollouts: Sequence[Mapping[str, Any]],
+    use_cuda_stream: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run one configuration, optionally on its own CUDA stream.
+
+    Worker threads share one CUDA context, so this avoids the large overhead of
+    spawning one process/context per tiny BiLSTM while still allowing kernels
+    from independent configurations to overlap.
+    """
+    training = config["training"]
+    device = core.resolve_device(str(training.get("device", "auto")))
+    if not use_cuda_stream or device.type != "cuda":
+        return _run_configuration(
+            config=config,
+            config_id=config_id,
+            stage_name=stage_name,
+            repeats=repeats,
+            signals=signals,
+            events=events,
+            no_event_failures=no_event_failures,
+            clean_rollouts=clean_rollouts,
+        )
+
+    stream = torch.cuda.Stream(device=device)
+    with torch.cuda.device(device), torch.cuda.stream(stream):
+        result = _run_configuration(
+            config=config,
+            config_id=config_id,
+            stage_name=stage_name,
+            repeats=repeats,
+            signals=signals,
+            events=events,
+            no_event_failures=no_event_failures,
+            clean_rollouts=clean_rollouts,
+        )
+    stream.synchronize()
+    return result
+
+
 def run_spec(
     *,
     spec: Mapping[str, Any],
@@ -287,6 +336,7 @@ def run_spec(
         "name": "main",
         "base": {},
         "sweep": normalized["sweep"],
+        "variants": normalized["variants"],
         "select": {
             "metric": "in_interval_rate_mean",
             "mode": "max",
@@ -305,23 +355,72 @@ def run_spec(
             stage.get("sweep", []),
             stage.get("variants", []),
         )
-        log(f"stage={stage_name} configurations={len(configurations)} repeats={normalized['repeats']}")
-        stage_rows = []
+        requested_workers = int(
+            stage_base.get("training", {}).get("parallel_workers", 4)
+        )
+        effective_workers = max(1, min(requested_workers, len(configurations)))
+        log(
+            f"stage={stage_name} configurations={len(configurations)} "
+            f"repeats={normalized['repeats']} workers={effective_workers}"
+        )
+
         configs_by_id: dict[str, dict[str, Any]] = {}
+        jobs: list[tuple[int, str, dict[str, Any]]] = []
         for config_index, config in enumerate(configurations):
             specs.validate_config(config)
             config_id = f"s{stage_index + 1:02d}_c{config_index + 1:03d}"
             configs_by_id[config_id] = config
-            summary, predictions, records = _run_configuration(
-                config=config,
-                config_id=config_id,
-                stage_name=stage_name,
-                repeats=int(normalized["repeats"]),
-                signals=signals,
-                events=events,
-                no_event_failures=no_event_failures,
-                clean_rollouts=clean_rollouts,
-            )
+            jobs.append((config_index, config_id, config))
+
+        completed: list[
+            tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]] | None
+        ] = [None] * len(jobs)
+
+        if effective_workers == 1:
+            for config_index, config_id, config in jobs:
+                log(f"stage={stage_name} start={config_id}")
+                completed[config_index] = _run_configuration_concurrent(
+                    config=config,
+                    config_id=config_id,
+                    stage_name=stage_name,
+                    repeats=int(normalized["repeats"]),
+                    signals=signals,
+                    events=events,
+                    no_event_failures=no_event_failures,
+                    clean_rollouts=clean_rollouts,
+                    use_cuda_stream=False,
+                )
+                log(f"stage={stage_name} done={config_id}")
+        else:
+            with ThreadPoolExecutor(
+                max_workers=effective_workers,
+                thread_name_prefix=f"localization-{stage_index + 1}",
+            ) as executor:
+                futures = {
+                    executor.submit(
+                        _run_configuration_concurrent,
+                        config=config,
+                        config_id=config_id,
+                        stage_name=stage_name,
+                        repeats=int(normalized["repeats"]),
+                        signals=signals,
+                        events=events,
+                        no_event_failures=no_event_failures,
+                        clean_rollouts=clean_rollouts,
+                        use_cuda_stream=True,
+                    ): (config_index, config_id)
+                    for config_index, config_id, config in jobs
+                }
+                for future in as_completed(futures):
+                    config_index, config_id = futures[future]
+                    completed[config_index] = future.result()
+                    log(f"stage={stage_name} done={config_id}")
+
+        stage_rows: list[dict[str, Any]] = []
+        for result in completed:
+            if result is None:
+                raise RuntimeError(f"stage {stage_name} has an incomplete worker result")
+            summary, predictions, records = result
             stage_rows.append(summary)
             all_summary.append(summary)
             all_predictions.extend(predictions)
@@ -333,6 +432,7 @@ def run_spec(
         stage_manifest.append({
             "stage": stage_name,
             "configuration_count": len(configurations),
+            "parallel_workers": effective_workers,
             "selector": selector,
             "best_config_id": best_row["config_id"],
             "best_config": best_config,
@@ -364,6 +464,9 @@ def run_spec(
         "selection_mode": "latest_usable_fused_per_rollout",
         "configuration_count": len(all_summary),
         "training_run_count": len(all_records),
+        "parallel_workers": int(
+            normalized["base"].get("training", {}).get("parallel_workers", 4)
+        ),
         "provenance": provenance,
         "outputs": [
             "config.json",
