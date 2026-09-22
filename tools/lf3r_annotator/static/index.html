@@ -548,6 +548,7 @@
           <nav class="analysis-subtabs localization-lab-tabs" aria-label="Localization Lab sections">
             <button type="button" data-localization-tab="builder" class="active">Experiment Builder</button>
             <button type="button" data-localization-tab="runs">Runs</button>
+            <button type="button" data-localization-tab="challenge">Challenge Set</button>
             <button type="button" data-localization-tab="presets">Presets</button>
           </nav>
 
@@ -581,6 +582,15 @@
                 </label>
                 <label><span>Success ratio</span>
                   <input id="localizationSuccessRatio" type="number" min="0" step="0.1" value="0">
+                </label>
+                <label><span>Challenge set</span>
+                  <select id="localizationChallengeTrainSet">
+                    <option value="">None</option>
+                  </select>
+                  <small class="analysis-run-field-help">Saved diagnostic challenge sets.</small>
+                </label>
+                <label class="localization-checkbox-field"><span>Challenge training</span>
+                  <span><input id="localizationForceChallengeTrain" type="checkbox"> Force every challenge rollout into train</span>
                 </label>
                 <label><span>Target</span>
                   <select id="localizationTargetKind">
@@ -692,6 +702,52 @@
             </div>
             <div id="localizationRunsList" class="analysis-table-wrap"></div>
             <pre id="localizationJobLog" class="job-log" aria-label="Localization experiment log"></pre>
+          </section>
+
+          <section data-localization-panel="challenge" class="hidden">
+            <div class="analysis-card-heading">
+              <div>
+                <h4>Localization challenge set</h4>
+                <small>Mine persistent hard cases from all-failure inference across every repeat. Challenge rollouts may also be used in training.</small>
+              </div>
+              <button id="localizationChallengeRefresh" class="ghost-button" type="button">Refresh</button>
+            </div>
+
+            <div class="analysis-run-grid localization-challenge-controls">
+              <label><span>Experiment run</span>
+                <select id="localizationChallengeRun"></select>
+              </label>
+              <label><span>Failure criterion</span>
+                <select id="localizationChallengeCriterion">
+                  <option value="outside_interval">Outside annotated interval</option>
+                  <option value="outside_3">Outside ±3 samples</option>
+                </select>
+              </label>
+              <label><span>Challenge size</span>
+                <input id="localizationChallengeSize" type="number" min="1" max="100" value="18" step="1">
+              </label>
+              <label class="localization-checkbox-field"><span>Table filter</span>
+                <span><input id="localizationChallengePersistentOnly" type="checkbox" checked> Persistent common failures only</span>
+              </label>
+            </div>
+
+            <div class="localization-challenge-config-block">
+              <h5 class="localization-subsection-title">Selected training results</h5>
+              <p class="analysis-card-note">A rollout is a common persistent failure only when it fails across all repeats for every checked config.</p>
+              <div id="localizationChallengeConfigs" class="localization-challenge-configs"></div>
+            </div>
+
+            <div class="settings-actions localization-challenge-actions">
+              <button id="localizationChallengePropose" class="ghost-button" type="button">Propose challenge set</button>
+              <label class="localization-inline-name"><span>Name</span>
+                <input id="localizationChallengeName" type="text" value="localization_challenge_v1" maxlength="64">
+              </label>
+              <button id="localizationChallengeSave" class="save-button" type="button">Save selected set</button>
+            </div>
+
+            <div id="localizationChallengeStatus" class="analysis-status" role="status">Select a completed run with all-failure predictions.</div>
+            <div id="localizationChallengeComposition" class="localization-challenge-composition"></div>
+            <div id="localizationChallengeTable" class="analysis-table-wrap"></div>
           </section>
 
           <section data-localization-panel="presets" class="hidden">
@@ -1364,8 +1420,8 @@
     </div>
   </main>
 
-  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v4-20260922">
-  <script src="/static/localization-lab.js?v=localization-lab-v4-20260922" defer></script>
+  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v5-20260922">
+  <script src="/static/localization-lab.js?v=localization-lab-v5-20260922" defer></script>
   <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
   <script src="/static/workspace.js?v=label-loss-webui-v3-20260921" defer></script>
 </body>
