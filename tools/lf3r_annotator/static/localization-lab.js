@@ -929,6 +929,14 @@
     return percent ? (100 * number).toFixed(1) + "%" : number.toFixed(3).replace(/\.000$/, "");
   }
 
+  function formatMetricCell(row, meanField, varianceField, percent) {
+    var main = formatMetric(row[meanField], percent);
+    var variance = row[varianceField];
+    if (variance == null || !Number.isFinite(Number(variance))) return main;
+    return '<span class="localization-result-metric">' + main
+      + '<small>var ' + formatMetric(variance, false) + '</small></span>';
+  }
+
   function renderRunResult(result) {
     state.activeRunResult = result;
     var shell = node("localizationRunResult");
@@ -976,14 +984,14 @@
           return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
             + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
             + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.in_interval_rate_mean, true) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.first_event_in_interval_rate_mean, true) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.within_3_mean, true) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.median_absolute_interval_error_samples_mean, false) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.mae_samples_mean, false) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.mse_samples_mean, false) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.before_interval_rate_mean, true) + '</td>'
-            + '<td class="numeric">' + formatMetric(row.after_interval_rate_mean, true) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "in_interval_rate_mean", "in_interval_rate_variance", true) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance", true) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "within_3_mean", "within_3_variance", true) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "median_absolute_interval_error_samples_mean", "median_absolute_interval_error_samples_variance", false) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "mae_samples_mean", "mae_samples_variance", false) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "mse_samples_mean", "mse_samples_variance", false) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "before_interval_rate_mean", "before_interval_rate_variance", true) + '</td>'
+            + '<td class="numeric">' + formatMetricCell(row, "after_interval_rate_mean", "after_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + esc(row["training.batch_size"] == null ? "—" : row["training.batch_size"]) + '</td>'
             + '<td>' + (row.best ? '<strong>Selected</strong>' : '') + '</td>'
             + '</tr>';
@@ -1014,6 +1022,7 @@
     var work = estimate(spec);
     if (work.trainingRuns > 500 && !window.confirm("This experiment expands to " + work.trainingRuns + " training runs. Start it?")) return;
     node("localizationBuilderStatus").textContent = "Submitting experiment…";
+    renderRunResult(null);
     var payload = await fetchJson("/api/analysis/localization/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
