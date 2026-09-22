@@ -7069,6 +7069,15 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     {"challenge_sets": self.app.analysis_jobs.localization_challenge_sets()},
                 )
                 return
+            if path.startswith("/api/analysis/localization/result/"):
+                run_name = path.rsplit("/", 1)[-1]
+                try:
+                    result = self.app.analysis_jobs.localization_result_detail(run_name)
+                except FileNotFoundError:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Localization result not found")
+                    return
+                self.json_response(HTTPStatus.OK, {"result": result})
+                return
             if path.startswith("/api/analysis/localization/challenge/"):
                 run_name = path.rsplit("/", 1)[-1]
                 self.json_response(
