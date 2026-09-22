@@ -518,13 +518,15 @@
           <p class="page-subtitle">Conclusion-first view of the annotated LIBERO-10 set. Detailed rows, legacy
             comparisons, and downloadable artifacts are available on demand.</p>
         </div>
-        <button id="analysisRefresh" class="ghost-button" type="button">Refresh analysis</button>
+        <button id="analysisRefresh" class="ghost-button" type="button" data-analysis-legacy-global>Refresh analysis</button>
       </div>
 
-      <div id="analysisStatus" class="analysis-status" role="status">Loading analysis...</div>
+      <div id="analysisStatus" class="analysis-status" role="status" data-analysis-legacy-global>Loading analysis...</div>
+
 
       <nav class="analysis-subtabs" aria-label="Analysis sections">
-        <a href="#/analysis/overview" data-analysis-tab="overview" class="active" aria-current="page">Overview</a>
+        <a href="#/analysis/localization" data-analysis-tab="localization" class="active" aria-current="page">Localization Lab</a>
+        <a href="#/analysis/overview" data-analysis-tab="overview">Overview</a>
         <a href="#/analysis/comparison" data-analysis-tab="comparison">Method comparison</a>
         <a href="#/analysis/failures" data-analysis-tab="failures">Failure types</a>
         <a href="#/analysis/events" data-analysis-tab="events">Event explorer</a>
@@ -532,7 +534,170 @@
         <a href="#/analysis/archive" data-analysis-tab="archive">Archive &amp; downloads</a>
       </nav>
 
-      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle">
+      <section id="analysisTabLocalization" class="analysis-tab-panel" data-analysis-panel="localization">
+        <section class="analysis-card localization-lab-shell">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">EXPERIMENT DESIGN</p>
+              <h3>Localization Lab</h3>
+              <p class="analysis-card-note">Build training experiments from a base preset, fixed parameters, sweeps, repeats, and optional sequential stages.</p>
+            </div>
+            <span id="localizationJobBadge" class="analysis-badge">Idle</span>
+          </div>
+
+          <nav class="analysis-subtabs localization-lab-tabs" aria-label="Localization Lab sections">
+            <button type="button" data-localization-tab="builder" class="active">Experiment Builder</button>
+            <button type="button" data-localization-tab="runs">Runs</button>
+            <button type="button" data-localization-tab="presets">Presets</button>
+          </nav>
+
+          <section data-localization-panel="builder">
+            <div class="analysis-run-grid localization-builder-grid">
+              <label><span>Experiment name</span>
+                <input id="localizationExperimentName" type="text" value="localization_experiment" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>Base preset</span>
+                <select id="localizationPresetSelect"><option value="">Loading presets…</option></select>
+              </label>
+              <label><span>Repeats</span>
+                <input id="localizationRepeats" type="number" min="1" max="50" value="5" step="1">
+              </label>
+              <div class="analysis-run-field">
+                <span>Estimated work</span>
+                <strong id="localizationEstimate">1 configuration × 5 repeats</strong>
+                <small id="localizationEstimateWarning" class="analysis-run-field-help"></small>
+              </div>
+            </div>
+
+            <details open class="analysis-result-details localization-section">
+              <summary>Fixed configuration</summary>
+              <div class="analysis-run-grid">
+                <label><span>Training population</span>
+                  <select id="localizationPopulation">
+                    <option value="failure_only">Failure only</option>
+                    <option value="failure_success">Failure + clean success</option>
+                  </select>
+                </label>
+                <label><span>Success ratio</span>
+                  <input id="localizationSuccessRatio" type="number" min="0" step="0.1" value="0">
+                </label>
+                <label><span>Target</span>
+                  <select id="localizationTargetKind">
+                    <option value="hard">Hard interval</option>
+                    <option value="gaussian">Gaussian interval</option>
+                  </select>
+                </label>
+                <label><span>Gaussian σ pre</span>
+                  <input id="localizationSigmaPre" type="number" min="0.01" step="0.5" value="3">
+                </label>
+                <label><span>Gaussian σ post</span>
+                  <input id="localizationSigmaPost" type="number" min="0.01" step="0.5" value="3">
+                </label>
+                <label><span>Event decay τ</span>
+                  <input id="localizationTauEvent" type="number" min="0.01" step="1" value="20">
+                </label>
+                <label><span>Hidden size</span>
+                  <input id="localizationHidden" type="number" min="1" max="512" step="1" value="16">
+                </label>
+                <label><span>Loss</span>
+                  <select id="localizationLoss">
+                    <option value="bce">BCE</option>
+                    <option value="temporal_softmax_ce">Temporal softmax CE</option>
+                    <option value="temporal_softmax_ce_distance">Temporal CE + distance</option>
+                    <option value="temporal_softmax_ce_squared_distance">Temporal CE + squared distance</option>
+                    <option value="temporal_softmax_ce_ranking">Temporal CE + ranking</option>
+                    <option value="temporal_softmax_ce_distance_ranking">Temporal CE + distance + ranking</option>
+                  </select>
+                </label>
+                <label><span>Distance weight</span>
+                  <input id="localizationDistanceWeight" type="number" min="0" step="0.1" value="1">
+                </label>
+                <label><span>Ranking weight</span>
+                  <input id="localizationRankingWeight" type="number" min="0" step="0.1" value="1">
+                </label>
+                <label><span>Ranking margin</span>
+                  <input id="localizationRankingMargin" type="number" min="0" step="0.1" value="1">
+                </label>
+                <label><span>Device</span>
+                  <select id="localizationDevice">
+                    <option value="auto">auto</option><option value="cuda">cuda</option>
+                    <option value="cuda:0">cuda:0</option><option value="cuda:1">cuda:1</option>
+                    <option value="cpu">cpu</option>
+                  </select>
+                </label>
+                <label><span>Batch size</span>
+                  <input id="localizationBatchSize" type="number" min="1" max="128" value="32" step="1">
+                </label>
+              </div>
+              <details class="analysis-result-details">
+                <summary>Advanced training settings</summary>
+                <div class="analysis-run-grid">
+                  <label><span>Epochs</span><input id="localizationEpochs" type="number" min="1" value="300"></label>
+                  <label><span>Patience</span><input id="localizationPatience" type="number" min="1" value="35"></label>
+                  <label><span>Learning rate</span><input id="localizationLearningRate" type="number" min="0.000001" step="0.0001" value="0.003"></label>
+                  <label><span>Weight decay</span><input id="localizationWeightDecay" type="number" min="0" step="0.0001" value="0.0001"></label>
+                  <label><span>Gradient clip</span><input id="localizationGradClip" type="number" min="0.01" step="0.1" value="5"></label>
+                  <label><span>Seed</span><input id="localizationSeed" type="number" min="0" step="1" value="17"></label>
+                  <label><span>Train fraction</span><input id="localizationTrainFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.70"></label>
+                  <label><span>Validation fraction</span><input id="localizationValFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.15"></label>
+                </div>
+              </details>
+            </details>
+
+            <details open class="analysis-result-details localization-section">
+              <summary>Sweep dimensions</summary>
+              <p class="analysis-card-note">Each dimension forms a Cartesian product. Values are comma-separated; strings such as loss names may be entered directly.</p>
+              <div id="localizationSweepRows" class="localization-sweep-list"></div>
+              <button id="localizationAddSweep" class="ghost-button" type="button">Add sweep dimension</button>
+            </details>
+
+            <details class="analysis-result-details localization-section">
+              <summary>Sequential stages</summary>
+              <label class="localization-stage-toggle"><input id="localizationUseStages" type="checkbox"> Use sequential stages instead of the top-level sweep</label>
+              <p class="analysis-card-note">Each stage inherits the best configuration from the previous stage. Selection defaults to max in-interval rate, then min MAE, then min MSE.</p>
+              <div id="localizationStages" class="localization-stage-list hidden"></div>
+              <button id="localizationAddStage" class="ghost-button hidden" type="button">Add stage</button>
+            </details>
+
+            <details class="analysis-result-details localization-section">
+              <summary>Experiment spec preview</summary>
+              <pre id="localizationSpecPreview" class="job-log localization-spec-preview"></pre>
+            </details>
+
+            <div class="settings-actions localization-builder-actions">
+              <button id="localizationSavePresetFromBuilder" class="ghost-button" type="button">Save as preset</button>
+              <span class="settings-actions-spacer"></span>
+              <button id="localizationRunExperiment" class="save-button" type="button">Run experiment</button>
+            </div>
+            <div id="localizationBuilderStatus" class="analysis-status" role="status">Ready.</div>
+          </section>
+
+          <section data-localization-panel="runs" class="hidden">
+            <div class="analysis-card-heading">
+              <div><h4>Experiment runs</h4><small>Unified outputs under outputs/robo_localization.</small></div>
+              <button id="localizationRefreshRuns" class="ghost-button" type="button">Refresh</button>
+            </div>
+            <div id="localizationRunsList" class="analysis-table-wrap"></div>
+            <pre id="localizationJobLog" class="job-log" aria-label="Localization experiment log"></pre>
+          </section>
+
+          <section data-localization-panel="presets" class="hidden">
+            <div class="analysis-card-heading">
+              <div><h4>Presets</h4><small>Built-in presets plus reusable project-local presets.</small></div>
+            </div>
+            <div class="analysis-run-grid">
+              <label><span>Preset name</span>
+                <input id="localizationPresetName" type="text" maxlength="64" placeholder="my_experiment">
+              </label>
+              <button id="localizationSavePreset" class="save-button" type="button">Save current spec</button>
+            </div>
+            <div id="localizationPresetList" class="analysis-table-wrap"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle" data-analysis-legacy-global>
         <div class="analysis-card-heading">
           <div>
             <p class="eyebrow">LIVE SCOPE</p>
@@ -1390,6 +1555,8 @@
     </div>
   </main>
 
+  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v1-20260922">
+  <script src="/static/localization-lab.js?v=localization-lab-v1-20260922" defer></script>
   <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
   <script src="/static/workspace.js?v=label-loss-webui-v3-20260921" defer></script>
 </body>
