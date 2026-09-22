@@ -139,6 +139,7 @@ Defaults preserve the current BiLSTM training setup:
 - learning rate: 0.003
 - weight decay: 1e-4
 - gradient clipping: 5
+- batch size: 32 rollout sequences
 - repeats: 5
 - success ratios: 0.5, 1, 2 (configurable; 0x always included)
 
@@ -176,8 +177,9 @@ for legacy single-directory evaluation.
 
 # BiLSTM label/loss ablation
 
-The label/loss experiment is implemented separately from the success-negative
-ablation so the existing WebUI experiment remains reproducible.
+The label/loss experiment keeps a separate experiment adapter and artifact contract,
+while sharing the same model, mini-batch trainer, optimizer loop, and batched inference
+with the success-negative experiment.
 
 Runner:
 
