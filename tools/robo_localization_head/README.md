@@ -123,3 +123,47 @@ serial execution.
 The minibatch path keeps sequence lengths on CPU for packed-sequence bookkeeping and
 reduces training/validation loss statistics with one host synchronization per batch
 instead of one synchronization per rollout.
+
+
+## Checkpoints and challenge mining
+
+Every localization training repeat now saves the best early-stopped model under:
+
+~~~text
+outputs/robo_localization/<run>/checkpoints/<stage>/<config_id>/repeat_XX.pt
+~~~
+
+Each checkpoint contains the model state, normalization mean/std, experiment
+configuration, split, seed, and training metadata. After each repeat, the selected
+model is also run once over every eligible annotated failure rollout. Those results
+are written to:
+
+~~~text
+all_failure_predictions.csv
+~~~
+
+This full-failure inference is the source for **Localization Lab -> Challenge Set**.
+It is diagnostic rather than held-out evaluation: rows explicitly record whether a
+rollout was in train/val/test and whether it was forcibly inserted into train.
+
+The Challenge Set page supports:
+
+- selecting one or more completed localization configurations;
+- finding rollouts that persistently fail across all repeats and all selected configs;
+- ranking by in-interval rate, ±3 rate, median/mean/worst absolute localization error;
+- filtering by task, failure type, multi-event, and recovery-like cases;
+- diversity-aware proposals;
+- saving a manifest plus selected-case CSV and full ranked hard-case CSV.
+
+Saved manifests live under:
+
+~~~text
+config/robo_localization_challenge_sets/
+~~~
+
+A saved challenge set can be selected in Experiment Builder and **forced into train**.
+The split logic moves every selected challenge rollout into train and replenishes
+validation/test from non-challenge training rollouts when possible. This is intended
+for diagnosis: if forced exposure fixes a hard case, insufficient training coverage
+is a plausible explanation; if it remains hard despite repeated forced training
+exposure, the target/loss/features/model should be investigated instead.
