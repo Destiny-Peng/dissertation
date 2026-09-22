@@ -33,6 +33,7 @@ DEFAULT_BASE = {
     "training": {
         "device": "auto",
         "batch_size": 32,
+        "parallel_workers": 4,
         "epochs": 300,
         "patience": 35,
         "learning_rate": 0.003,
@@ -303,6 +304,9 @@ def validate_config(config: Mapping[str, Any]) -> None:
     batch_size = int(training.get("batch_size", 32))
     if batch_size < 1 or batch_size > 128:
         raise ValueError("training.batch_size must be between 1 and 128")
+    parallel_workers = int(training.get("parallel_workers", 4))
+    if parallel_workers < 1 or parallel_workers > 8:
+        raise ValueError("training.parallel_workers must be between 1 and 8")
     for key in ("epochs", "patience"):
         if int(training.get(key, 1)) < 1:
             raise ValueError(f"training.{key} must be >= 1")
