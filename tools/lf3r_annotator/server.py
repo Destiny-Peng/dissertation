@@ -37,6 +37,10 @@ from task_supervisor import TmuxJobSupervisor, TmuxSupervisorError
 
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROLLOUT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+CONTROL_PREFIX_REQUEST_RE = re.compile(
+    rb"^(?P<prefix>[\x00-\x1f]{1,32})"
+    rb"(?P<request>(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) [^\r\n]+ HTTP/1\.[01]\r?\n)$"
+)
 FAILURE_TYPES = {
     "none_success",
     "grasp_failure",
@@ -4694,6 +4698,26 @@ class LF3RApplication:
 class LF3RHandler(BaseHTTPRequestHandler):
     app: LF3RApplication
     server_version = "LF3RAnnotator/1.0"
+
+    @staticmethod
+    def _sanitize_raw_requestline(raw: bytes) -> tuple[bytes, int]:
+        match = CONTROL_PREFIX_REQUEST_RE.fullmatch(raw)
+        if match is None:
+            return raw, 0
+        prefix = match.group("prefix")
+        return match.group("request"), len(prefix)
+
+    def parse_request(self) -> bool:
+        sanitized, stripped = self._sanitize_raw_requestline(self.raw_requestline)
+        if stripped:
+            self.raw_requestline = sanitized
+            method = sanitized.split(b" ", 1)[0].decode("ascii", errors="replace")
+            self.log_error(
+                "sanitized %d leading control byte(s) before HTTP method %s",
+                stripped,
+                method,
+            )
+        return super().parse_request()
 
     def log_message(self, fmt: str, *args: Any) -> None:
         super().log_message(fmt, *args)
