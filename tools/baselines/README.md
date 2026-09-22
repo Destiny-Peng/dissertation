@@ -166,6 +166,17 @@ Each rollout writes `raw/<rollout-id>/densereward_raw.jsonl` and `worker_result.
 
 Robo-Dopamine writes the official `pred_vllm.json` under its native timestamped output subdirectory and records that location in `worker_result.json`.
 
+An optional LF3R localization head can be attached with
+`--robo-localization-ckpt PATH`. This does **not** replace Robo-Dopamine's GRM
+checkpoint. It consumes the wrapper's fused `progress + hop` sequence after the
+incremental/forward/backward outputs have been fused, loads the saved tiny BiLSTM
+and its normalization statistics on CPU, and writes
+`raw/<rollout-id>/localization_prediction.json`. The selected point is the native
+Robo-Dopamine sampled frame at `argmax(logits)`; `worker_result.json` records
+the checkpoint and predicted frame so the Results UI can overlay it on the
+Robo-Dopamine curves. Non-fused modes are rejected when this option is set.
+
+
 ### Robo-Dopamine persistent execution and resume
 
 Robo-Dopamine uses one worker process and one cached `GRMInference` object (including its vLLM engine and processor) for the selected rollout set. Rollouts are processed sequentially with the configured frame interval, batch size, goal image, and evaluation mode. Each rollout gets its own `raw/<rollout-id>/` directory, so the official timestamped output and `pred_vllm.json` remain isolated while the model stays resident. Ordinary parsing or inference errors mark only that rollout as `failed` and continue. CUDA OOM, a dead vLLM engine, or another classified engine-fatal error marks the current rollout as `interrupted`, saves state, exits with code `70`, and leaves later jobs pending.
