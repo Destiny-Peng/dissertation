@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Tests for the Localization Lab experiment-spec engine."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+TOOLS_DIR = Path(__file__).resolve().parents[1]
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+from robo_localization_head import specs
+
+
+class LocalizationSpecTests(unittest.TestCase):
+    def test_cartesian_sweep_estimate(self) -> None:
+        spec = {
+            "name": "matrix",
+            "base": specs.DEFAULT_BASE,
+            "repeats": 5,
+            "sweep": [
+                {"path": "model.hidden", "values": [16, 32]},
+                {"path": "target.kind", "values": ["hard", "gaussian"]},
+                {"path": "training.batch_size", "values": [16, 32, 64]},
+            ],
+            "stages": [],
+        }
+        normalized = specs.normalize_spec(spec)
+        configs = specs.expand(normalized["base"], normalized["sweep"])
+        self.assertEqual(len(configs), 12)
+        self.assertEqual(specs.estimate_runs(spec)["training_runs"], 60)
+
+    def test_stage_spec_is_valid(self) -> None:
+        spec = specs.BUILTIN_PRESETS["label_loss_default"]
+        normalized = specs.normalize_spec(spec)
+        self.assertEqual(len(normalized["stages"]), 2)
+        self.assertEqual(
+            specs.estimate_runs(spec),
+            {"configurations": 11, "training_runs": 55},
+        )
+
+    def test_success_negative_rejects_temporal_softmax(self) -> None:
+        config = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {
+                "data": {"population": "failure_success", "success_ratio": 1.0},
+                "loss": {"name": "temporal_softmax_ce"},
+            },
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(config)
+
+    def test_whole_target_sweep_replaces_target(self) -> None:
+        configs = specs.expand(
+            specs.DEFAULT_BASE,
+            [
+                {
+                    "path": "target",
+                    "values": [
+                        {"kind": "hard", "tau_event": 20.0},
+                        {
+                            "kind": "gaussian",
+                            "sigma_pre": 3.0,
+                            "sigma_post": 1.0,
+                            "tau_event": 20.0,
+                        },
+                    ],
+                }
+            ],
+        )
+        self.assertEqual(configs[0]["target"]["kind"], "hard")
+        self.assertEqual(configs[1]["target"]["sigma_post"], 1.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
