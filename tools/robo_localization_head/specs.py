@@ -50,6 +50,7 @@ BUILTIN_PRESETS = {
         "name": "bilstm_default",
         "base": copy.deepcopy(DEFAULT_BASE),
         "sweep": [],
+        "variants": [],
         "repeats": 5,
         "stages": [],
     },
@@ -62,17 +63,53 @@ BUILTIN_PRESETS = {
         "stages": [
             {
                 "name": "label_selection",
-                "sweep": [
+                "sweep": [],
+                "variants": [
                     {
-                        "path": "target",
-                        "values": [
-                            {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 1.0, "sigma_post": 1.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 2.0, "sigma_post": 2.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
-                            {"kind": "gaussian", "sigma_pre": 5.0, "sigma_post": 5.0, "tau_event": 20.0},
-                        ],
-                    }
+                        "name": "hard",
+                        "set": {
+                            "target.kind": "hard",
+                            "target.sigma_pre": 3.0,
+                            "target.sigma_post": 3.0,
+                            "target.tau_event": 20.0,
+                        },
+                    },
+                    {
+                        "name": "gaussian_sigma_1",
+                        "set": {
+                            "target.kind": "gaussian",
+                            "target.sigma_pre": 1.0,
+                            "target.sigma_post": 1.0,
+                            "target.tau_event": 20.0,
+                        },
+                    },
+                    {
+                        "name": "gaussian_sigma_2",
+                        "set": {
+                            "target.kind": "gaussian",
+                            "target.sigma_pre": 2.0,
+                            "target.sigma_post": 2.0,
+                            "target.tau_event": 20.0,
+                        },
+                    },
+                    {
+                        "name": "gaussian_sigma_3",
+                        "set": {
+                            "target.kind": "gaussian",
+                            "target.sigma_pre": 3.0,
+                            "target.sigma_post": 3.0,
+                            "target.tau_event": 20.0,
+                        },
+                    },
+                    {
+                        "name": "gaussian_sigma_5",
+                        "set": {
+                            "target.kind": "gaussian",
+                            "target.sigma_pre": 5.0,
+                            "target.sigma_post": 5.0,
+                            "target.tau_event": 20.0,
+                        },
+                    },
                 ],
                 "select": {
                     "metric": "in_interval_rate_mean",
@@ -121,6 +158,7 @@ BUILTIN_PRESETS = {
             {"path": "data.success_ratio", "values": [0.0, 0.5, 1.0, 2.0]},
             {"path": "model.hidden", "values": [16, 32]},
         ],
+        "variants": [],
         "stages": [],
     },
 }
@@ -150,9 +188,18 @@ def set_path(config: dict[str, Any], path: str, value: Any) -> None:
     cursor[parts[-1]] = copy.deepcopy(value)
 
 
-def expand(base: Mapping[str, Any], sweep: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    if not sweep:
-        return [copy.deepcopy(dict(base))]
+def expand(
+    base: Mapping[str, Any],
+    sweep: Sequence[Mapping[str, Any]],
+    variants: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Expand independent sweep dimensions and optional coupled variants.
+
+    Sweep dimensions form a Cartesian product. A variant is a named set of paths
+    that move together, e.g. target.kind + sigma_pre + sigma_post + tau_event.
+    If both are present, each independent sweep combination is crossed with each
+    coupled variant.
+    """
     paths: list[str] = []
     values: list[list[Any]] = []
     for item in sweep:
@@ -164,12 +211,30 @@ def expand(base: Mapping[str, Any], sweep: Sequence[Mapping[str, Any]]) -> list[
             raise ValueError(f"duplicate sweep path: {path}")
         paths.append(path)
         values.append(options)
-    result = []
-    for combination in itertools.product(*values):
-        config = copy.deepcopy(dict(base))
+
+    combinations = list(itertools.product(*values)) if values else [()]
+    variant_rows = list(variants or [])
+    if not variant_rows:
+        variant_rows = [{"name": "base", "set": {}}]
+
+    result: list[dict[str, Any]] = []
+    for combination in combinations:
+        swept = copy.deepcopy(dict(base))
         for path, value in zip(paths, combination):
-            set_path(config, path, value)
-        result.append(config)
+            set_path(swept, path, value)
+        for variant in variant_rows:
+            if not isinstance(variant, Mapping):
+                raise ValueError("each variant must be an object")
+            variant_name = str(variant.get("name") or "").strip()
+            if not NAME_RE.fullmatch(variant_name):
+                raise ValueError(f"invalid variant name: {variant_name!r}")
+            assignments = variant.get("set", {})
+            if not isinstance(assignments, Mapping) or not assignments:
+                raise ValueError(f"variant {variant_name!r} requires a non-empty set object")
+            config = copy.deepcopy(swept)
+            for path, value in assignments.items():
+                set_path(config, str(path), value)
+            result.append(config)
     return result
 
 
@@ -256,11 +321,12 @@ def normalize_spec(raw: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("repeats must be between 1 and 50")
     base = deep_merge(DEFAULT_BASE, raw.get("base", {}))
     sweep = copy.deepcopy(raw.get("sweep", []))
+    variants = copy.deepcopy(raw.get("variants", []))
     stages = copy.deepcopy(raw.get("stages", []))
-    if not isinstance(sweep, list) or not isinstance(stages, list):
-        raise ValueError("sweep and stages must be arrays")
-    if stages and sweep:
-        raise ValueError("use either top-level sweep or stages, not both")
+    if not isinstance(sweep, list) or not isinstance(variants, list) or not isinstance(stages, list):
+        raise ValueError("sweep, variants, and stages must be arrays")
+    if stages and (sweep or variants):
+        raise ValueError("use either top-level sweep/variants or stages, not both")
 
     if stages:
         inherited = copy.deepcopy(base)
@@ -271,12 +337,16 @@ def normalize_spec(raw: Mapping[str, Any]) -> dict[str, Any]:
             if not NAME_RE.fullmatch(stage_name):
                 raise ValueError(f"invalid stage name: {stage_name!r}")
             stage_base = deep_merge(inherited, stage.get("base", {}))
-            configs = expand(stage_base, stage.get("sweep", []))
+            configs = expand(
+                stage_base,
+                stage.get("sweep", []),
+                stage.get("variants", []),
+            )
             for config in configs:
                 validate_config(config)
             inherited = stage_base
     else:
-        for config in expand(base, sweep):
+        for config in expand(base, sweep, variants):
             validate_config(config)
 
     return {
@@ -284,6 +354,7 @@ def normalize_spec(raw: Mapping[str, Any]) -> dict[str, Any]:
         "name": name,
         "base": base,
         "sweep": sweep,
+        "variants": variants,
         "stages": stages,
         "repeats": repeats,
     }
@@ -294,11 +365,19 @@ def estimate_runs(spec: Mapping[str, Any]) -> dict[str, int]:
     repeats = int(normalized["repeats"])
     if normalized["stages"]:
         configurations = sum(
-            len(expand(deep_merge(normalized["base"], stage.get("base", {})), stage.get("sweep", [])))
+            len(expand(
+                deep_merge(normalized["base"], stage.get("base", {})),
+                stage.get("sweep", []),
+                stage.get("variants", []),
+            ))
             for stage in normalized["stages"]
         )
     else:
-        configurations = len(expand(normalized["base"], normalized["sweep"]))
+        configurations = len(expand(
+            normalized["base"],
+            normalized["sweep"],
+            normalized["variants"],
+        ))
     return {
         "configurations": configurations,
         "training_runs": configurations * repeats,
