@@ -329,11 +329,17 @@ def _run_configuration(
             "stage": stage_name,
             "config_id": config_id,
             "repeat": repeat,
+            "seed": seed,
             "split": split,
             "failure_train_ids": failure_train_ids,
             "success_train_ids": success_ids,
             "forced_train_ids": list(split.get("forced_train", [])),
             "checkpoint": checkpoint_rel,
+            "best_epoch": train_meta["best_epoch"],
+            "best_val_loss": train_meta["best_val_loss"],
+            "effective_train_batch_size": train_meta["effective_train_batch_size"],
+            "optimizer_steps_per_epoch": train_meta["optimizer_steps_per_epoch"],
+            "metrics": copy.deepcopy(metric_row),
         })
     summary = _aggregate(per_repeat)
     best_repeat = _best_repeat_row(per_repeat)
