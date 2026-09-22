@@ -739,3 +739,68 @@
     grid-column: auto;
   }
 }
+
+
+.localization-repeat-detail-row > td {
+  padding: 0 !important;
+  background: color-mix(in srgb, var(--surface-color, #11151a) 97%, transparent);
+}
+
+.localization-repeat-details {
+  width: 100%;
+  min-width: 0;
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.localization-repeat-details > summary {
+  cursor: pointer;
+  padding: .5rem .75rem;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 650;
+  user-select: none;
+}
+
+.localization-repeat-details[open] > summary {
+  color: var(--text-color, #f5f7fa);
+}
+
+.localization-repeat-table-wrap {
+  padding: 0 .7rem .75rem;
+}
+
+.localization-repeat-table {
+  min-width: 1320px;
+  font-size: .66rem;
+}
+
+.localization-repeat-table th,
+.localization-repeat-table td {
+  padding-top: .42rem;
+  padding-bottom: .42rem;
+  white-space: nowrap;
+}
+
+.localization-repeat-checkpoint {
+  display: flex;
+  min-width: 15rem;
+  max-width: 22rem;
+  align-items: center;
+  gap: .45rem;
+}
+
+.localization-repeat-checkpoint code {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: .59rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.localization-repeat-checkpoint .ghost-button {
+  flex: 0 0 auto;
+  padding: .2rem .45rem;
+  font-size: .58rem;
+}
