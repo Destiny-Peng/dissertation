@@ -300,7 +300,11 @@ def run_spec(
     for stage_index, stage in enumerate(stage_specs):
         stage_name = str(stage["name"])
         stage_base = specs.deep_merge(inherited, stage.get("base", {}))
-        configurations = specs.expand(stage_base, stage.get("sweep", []))
+        configurations = specs.expand(
+            stage_base,
+            stage.get("sweep", []),
+            stage.get("variants", []),
+        )
         log(f"stage={stage_name} configurations={len(configurations)} repeats={normalized['repeats']}")
         stage_rows = []
         configs_by_id: dict[str, dict[str, Any]] = {}
