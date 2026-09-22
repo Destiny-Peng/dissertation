@@ -351,7 +351,7 @@
 }
 
 .localization-run-result-table {
-  min-width: 1040px;
+  min-width: 1180px;
 }
 
 .localization-best-row td {
@@ -383,6 +383,39 @@
   color: var(--muted);
   font-size: .62rem;
   font-weight: 400;
+}
+
+.localization-best-repeat {
+  display: inline-flex;
+  min-width: 8.5rem;
+  max-width: 13rem;
+  flex-direction: column;
+  gap: .16rem;
+  line-height: 1.15;
+}
+
+.localization-best-repeat strong {
+  color: var(--accent);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+
+.localization-best-repeat small {
+  color: var(--muted);
+  font-size: .61rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.localization-best-repeat code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: .58rem;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 
