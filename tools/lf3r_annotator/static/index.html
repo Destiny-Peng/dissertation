@@ -726,6 +726,19 @@
               <label><span>Challenge size</span>
                 <input id="localizationChallengeSize" type="number" min="1" max="100" value="18" step="1">
               </label>
+              <label><span>Task</span>
+                <select id="localizationChallengeTask"><option value="">All tasks</option></select>
+              </label>
+              <label><span>Failure type</span>
+                <select id="localizationChallengeFailureType"><option value="">All failure types</option></select>
+              </label>
+              <label><span>Case flags</span>
+                <select id="localizationChallengeCaseFlag">
+                  <option value="">All cases</option>
+                  <option value="multi_event">Multi-event only</option>
+                  <option value="recovery_like">Recovery-like only</option>
+                </select>
+              </label>
               <label class="localization-checkbox-field"><span>Table filter</span>
                 <span><input id="localizationChallengePersistentOnly" type="checkbox" checked> Persistent common failures only</span>
               </label>
