@@ -89,6 +89,33 @@ def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _best_repeat_row(rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """Return the descriptively best observed repeat for one configuration.
+
+    Repeat ranking follows the Localization Lab's default localization metric:
+    maximize test in-interval rate, then minimize test MAE and MSE.  The repeat
+    index is the final deterministic tie-breaker.
+    """
+    eligible = [
+        row for row in rows
+        if row.get("repeat") is not None
+        and row.get("in_interval_rate") is not None
+        and row.get("mae_samples") is not None
+        and row.get("mse_samples") is not None
+    ]
+    if not eligible:
+        return None
+    return min(
+        eligible,
+        key=lambda row: (
+            -float(row["in_interval_rate"]),
+            float(row["mae_samples"]),
+            float(row["mse_samples"]),
+            int(row["repeat"]),
+        ),
+    )
+
+
 def _selector_key(row: Mapping[str, Any], selector: Mapping[str, Any]) -> tuple[float, ...]:
     fields = [{
         "metric": selector.get("metric", "in_interval_rate_mean"),
@@ -292,6 +319,8 @@ def _run_configuration(
             "best_val_loss": train_meta["best_val_loss"],
             "effective_train_batch_size": train_meta["effective_train_batch_size"],
             "optimizer_steps_per_epoch": train_meta["optimizer_steps_per_epoch"],
+            "seed": seed,
+            "checkpoint": checkpoint_rel,
         })
         per_repeat.append(metric_row)
         predictions.extend(repeat_predictions)
@@ -307,6 +336,31 @@ def _run_configuration(
             "checkpoint": checkpoint_rel,
         })
     summary = _aggregate(per_repeat)
+    best_repeat = _best_repeat_row(per_repeat)
+    if best_repeat is not None:
+        summary.update({
+            "best_repeat": int(best_repeat["repeat"]),
+            "best_repeat_seed": int(best_repeat["seed"]),
+            "best_repeat_checkpoint": best_repeat["checkpoint"],
+            "best_repeat_test_n": int(best_repeat.get("n") or 0),
+            "best_repeat_in_interval_rate": best_repeat.get("in_interval_rate"),
+            "best_repeat_first_event_in_interval_rate": best_repeat.get(
+                "first_event_in_interval_rate"
+            ),
+            "best_repeat_within_3": best_repeat.get("within_3"),
+            "best_repeat_median_absolute_interval_error_samples": best_repeat.get(
+                "median_absolute_interval_error_samples"
+            ),
+            "best_repeat_mae_samples": best_repeat.get("mae_samples"),
+            "best_repeat_mse_samples": best_repeat.get("mse_samples"),
+            "best_repeat_before_interval_rate": best_repeat.get(
+                "before_interval_rate"
+            ),
+            "best_repeat_after_interval_rate": best_repeat.get(
+                "after_interval_rate"
+            ),
+            "best_repeat_selection": "test_in_interval_desc_mae_mse_asc",
+        })
     flat: dict[str, Any] = {}
     _flatten("", config, flat)
     summary.update({"stage": stage_name, "config_id": config_id, **flat})
