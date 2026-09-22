@@ -1,0 +1,45 @@
+.localization-lab-shell { display: grid; gap: 1rem; }
+.localization-lab-tabs { margin: 0; }
+.localization-lab-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted-color, #8f98a8);
+  padding: .65rem .9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+}
+.localization-lab-tabs button.active {
+  color: var(--text-color, #f5f7fa);
+  border-bottom-color: var(--accent-color, #7aa2ff);
+}
+.localization-section { margin-top: .85rem; }
+.localization-sweep-list, .localization-stage-list, .localization-stage-sweeps {
+  display: grid;
+  gap: .65rem;
+  margin: .75rem 0;
+}
+.localization-sweep-row {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(240px, 2fr) auto;
+  gap: .6rem;
+  align-items: center;
+}
+.localization-stage-card {
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: .75rem;
+  padding: .85rem;
+}
+.localization-stage-header {
+  display: flex;
+  gap: .75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+.localization-stage-header input { flex: 1; }
+.localization-builder-actions { margin-top: 1rem; }
+.localization-spec-preview { max-height: 28rem; overflow: auto; }
+.localization-stage-toggle { display: flex; gap: .55rem; align-items: center; }
+@media (max-width: 820px) {
+  .localization-sweep-row { grid-template-columns: 1fr; }
+}
