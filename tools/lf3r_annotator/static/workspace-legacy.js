@@ -3806,6 +3806,9 @@ function workspaceRenderAnalysisTabs(tab) {
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  document.querySelectorAll("[data-analysis-legacy-global]").forEach(function (node) {
+    node.classList.toggle("hidden", tab === "localization");
+  });
 }
 
 function workspaceRenderRoute() {
