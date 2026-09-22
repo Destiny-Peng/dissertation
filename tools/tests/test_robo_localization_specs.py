@@ -68,6 +68,37 @@ class LocalizationSpecTests(unittest.TestCase):
             {"configurations": 11, "training_runs": 55},
         )
 
+    def test_challenge_force_train_fields_survive_normalization(self) -> None:
+        spec = {
+            "name": "challenge_train",
+            "base": {
+                "data": {
+                    "challenge_set_name": "challenge_v1",
+                    "force_train_rollout_ids": ["r1", "r2"],
+                }
+            },
+            "repeats": 1,
+            "sweep": [],
+            "stages": [],
+        }
+        normalized = specs.normalize_spec(spec)
+        self.assertEqual(
+            normalized["base"]["data"]["force_train_rollout_ids"],
+            ["r1", "r2"],
+        )
+        self.assertEqual(
+            normalized["base"]["data"]["challenge_set_name"],
+            "challenge_v1",
+        )
+
+    def test_invalid_challenge_force_train_ids_are_rejected(self) -> None:
+        config = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"data": {"force_train_rollout_ids": "r1"}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(config)
+
     def test_success_negative_rejects_temporal_softmax(self) -> None:
         config = specs.deep_merge(
             specs.DEFAULT_BASE,
