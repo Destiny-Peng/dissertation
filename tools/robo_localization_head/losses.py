@@ -37,9 +37,12 @@ def loss_value(
         )
     if name not in LOSS_NAMES:
         raise ValueError(f"unknown loss.name: {name}")
-    total = labels.sum()
-    if float(total.detach().cpu()) <= 0:
+    # Temporal-softmax configurations are validated as failure-only. Check the
+    # already-host-resident row labels instead of forcing a CUDA -> CPU sync.
+    row_labels = np.asarray(row.get("labels", []), dtype=np.float32)
+    if row_labels.size == 0 or float(row_labels.sum()) <= 0:
         raise ValueError("temporal-softmax loss cannot train all-negative success rollouts")
+    total = labels.sum()
     q = labels / total
     loss = -(q * F.log_softmax(logits, dim=0)).sum()
     p = torch.softmax(logits, dim=0)
