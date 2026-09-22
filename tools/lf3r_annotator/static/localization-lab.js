@@ -679,6 +679,7 @@
           return Number(row.worst_absolute_interval_error || 0);
         })),
         train_exposure_rate: avg("train_exposure_rate"),
+        forced_train_rate: avg("forced_train_rate"),
         train_in_interval_success_rate: (function () {
           var values = configRows.map(function (row) { return row.train_in_interval_success_rate; })
             .filter(function (value) { return value != null; }).map(Number);
@@ -770,7 +771,7 @@
     host.innerHTML = '<table class="analysis-table localization-challenge-table"><thead><tr>'
       + '<th>Use</th><th>Rank</th><th>Rollout</th><th>Repeats</th><th>In interval</th><th>±3</th>'
       + '<th>Median |err|</th><th>Mean |err|</th><th>Worst |err|</th><th>Train exposure</th>'
-      + '<th>Train in-interval</th><th>Task</th><th>Failure</th><th>Flags</th>'
+      + '<th>Forced train</th><th>Train in-interval</th><th>Task</th><th>Failure</th><th>Flags</th>'
       + '</tr></thead><tbody>'
       + visible.map(function (row, index) {
         var flags = [];
@@ -789,6 +790,7 @@
           + '<td class="numeric">' + Number(row.mean_absolute_interval_error).toFixed(1) + '</td>'
           + '<td class="numeric">' + Number(row.worst_absolute_interval_error).toFixed(0) + '</td>'
           + '<td class="numeric">' + formatRate(row.train_exposure_rate) + '</td>'
+          + '<td class="numeric">' + formatRate(row.forced_train_rate) + '</td>'
           + '<td class="numeric">' + formatRate(row.train_in_interval_success_rate) + '</td>'
           + '<td>' + esc(row.task_id) + '</td>'
           + '<td>' + esc(row.primary_failure_type || "unknown") + '</td>'
