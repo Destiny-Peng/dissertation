@@ -292,6 +292,7 @@
           + " · h16 failure-only · latest fused per rollout"
           + " · τ=" + (parameters.tau_event == null ? "?" : parameters.tau_event)
           + " · repeats " + (parameters.repeats || "?")
+          + " · batch " + (parameters.batch_size || "?")
           + " · " + (parameters.device || "auto"),
           ""
         );
@@ -344,6 +345,7 @@
         repeats: Math.round(finiteNumber("analysisLabelLossRepeats", "Repeats", 0, true)),
         epochs: Math.round(finiteNumber("analysisLabelLossEpochs", "Epochs", 0, true)),
         patience: Math.round(finiteNumber("analysisLabelLossPatience", "Patience", 0, true)),
+        batch_size: Math.round(finiteNumber("analysisLabelLossBatchSize", "Batch size", 0, true)),
         learning_rate: finiteNumber("analysisLabelLossLearningRate", "Learning rate", 0, true),
         weight_decay: finiteNumber("analysisLabelLossWeightDecay", "Weight decay", 0, false),
         grad_clip: finiteNumber("analysisLabelLossGradClip", "Gradient clip", 0, true),
