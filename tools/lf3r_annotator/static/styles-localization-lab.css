@@ -149,3 +149,21 @@
   }
 }
 
+#analysisTabLocalization .localization-sweep-row {
+  align-items: start;
+}
+
+#analysisTabLocalization .localization-sweep-help {
+  display: block;
+  margin-top: .15rem;
+  color: var(--muted);
+  font-size: .625rem;
+  line-height: 1.35;
+  opacity: .88;
+}
+
+#analysisTabLocalization .localization-sweep-remove {
+  margin-top: calc(1.1rem + .38rem);
+  align-self: start;
+}
+
