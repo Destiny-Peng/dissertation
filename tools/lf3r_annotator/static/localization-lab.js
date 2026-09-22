@@ -175,13 +175,29 @@
     definition = definition || { name: "stage_" + (node("localizationStages").children.length + 1), sweep: [] };
     var card = document.createElement("section");
     card.className = "localization-stage-card";
+    var selector = definition.select || defaultSelector();
     card.innerHTML =
       '<div class="localization-stage-header">'
       + '<input data-stage-name type="text" value="' + esc(definition.name || "stage") + '" maxlength="64">'
       + '<button type="button" class="ghost-button" data-remove-stage>Remove stage</button>'
       + '</div>'
+      + '<div class="analysis-run-grid localization-stage-selector">'
+      + '<label><span>Select best by</span><select data-stage-metric>'
+      + '<option value="in_interval_rate_mean">In-interval rate</option>'
+      + '<option value="first_event_in_interval_rate_mean">First-event in-interval</option>'
+      + '<option value="mae_samples_mean">MAE</option>'
+      + '<option value="mse_samples_mean">MSE</option>'
+      + '<option value="before_interval_rate_mean">Before-interval rate</option>'
+      + '<option value="after_interval_rate_mean">After-interval rate</option>'
+      + '</select></label>'
+      + '<label><span>Direction</span><select data-stage-mode>'
+      + '<option value="max">Maximize</option><option value="min">Minimize</option>'
+      + '</select></label>'
+      + '</div>'
       + '<div class="localization-stage-sweeps"></div>'
       + '<button type="button" class="ghost-button" data-add-stage-sweep>Add sweep dimension</button>';
+    card.querySelector("[data-stage-metric]").value = selector.metric || "in_interval_rate_mean";
+    card.querySelector("[data-stage-mode]").value = selector.mode || "max";
     node("localizationStages").appendChild(card);
     var sweepHost = card.querySelector(".localization-stage-sweeps");
     (definition.sweep || []).forEach(function (item) { addSweepRow(sweepHost, item); });
@@ -193,15 +209,20 @@
       card.remove(); refreshPreview();
     });
     card.querySelector("[data-stage-name]").addEventListener("input", refreshPreview);
+    card.querySelector("[data-stage-metric]").addEventListener("change", refreshPreview);
+    card.querySelector("[data-stage-mode]").addEventListener("change", refreshPreview);
     refreshPreview();
   }
 
   function readStages() {
     return Array.prototype.map.call(node("localizationStages").querySelectorAll(".localization-stage-card"), function (card) {
+      var selector = defaultSelector();
+      selector.metric = card.querySelector("[data-stage-metric]").value;
+      selector.mode = card.querySelector("[data-stage-mode]").value;
       return {
         name: card.querySelector("[data-stage-name]").value.trim(),
         sweep: readSweep(card.querySelector(".localization-stage-sweeps")),
-        select: defaultSelector()
+        select: selector
       };
     });
   }
@@ -270,6 +291,7 @@
     node("localizationUseStages").checked = useStages;
     node("localizationStages").classList.toggle("hidden", !useStages);
     node("localizationAddStage").classList.toggle("hidden", !useStages);
+    node("localizationSweepSection").classList.toggle("hidden", useStages);
     if (useStages) spec.stages.forEach(addStage);
     refreshPreview();
   }
@@ -464,6 +486,7 @@
       var enabled = node("localizationUseStages").checked;
       node("localizationStages").classList.toggle("hidden", !enabled);
       node("localizationAddStage").classList.toggle("hidden", !enabled);
+      node("localizationSweepSection").classList.toggle("hidden", enabled);
       if (enabled && !node("localizationStages").children.length) addStage();
       refreshPreview();
     });
