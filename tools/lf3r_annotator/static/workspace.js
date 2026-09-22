@@ -33,13 +33,7 @@
       loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v3-20260916");
       loadScript("/static/manifest-support-v2.js?v=manual-transcode-v1-20260916", function () {
         loadScript("/static/workspace-legacy.js?v=analysis-job-ownership-v2-20260921", function () {
-          loadScript("/static/analysis-robo-hop.js?v=isolated-run-catalog-v6-20260921", function () {
-            loadScript("/static/analysis-robo-bilstm.js?v=shared-minibatch-v1-20260922", function () {
-              loadScript("/static/analysis-robo-label-loss.js?v=shared-minibatch-v1-20260922", function () {
-                loadScript("/static/analysis-robo-training.js?v=unified-localization-v1-20260922");
-              });
-            });
-          });
+          loadScript("/static/analysis-robo-hop.js?v=isolated-run-catalog-v6-20260921");
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
             loadScript("/static/results-axis-scale.js?v=procvlm-progress-0-100-v2-20260916");
             loadScript("/static/results-current-values.js?v=current-numeric-values-v2-20260916");
