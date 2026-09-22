@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "name": "gaussian_selection",
+  "base": {
+    "data": {
+      "population": "failure_only",
+      "success_ratio": 0,
+      "challenge_set_name": "",
+      "force_train_rollout_ids": []
+    },
+    "target": {
+      "kind": "hard",
+      "sigma_pre": 3,
+      "sigma_post": 3,
+      "tau_event": 20
+    },
+    "model": {
+      "hidden": 16
+    },
+    "loss": {
+      "name": "bce",
+      "distance_weight": 0,
+      "ranking_weight": 0,
+      "ranking_margin": 0
+    },
+    "training": {
+      "device": "auto",
+      "batch_size": 16,
+      "parallel_workers": 8,
+      "epochs": 500,
+      "patience": 100,
+      "learning_rate": 0.003,
+      "weight_decay": 0.0001,
+      "grad_clip": 5,
+      "seed": 17,
+      "train_fraction": 0.7,
+      "val_fraction": 0.15
+    }
+  },
+  "sweep": [],
+  "variants": [
+    {
+      "name": "gaussian_sigma_1",
+      "set": {
+        "target.kind": "gaussian",
+        "target.sigma_pre": 1,
+        "target.sigma_post": 1,
+        "target.tau_event": 20
+      }
+    },
+    {
+      "name": "gaussian_sigma_3",
+      "set": {
+        "target.kind": "gaussian",
+        "target.sigma_pre": 3,
+        "target.sigma_post": 3,
+        "target.tau_event": 20
+      }
+    },
+    {
+      "name": "gaussian_sigma_5",
+      "set": {
+        "target.kind": "gaussian",
+        "target.sigma_pre": 5,
+        "target.sigma_post": 5,
+        "target.tau_event": 20
+      }
+    },
+    {
+      "name": "hard",
+      "set": {
+        "target.kind": "hard",
+        "target.sigma_pre": 3,
+        "target.sigma_post": 3,
+        "target.tau_event": 20
+      }
+    }
+  ],
+  "stages": [],
+  "repeats": 5
+}
