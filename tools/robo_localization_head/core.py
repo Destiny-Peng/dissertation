@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 from collections import defaultdict
 from typing import Any, Callable, Mapping, Sequence
 
@@ -20,6 +21,8 @@ RowLossFn = Callable[
     [torch.Tensor, Mapping[str, Any], torch.Tensor, torch.Tensor],
     torch.Tensor,
 ]
+
+_SEED_LOCK = threading.Lock()
 
 
 def onset_anchor(frames: Sequence[int], frame: int) -> int | None:
@@ -139,7 +142,7 @@ class TinyBiLSTM(nn.Module):
         else:
             packed = nn.utils.rnn.pack_padded_sequence(
                 sequence,
-                lengths.detach().cpu(),
+                lengths,
                 batch_first=True,
                 enforce_sorted=False,
             )
@@ -208,7 +211,7 @@ def collate_rollout_batch(
     return (
         padded_sequence.to(device, non_blocking=non_blocking),
         padded_labels.to(device, non_blocking=non_blocking),
-        lengths.to(device, non_blocking=non_blocking),
+        lengths,
     )
 
 
@@ -252,9 +255,12 @@ def train_bilstm(
     if not val_ids:
         raise ValueError("validation split is empty")
 
-    set_seed(seed)
     prepared = prepare_tensor_dataset(dataset, mean, std)
-    model = TinyBiLSTM(hidden=hidden).to(device)
+    # Model initialization uses global RNG state. Keep it deterministic when
+    # several independent configurations train concurrently in worker threads.
+    with _SEED_LOCK:
+        set_seed(seed)
+        model = TinyBiLSTM(hidden=hidden).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters() if "bias" not in name
     ]
@@ -310,26 +316,30 @@ def train_bilstm(
             x, y, lengths = collate_rollout_batch(prepared, batch_ids, device)
             logits = model(x, lengths)
             row_losses = batch_losses(batch_ids, logits, y, lengths)
-            batch_loss = torch.stack(row_losses).mean()
+            row_loss_tensor = torch.stack(row_losses)
+            batch_loss = row_loss_tensor.mean()
             batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
-            train_loss_sum += sum(float(value.detach().cpu()) for value in row_losses)
+            # One host synchronization per batch instead of one per rollout.
+            train_loss_sum += float(row_loss_tensor.detach().sum().item())
             train_seen += len(row_losses)
 
         train_loss = train_loss_sum / max(1, train_seen)
 
         model.eval()
-        val_losses: list[float] = []
+        val_loss_sum = 0.0
+        val_seen = 0
         with torch.no_grad():
             for batch_ids in rollout_batches(val_ids, effective_val_batch):
                 x, y, lengths = collate_rollout_batch(prepared, batch_ids, device)
                 logits = model(x, lengths)
-                val_losses.extend(
-                    float(value.detach().cpu())
-                    for value in batch_losses(batch_ids, logits, y, lengths)
-                )
-        val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
+                row_losses = batch_losses(batch_ids, logits, y, lengths)
+                row_loss_tensor = torch.stack(row_losses)
+                # Again synchronize once per batch, not once per rollout.
+                val_loss_sum += float(row_loss_tensor.detach().sum().item())
+                val_seen += len(row_losses)
+        val_loss = val_loss_sum / val_seen if val_seen else float("inf")
         if epoch == 1 or epoch % 25 == 0:
             logger(
                 f"{progress_label} epoch={epoch}/{epochs} "
