@@ -2388,8 +2388,11 @@ out.mkdir(parents=True, exist_ok=True)
     encoding='utf-8',
 )
 (out / 'per_rollout_predictions.csv').write_text(
-    'rollout_id,predicted_index,in_interval\n'
-    'sample-rollout,0,true\n',
+    'stage,config_id,repeat,rollout_id,interval_error_samples,first_event_in_interval,checkpoint\n'
+    'main,s01_c001,0,r0-a,0,true,checkpoints/main/s01_c001/repeat_00.pt\n'
+    'main,s01_c001,0,r0-b,2,false,checkpoints/main/s01_c001/repeat_00.pt\n'
+    'main,s01_c001,1,r1-a,0,true,checkpoints/main/s01_c001/repeat_01.pt\n'
+    'main,s01_c001,1,r1-b,0,true,checkpoints/main/s01_c001/repeat_01.pt\n',
     encoding='utf-8',
 )
 (out / 'metadata.json').write_text(json.dumps({
@@ -2482,6 +2485,22 @@ print('fake localization experiment complete')
             "/api/analysis/localization/artifacts/" + run_name + "/summary.csv"
         ) as response:
             self.assertIn("s01_c001", response.read().decode("utf-8"))
+
+        # Old-style runs do not need to be retrained: the result endpoint
+        # derives the best observed repeat from per_rollout_predictions.csv.
+        with self.request(
+            "/api/analysis/localization/result/" + run_name
+        ) as response:
+            result = json.load(response)["result"]
+        best_repeat = result["stages"][0]["rows"][0]["best_repeat"]
+        self.assertEqual(best_repeat["repeat"], 1)
+        self.assertEqual(best_repeat["in_interval_rate"], 1.0)
+        self.assertEqual(best_repeat["mae_samples"], 0.0)
+        self.assertTrue(best_repeat["checkpoint"].endswith("repeat_01.pt"))
+        self.assertEqual(
+            best_repeat["selection"],
+            "test_in_interval_desc_mae_mse_asc",
+        )
 
         with self.request(
             "/api/analysis/localization/presets/delete",
