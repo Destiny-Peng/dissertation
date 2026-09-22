@@ -816,6 +816,9 @@
       selectedIds.add(picked.rollout_id);
     }
     state.selectedChallengeRollouts = selectedIds;
+    if (selected.some(function (row) { return !row.persistent; })) {
+      node("localizationChallengePersistentOnly").checked = false;
+    }
     renderChallengeTable();
   }
 
@@ -826,8 +829,9 @@
       host.innerHTML = '<p class="analysis-empty">' + esc(data && data.reason || "Challenge data unavailable.") + '</p>';
       return;
     }
+    var defaultId = data.default_config_id || (data.configs[0] && data.configs[0].config_id) || "";
     host.innerHTML = data.configs.map(function (config) {
-      var checked = config.config_id === data.default_config_id ? " checked" : "";
+      var checked = config.config_id === defaultId ? " checked" : "";
       return '<label class="localization-challenge-config">'
         + '<input type="checkbox" data-challenge-config value="' + esc(config.config_id) + '"' + checked + '>'
         + '<span>' + esc(config.label) + (config.best ? " · best" : "") + '</span></label>';
