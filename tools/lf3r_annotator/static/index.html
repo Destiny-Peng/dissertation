@@ -573,80 +573,104 @@
 
             <details open class="analysis-result-details localization-section">
               <summary>Fixed configuration</summary>
-              <div class="analysis-run-grid">
-                <label><span>Training population</span>
-                  <select id="localizationPopulation">
-                    <option value="failure_only">Failure only</option>
-                    <option value="failure_success">Failure + clean success</option>
-                  </select>
-                </label>
-                <label><span>Success ratio</span>
-                  <input id="localizationSuccessRatio" type="number" min="0" step="0.1" value="0">
-                </label>
-                <label><span>Challenge set</span>
-                  <select id="localizationChallengeTrainSet">
-                    <option value="">None</option>
-                  </select>
-                  <small class="analysis-run-field-help">Saved diagnostic challenge sets.</small>
-                </label>
-                <label class="localization-checkbox-field"><span>Challenge training</span>
-                  <span><input id="localizationForceChallengeTrain" type="checkbox"> Force every challenge rollout into train</span>
-                </label>
-                <label><span>Target</span>
-                  <select id="localizationTargetKind">
-                    <option value="hard">Hard interval</option>
-                    <option value="gaussian">Gaussian interval</option>
-                  </select>
-                </label>
-                <label><span>Gaussian σ pre</span>
-                  <input id="localizationSigmaPre" type="number" min="0.01" step="0.5" value="3">
-                </label>
-                <label><span>Gaussian σ post</span>
-                  <input id="localizationSigmaPost" type="number" min="0.01" step="0.5" value="3">
-                </label>
-                <label><span>Event decay τ</span>
-                  <input id="localizationTauEvent" type="number" min="0.01" step="1" value="20">
-                </label>
-                <label><span>Hidden size</span>
-                  <input id="localizationHidden" type="number" min="1" max="512" step="1" value="16">
-                </label>
-                <label><span>Loss</span>
-                  <select id="localizationLoss">
-                    <option value="bce">BCE</option>
-                    <option value="temporal_softmax_ce">Temporal softmax CE</option>
-                    <option value="temporal_softmax_ce_distance">Temporal CE + distance</option>
-                    <option value="temporal_softmax_ce_squared_distance">Temporal CE + squared distance</option>
-                    <option value="temporal_softmax_ce_ranking">Temporal CE + ranking</option>
-                    <option value="temporal_softmax_ce_distance_ranking">Temporal CE + distance + ranking</option>
-                  </select>
-                </label>
-                <label><span>Distance weight</span>
-                  <input id="localizationDistanceWeight" type="number" min="0" step="0.1" value="1">
-                </label>
-                <label><span>Ranking weight</span>
-                  <input id="localizationRankingWeight" type="number" min="0" step="0.1" value="1">
-                </label>
-                <label><span>Ranking margin</span>
-                  <input id="localizationRankingMargin" type="number" min="0" step="0.1" value="1">
-                </label>
-                <label><span>Device</span>
-                  <select id="localizationDevice">
-                    <option value="auto">auto</option><option value="cuda">cuda</option>
-                    <option value="cuda:0">cuda:0</option><option value="cuda:1">cuda:1</option>
-                    <option value="cpu">cpu</option>
-                  </select>
-                </label>
-                <label><span>Batch size</span>
-                  <input id="localizationBatchSize" type="number" min="1" max="128" value="32" step="1">
-                </label>
-                <label><span>Parallel workers</span>
-                  <input id="localizationParallelWorkers" type="number" min="1" max="8" value="4" step="1">
-                  <small class="analysis-run-field-help">1–8 independent configs per stage; 4 recommended for this tiny BiLSTM.</small>
-                </label>
+              <div class="localization-config-groups">
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Data</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Training population</span>
+                      <select id="localizationPopulation">
+                        <option value="failure_only">Failure only</option>
+                        <option value="failure_success">Failure + clean success</option>
+                      </select>
+                    </label>
+                    <label><span>Success ratio</span>
+                      <input id="localizationSuccessRatio" type="number" min="0" step="0.1" value="0">
+                    </label>
+                    <label><span>Challenge set</span>
+                      <select id="localizationChallengeTrainSet">
+                        <option value="">None</option>
+                      </select>
+                      <small class="analysis-run-field-help">Saved diagnostic challenge sets.</small>
+                    </label>
+                    <label class="localization-checkbox-field"><span>Challenge training</span>
+                      <span><input id="localizationForceChallengeTrain" type="checkbox"> Force every challenge rollout into train</span>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Target</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Target</span>
+                      <select id="localizationTargetKind">
+                        <option value="hard">Hard interval</option>
+                        <option value="gaussian">Gaussian interval</option>
+                      </select>
+                    </label>
+                    <label><span>Gaussian σ pre</span>
+                      <input id="localizationSigmaPre" type="number" min="0.01" step="0.5" value="3">
+                    </label>
+                    <label><span>Gaussian σ post</span>
+                      <input id="localizationSigmaPost" type="number" min="0.01" step="0.5" value="3">
+                    </label>
+                    <label><span>Event decay τ</span>
+                      <input id="localizationTauEvent" type="number" min="0.01" step="1" value="20">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group localization-config-group-wide">
+                  <h5 class="localization-config-group-title">Model &amp; loss</h5>
+                  <div class="analysis-run-grid localization-model-grid">
+                    <label><span>Hidden size</span>
+                      <input id="localizationHidden" type="number" min="1" max="512" step="1" value="16">
+                    </label>
+                    <label class="localization-loss-field"><span>Loss</span>
+                      <select id="localizationLoss">
+                        <option value="bce">BCE</option>
+                        <option value="temporal_softmax_ce">Temporal softmax CE</option>
+                        <option value="temporal_softmax_ce_distance">Temporal CE + distance</option>
+                        <option value="temporal_softmax_ce_squared_distance">Temporal CE + squared distance</option>
+                        <option value="temporal_softmax_ce_ranking">Temporal CE + ranking</option>
+                        <option value="temporal_softmax_ce_distance_ranking">Temporal CE + distance + ranking</option>
+                      </select>
+                    </label>
+                    <label><span>Distance weight</span>
+                      <input id="localizationDistanceWeight" type="number" min="0" step="0.1" value="1">
+                    </label>
+                    <label><span>Ranking weight</span>
+                      <input id="localizationRankingWeight" type="number" min="0" step="0.1" value="1">
+                    </label>
+                    <label><span>Ranking margin</span>
+                      <input id="localizationRankingMargin" type="number" min="0" step="0.1" value="1">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Runtime</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Device</span>
+                      <select id="localizationDevice">
+                        <option value="auto">auto</option><option value="cuda">cuda</option>
+                        <option value="cuda:0">cuda:0</option><option value="cuda:1">cuda:1</option>
+                        <option value="cpu">cpu</option>
+                      </select>
+                    </label>
+                    <label><span>Batch size</span>
+                      <input id="localizationBatchSize" type="number" min="1" max="128" value="32" step="1">
+                    </label>
+                    <label><span>Parallel workers</span>
+                      <input id="localizationParallelWorkers" type="number" min="1" max="8" value="4" step="1">
+                      <small class="analysis-run-field-help">1–8 independent configs per stage; 4 recommended for this tiny BiLSTM.</small>
+                    </label>
+                  </div>
+                </section>
               </div>
-              <details class="analysis-result-details">
+
+              <details class="analysis-result-details localization-advanced-settings">
                 <summary>Advanced training settings</summary>
-                <div class="analysis-run-grid">
+                <div class="analysis-run-grid localization-advanced-grid">
                   <label><span>Epochs</span><input id="localizationEpochs" type="number" min="1" value="300"></label>
                   <label><span>Patience</span><input id="localizationPatience" type="number" min="1" value="35"></label>
                   <label><span>Learning rate</span><input id="localizationLearningRate" type="number" min="0.000001" step="0.0001" value="0.003"></label>
@@ -716,35 +740,45 @@
               <button id="localizationChallengeRefresh" class="ghost-button" type="button">Refresh</button>
             </div>
 
-            <div class="analysis-run-grid localization-challenge-controls">
-              <label><span>Experiment run</span>
-                <select id="localizationChallengeRun"></select>
-              </label>
-              <label><span>Failure criterion</span>
-                <select id="localizationChallengeCriterion">
-                  <option value="outside_interval">Outside annotated interval</option>
-                  <option value="outside_3">Outside ±3 samples</option>
-                </select>
-              </label>
-              <label><span>Challenge size</span>
-                <input id="localizationChallengeSize" type="number" min="1" max="100" value="18" step="1">
-              </label>
-              <label><span>Task</span>
-                <select id="localizationChallengeTask"><option value="">All tasks</option></select>
-              </label>
-              <label><span>Failure type</span>
-                <select id="localizationChallengeFailureType"><option value="">All failure types</option></select>
-              </label>
-              <label><span>Case flags</span>
-                <select id="localizationChallengeCaseFlag">
-                  <option value="">All cases</option>
-                  <option value="multi_event">Multi-event only</option>
-                  <option value="recovery_like">Recovery-like only</option>
-                </select>
-              </label>
-              <label class="localization-checkbox-field"><span>Table filter</span>
-                <span><input id="localizationChallengePersistentOnly" type="checkbox" checked> Persistent common failures only</span>
-              </label>
+            <div class="localization-challenge-filter-stack">
+              <section class="localization-filter-group">
+                <h5 class="localization-config-group-title">Source</h5>
+                <div class="analysis-run-grid localization-challenge-source-grid">
+                  <label class="localization-run-select-field"><span>Experiment run</span>
+                    <select id="localizationChallengeRun"></select>
+                  </label>
+                  <label><span>Failure criterion</span>
+                    <select id="localizationChallengeCriterion">
+                      <option value="outside_interval">Outside annotated interval</option>
+                      <option value="outside_3">Outside ±3 samples</option>
+                    </select>
+                  </label>
+                  <label><span>Challenge size</span>
+                    <input id="localizationChallengeSize" type="number" min="1" max="100" value="18" step="1">
+                  </label>
+                </div>
+              </section>
+              <section class="localization-filter-group">
+                <h5 class="localization-config-group-title">Filters</h5>
+                <div class="analysis-run-grid localization-challenge-filter-grid">
+                  <label><span>Task</span>
+                    <select id="localizationChallengeTask"><option value="">All tasks</option></select>
+                  </label>
+                  <label><span>Failure type</span>
+                    <select id="localizationChallengeFailureType"><option value="">All failure types</option></select>
+                  </label>
+                  <label><span>Case flags</span>
+                    <select id="localizationChallengeCaseFlag">
+                      <option value="">All cases</option>
+                      <option value="multi_event">Multi-event only</option>
+                      <option value="recovery_like">Recovery-like only</option>
+                    </select>
+                  </label>
+                  <label class="localization-checkbox-field"><span>Table filter</span>
+                    <span><input id="localizationChallengePersistentOnly" type="checkbox" checked> Persistent common failures only</span>
+                  </label>
+                </div>
+              </section>
             </div>
 
             <div class="localization-challenge-config-block">
@@ -1436,8 +1470,8 @@
     </div>
   </main>
 
-  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v6-20260922">
-  <script src="/static/localization-lab.js?v=localization-lab-v8-20260922" defer></script>
+  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v7-20260922">
+  <script src="/static/localization-lab.js?v=localization-lab-v9-20260922" defer></script>
   <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
   <script src="/static/workspace.js?v=label-loss-webui-v3-20260921" defer></script>
 </body>
