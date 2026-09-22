@@ -1114,16 +1114,36 @@
   }
 
   async function recoverJob() {
+    var tokenAtStart = state.pollingToken;
+    var jobAtStart = state.currentJob && state.currentJob.job_id;
     try {
       var payload = await fetchJson("/api/jobs?job_type=analysis", { cache: "no-store" });
+
+      // A new foreground job may have been submitted while this recovery
+      // request was in flight. Never let stale startup recovery steal polling
+      // back from that newly submitted job.
+      if (
+        state.pollingToken !== tokenAtStart
+        || (
+          state.currentJob
+          && state.currentJob.job_id
+          && state.currentJob.job_id !== jobAtStart
+        )
+      ) {
+        return;
+      }
+
       var jobs = (payload.jobs || []).filter(function (job) {
         return job.analysis_kind === "robo_localization_experiment";
       });
       if (!jobs.length) return;
       state.currentJob = jobs[0];
       node("localizationJobBadge").textContent = state.currentJob.status || "unknown";
-      if (state.currentJob.status === "queued" || state.currentJob.status === "running") beginJobPolling(state.currentJob.job_id);
-      else loadJobLog(state.currentJob.job_id);
+      if (state.currentJob.status === "queued" || state.currentJob.status === "running") {
+        beginJobPolling(state.currentJob.job_id);
+      } else {
+        loadJobLog(state.currentJob.job_id);
+      }
     } catch (_error) {}
   }
 
