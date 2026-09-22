@@ -221,6 +221,9 @@ def _run_configuration(
                 "seed": seed,
                 "config": copy.deepcopy(dict(config)),
                 "split": copy.deepcopy(split),
+                "failure_train_ids": list(failure_train_ids),
+                "success_train_ids": list(success_ids),
+                "forced_train_ids": list(split.get("forced_train", [])),
                 "normalization_mean": torch.from_numpy(np.asarray(mean, dtype=np.float32).copy()),
                 "normalization_std": torch.from_numpy(np.asarray(std, dtype=np.float32).copy()),
                 "model_state_dict": {
