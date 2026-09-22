@@ -384,3 +384,208 @@
   font-size: .62rem;
   font-weight: 400;
 }
+
+
+/* ---- Localization Lab layout pass -------------------------------------------------
+   Keep semantic groups visually stable instead of letting every form share the same
+   auto-fit grid. */
+.localization-config-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .9rem;
+  margin-top: .8rem;
+}
+
+.localization-config-group,
+.localization-filter-group {
+  min-width: 0;
+  padding: .85rem;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: .7rem;
+  background: color-mix(in srgb, var(--surface-color, #11151a) 94%, transparent);
+}
+
+.localization-config-group-wide {
+  grid-column: 1 / -1;
+}
+
+.localization-config-group-title {
+  margin: 0 0 .7rem;
+  color: var(--text-color, #f5f7fa);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .025em;
+}
+
+#analysisTabLocalization .localization-config-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .7rem .8rem;
+}
+
+#analysisTabLocalization .localization-model-grid {
+  grid-template-columns:
+    minmax(7rem, .65fr)
+    minmax(16rem, 1.8fr)
+    repeat(3, minmax(8rem, .8fr));
+  gap: .7rem .8rem;
+}
+
+#analysisTabLocalization .localization-advanced-settings {
+  margin-top: .9rem;
+}
+
+#analysisTabLocalization .localization-advanced-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.localization-challenge-filter-stack {
+  display: grid;
+  gap: .75rem;
+  margin-top: .85rem;
+}
+
+#analysisTabLocalization .localization-challenge-source-grid {
+  grid-template-columns: minmax(18rem, 2fr) minmax(13rem, 1fr) minmax(8rem, .6fr);
+}
+
+#analysisTabLocalization .localization-challenge-filter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.localization-challenge-config-block {
+  padding: .85rem;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: .7rem;
+}
+
+.localization-challenge-actions {
+  display: grid;
+  grid-template-columns: auto minmax(14rem, 1fr) auto;
+  gap: .75rem;
+  margin-top: .85rem;
+}
+
+.localization-challenge-actions .localization-inline-name {
+  min-width: 0;
+}
+
+#localizationJobLog {
+  margin-top: 1rem;
+}
+
+/* Wide diagnostic/result tables should scroll horizontally without losing the
+   row identity or column headers. */
+#analysisTabLocalization .analysis-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.localization-run-result-table,
+.localization-challenge-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.localization-run-result-table th,
+.localization-run-result-table td,
+.localization-challenge-table th,
+.localization-challenge-table td {
+  vertical-align: middle;
+}
+
+.localization-run-result-table thead th,
+.localization-challenge-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-color, #11151a);
+  white-space: nowrap;
+}
+
+.localization-run-result-table th:first-child,
+.localization-run-result-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 17rem;
+  max-width: 22rem;
+  background: var(--surface-color, #11151a);
+  white-space: normal;
+}
+
+.localization-run-result-table thead th:first-child {
+  z-index: 4;
+}
+
+.localization-best-row td:first-child {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-color, #11151a));
+}
+
+.localization-run-result-table td.numeric,
+.localization-challenge-table td.numeric {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.localization-run-result {
+  overflow: hidden;
+}
+
+.localization-run-stage-heading {
+  padding-inline: .1rem;
+}
+
+.localization-result-metric {
+  min-width: 4.2rem;
+}
+
+@media (max-width: 1180px) {
+  .localization-config-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .localization-config-group-wide {
+    grid-column: auto;
+  }
+
+  #analysisTabLocalization .localization-model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #analysisTabLocalization .localization-loss-field {
+    grid-column: span 2;
+  }
+
+  #analysisTabLocalization .localization-advanced-grid,
+  #analysisTabLocalization .localization-challenge-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  #analysisTabLocalization .localization-config-grid,
+  #analysisTabLocalization .localization-model-grid,
+  #analysisTabLocalization .localization-advanced-grid,
+  #analysisTabLocalization .localization-challenge-source-grid,
+  #analysisTabLocalization .localization-challenge-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #analysisTabLocalization .localization-loss-field {
+    grid-column: auto;
+  }
+
+  .localization-challenge-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .localization-challenge-actions > button {
+    width: 100%;
+  }
+
+  .localization-run-result-table th:first-child,
+  .localization-run-result-table td:first-child {
+    position: static;
+    min-width: 14rem;
+  }
+}
