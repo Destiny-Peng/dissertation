@@ -21,14 +21,6 @@
       help: "Allowed: failure_only, failure_success"
     },
     {
-      path: "target", label: "Whole target config", type: "target_object",
-      defaults: [
-        {kind: "hard", sigma_pre: 3, sigma_post: 3, tau_event: 20},
-        {kind: "gaussian", sigma_pre: 3, sigma_post: 3, tau_event: 20}
-      ],
-      help: "JSON array of target objects. Each object: kind=hard|gaussian, sigma_pre>0, sigma_post>0, tau_event>0."
-    },
-    {
       path: "target.kind", label: "Target kind", type: "enum",
       allowed: ["hard", "gaussian"], defaults: ["hard", "gaussian"],
       help: "Allowed: hard, gaussian"
@@ -223,23 +215,6 @@
         }
         return;
       }
-      if (definition.type === "target_object") {
-        if (!value || typeof value !== "object" || Array.isArray(value)) {
-          throw new Error(definition.label + ": every value must be a JSON object");
-        }
-        if (["hard", "gaussian"].indexOf(value.kind) === -1) {
-          throw new Error(definition.label + ": kind must be hard or gaussian");
-        }
-        if (!(Number(value.tau_event) > 0)) {
-          throw new Error(definition.label + ": tau_event must be > 0");
-        }
-        if (value.kind === "gaussian") {
-          if (!(Number(value.sigma_pre) > 0) || !(Number(value.sigma_post) > 0)) {
-            throw new Error(definition.label + ": Gaussian sigma_pre/sigma_post must be > 0");
-          }
-        }
-        return;
-      }
       var number = Number(value);
       if (!Number.isFinite(number)) {
         throw new Error(definition.label + ": values must be numeric");
@@ -306,6 +281,83 @@
     });
   }
 
+  function updateTargetVariantState(row) {
+    var kind = row.querySelector("[data-variant-kind]").value;
+    var disabled = kind === "hard";
+    row.querySelector("[data-variant-sigma-pre]").disabled = disabled;
+    row.querySelector("[data-variant-sigma-post]").disabled = disabled;
+  }
+
+  function addTargetVariant(host, definition) {
+    definition = definition || {
+      name: "gaussian_sigma_3",
+      set: {
+        "target.kind": "gaussian",
+        "target.sigma_pre": 3,
+        "target.sigma_post": 3,
+        "target.tau_event": 20
+      }
+    };
+    var assignments = definition.set || {};
+    var kind = assignments["target.kind"] || "gaussian";
+    var row = document.createElement("div");
+    row.className = "localization-target-variant-row";
+    row.innerHTML =
+      '<label class="localization-control"><span>Name</span>'
+      + '<input data-variant-name type="text" maxlength="64" value="' + esc(definition.name || "target_variant") + '"></label>'
+      + '<label class="localization-control"><span>Target</span>'
+      + '<select data-variant-kind><option value="hard">hard</option><option value="gaussian">gaussian</option></select></label>'
+      + '<label class="localization-control"><span>σ pre</span>'
+      + '<input data-variant-sigma-pre type="number" min="0.01" step="0.5" value="' + esc(assignments["target.sigma_pre"] == null ? 3 : assignments["target.sigma_pre"]) + '"></label>'
+      + '<label class="localization-control"><span>σ post</span>'
+      + '<input data-variant-sigma-post type="number" min="0.01" step="0.5" value="' + esc(assignments["target.sigma_post"] == null ? 3 : assignments["target.sigma_post"]) + '"></label>'
+      + '<label class="localization-control"><span>Event τ</span>'
+      + '<input data-variant-tau type="number" min="0.01" step="1" value="' + esc(assignments["target.tau_event"] == null ? 20 : assignments["target.tau_event"]) + '"></label>'
+      + '<button type="button" class="ghost-button localization-variant-remove" data-remove-variant>Remove</button>';
+    row.querySelector("[data-variant-kind]").value = kind;
+    row.querySelector("[data-remove-variant]").addEventListener("click", function () {
+      row.remove();
+      refreshPreview();
+    });
+    row.querySelector("[data-variant-kind]").addEventListener("change", function () {
+      updateTargetVariantState(row);
+      refreshPreview();
+    });
+    row.querySelectorAll("input").forEach(function (input) {
+      input.addEventListener("input", refreshPreview);
+      input.addEventListener("change", refreshPreview);
+    });
+    host.appendChild(row);
+    updateTargetVariantState(row);
+    refreshPreview();
+  }
+
+  function readTargetVariants(host) {
+    return Array.prototype.map.call(host.querySelectorAll(".localization-target-variant-row"), function (row) {
+      var name = row.querySelector("[data-variant-name]").value.trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+        throw new Error("Target variant name is invalid: " + name);
+      }
+      var kind = row.querySelector("[data-variant-kind]").value;
+      var sigmaPre = Number(row.querySelector("[data-variant-sigma-pre]").value);
+      var sigmaPost = Number(row.querySelector("[data-variant-sigma-post]").value);
+      var tau = Number(row.querySelector("[data-variant-tau]").value);
+      if (!(tau > 0)) throw new Error(name + ": Event τ must be > 0");
+      if (kind === "gaussian" && (!(sigmaPre > 0) || !(sigmaPost > 0))) {
+        throw new Error(name + ": Gaussian σ pre/post must be > 0");
+      }
+      return {
+        name: name,
+        set: {
+          "target.kind": kind,
+          "target.sigma_pre": Number.isFinite(sigmaPre) ? sigmaPre : 3,
+          "target.sigma_post": Number.isFinite(sigmaPost) ? sigmaPost : 3,
+          "target.tau_event": tau
+        }
+      };
+    });
+  }
+
   function defaultSelector() {
     return {
       metric: "in_interval_rate_mean",
@@ -340,16 +392,29 @@
       + '<option value="max">Maximize</option><option value="min">Minimize</option>'
       + '</select></label>'
       + '</div>'
+      + '<div class="localization-stage-subsection">'
+      + '<h5 class="localization-subsection-title">Independent sweep dimensions</h5>'
       + '<div class="localization-stage-sweeps"></div>'
-      + '<button type="button" class="ghost-button" data-add-stage-sweep>Add sweep dimension</button>';
+      + '<button type="button" class="ghost-button" data-add-stage-sweep>Add sweep dimension</button>'
+      + '</div>'
+      + '<div class="localization-stage-subsection">'
+      + '<h5 class="localization-subsection-title">Coupled target variants</h5>'
+      + '<div class="localization-stage-variants localization-target-variant-list"></div>'
+      + '<button type="button" class="ghost-button" data-add-stage-variant>Add target variant</button>'
+      + '</div>';
     card.querySelector("[data-stage-metric]").value = selector.metric || "in_interval_rate_mean";
     card.querySelector("[data-stage-mode]").value = selector.mode || "max";
     node("localizationStages").appendChild(card);
     var sweepHost = card.querySelector(".localization-stage-sweeps");
+    var variantHost = card.querySelector(".localization-stage-variants");
     (definition.sweep || []).forEach(function (item) { addSweepRow(sweepHost, item); });
-    if (!(definition.sweep || []).length) addSweepRow(sweepHost);
+    (definition.variants || []).forEach(function (item) { addTargetVariant(variantHost, item); });
+    if (!(definition.sweep || []).length && !(definition.variants || []).length) addSweepRow(sweepHost);
     card.querySelector("[data-add-stage-sweep]").addEventListener("click", function () {
       addSweepRow(sweepHost);
+    });
+    card.querySelector("[data-add-stage-variant]").addEventListener("click", function () {
+      addTargetVariant(variantHost);
     });
     card.querySelector("[data-remove-stage]").addEventListener("click", function () {
       card.remove(); refreshPreview();
@@ -368,6 +433,7 @@
       return {
         name: card.querySelector("[data-stage-name]").value.trim(),
         sweep: readSweep(card.querySelector(".localization-stage-sweeps")),
+        variants: readTargetVariants(card.querySelector(".localization-stage-variants")),
         select: selector
       };
     });
@@ -380,6 +446,7 @@
       name: node("localizationExperimentName").value.trim(),
       base: baseFromForm(),
       sweep: useStages ? [] : readSweep(node("localizationSweepRows")),
+      variants: useStages ? [] : readTargetVariants(node("localizationTargetVariants")),
       stages: useStages ? readStages() : [],
       repeats: Math.round(n("localizationRepeats"))
     };
@@ -390,10 +457,16 @@
     return sweep.reduce(function (total, item) { return total * Math.max(1, (item.values || []).length); }, 1);
   }
 
+  function configurationCount(sweep, variants) {
+    return productCount(sweep || []) * Math.max(1, (variants || []).length);
+  }
+
   function estimate(spec) {
     var configurations = spec.stages && spec.stages.length
-      ? spec.stages.reduce(function (total, stage) { return total + productCount(stage.sweep || []); }, 0)
-      : productCount(spec.sweep || []);
+      ? spec.stages.reduce(function (total, stage) {
+          return total + configurationCount(stage.sweep || [], stage.variants || []);
+        }, 0)
+      : configurationCount(spec.sweep || [], spec.variants || []);
     return { configurations: configurations, trainingRuns: configurations * Number(spec.repeats || 1) };
   }
 
@@ -431,7 +504,9 @@
     node("localizationRepeats").value = spec.repeats == null ? 5 : spec.repeats;
     setBase(spec.base || {});
     node("localizationSweepRows").innerHTML = "";
+    node("localizationTargetVariants").innerHTML = "";
     (spec.sweep || []).forEach(function (item) { addSweepRow(node("localizationSweepRows"), item); });
+    (spec.variants || []).forEach(function (item) { addTargetVariant(node("localizationTargetVariants"), item); });
     node("localizationStages").innerHTML = "";
     var useStages = Array.isArray(spec.stages) && spec.stages.length > 0;
     node("localizationUseStages").checked = useStages;
@@ -627,6 +702,9 @@
     });
     node("localizationAddSweep").addEventListener("click", function () {
       addSweepRow(node("localizationSweepRows"));
+    });
+    node("localizationAddTargetVariant").addEventListener("click", function () {
+      addTargetVariant(node("localizationTargetVariants"));
     });
     node("localizationUseStages").addEventListener("change", function () {
       var enabled = node("localizationUseStages").checked;
