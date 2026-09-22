@@ -5712,6 +5712,10 @@ class AnalysisJobService:
                 sample for sample in samples
                 if str(sample.get("seen_in_train") or "").lower() in {"1", "true", "yes"}
             ]
+            forced_train_samples = [
+                sample for sample in samples
+                if str(sample.get("forced_into_train") or "").lower() in {"1", "true", "yes"}
+            ]
             train_errors = [
                 abs(int(float(sample.get("interval_error_samples") or 0)))
                 for sample in train_samples
@@ -5740,6 +5744,8 @@ class AnalysisJobService:
                 "worst_absolute_interval_error": int(max(errors)),
                 "train_repeat_count": len(train_samples),
                 "train_exposure_rate": len(train_samples) / repeat_count,
+                "forced_train_repeat_count": len(forced_train_samples),
+                "forced_train_rate": len(forced_train_samples) / repeat_count,
                 "train_in_interval_success_rate": (
                     sum(train_in_interval) / len(train_samples) if train_samples else None
                 ),
