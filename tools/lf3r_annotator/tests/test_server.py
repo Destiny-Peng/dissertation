@@ -2492,7 +2492,8 @@ print('fake localization experiment complete')
             "/api/analysis/localization/result/" + run_name
         ) as response:
             result = json.load(response)["result"]
-        best_repeat = result["stages"][0]["rows"][0]["best_repeat"]
+        config_row = result["stages"][0]["rows"][0]
+        best_repeat = config_row["best_repeat"]
         self.assertEqual(best_repeat["repeat"], 1)
         self.assertEqual(best_repeat["in_interval_rate"], 1.0)
         self.assertEqual(best_repeat["mae_samples"], 0.0)
@@ -2501,6 +2502,12 @@ print('fake localization experiment complete')
             best_repeat["selection"],
             "test_in_interval_desc_mae_mse_asc",
         )
+        repeats = config_row["repeats"]
+        self.assertEqual([row["repeat"] for row in repeats], [0, 1])
+        self.assertEqual(repeats[0]["within_1"], 0.5)
+        self.assertEqual(repeats[0]["within_3"], 1.0)
+        self.assertEqual(repeats[1]["within_5"], 1.0)
+        self.assertEqual(repeats[1]["in_interval_rate"], 1.0)
 
         with self.request(
             "/api/analysis/localization/presets/delete",
