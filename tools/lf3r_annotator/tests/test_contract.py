@@ -131,8 +131,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("baselineBatchUsesWorkers", javascript)
         self.assertIn("parallel_workers", javascript)
         self.assertIn("workers", javascript)
-        self.assertIn("renderBestRepeatCell", javascript)
-        self.assertIn("Best repeat", javascript)
+        self.assertIn("renderRepeatDetails", javascript)
+        self.assertIn("Show all ", javascript)
         self.assertIn('data-batch-option="robo_localization_ckpt"', html)
         self.assertIn("renderLocalizationPredictionMarker", javascript)
         self.assertIn("renderLocalizationPredictionSummary", javascript)
@@ -157,7 +157,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             ".evaluation-run-controls",
             ".evaluation-localization-summary",
             ".evaluation-localization-pin",
-            ".localization-best-repeat",
+            ".localization-repeat-details",
+            ".localization-repeat-table",
         ]:
             self.assertIn(marker, styles)
 
