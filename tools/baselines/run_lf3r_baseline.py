@@ -2323,6 +2323,12 @@ def parse_args() -> argparse.Namespace:
         help="Run official Robo-Dopamine perspectives in one persistent model instance; pass all three for fusion",
     )
     parser.add_argument("--goal-image", type=Path, default=None)
+    parser.add_argument(
+        "--robo-localization-ckpt",
+        type=Path,
+        default=None,
+        help="Optional saved LF3R BiLSTM localization checkpoint for fused Robo-Dopamine output",
+    )
     args = parser.parse_args()
     if args.resume_run is None:
         if args.manifest is None:
@@ -2382,6 +2388,20 @@ def parse_args() -> argparse.Namespace:
     ):
         if getattr(args, name) < 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.robo_localization_ckpt is not None:
+        if args.baseline != "robo_dopamine":
+            parser.error("--robo-localization-ckpt is only valid for --baseline robo_dopamine")
+        effective_fused = (
+            args.robo_eval_mode == "fused"
+            or (
+                args.robo_eval_modes is not None
+                and set(args.robo_eval_modes) == {"incremental", "forward", "backward"}
+            )
+        )
+        if not effective_fused:
+            parser.error(
+                "--robo-localization-ckpt requires fused Robo-Dopamine output"
+            )
     if args.robo_eval_modes:
         if len(set(args.robo_eval_modes)) != len(args.robo_eval_modes):
             parser.error("--robo-eval-modes must not contain duplicates")
@@ -2442,6 +2462,12 @@ def main() -> int:
     args.logs_dir = args.logs_dir.expanduser().resolve()
     if args.goal_image is not None:
         args.goal_image = args.goal_image.expanduser().resolve()
+    if args.robo_localization_ckpt is not None:
+        args.robo_localization_ckpt = args.robo_localization_ckpt.expanduser().resolve()
+        if not args.robo_localization_ckpt.is_file():
+            raise FileNotFoundError(
+                f"Localization checkpoint does not exist: {args.robo_localization_ckpt}"
+            )
     if args.baseline == "procvlm" and args.procvlm_procedure_mode == "baseline":
         # Baseline mode must remain independent of canonical/tracker state.
         # Ignore any stale procedure path supplied by an old WebUI/session.
