@@ -9,22 +9,94 @@
   };
 
   var PARAMS = [
-    ["data.success_ratio", "Success ratio"],
-    ["data.population", "Training population"],
-    ["target", "Whole target config"],
-    ["target.kind", "Target kind"],
-    ["target.sigma_pre", "Gaussian σ pre"],
-    ["target.sigma_post", "Gaussian σ post"],
-    ["target.tau_event", "Event decay τ"],
-    ["model.hidden", "Hidden size"],
-    ["loss.name", "Loss"],
-    ["loss.distance_weight", "Distance weight"],
-    ["loss.ranking_weight", "Ranking weight"],
-    ["loss.ranking_margin", "Ranking margin"],
-    ["training.batch_size", "Batch size"],
-    ["training.learning_rate", "Learning rate"],
-    ["training.weight_decay", "Weight decay"],
-    ["training.grad_clip", "Gradient clip"]
+    {
+      path: "data.success_ratio", label: "Success ratio", type: "number", min: 0,
+      defaults: [0, 0.5, 1, 2],
+      help: "Numbers >= 0. Used only with population=failure_success. Example: [0,0.5,1,2]"
+    },
+    {
+      path: "data.population", label: "Training population", type: "enum",
+      allowed: ["failure_only", "failure_success"],
+      defaults: ["failure_only", "failure_success"],
+      help: "Allowed: failure_only, failure_success"
+    },
+    {
+      path: "target", label: "Whole target config", type: "target_object",
+      defaults: [
+        {kind: "hard", sigma_pre: 3, sigma_post: 3, tau_event: 20},
+        {kind: "gaussian", sigma_pre: 3, sigma_post: 3, tau_event: 20}
+      ],
+      help: "JSON array of target objects. Each object: kind=hard|gaussian, sigma_pre>0, sigma_post>0, tau_event>0."
+    },
+    {
+      path: "target.kind", label: "Target kind", type: "enum",
+      allowed: ["hard", "gaussian"], defaults: ["hard", "gaussian"],
+      help: "Allowed: hard, gaussian"
+    },
+    {
+      path: "target.sigma_pre", label: "Gaussian σ pre", type: "number", minExclusive: 0,
+      defaults: [1, 2, 3, 5], help: "Positive numbers only. Example: [1,2,3,5]"
+    },
+    {
+      path: "target.sigma_post", label: "Gaussian σ post", type: "number", minExclusive: 0,
+      defaults: [1, 2, 3, 5], help: "Positive numbers only. Example: [1,2,3,5]"
+    },
+    {
+      path: "target.tau_event", label: "Event decay τ", type: "number", minExclusive: 0,
+      defaults: [10, 20, 40], help: "Positive native-sample decay constants. Example: [10,20,40]"
+    },
+    {
+      path: "model.hidden", label: "Hidden size", type: "integer", min: 1, max: 512,
+      defaults: [16, 32], help: "Integer 1-512. Example: [16,32]"
+    },
+    {
+      path: "loss.name", label: "Loss", type: "enum",
+      allowed: [
+        "bce",
+        "temporal_softmax_ce",
+        "temporal_softmax_ce_distance",
+        "temporal_softmax_ce_squared_distance",
+        "temporal_softmax_ce_ranking",
+        "temporal_softmax_ce_distance_ranking"
+      ],
+      defaults: [
+        "bce",
+        "temporal_softmax_ce",
+        "temporal_softmax_ce_distance",
+        "temporal_softmax_ce_squared_distance",
+        "temporal_softmax_ce_ranking",
+        "temporal_softmax_ce_distance_ranking"
+      ],
+      help: "Allowed: bce, temporal_softmax_ce, temporal_softmax_ce_distance, temporal_softmax_ce_squared_distance, temporal_softmax_ce_ranking, temporal_softmax_ce_distance_ranking"
+    },
+    {
+      path: "loss.distance_weight", label: "Distance weight", type: "number", min: 0,
+      defaults: [0.5, 1, 2], help: "Numbers >= 0. Example: [0.5,1,2]"
+    },
+    {
+      path: "loss.ranking_weight", label: "Ranking weight", type: "number", min: 0,
+      defaults: [0.5, 1, 2], help: "Numbers >= 0. Example: [0.5,1,2]"
+    },
+    {
+      path: "loss.ranking_margin", label: "Ranking margin", type: "number", min: 0,
+      defaults: [0.5, 1, 2], help: "Numbers >= 0. Example: [0.5,1,2]"
+    },
+    {
+      path: "training.batch_size", label: "Batch size", type: "integer", min: 1, max: 128,
+      defaults: [16, 32, 64], help: "Integer 1-128. Example: [16,32,64]"
+    },
+    {
+      path: "training.learning_rate", label: "Learning rate", type: "number", minExclusive: 0,
+      defaults: [0.001, 0.003, 0.01], help: "Positive numbers. Example: [0.001,0.003,0.01]"
+    },
+    {
+      path: "training.weight_decay", label: "Weight decay", type: "number", min: 0,
+      defaults: [0, 0.0001, 0.001], help: "Numbers >= 0. Example: [0,0.0001,0.001]"
+    },
+    {
+      path: "training.grad_clip", label: "Gradient clip", type: "number", minExclusive: 0,
+      defaults: [1, 5, 10], help: "Positive numbers. Example: [1,5,10]"
+    }
   ];
 
   function node(id) { return document.getElementById(id); }
@@ -124,11 +196,79 @@
     return JSON.stringify(values || []);
   }
 
+  function paramDefinition(path) {
+    return PARAMS.find(function (item) { return item.path === path; }) || null;
+  }
+
   function paramOptions(selected) {
     return PARAMS.map(function (item) {
-      return '<option value="' + esc(item[0]) + '"' + (item[0] === selected ? " selected" : "") + ">"
-        + esc(item[1]) + "</option>";
+      return '<option value="' + esc(item.path) + '"' + (item.path === selected ? " selected" : "") + ">"
+        + esc(item.label) + "</option>";
     }).join("");
+  }
+
+  function validateSweepValues(path, values) {
+    var definition = paramDefinition(path);
+    if (!definition) throw new Error("Unsupported sweep parameter: " + path);
+    if (!Array.isArray(values) || !values.length) {
+      throw new Error(definition.label + ": at least one value is required");
+    }
+    values.forEach(function (value) {
+      if (definition.type === "enum") {
+        if (definition.allowed.indexOf(value) === -1) {
+          throw new Error(
+            definition.label + ': invalid value "' + value + '". Allowed: '
+            + definition.allowed.join(", ")
+          );
+        }
+        return;
+      }
+      if (definition.type === "target_object") {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error(definition.label + ": every value must be a JSON object");
+        }
+        if (["hard", "gaussian"].indexOf(value.kind) === -1) {
+          throw new Error(definition.label + ": kind must be hard or gaussian");
+        }
+        if (!(Number(value.tau_event) > 0)) {
+          throw new Error(definition.label + ": tau_event must be > 0");
+        }
+        if (value.kind === "gaussian") {
+          if (!(Number(value.sigma_pre) > 0) || !(Number(value.sigma_post) > 0)) {
+            throw new Error(definition.label + ": Gaussian sigma_pre/sigma_post must be > 0");
+          }
+        }
+        return;
+      }
+      var number = Number(value);
+      if (!Number.isFinite(number)) {
+        throw new Error(definition.label + ": values must be numeric");
+      }
+      if (definition.type === "integer" && !Number.isInteger(number)) {
+        throw new Error(definition.label + ": values must be integers");
+      }
+      if (definition.min != null && number < definition.min) {
+        throw new Error(definition.label + ": values must be >= " + definition.min);
+      }
+      if (definition.minExclusive != null && number <= definition.minExclusive) {
+        throw new Error(definition.label + ": values must be > " + definition.minExclusive);
+      }
+      if (definition.max != null && number > definition.max) {
+        throw new Error(definition.label + ": values must be <= " + definition.max);
+      }
+    });
+    return values;
+  }
+
+  function updateSweepRowHelp(row, resetValues) {
+    var pathSelect = row.querySelector("[data-sweep-path]");
+    var valuesInput = row.querySelector("[data-sweep-values]");
+    var help = row.querySelector("[data-sweep-help]");
+    var definition = paramDefinition(pathSelect.value);
+    if (!definition) return;
+    help.textContent = definition.help;
+    valuesInput.placeholder = formatValues(definition.defaults);
+    if (resetValues) valuesInput.value = formatValues(definition.defaults);
   }
 
   function addSweepRow(host, definition) {
@@ -139,26 +279,30 @@
       '<label class="localization-control"><span>Parameter</span>'
       + '<select data-sweep-path>' + paramOptions(definition.path) + '</select></label>'
       + '<label class="localization-control"><span>Values</span>'
-      + '<input data-sweep-values type="text" value="' + esc(formatValues(definition.values)) + '"></label>'
+      + '<input data-sweep-values type="text" value="' + esc(formatValues(definition.values)) + '">'
+      + '<small class="localization-sweep-help" data-sweep-help></small></label>'
       + '<button type="button" class="ghost-button localization-sweep-remove" data-remove-sweep>Remove</button>';
+    updateSweepRowHelp(row, false);
     row.querySelector("[data-remove-sweep]").addEventListener("click", function () {
       row.remove();
       refreshPreview();
     });
-    row.querySelectorAll("input,select").forEach(function (input) {
-      input.addEventListener("input", refreshPreview);
-      input.addEventListener("change", refreshPreview);
+    row.querySelector("[data-sweep-path]").addEventListener("change", function () {
+      updateSweepRowHelp(row, true);
+      refreshPreview();
     });
+    row.querySelector("[data-sweep-values]").addEventListener("input", refreshPreview);
+    row.querySelector("[data-sweep-values]").addEventListener("change", refreshPreview);
     host.appendChild(row);
     refreshPreview();
   }
 
   function readSweep(host) {
     return Array.prototype.map.call(host.querySelectorAll(".localization-sweep-row"), function (row) {
-      return {
-        path: row.querySelector("[data-sweep-path]").value,
-        values: parseValues(row.querySelector("[data-sweep-values]").value)
-      };
+      var path = row.querySelector("[data-sweep-path]").value;
+      var values = parseValues(row.querySelector("[data-sweep-values]").value);
+      validateSweepValues(path, values);
+      return { path: path, values: values };
     });
   }
 
