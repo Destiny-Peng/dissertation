@@ -648,8 +648,16 @@
             <details id="localizationSweepSection" open class="analysis-result-details localization-section">
               <summary>Sweep dimensions</summary>
               <p class="analysis-card-note">Each dimension forms a Cartesian product. Values are comma-separated; strings such as loss names may be entered directly.</p>
+              <h5 class="localization-subsection-title">Independent sweep dimensions</h5>
               <div id="localizationSweepRows" class="localization-sweep-list"></div>
               <button id="localizationAddSweep" class="ghost-button" type="button">Add sweep dimension</button>
+
+              <div class="localization-variant-section">
+                <h5 class="localization-subsection-title">Coupled target variants</h5>
+                <p class="analysis-card-note">Use this when target kind, σ pre/post, and event-decay τ must change together. Each row is one candidate configuration.</p>
+                <div id="localizationTargetVariants" class="localization-target-variant-list"></div>
+                <button id="localizationAddTargetVariant" class="ghost-button" type="button">Add target variant</button>
+              </div>
             </details>
 
             <details class="analysis-result-details localization-section">
