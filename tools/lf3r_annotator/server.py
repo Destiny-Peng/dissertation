@@ -5615,6 +5615,96 @@ class AnalysisJobService:
         rows.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
         return {"available": bool(rows), "runs": rows[:50]}
 
+    def _localization_best_repeats(
+        self,
+        directory: Path,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Recover the best observed repeat for every config, including old runs."""
+        predictions_path = directory / "per_rollout_predictions.csv"
+        if not predictions_path.is_file():
+            return {}
+
+        grouped: dict[tuple[str, str, int], dict[str, Any]] = {}
+        try:
+            with predictions_path.open("r", newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    stage = str(row.get("stage") or "main")
+                    config_id = str(row.get("config_id") or "")
+                    if not config_id:
+                        continue
+                    try:
+                        repeat = int(float(str(row.get("repeat") or "")))
+                        error = int(float(str(row.get("interval_error_samples") or "")))
+                    except (TypeError, ValueError):
+                        continue
+                    key = (stage, config_id, repeat)
+                    bucket = grouped.setdefault(
+                        key,
+                        {
+                            "stage": stage,
+                            "config_id": config_id,
+                            "repeat": repeat,
+                            "errors": [],
+                            "first_event_hits": [],
+                            "checkpoint": None,
+                        },
+                    )
+                    bucket["errors"].append(error)
+                    first_event = str(row.get("first_event_in_interval") or "").strip().lower()
+                    if first_event in {"true", "1", "yes"}:
+                        bucket["first_event_hits"].append(True)
+                    elif first_event in {"false", "0", "no"}:
+                        bucket["first_event_hits"].append(False)
+                    checkpoint = str(row.get("checkpoint") or "").strip()
+                    if checkpoint and not bucket["checkpoint"]:
+                        bucket["checkpoint"] = checkpoint
+        except OSError:
+            return {}
+
+        by_config: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for (stage, config_id, repeat), bucket in grouped.items():
+            errors = list(bucket["errors"])
+            if not errors:
+                continue
+            absolute = [abs(value) for value in errors]
+            count = len(errors)
+            first_hits = list(bucket["first_event_hits"])
+            summary = {
+                "repeat": repeat,
+                "checkpoint": bucket["checkpoint"],
+                "test_n": count,
+                "in_interval_rate": sum(value == 0 for value in errors) / count,
+                "first_event_in_interval_rate": (
+                    sum(first_hits) / len(first_hits) if first_hits else None
+                ),
+                "within_3": sum(value <= 3 for value in absolute) / count,
+                "median_absolute_interval_error_samples": float(
+                    statistics.median(absolute)
+                ),
+                "mae_samples": float(sum(absolute) / count),
+                "mse_samples": float(
+                    sum(value * value for value in errors) / count
+                ),
+                "before_interval_rate": sum(value < 0 for value in errors) / count,
+                "after_interval_rate": sum(value > 0 for value in errors) / count,
+                "selection": "test_in_interval_desc_mae_mse_asc",
+                "derived_from": "per_rollout_predictions.csv",
+            }
+            by_config.setdefault((stage, config_id), []).append(summary)
+
+        best: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, repeats in by_config.items():
+            best[key] = min(
+                repeats,
+                key=lambda row: (
+                    -float(row["in_interval_rate"]),
+                    float(row["mae_samples"]),
+                    float(row["mse_samples"]),
+                    int(row["repeat"]),
+                ),
+            )
+        return best
+
     def localization_result_detail(self, run_name: str) -> dict[str, Any]:
         if not re.fullmatch(r"[A-Za-z0-9._-]+", run_name):
             raise ValidationError("Invalid localization run id")
@@ -5638,6 +5728,8 @@ class AnalysisJobService:
                     manifest = loaded
             except (OSError, json.JSONDecodeError):
                 pass
+
+        best_repeats = self._localization_best_repeats(directory)
 
         best_by_stage: dict[str, str] = {}
         stage_meta: dict[str, dict[str, Any]] = {}
@@ -5677,6 +5769,13 @@ class AnalysisJobService:
             "training.parallel_workers", "training.learning_rate",
             "training.weight_decay", "training.grad_clip",
             "training.epochs", "training.patience",
+            "best_repeat", "best_repeat_seed", "best_repeat_test_n",
+            "best_repeat_in_interval_rate",
+            "best_repeat_first_event_in_interval_rate",
+            "best_repeat_within_3",
+            "best_repeat_median_absolute_interval_error_samples",
+            "best_repeat_mae_samples", "best_repeat_mse_samples",
+            "best_repeat_before_interval_rate", "best_repeat_after_interval_rate",
         }
 
         rows: list[dict[str, Any]] = []
@@ -5713,6 +5812,38 @@ class AnalysisJobService:
                     label_parts.append(f"h{hidden}")
                 row["label"] = " · ".join(part for part in label_parts if part)
                 row["best"] = best_by_stage.get(stage) == config_id
+
+                stored_repeat = row.get("best_repeat")
+                if stored_repeat is not None:
+                    row["best_repeat"] = {
+                        "repeat": int(stored_repeat),
+                        "seed": row.get("best_repeat_seed"),
+                        "checkpoint": row.get("best_repeat_checkpoint") or None,
+                        "test_n": row.get("best_repeat_test_n"),
+                        "in_interval_rate": row.get("best_repeat_in_interval_rate"),
+                        "first_event_in_interval_rate": row.get(
+                            "best_repeat_first_event_in_interval_rate"
+                        ),
+                        "within_3": row.get("best_repeat_within_3"),
+                        "median_absolute_interval_error_samples": row.get(
+                            "best_repeat_median_absolute_interval_error_samples"
+                        ),
+                        "mae_samples": row.get("best_repeat_mae_samples"),
+                        "mse_samples": row.get("best_repeat_mse_samples"),
+                        "before_interval_rate": row.get(
+                            "best_repeat_before_interval_rate"
+                        ),
+                        "after_interval_rate": row.get(
+                            "best_repeat_after_interval_rate"
+                        ),
+                        "selection": (
+                            row.get("best_repeat_selection")
+                            or "test_in_interval_desc_mae_mse_asc"
+                        ),
+                        "derived_from": "summary.csv",
+                    }
+                else:
+                    row["best_repeat"] = best_repeats.get((stage, config_id))
                 rows.append(row)
 
         stage_order: list[str] = []
