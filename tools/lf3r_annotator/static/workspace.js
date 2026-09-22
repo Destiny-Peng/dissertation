@@ -35,13 +35,13 @@
         loadScript("/static/workspace-legacy.js?v=analysis-job-ownership-v2-20260921", function () {
           loadScript("/static/analysis-robo-hop.js?v=isolated-run-catalog-v6-20260921");
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
-            loadScript("/static/results-axis-scale.js?v=procvlm-progress-0-100-v2-20260916");
+            loadScript("/static/results-axis-scale.js?v=localization-point-v1-20260922");
             loadScript("/static/results-current-values.js?v=current-numeric-values-v2-20260916");
             loadStyle("lf3rRunsStyles", "/static/styles-runs.css?v=runs-console-v4-20260916");
             loadStyle("lf3rRunConfigStyles", "/static/styles-run-config.css?v=single-baseline-config-v2-20260916");
             loadStyle("lf3rRunsLogStyles", "/static/styles-runs-log.css?v=runs-log-v2-20260916");
             loadStyle("lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css?v=baseline-job-filter-v1-20260916");
-            loadScript("/static/results-run-config-v3.js?v=robo-task-goal-v1-20260918", function () {
+            loadScript("/static/results-run-config-v3.js?v=robo-localization-ckpt-v1-20260922", function () {
               loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
                 loadScript("/static/runs-layout.js?v=runs-console-v9-20260916", function () {
                   loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
