@@ -2360,5 +2360,136 @@ print('fake label loss ablation complete')
         self.assertFalse(analysis["available"])
         self.assertIn("No complete baseline analysis snapshot", analysis["message"])
 
+    def test_localization_lab_preset_and_spec_job(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.analysis_jobs.robo_python = Path(sys.executable)
+        script = self.root / "tools" / "train_robo_localization.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--spec', type=Path, required=True)
+parser.add_argument('--output-dir', type=Path, required=True)
+args, _unknown = parser.parse_known_args()
+spec = json.loads(args.spec.read_text(encoding='utf-8'))
+out = args.output_dir
+out.mkdir(parents=True, exist_ok=True)
+(out / 'config.json').write_text(json.dumps(spec), encoding='utf-8')
+(out / 'experiment_manifest.json').write_text(json.dumps({
+    'stages': [{'stage': 'main', 'best_config_id': 's01_c001'}]
+}), encoding='utf-8')
+(out / 'training_records.json').write_text('[]', encoding='utf-8')
+(out / 'summary.csv').write_text(
+    'stage,config_id,in_interval_rate_mean,mae_samples_mean\n'
+    'main,s01_c001,0.75,1.0\n',
+    encoding='utf-8',
+)
+(out / 'per_rollout_predictions.csv').write_text(
+    'rollout_id,predicted_index,in_interval\n'
+    'sample-rollout,0,true\n',
+    encoding='utf-8',
+)
+(out / 'metadata.json').write_text(json.dumps({
+    'schema_version': 1,
+    'analysis': 'robo_localization_experiment',
+    'name': spec.get('name'),
+    'generated_at': '2026-09-22T06:00:00+00:00',
+    'configuration_count': 1,
+    'training_run_count': 1,
+}), encoding='utf-8')
+print('fake localization experiment complete')
+""",
+            encoding="utf-8",
+        )
+
+        with self.request("/api/analysis/localization/presets") as response:
+            self.assertEqual(response.headers.get("Connection"), "close")
+            presets = json.load(response)["presets"]
+        self.assertTrue(any(item["name"] == "bilstm_default" for item in presets))
+        self.assertTrue(any(item["name"] == "label_loss_default" for item in presets))
+
+        spec = {
+            "schema_version": 1,
+            "name": "web_builder_test",
+            "base": {
+                "data": {"population": "failure_only", "success_ratio": 0},
+                "target": {
+                    "kind": "hard",
+                    "sigma_pre": 3,
+                    "sigma_post": 3,
+                    "tau_event": 20,
+                },
+                "model": {"hidden": 16},
+                "loss": {
+                    "name": "bce",
+                    "distance_weight": 1,
+                    "ranking_weight": 1,
+                    "ranking_margin": 1,
+                },
+                "training": {
+                    "device": "cpu",
+                    "batch_size": 32,
+                    "epochs": 2,
+                    "patience": 1,
+                    "learning_rate": 0.003,
+                    "weight_decay": 0.0001,
+                    "grad_clip": 5,
+                    "seed": 17,
+                    "train_fraction": 0.7,
+                    "val_fraction": 0.15,
+                },
+            },
+            "sweep": [],
+            "stages": [],
+            "repeats": 1,
+        }
+
+        with self.request(
+            "/api/analysis/localization/presets/save",
+            {"spec": spec, "overwrite": False},
+        ) as response:
+            saved = json.load(response)["preset"]
+        self.assertEqual(saved["name"], "web_builder_test")
+        self.assertTrue(
+            (self.root / "config" / "robo_localization_presets" / "web_builder_test.json").is_file()
+        )
+
+        with self.request(
+            "/api/analysis/localization/run",
+            {"spec": spec},
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+        self.assertEqual(job["analysis_kind"], "robo_localization_experiment")
+        self.assertIn("--spec", job["command"])
+        self.assertEqual(job["parameters"]["experiment_name"], "web_builder_test")
+
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        output_dir = self.root / final["output_dir"]
+        self.assertTrue((output_dir / "metadata.json").is_file())
+        self.assertTrue((output_dir / "summary.csv").is_file())
+
+        with self.request("/api/analysis/localization") as response:
+            runs = json.load(response)["localization"]["runs"]
+        self.assertTrue(any(item["name"] == "web_builder_test" for item in runs))
+
+        run_name = Path(final["output_dir"]).name
+        with self.request(
+            "/api/analysis/localization/artifacts/" + run_name + "/summary.csv"
+        ) as response:
+            self.assertIn("s01_c001", response.read().decode("utf-8"))
+
+        with self.request(
+            "/api/analysis/localization/presets/delete",
+            {"name": "web_builder_test"},
+        ) as response:
+            deleted = json.load(response)
+        self.assertTrue(deleted["deleted"])
+
+
 if __name__ == "__main__":
     unittest.main()
