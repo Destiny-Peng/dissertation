@@ -937,6 +937,33 @@
       + '<small>var ' + formatMetric(variance, false) + '</small></span>';
   }
 
+  function renderBestRepeatCell(best) {
+    if (!best || best.repeat == null) return "—";
+    var metrics = [];
+    if (best.in_interval_rate != null && Number.isFinite(Number(best.in_interval_rate))) {
+      metrics.push("In " + formatMetric(best.in_interval_rate, true));
+    }
+    if (best.mae_samples != null && Number.isFinite(Number(best.mae_samples))) {
+      metrics.push("MAE " + formatMetric(best.mae_samples, false));
+    }
+    if (best.mse_samples != null && Number.isFinite(Number(best.mse_samples))) {
+      metrics.push("MSE " + formatMetric(best.mse_samples, false));
+    }
+    var checkpoint = String(best.checkpoint || "");
+    var checkpointLabel = checkpoint
+      ? checkpoint.split("/").slice(-3).join("/")
+      : "";
+    var title = "Descriptive repeat ranking: maximize test in-interval rate, then minimize test MAE and MSE.";
+    if (checkpoint) title += " Checkpoint: " + checkpoint;
+    return '<div class="localization-best-repeat" title="' + esc(title) + '">'
+      + '<strong>repeat ' + esc(best.repeat) + '</strong>'
+      + (metrics.length ? '<small>' + esc(metrics.join(" · ")) + '</small>' : "")
+      + (checkpointLabel
+          ? '<code title="' + esc(checkpoint) + '">' + esc(checkpointLabel) + '</code>'
+          : "")
+      + '</div>';
+  }
+
   function renderRunResult(result) {
     state.activeRunResult = result;
     var shell = node("localizationRunResult");
@@ -976,14 +1003,16 @@
         + (stage.best_config_id ? '<span class="analysis-badge">Best ' + esc(stage.best_config_id) + '</span>' : '')
         + '</div>'
         + '<div class="analysis-table-wrap"><table class="analysis-table localization-run-result-table"><thead><tr>'
-        + '<th>Config</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
+        + '<th>Config</th><th>Repeats</th><th title="Descriptive ranking within this config: max test in-interval, then min test MAE/MSE">Best repeat</th>'
+        + '<th>In interval</th><th>First event</th><th>±3</th>'
         + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
-        + '<th>Batch</th><th>Best</th>'
+        + '<th>Batch</th><th>Best config</th>'
         + '</tr></thead><tbody>'
         + rows.map(function (row) {
           return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
             + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
             + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
+            + '<td>' + renderBestRepeatCell(row.best_repeat) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "in_interval_rate_mean", "in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "within_3_mean", "within_3_variance", true) + '</td>'
