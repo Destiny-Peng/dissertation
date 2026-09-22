@@ -5615,14 +5615,38 @@ class AnalysisJobService:
         rows.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
         return {"available": bool(rows), "runs": rows[:50]}
 
-    def _localization_best_repeats(
+    def _localization_repeat_metrics(
         self,
         directory: Path,
-    ) -> dict[tuple[str, str], dict[str, Any]]:
-        """Recover the best observed repeat for every config, including old runs."""
+    ) -> dict[tuple[str, str], list[dict[str, Any]]]:
+        """Recover every repeat's observed test metrics for each config.
+
+        The primary source is per_rollout_predictions.csv so this also works for
+        runs created before explicit per-repeat summaries were persisted.
+        """
         predictions_path = directory / "per_rollout_predictions.csv"
         if not predictions_path.is_file():
             return {}
+
+        record_meta: dict[tuple[str, str, int], dict[str, Any]] = {}
+        records_path = directory / "training_records.json"
+        if records_path.is_file():
+            try:
+                loaded = json.loads(records_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                loaded = []
+            if isinstance(loaded, list):
+                for record in loaded:
+                    if not isinstance(record, dict):
+                        continue
+                    stage = str(record.get("stage") or "main")
+                    config_id = str(record.get("config_id") or "")
+                    try:
+                        repeat = int(record.get("repeat"))
+                    except (TypeError, ValueError):
+                        continue
+                    if config_id:
+                        record_meta[(stage, config_id, repeat)] = record
 
         grouped: dict[tuple[str, str, int], dict[str, Any]] = {}
         try:
@@ -5650,7 +5674,9 @@ class AnalysisJobService:
                         },
                     )
                     bucket["errors"].append(error)
-                    first_event = str(row.get("first_event_in_interval") or "").strip().lower()
+                    first_event = str(
+                        row.get("first_event_in_interval") or ""
+                    ).strip().lower()
                     if first_event in {"true", "1", "yes"}:
                         bucket["first_event_hits"].append(True)
                     elif first_event in {"false", "0", "no"}:
@@ -5662,22 +5688,30 @@ class AnalysisJobService:
             return {}
 
         by_config: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for (stage, config_id, repeat), bucket in grouped.items():
+        for key, bucket in grouped.items():
+            stage, config_id, repeat = key
             errors = list(bucket["errors"])
             if not errors:
                 continue
             absolute = [abs(value) for value in errors]
             count = len(errors)
             first_hits = list(bucket["first_event_hits"])
+            meta = record_meta.get(key, {})
+            split = meta.get("split") if isinstance(meta.get("split"), dict) else {}
             summary = {
                 "repeat": repeat,
-                "checkpoint": bucket["checkpoint"],
+                "seed": meta.get("seed"),
+                "checkpoint": bucket["checkpoint"] or meta.get("checkpoint"),
                 "test_n": count,
+                "train_n": len(split.get("train") or []),
+                "val_n": len(split.get("val") or []),
                 "in_interval_rate": sum(value == 0 for value in errors) / count,
                 "first_event_in_interval_rate": (
                     sum(first_hits) / len(first_hits) if first_hits else None
                 ),
+                "within_1": sum(value <= 1 for value in absolute) / count,
                 "within_3": sum(value <= 3 for value in absolute) / count,
+                "within_5": sum(value <= 5 for value in absolute) / count,
                 "median_absolute_interval_error_samples": float(
                     statistics.median(absolute)
                 ),
@@ -5687,13 +5721,31 @@ class AnalysisJobService:
                 ),
                 "before_interval_rate": sum(value < 0 for value in errors) / count,
                 "after_interval_rate": sum(value > 0 for value in errors) / count,
-                "selection": "test_in_interval_desc_mae_mse_asc",
+                "best_epoch": meta.get("best_epoch"),
+                "best_val_loss": meta.get("best_val_loss"),
+                "effective_train_batch_size": meta.get(
+                    "effective_train_batch_size"
+                ),
+                "optimizer_steps_per_epoch": meta.get(
+                    "optimizer_steps_per_epoch"
+                ),
                 "derived_from": "per_rollout_predictions.csv",
             }
             by_config.setdefault((stage, config_id), []).append(summary)
 
+        for repeats in by_config.values():
+            repeats.sort(key=lambda row: int(row["repeat"]))
+        return by_config
+
+    def _localization_best_repeats(
+        self,
+        directory: Path,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        repeats_by_config = self._localization_repeat_metrics(directory)
         best: dict[tuple[str, str], dict[str, Any]] = {}
-        for key, repeats in by_config.items():
+        for key, repeats in repeats_by_config.items():
+            if not repeats:
+                continue
             best[key] = min(
                 repeats,
                 key=lambda row: (
@@ -5703,6 +5755,10 @@ class AnalysisJobService:
                     int(row["repeat"]),
                 ),
             )
+            best[key] = {
+                **best[key],
+                "selection": "test_in_interval_desc_mae_mse_asc",
+            }
         return best
 
     def localization_result_detail(self, run_name: str) -> dict[str, Any]:
@@ -5729,6 +5785,7 @@ class AnalysisJobService:
             except (OSError, json.JSONDecodeError):
                 pass
 
+        repeat_metrics = self._localization_repeat_metrics(directory)
         best_repeats = self._localization_best_repeats(directory)
 
         best_by_stage: dict[str, str] = {}
@@ -5844,6 +5901,7 @@ class AnalysisJobService:
                     }
                 else:
                     row["best_repeat"] = best_repeats.get((stage, config_id))
+                row["repeats"] = repeat_metrics.get((stage, config_id), [])
                 rows.append(row)
 
         stage_order: list[str] = []
