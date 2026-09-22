@@ -5039,7 +5039,7 @@ class AnalysisJobService:
         allowed_fields = {
             "analysis_kind", "runs", "output_label", "device", "repeats",
             "epochs", "patience", "learning_rate", "weight_decay", "grad_clip",
-            "success_ratios",
+            "batch_size", "success_ratios",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -5076,6 +5076,7 @@ class AnalysisJobService:
         repeats = self._integer(payload.get("repeats", 5), "repeats", 1, 50)
         epochs = self._integer(payload.get("epochs", 300), "epochs", 1, 5000)
         patience = self._integer(payload.get("patience", 35), "patience", 1, 1000)
+        batch_size = self._integer(payload.get("batch_size", 32), "batch_size", 1, 128)
 
         raw_success_ratios = payload.get("success_ratios", "0.5,1,2")
         if isinstance(raw_success_ratios, str):
@@ -5125,9 +5126,9 @@ class AnalysisJobService:
                 "learning_rate and grad_clip must be > 0; weight_decay must be >= 0"
             )
 
-        script = self.project_root / "tools" / "train_robo_dopamine_localization_head.py"
+        script = self.project_root / "tools" / "train_robo_localization.py"
         if not script.is_file():
-            raise ValidationError("BiLSTM localization-head training script is missing")
+            raise ValidationError("Unified BiLSTM localization trainer is missing")
 
         job_id = "analysis-bilstm-" + uuid.uuid4().hex[:12]
         workspace = self.robo_localization_head_root / ".web_jobs" / job_id
@@ -5139,6 +5140,7 @@ class AnalysisJobService:
         command = [
             str(self.robo_python),
             str(script),
+            "--experiment", "success_negative",
             "--run-pool-root", str(pool_root),
             "--manifest", str(self.manifest_path),
             "--annotations", str(self.annotation_root / "records"),
@@ -5150,6 +5152,7 @@ class AnalysisJobService:
             "--learning-rate", str(learning_rate),
             "--weight-decay", str(weight_decay),
             "--grad-clip", str(grad_clip),
+            "--batch-size", str(batch_size),
             "--success-ratios", success_ratios_arg,
         ]
         self.robo_localization_head_root.mkdir(parents=True, exist_ok=True)
@@ -5177,6 +5180,7 @@ class AnalysisJobService:
                     "learning_rate": learning_rate,
                     "weight_decay": weight_decay,
                     "grad_clip": grad_clip,
+                    "batch_size": batch_size,
                     "success_ratios": success_ratios,
                     "result_selection": "latest_usable_fused_per_rollout",
                     "run_pool_root": self._relative(pool_root),
@@ -5284,13 +5288,9 @@ class AnalysisJobService:
                 "run_asymmetric_if_soft_improves must be boolean"
             )
 
-        script = (
-            self.project_root
-            / "tools"
-            / "train_robo_dopamine_label_loss_ablation.py"
-        )
+        script = self.project_root / "tools" / "train_robo_localization.py"
         if not script.is_file():
-            raise ValidationError("BiLSTM label/loss ablation script is missing")
+            raise ValidationError("Unified BiLSTM localization trainer is missing")
 
         job_id = "analysis-label-loss-" + uuid.uuid4().hex[:12]
         workspace = self.robo_label_loss_root / ".web_jobs" / job_id
@@ -5306,6 +5306,7 @@ class AnalysisJobService:
         command = [
             str(self.robo_python),
             str(script),
+            "--experiment", "label_loss",
             "--run-pool-root", str(pool_root),
             "--manifest", str(self.manifest_path),
             "--annotations", str(self.annotation_root / "records"),
