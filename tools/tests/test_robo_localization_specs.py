@@ -32,6 +32,16 @@ class LocalizationSpecTests(unittest.TestCase):
         self.assertEqual(len(configs), 12)
         self.assertEqual(specs.estimate_runs(spec)["training_runs"], 60)
 
+    def test_empty_variants_do_not_create_base_variant(self) -> None:
+        configs = specs.expand(
+            specs.DEFAULT_BASE,
+            [{"path": "loss.name", "values": ["bce", "temporal_softmax_ce"]}],
+            [],
+        )
+        self.assertEqual(len(configs), 2)
+        self.assertEqual(configs[0]["loss"]["name"], "bce")
+        self.assertEqual(configs[1]["loss"]["name"], "temporal_softmax_ce")
+
     def test_stage_spec_is_valid(self) -> None:
         spec = specs.BUILTIN_PRESETS["label_loss_default"]
         normalized = specs.normalize_spec(spec)
