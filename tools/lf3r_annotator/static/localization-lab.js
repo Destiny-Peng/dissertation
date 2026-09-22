@@ -127,6 +127,7 @@
       training: {
         device: node("localizationDevice").value,
         batch_size: Math.round(n("localizationBatchSize")),
+        parallel_workers: Math.round(n("localizationParallelWorkers")),
         epochs: Math.round(n("localizationEpochs")),
         patience: Math.round(n("localizationPatience")),
         learning_rate: n("localizationLearningRate"),
@@ -155,6 +156,7 @@
     node("localizationRankingMargin").value = loss.ranking_margin == null ? 1 : loss.ranking_margin;
     node("localizationDevice").value = training.device || "auto";
     node("localizationBatchSize").value = training.batch_size == null ? 32 : training.batch_size;
+    node("localizationParallelWorkers").value = training.parallel_workers == null ? 4 : training.parallel_workers;
     node("localizationEpochs").value = training.epochs == null ? 300 : training.epochs;
     node("localizationPatience").value = training.patience == null ? 35 : training.patience;
     node("localizationLearningRate").value = training.learning_rate == null ? 0.003 : training.learning_rate;
@@ -484,8 +486,10 @@
       var spec = currentSpec();
       var work = estimate(spec);
       node("localizationSpecPreview").textContent = JSON.stringify(spec, null, 2);
+      var workers = Math.max(1, Number(spec.base.training.parallel_workers || 1));
       node("localizationEstimate").textContent =
-        work.configurations + " configuration(s) × " + spec.repeats + " repeat(s) = " + work.trainingRuns + " training run(s)";
+        work.configurations + " configuration(s) × " + spec.repeats + " repeat(s) = "
+        + work.trainingRuns + " training run(s) · up to " + workers + " config worker(s)";
       var warning = "";
       if (work.trainingRuns > 500) warning = "Large experiment: more than 500 training runs.";
       else if (work.trainingRuns > 100) warning = "Large experiment: more than 100 training runs.";
