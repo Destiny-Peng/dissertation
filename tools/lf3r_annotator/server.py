@@ -6842,6 +6842,19 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     {"localization": self.app.analysis_jobs.localization_results()},
                 )
                 return
+            if path == "/api/analysis/localization/challenge-sets":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"challenge_sets": self.app.analysis_jobs.localization_challenge_sets()},
+                )
+                return
+            if path.startswith("/api/analysis/localization/challenge/"):
+                run_name = path.rsplit("/", 1)[-1]
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"challenge": self.app.analysis_jobs.localization_challenge_data(run_name)},
+                )
+                return
             if path.startswith("/api/analysis/localization/artifacts/"):
                 relative = path[len("/api/analysis/localization/artifacts/"):]
                 parts = relative.split("/", 1)
@@ -7202,6 +7215,7 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 "/api/analysis/localization/run",
                 "/api/analysis/localization/presets/save",
                 "/api/analysis/localization/presets/delete",
+                "/api/analysis/localization/challenge/save",
             }:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -7215,12 +7229,15 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if path == "/api/analysis/localization/run":
                     job = self.app.analysis_jobs.start_localization_spec_run(payload)
                     self.json_response(HTTPStatus.ACCEPTED, {"job": job})
-                elif path.endswith("/save"):
+                elif path == "/api/analysis/localization/presets/save":
                     preset = self.app.analysis_jobs.save_localization_preset(payload)
                     self.json_response(HTTPStatus.OK, {"preset": preset})
-                else:
+                elif path == "/api/analysis/localization/presets/delete":
                     result = self.app.analysis_jobs.delete_localization_preset(payload)
                     self.json_response(HTTPStatus.OK, result)
+                else:
+                    manifest = self.app.analysis_jobs.save_localization_challenge_set(payload)
+                    self.json_response(HTTPStatus.OK, {"challenge_set": manifest})
                 return
             if path in {"/api/baselines/run-batch", "/api/analysis/run", "/api/rollouts/generate"}:
                 try:
