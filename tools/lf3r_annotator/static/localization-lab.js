@@ -937,31 +937,51 @@
       + '<small>var ' + formatMetric(variance, false) + '</small></span>';
   }
 
-  function renderBestRepeatCell(best) {
-    if (!best || best.repeat == null) return "—";
-    var metrics = [];
-    if (best.in_interval_rate != null && Number.isFinite(Number(best.in_interval_rate))) {
-      metrics.push("In " + formatMetric(best.in_interval_rate, true));
+  function renderRepeatDetails(row) {
+    var repeats = Array.isArray(row.repeats) ? row.repeats : [];
+    if (!repeats.length) {
+      return '<p class="analysis-card-note">Per-repeat metrics are unavailable for this run.</p>';
     }
-    if (best.mae_samples != null && Number.isFinite(Number(best.mae_samples))) {
-      metrics.push("MAE " + formatMetric(best.mae_samples, false));
-    }
-    if (best.mse_samples != null && Number.isFinite(Number(best.mse_samples))) {
-      metrics.push("MSE " + formatMetric(best.mse_samples, false));
-    }
-    var checkpoint = String(best.checkpoint || "");
-    var checkpointLabel = checkpoint
-      ? checkpoint.split("/").slice(-3).join("/")
-      : "";
-    var title = "Descriptive repeat ranking: maximize test in-interval rate, then minimize test MAE and MSE.";
-    if (checkpoint) title += " Checkpoint: " + checkpoint;
-    return '<div class="localization-best-repeat" title="' + esc(title) + '">'
-      + '<strong>repeat ' + esc(best.repeat) + '</strong>'
-      + (metrics.length ? '<small>' + esc(metrics.join(" · ")) + '</small>' : "")
-      + (checkpointLabel
-          ? '<code title="' + esc(checkpoint) + '">' + esc(checkpointLabel) + '</code>'
-          : "")
-      + '</div>';
+    return '<details class="localization-repeat-details">'
+      + '<summary>Show all ' + esc(repeats.length) + ' repeat(s)</summary>'
+      + '<div class="analysis-table-wrap localization-repeat-table-wrap">'
+      + '<table class="analysis-table localization-repeat-table"><thead><tr>'
+      + '<th>Repeat</th><th>Seed</th><th>Test N</th>'
+      + '<th>In interval</th><th>First event</th><th>±1</th><th>±3</th><th>±5</th>'
+      + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
+      + '<th>Best epoch</th><th>Val loss</th><th>Checkpoint</th>'
+      + '</tr></thead><tbody>'
+      + repeats.map(function (repeat) {
+        var checkpoint = String(repeat.checkpoint || "");
+        var shortCheckpoint = checkpoint
+          ? checkpoint.split("/").slice(-4).join("/")
+          : "—";
+        return '<tr>'
+          + '<td><strong>repeat ' + esc(repeat.repeat) + '</strong></td>'
+          + '<td class="numeric">' + esc(repeat.seed == null ? "—" : repeat.seed) + '</td>'
+          + '<td class="numeric">' + esc(repeat.test_n == null ? "—" : repeat.test_n) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.in_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.first_event_in_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.within_1, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.within_3, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.within_5, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.median_absolute_interval_error_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.mae_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.mse_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.before_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.after_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + esc(repeat.best_epoch == null ? "—" : repeat.best_epoch) + '</td>'
+          + '<td class="numeric">' + formatMetric(repeat.best_val_loss, false) + '</td>'
+          + '<td><div class="localization-repeat-checkpoint">'
+          + '<code title="' + esc(checkpoint) + '">' + esc(shortCheckpoint) + '</code>'
+          + (checkpoint
+              ? '<button type="button" class="ghost-button" data-copy-localization-ckpt="'
+                + esc(checkpoint) + '">Copy</button>'
+              : '')
+          + '</div></td>'
+          + '</tr>';
+      }).join("")
+      + '</tbody></table></div></details>';
   }
 
   function renderRunResult(result) {
@@ -1003,8 +1023,7 @@
         + (stage.best_config_id ? '<span class="analysis-badge">Best ' + esc(stage.best_config_id) + '</span>' : '')
         + '</div>'
         + '<div class="analysis-table-wrap"><table class="analysis-table localization-run-result-table"><thead><tr>'
-        + '<th>Config</th><th>Repeats</th><th title="Descriptive ranking within this config: max test in-interval, then min test MAE/MSE">Best repeat</th>'
-        + '<th>In interval</th><th>First event</th><th>±3</th>'
+        + '<th>Config</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
         + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
         + '<th>Batch</th><th>Best config</th>'
         + '</tr></thead><tbody>'
@@ -1012,7 +1031,6 @@
           return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
             + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
             + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
-            + '<td>' + renderBestRepeatCell(row.best_repeat) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "in_interval_rate_mean", "in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "within_3_mean", "within_3_variance", true) + '</td>'
@@ -1023,7 +1041,10 @@
             + '<td class="numeric">' + formatMetricCell(row, "after_interval_rate_mean", "after_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + esc(row["training.batch_size"] == null ? "—" : row["training.batch_size"]) + '</td>'
             + '<td>' + (row.best ? '<strong>Selected</strong>' : '') + '</td>'
-            + '</tr>';
+            + '</tr>'
+            + '<tr class="localization-repeat-detail-row"><td colspan="12">'
+            + renderRepeatDetails(row)
+            + '</td></tr>';
         }).join("")
         + '</tbody></table></div></section>';
     }).join("");
@@ -1239,6 +1260,19 @@
       });
     });
     node("localizationRunResult").addEventListener("click", function (event) {
+      var copyButton = event.target.closest("[data-copy-localization-ckpt]");
+      if (copyButton) {
+        var checkpoint = copyButton.dataset.copyLocalizationCkpt;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(checkpoint).then(function () {
+            var original = copyButton.textContent;
+            copyButton.textContent = "Copied";
+            window.setTimeout(function () { copyButton.textContent = original; }, 1200);
+          }).catch(function () {});
+        }
+        return;
+      }
+
       var button = event.target.closest("[data-open-challenge-run]");
       if (!button) return;
       var runId = button.dataset.openChallengeRun;
