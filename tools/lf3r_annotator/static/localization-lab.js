@@ -692,6 +692,16 @@
         recovery_like: Boolean(first.recovery_like)
       });
     });
+    var taskFilter = node("localizationChallengeTask").value;
+    var failureFilter = node("localizationChallengeFailureType").value;
+    var flagFilter = node("localizationChallengeCaseFlag").value;
+    result = result.filter(function (row) {
+      if (taskFilter && String(row.task_id) !== taskFilter) return false;
+      if (failureFilter && String(row.primary_failure_type || "unknown") !== failureFilter) return false;
+      if (flagFilter === "multi_event" && !row.multi_event) return false;
+      if (flagFilter === "recovery_like" && !row.recovery_like) return false;
+      return true;
+    });
     result.sort(function (a, b) {
       return a.within_3_success_rate - b.within_3_success_rate
         || a.in_interval_success_rate - b.in_interval_success_rate
@@ -822,6 +832,28 @@
     renderChallengeTable();
   }
 
+  function renderChallengeFilters() {
+    var data = state.challengeData;
+    var taskSelect = node("localizationChallengeTask");
+    var failureSelect = node("localizationChallengeFailureType");
+    if (!data || !data.available) {
+      taskSelect.innerHTML = '<option value="">All tasks</option>';
+      failureSelect.innerHTML = '<option value="">All failure types</option>';
+      return;
+    }
+    var tasks = Array.from(new Set(data.rows.map(function (row) { return String(row.task_id); }))).sort();
+    var failures = Array.from(new Set(data.rows.map(function (row) {
+      return String(row.primary_failure_type || "unknown");
+    }))).sort();
+    taskSelect.innerHTML = '<option value="">All tasks</option>' + tasks.map(function (value) {
+      return '<option value="' + esc(value) + '">' + esc(value) + '</option>';
+    }).join("");
+    failureSelect.innerHTML = '<option value="">All failure types</option>' + failures.map(function (value) {
+      return '<option value="' + esc(value) + '">' + esc(value) + '</option>';
+    }).join("");
+    node("localizationChallengeCaseFlag").value = "";
+  }
+
   function renderChallengeConfigs() {
     var host = node("localizationChallengeConfigs");
     var data = state.challengeData;
@@ -853,6 +885,7 @@
     );
     state.challengeData = payload.challenge || null;
     state.selectedChallengeRollouts = new Set();
+    renderChallengeFilters();
     renderChallengeConfigs();
     renderChallengeTable();
   }
@@ -1044,7 +1077,16 @@
         node("localizationChallengeStatus").className = "analysis-status error";
       });
     });
-    node("localizationChallengeCriterion").addEventListener("change", renderChallengeTable);
+    node("localizationChallengeCriterion").addEventListener("change", function () {
+      state.selectedChallengeRollouts = new Set();
+      renderChallengeTable();
+    });
+    ["localizationChallengeTask", "localizationChallengeFailureType", "localizationChallengeCaseFlag"].forEach(function (id) {
+      node(id).addEventListener("change", function () {
+        state.selectedChallengeRollouts = new Set();
+        renderChallengeTable();
+      });
+    });
     node("localizationChallengePersistentOnly").addEventListener("change", renderChallengeTable);
     node("localizationChallengePropose").addEventListener("click", proposeChallengeSet);
     node("localizationChallengeSave").addEventListener("click", function () {
