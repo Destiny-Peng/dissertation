@@ -3,6 +3,10 @@
 (function installLocalizationLab() {
   var state = {
     presets: [],
+    challengeSets: [],
+    runs: [],
+    challengeData: null,
+    selectedChallengeRollouts: new Set(),
     currentJob: null,
     polling: false,
     activeTab: "builder"
@@ -106,10 +110,15 @@
 
   function baseFromForm() {
     var population = node("localizationPopulation").value;
+    var challengeName = node("localizationChallengeTrainSet").value;
+    var challengeSet = state.challengeSets.find(function (item) { return item.name === challengeName; }) || null;
+    var forceChallenge = node("localizationForceChallengeTrain").checked && challengeSet;
     return {
       data: {
         population: population,
-        success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio")
+        success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio"),
+        challenge_set_name: forceChallenge ? challengeName : "",
+        force_train_rollout_ids: forceChallenge ? clone(challengeSet.rollout_ids || []) : []
       },
       target: {
         kind: node("localizationTargetKind").value,
@@ -127,6 +136,7 @@
       training: {
         device: node("localizationDevice").value,
         batch_size: Math.round(n("localizationBatchSize")),
+        parallel_workers: Math.round(n("localizationParallelWorkers")),
         epochs: Math.round(n("localizationEpochs")),
         patience: Math.round(n("localizationPatience")),
         learning_rate: n("localizationLearningRate"),
@@ -144,6 +154,8 @@
     var loss = base.loss || {}, training = base.training || {};
     node("localizationPopulation").value = data.population || "failure_only";
     node("localizationSuccessRatio").value = data.success_ratio == null ? 0 : data.success_ratio;
+    node("localizationChallengeTrainSet").value = data.challenge_set_name || "";
+    node("localizationForceChallengeTrain").checked = Array.isArray(data.force_train_rollout_ids) && data.force_train_rollout_ids.length > 0;
     node("localizationTargetKind").value = target.kind || "hard";
     node("localizationSigmaPre").value = target.sigma_pre == null ? 3 : target.sigma_pre;
     node("localizationSigmaPost").value = target.sigma_post == null ? 3 : target.sigma_post;
@@ -155,6 +167,7 @@
     node("localizationRankingMargin").value = loss.ranking_margin == null ? 1 : loss.ranking_margin;
     node("localizationDevice").value = training.device || "auto";
     node("localizationBatchSize").value = training.batch_size == null ? 32 : training.batch_size;
+    node("localizationParallelWorkers").value = training.parallel_workers == null ? 4 : training.parallel_workers;
     node("localizationEpochs").value = training.epochs == null ? 300 : training.epochs;
     node("localizationPatience").value = training.patience == null ? 35 : training.patience;
     node("localizationLearningRate").value = training.learning_rate == null ? 0.003 : training.learning_rate;
@@ -484,8 +497,10 @@
       var spec = currentSpec();
       var work = estimate(spec);
       node("localizationSpecPreview").textContent = JSON.stringify(spec, null, 2);
+      var workers = Math.max(1, Number(spec.base.training.parallel_workers || 1));
       node("localizationEstimate").textContent =
-        work.configurations + " configuration(s) × " + spec.repeats + " repeat(s) = " + work.trainingRuns + " training run(s)";
+        work.configurations + " configuration(s) × " + spec.repeats + " repeat(s) = "
+        + work.trainingRuns + " training run(s) · up to " + workers + " config worker(s)";
       var warning = "";
       if (work.trainingRuns > 500) warning = "Large experiment: more than 500 training runs.";
       else if (work.trainingRuns > 100) warning = "Large experiment: more than 100 training runs.";
@@ -537,6 +552,20 @@
     }).join("");
     renderPresetList();
     if (state.presets.length && !select.value) select.value = state.presets[0].name;
+  }
+
+  async function loadChallengeSets() {
+    var payload = await fetchJson("/api/analysis/localization/challenge-sets", { cache: "no-store" });
+    state.challengeSets = payload.challenge_sets || [];
+    var select = node("localizationChallengeTrainSet");
+    var previous = select.value;
+    select.innerHTML = '<option value="">None</option>' + state.challengeSets.map(function (item) {
+      return '<option value="' + esc(item.name) + '">' + esc(item.name)
+        + ' · ' + esc(item.size || 0) + ' rollout(s)</option>';
+    }).join("");
+    if (state.challengeSets.some(function (item) { return item.name === previous; })) {
+      select.value = previous;
+    }
   }
 
   function selectedPreset() {
@@ -598,7 +627,300 @@
     document.querySelectorAll("[data-localization-panel]").forEach(function (panel) {
       panel.classList.toggle("hidden", panel.dataset.localizationPanel !== tab);
     });
+    if (tab === "challenge" && !state.challengeData && node("localizationChallengeRun").value) {
+      loadChallengeRun().catch(function (error) {
+        node("localizationChallengeStatus").textContent = error.message;
+        node("localizationChallengeStatus").className = "analysis-status error";
+      });
+    }
   }
+
+  function selectedChallengeConfigIds() {
+    return Array.prototype.map.call(
+      node("localizationChallengeConfigs").querySelectorAll("input[data-challenge-config]:checked"),
+      function (input) { return input.value; }
+    );
+  }
+
+  function challengeRowsForSelection() {
+    if (!state.challengeData || !state.challengeData.available) return [];
+    var configIds = selectedChallengeConfigIds();
+    if (!configIds.length) return [];
+    var criterion = node("localizationChallengeCriterion").value;
+    var byRollout = {};
+    state.challengeData.rows.forEach(function (row) {
+      if (configIds.indexOf(row.config_id) === -1) return;
+      if (!byRollout[row.rollout_id]) byRollout[row.rollout_id] = {};
+      byRollout[row.rollout_id][row.config_id] = row;
+    });
+    var result = [];
+    Object.keys(byRollout).forEach(function (rolloutId) {
+      var configRows = configIds.map(function (configId) { return byRollout[rolloutId][configId]; });
+      if (configRows.some(function (row) { return !row; })) return;
+      var first = configRows[0];
+      function avg(field) {
+        return configRows.reduce(function (total, row) { return total + Number(row[field] || 0); }, 0) / configRows.length;
+      }
+      var persistent = configRows.every(function (row) {
+        return criterion === "outside_3"
+          ? row.all_repeats_failed_within_3
+          : row.all_repeats_failed_interval;
+      });
+      result.push({
+        rollout_id: rolloutId,
+        config_rows: configRows,
+        persistent: persistent,
+        repeat_count: Math.min.apply(null, configRows.map(function (row) { return Number(row.repeat_count || 0); })),
+        in_interval_success_rate: avg("in_interval_success_rate"),
+        within_3_success_rate: avg("within_3_success_rate"),
+        median_absolute_interval_error: avg("median_absolute_interval_error"),
+        mean_absolute_interval_error: avg("mean_absolute_interval_error"),
+        worst_absolute_interval_error: Math.max.apply(null, configRows.map(function (row) {
+          return Number(row.worst_absolute_interval_error || 0);
+        })),
+        train_exposure_rate: avg("train_exposure_rate"),
+        forced_train_rate: avg("forced_train_rate"),
+        train_in_interval_success_rate: (function () {
+          var values = configRows.map(function (row) { return row.train_in_interval_success_rate; })
+            .filter(function (value) { return value != null; }).map(Number);
+          return values.length ? values.reduce(function (a, b) { return a + b; }, 0) / values.length : null;
+        })(),
+        task_id: first.task_id,
+        task_key: first.task_key,
+        primary_failure_type: first.primary_failure_type,
+        failure_types: first.failure_types || [],
+        multi_event: Boolean(first.multi_event),
+        recovery_like: Boolean(first.recovery_like)
+      });
+    });
+    var taskFilter = node("localizationChallengeTask").value;
+    var failureFilter = node("localizationChallengeFailureType").value;
+    var flagFilter = node("localizationChallengeCaseFlag").value;
+    result = result.filter(function (row) {
+      if (taskFilter && String(row.task_id) !== taskFilter) return false;
+      if (failureFilter && String(row.primary_failure_type || "unknown") !== failureFilter) return false;
+      if (flagFilter === "multi_event" && !row.multi_event) return false;
+      if (flagFilter === "recovery_like" && !row.recovery_like) return false;
+      return true;
+    });
+    result.sort(function (a, b) {
+      return a.within_3_success_rate - b.within_3_success_rate
+        || a.in_interval_success_rate - b.in_interval_success_rate
+        || b.median_absolute_interval_error - a.median_absolute_interval_error
+        || b.mean_absolute_interval_error - a.mean_absolute_interval_error
+        || b.worst_absolute_interval_error - a.worst_absolute_interval_error
+        || a.rollout_id.localeCompare(b.rollout_id);
+    });
+    return result;
+  }
+
+  function formatRate(value) {
+    if (value == null || !Number.isFinite(Number(value))) return "—";
+    return (100 * Number(value)).toFixed(0) + "%";
+  }
+
+  function renderChallengeComposition(rows) {
+    var selected = rows.filter(function (row) {
+      return state.selectedChallengeRollouts.has(row.rollout_id);
+    });
+    var host = node("localizationChallengeComposition");
+    if (!selected.length) {
+      host.innerHTML = '<p class="analysis-card-note">No challenge rollouts selected.</p>';
+      return;
+    }
+    var tasks = {}, failures = {}, multi = 0, recovery = 0, persistent = 0;
+    selected.forEach(function (row) {
+      var task = String(row.task_id);
+      tasks[task] = (tasks[task] || 0) + 1;
+      var failure = row.primary_failure_type || "unknown";
+      failures[failure] = (failures[failure] || 0) + 1;
+      if (row.multi_event) multi += 1;
+      if (row.recovery_like) recovery += 1;
+      if (row.persistent) persistent += 1;
+    });
+    function pairs(value) {
+      return Object.keys(value).sort().map(function (key) {
+        return esc(key) + ": " + esc(value[key]);
+      }).join(" · ");
+    }
+    host.innerHTML =
+      '<div class="localization-challenge-summary">'
+      + '<strong>' + selected.length + ' selected</strong>'
+      + '<span>Persistent: ' + persistent + '</span>'
+      + '<span>Multi-event: ' + multi + '</span>'
+      + '<span>Recovery-like: ' + recovery + '</span>'
+      + '</div>'
+      + '<p><strong>Tasks</strong> ' + pairs(tasks) + '</p>'
+      + '<p><strong>Failure types</strong> ' + pairs(failures) + '</p>';
+  }
+
+  function renderChallengeTable() {
+    var rows = challengeRowsForSelection();
+    var persistentOnly = node("localizationChallengePersistentOnly").checked;
+    var visible = persistentOnly ? rows.filter(function (row) { return row.persistent; }) : rows;
+    node("localizationChallengeStatus").className = "analysis-status";
+    node("localizationChallengeStatus").textContent =
+      visible.length + " rollout(s) shown · " + rows.filter(function (row) { return row.persistent; }).length
+      + " common persistent failure(s) · full-repeat inference";
+    renderChallengeComposition(rows);
+    var host = node("localizationChallengeTable");
+    if (!visible.length) {
+      host.innerHTML = '<p class="analysis-empty">No rollouts match the current config/criterion selection.</p>';
+      return;
+    }
+    host.innerHTML = '<table class="analysis-table localization-challenge-table"><thead><tr>'
+      + '<th>Use</th><th>Rank</th><th>Rollout</th><th>Repeats</th><th>In interval</th><th>±3</th>'
+      + '<th>Median |err|</th><th>Mean |err|</th><th>Worst |err|</th><th>Train exposure</th>'
+      + '<th>Forced train</th><th>Train in-interval</th><th>Task</th><th>Failure</th><th>Flags</th>'
+      + '</tr></thead><tbody>'
+      + visible.map(function (row, index) {
+        var flags = [];
+        if (row.persistent) flags.push("persistent");
+        if (row.multi_event) flags.push("multi-event");
+        if (row.recovery_like) flags.push("recovery");
+        return '<tr>'
+          + '<td><input type="checkbox" data-challenge-rollout="' + esc(row.rollout_id) + '"'
+          + (state.selectedChallengeRollouts.has(row.rollout_id) ? " checked" : "") + '></td>'
+          + '<td class="numeric">' + (index + 1) + '</td>'
+          + '<td><a href="#/review/' + encodeURIComponent(row.rollout_id) + '">' + esc(row.rollout_id) + '</a></td>'
+          + '<td class="numeric">' + esc(row.repeat_count) + '</td>'
+          + '<td class="numeric">' + formatRate(row.in_interval_success_rate) + '</td>'
+          + '<td class="numeric">' + formatRate(row.within_3_success_rate) + '</td>'
+          + '<td class="numeric">' + Number(row.median_absolute_interval_error).toFixed(1) + '</td>'
+          + '<td class="numeric">' + Number(row.mean_absolute_interval_error).toFixed(1) + '</td>'
+          + '<td class="numeric">' + Number(row.worst_absolute_interval_error).toFixed(0) + '</td>'
+          + '<td class="numeric">' + formatRate(row.train_exposure_rate) + '</td>'
+          + '<td class="numeric">' + formatRate(row.forced_train_rate) + '</td>'
+          + '<td class="numeric">' + formatRate(row.train_in_interval_success_rate) + '</td>'
+          + '<td>' + esc(row.task_id) + '</td>'
+          + '<td>' + esc(row.primary_failure_type || "unknown") + '</td>'
+          + '<td>' + esc(flags.join(", ")) + '</td>'
+          + '</tr>';
+      }).join("") + '</tbody></table>';
+  }
+
+  function proposeChallengeSet() {
+    var rows = challengeRowsForSelection();
+    var requested = Math.max(1, Math.round(n("localizationChallengeSize")));
+    var persistent = rows.filter(function (row) { return row.persistent; });
+    var seedN = Math.min(persistent.length, Math.max(1, Math.floor(requested * 0.75)));
+    var selected = persistent.slice(0, seedN);
+    var selectedIds = new Set(selected.map(function (row) { return row.rollout_id; }));
+    var pool = rows.filter(function (row) { return !selectedIds.has(row.rollout_id); });
+    while (selected.length < requested && pool.length) {
+      var seenTasks = new Set(selected.map(function (row) { return String(row.task_id); }));
+      var seenFailures = new Set(selected.map(function (row) { return row.primary_failure_type || "unknown"; }));
+      var hasMulti = selected.some(function (row) { return row.multi_event; });
+      var hasRecovery = selected.some(function (row) { return row.recovery_like; });
+      var bestIndex = 0, bestScore = -1;
+      pool.forEach(function (row, index) {
+        var diversity = 0;
+        if (!seenTasks.has(String(row.task_id))) diversity += 4;
+        if (!seenFailures.has(row.primary_failure_type || "unknown")) diversity += 4;
+        if (row.multi_event && !hasMulti) diversity += 2;
+        if (row.recovery_like && !hasRecovery) diversity += 2;
+        if (row.persistent) diversity += 3;
+        var score = diversity * 1000 - index;
+        if (score > bestScore) { bestScore = score; bestIndex = index; }
+      });
+      var picked = pool.splice(bestIndex, 1)[0];
+      selected.push(picked);
+      selectedIds.add(picked.rollout_id);
+    }
+    state.selectedChallengeRollouts = selectedIds;
+    if (selected.some(function (row) { return !row.persistent; })) {
+      node("localizationChallengePersistentOnly").checked = false;
+    }
+    renderChallengeTable();
+  }
+
+  function renderChallengeFilters() {
+    var data = state.challengeData;
+    var taskSelect = node("localizationChallengeTask");
+    var failureSelect = node("localizationChallengeFailureType");
+    if (!data || !data.available) {
+      taskSelect.innerHTML = '<option value="">All tasks</option>';
+      failureSelect.innerHTML = '<option value="">All failure types</option>';
+      return;
+    }
+    var tasks = Array.from(new Set(data.rows.map(function (row) { return String(row.task_id); }))).sort();
+    var failures = Array.from(new Set(data.rows.map(function (row) {
+      return String(row.primary_failure_type || "unknown");
+    }))).sort();
+    taskSelect.innerHTML = '<option value="">All tasks</option>' + tasks.map(function (value) {
+      return '<option value="' + esc(value) + '">' + esc(value) + '</option>';
+    }).join("");
+    failureSelect.innerHTML = '<option value="">All failure types</option>' + failures.map(function (value) {
+      return '<option value="' + esc(value) + '">' + esc(value) + '</option>';
+    }).join("");
+    node("localizationChallengeCaseFlag").value = "";
+  }
+
+  function renderChallengeConfigs() {
+    var host = node("localizationChallengeConfigs");
+    var data = state.challengeData;
+    if (!data || !data.available) {
+      host.innerHTML = '<p class="analysis-empty">' + esc(data && data.reason || "Challenge data unavailable.") + '</p>';
+      return;
+    }
+    var defaultId = data.default_config_id || (data.configs[0] && data.configs[0].config_id) || "";
+    host.innerHTML = data.configs.map(function (config) {
+      var checked = config.config_id === defaultId ? " checked" : "";
+      return '<label class="localization-challenge-config">'
+        + '<input type="checkbox" data-challenge-config value="' + esc(config.config_id) + '"' + checked + '>'
+        + '<span>' + esc(config.label) + (config.best ? " · best" : "") + '</span></label>';
+    }).join("");
+  }
+
+  async function loadChallengeRun() {
+    var runId = node("localizationChallengeRun").value;
+    if (!runId) {
+      state.challengeData = null;
+      node("localizationChallengeConfigs").innerHTML = "";
+      node("localizationChallengeTable").innerHTML = '<p class="analysis-empty">No challenge-capable run available.</p>';
+      return;
+    }
+    node("localizationChallengeStatus").textContent = "Loading challenge results…";
+    var payload = await fetchJson(
+      "/api/analysis/localization/challenge/" + encodeURIComponent(runId),
+      { cache: "no-store" }
+    );
+    state.challengeData = payload.challenge || null;
+    state.selectedChallengeRollouts = new Set();
+    renderChallengeFilters();
+    renderChallengeConfigs();
+    renderChallengeTable();
+  }
+
+  async function saveChallengeSet() {
+    if (!state.challengeData || !state.challengeData.available) throw new Error("Challenge data is unavailable");
+    var name = node("localizationChallengeName").value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) throw new Error("Challenge-set name is invalid");
+    var configIds = selectedChallengeConfigIds();
+    if (!configIds.length) throw new Error("Select at least one training result");
+    var rolloutIds = Array.from(state.selectedChallengeRollouts);
+    if (!rolloutIds.length) throw new Error("Select or propose at least one rollout");
+    var existing = state.challengeSets.find(function (item) { return item.name === name; });
+    var overwrite = Boolean(existing);
+    if (overwrite && !window.confirm("Overwrite challenge set " + name + "?")) return;
+    await fetchJson("/api/analysis/localization/challenge/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        source_run: state.challengeData.run_id,
+        config_ids: configIds,
+        criterion: node("localizationChallengeCriterion").value,
+        rollout_ids: rolloutIds,
+        overwrite: overwrite
+      })
+    });
+    await loadChallengeSets();
+    node("localizationChallengeTrainSet").value = name;
+    node("localizationChallengeStatus").textContent =
+      "Saved " + name + " with " + rolloutIds.length + " rollout(s). It is now available for forced training.";
+  }
+
 
   async function runExperiment() {
     var spec = currentSpec();
@@ -650,6 +972,17 @@
   async function loadRuns() {
     var payload = await fetchJson("/api/analysis/localization", { cache: "no-store" });
     var runs = payload.localization && payload.localization.runs || [];
+    state.runs = runs;
+    var challengeSelect = node("localizationChallengeRun");
+    var previousRun = challengeSelect.value;
+    var challengeRuns = runs.filter(function (run) { return run.challenge_available; });
+    challengeSelect.innerHTML = challengeRuns.map(function (run) {
+      return '<option value="' + esc(run.run_id) + '">' + esc(run.name || run.run_id)
+        + ' · ' + esc(run.generated_at || "") + '</option>';
+    }).join("");
+    if (challengeRuns.some(function (run) { return run.run_id === previousRun; })) {
+      challengeSelect.value = previousRun;
+    }
     var host = node("localizationRunsList");
     if (!runs.length) {
       host.innerHTML = '<p class="analysis-empty">No completed Localization Lab experiments yet.</p>';
@@ -662,7 +995,9 @@
           + '<td class="numeric">' + esc(run.configuration_count) + '</td>'
           + '<td class="numeric">' + esc(run.training_run_count) + '</td>'
           + '<td><a href="' + esc(run.summary_url) + '" download>summary.csv</a> · '
-          + '<a href="' + esc(run.manifest_url) + '" download>manifest</a></td></tr>';
+          + '<a href="' + esc(run.manifest_url) + '" download>manifest</a>'
+          + (run.all_failure_url ? ' · <a href="' + esc(run.all_failure_url) + '" download>all failures</a>' : "")
+          + '</td></tr>';
       }).join("") + '</tbody></table>';
   }
 
@@ -683,7 +1018,7 @@
   async function refresh() {
     if (!node("analysisTabLocalization")) return;
     try {
-      await Promise.all([loadPresets(), loadRuns()]);
+      await Promise.all([loadPresets(), loadRuns(), loadChallengeSets()]);
       refreshPreview();
     } catch (error) {
       node("localizationBuilderStatus").textContent = "Localization Lab error: " + error.message;
@@ -732,6 +1067,48 @@
     });
     node("localizationRefreshRuns").addEventListener("click", function () {
       loadRuns().catch(function (error) { node("localizationJobLog").textContent = error.message; });
+    });
+    node("localizationChallengeRefresh").addEventListener("click", function () {
+      Promise.all([loadRuns(), loadChallengeSets()]).then(loadChallengeRun).catch(function (error) {
+        node("localizationChallengeStatus").textContent = error.message;
+      });
+    });
+    node("localizationChallengeRun").addEventListener("change", function () {
+      loadChallengeRun().catch(function (error) {
+        node("localizationChallengeStatus").textContent = error.message;
+        node("localizationChallengeStatus").className = "analysis-status error";
+      });
+    });
+    node("localizationChallengeCriterion").addEventListener("change", function () {
+      state.selectedChallengeRollouts = new Set();
+      renderChallengeTable();
+    });
+    ["localizationChallengeTask", "localizationChallengeFailureType", "localizationChallengeCaseFlag"].forEach(function (id) {
+      node(id).addEventListener("change", function () {
+        state.selectedChallengeRollouts = new Set();
+        renderChallengeTable();
+      });
+    });
+    node("localizationChallengePersistentOnly").addEventListener("change", renderChallengeTable);
+    node("localizationChallengePropose").addEventListener("click", proposeChallengeSet);
+    node("localizationChallengeSave").addEventListener("click", function () {
+      saveChallengeSet().catch(function (error) {
+        node("localizationChallengeStatus").textContent = error.message;
+        node("localizationChallengeStatus").className = "analysis-status error";
+      });
+    });
+    node("localizationChallengeConfigs").addEventListener("change", function (event) {
+      if (event.target.matches("[data-challenge-config]")) {
+        state.selectedChallengeRollouts = new Set();
+        renderChallengeTable();
+      }
+    });
+    node("localizationChallengeTable").addEventListener("change", function (event) {
+      var input = event.target.closest("[data-challenge-rollout]");
+      if (!input) return;
+      if (input.checked) state.selectedChallengeRollouts.add(input.dataset.challengeRollout);
+      else state.selectedChallengeRollouts.delete(input.dataset.challengeRollout);
+      renderChallengeComposition(challengeRowsForSelection());
     });
     node("localizationPresetList").addEventListener("click", function (event) {
       var load = event.target.closest("[data-load-preset]");

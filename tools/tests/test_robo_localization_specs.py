@@ -42,6 +42,23 @@ class LocalizationSpecTests(unittest.TestCase):
         self.assertEqual(configs[0]["loss"]["name"], "bce")
         self.assertEqual(configs[1]["loss"]["name"], "temporal_softmax_ce")
 
+    def test_parallel_workers_default_and_validation(self) -> None:
+        normalized = specs.normalize_spec({
+            "name": "workers",
+            "base": {},
+            "repeats": 1,
+            "sweep": [],
+            "stages": [],
+        })
+        self.assertEqual(normalized["base"]["training"]["parallel_workers"], 4)
+
+        invalid = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"training": {"parallel_workers": 9}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(invalid)
+
     def test_stage_spec_is_valid(self) -> None:
         spec = specs.BUILTIN_PRESETS["label_loss_default"]
         normalized = specs.normalize_spec(spec)
@@ -50,6 +67,37 @@ class LocalizationSpecTests(unittest.TestCase):
             specs.estimate_runs(spec),
             {"configurations": 11, "training_runs": 55},
         )
+
+    def test_challenge_force_train_fields_survive_normalization(self) -> None:
+        spec = {
+            "name": "challenge_train",
+            "base": {
+                "data": {
+                    "challenge_set_name": "challenge_v1",
+                    "force_train_rollout_ids": ["r1", "r2"],
+                }
+            },
+            "repeats": 1,
+            "sweep": [],
+            "stages": [],
+        }
+        normalized = specs.normalize_spec(spec)
+        self.assertEqual(
+            normalized["base"]["data"]["force_train_rollout_ids"],
+            ["r1", "r2"],
+        )
+        self.assertEqual(
+            normalized["base"]["data"]["challenge_set_name"],
+            "challenge_v1",
+        )
+
+    def test_invalid_challenge_force_train_ids_are_rejected(self) -> None:
+        config = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"data": {"force_train_rollout_ids": "r1"}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(config)
 
     def test_success_negative_rejects_temporal_softmax(self) -> None:
         config = specs.deep_merge(

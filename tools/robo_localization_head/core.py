@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import random
+import threading
 from collections import defaultdict
 from typing import Any, Callable, Mapping, Sequence
 
@@ -20,6 +21,8 @@ RowLossFn = Callable[
     [torch.Tensor, Mapping[str, Any], torch.Tensor, torch.Tensor],
     torch.Tensor,
 ]
+
+_SEED_LOCK = threading.Lock()
 
 
 def onset_anchor(frames: Sequence[int], frame: int) -> int | None:
@@ -99,6 +102,62 @@ def rollout_split(
     }
 
 
+def force_train_rollouts(
+    split: Mapping[str, Any],
+    forced_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Move selected rollouts into train while keeping val/test sizes when possible.
+
+    This is intended for diagnostic challenge-set experiments, not held-out
+    generalization estimates. Rollouts moved out of val/test are replaced by
+    deterministic non-forced train rollouts when enough candidates exist.
+    """
+    result = dict(split)
+    train = set(split.get("train", []))
+    val = set(split.get("val", []))
+    test = set(split.get("test", []))
+    all_ids = train | val | test
+    forced = set(forced_ids) & all_ids
+    target_val_n = len(val)
+    target_test_n = len(test)
+
+    val.difference_update(forced)
+    test.difference_update(forced)
+    train.update(forced)
+
+    candidates = sorted(train - forced)
+    rng = random.Random(int(split.get("seed", 0)) + 104729)
+    rng.shuffle(candidates)
+
+    def refill(target: set[str], target_n: int) -> None:
+        while len(target) < target_n and candidates:
+            rollout_id = candidates.pop()
+            if rollout_id not in train:
+                continue
+            train.remove(rollout_id)
+            target.add(rollout_id)
+
+    refill(val, target_val_n)
+    refill(test, target_test_n)
+
+    if not train:
+        raise ValueError("forcing challenge rollouts into train left training empty")
+    if not val:
+        raise ValueError(
+            "forcing challenge rollouts into train left validation empty; "
+            "reduce the forced challenge set or add more failure rollouts"
+        )
+
+    result["train"] = sorted(train)
+    result["val"] = sorted(val)
+    result["test"] = sorted(test)
+    result["forced_train"] = sorted(forced)
+    result["kind"] = (
+        "rollout_random_force_train" if forced else str(split.get("kind") or "rollout_random")
+    )
+    return result
+
+
 def standardization_stats(
     dataset: Mapping[str, Mapping[str, Any]],
     rollout_ids: Sequence[str],
@@ -139,7 +198,7 @@ class TinyBiLSTM(nn.Module):
         else:
             packed = nn.utils.rnn.pack_padded_sequence(
                 sequence,
-                lengths.detach().cpu(),
+                lengths,
                 batch_first=True,
                 enforce_sorted=False,
             )
@@ -208,7 +267,7 @@ def collate_rollout_batch(
     return (
         padded_sequence.to(device, non_blocking=non_blocking),
         padded_labels.to(device, non_blocking=non_blocking),
-        lengths.to(device, non_blocking=non_blocking),
+        lengths,
     )
 
 
@@ -252,9 +311,12 @@ def train_bilstm(
     if not val_ids:
         raise ValueError("validation split is empty")
 
-    set_seed(seed)
     prepared = prepare_tensor_dataset(dataset, mean, std)
-    model = TinyBiLSTM(hidden=hidden).to(device)
+    # Model initialization uses global RNG state. Keep it deterministic when
+    # several independent configurations train concurrently in worker threads.
+    with _SEED_LOCK:
+        set_seed(seed)
+        model = TinyBiLSTM(hidden=hidden).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters() if "bias" not in name
     ]
@@ -310,26 +372,30 @@ def train_bilstm(
             x, y, lengths = collate_rollout_batch(prepared, batch_ids, device)
             logits = model(x, lengths)
             row_losses = batch_losses(batch_ids, logits, y, lengths)
-            batch_loss = torch.stack(row_losses).mean()
+            row_loss_tensor = torch.stack(row_losses)
+            batch_loss = row_loss_tensor.mean()
             batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
-            train_loss_sum += sum(float(value.detach().cpu()) for value in row_losses)
+            # One host synchronization per batch instead of one per rollout.
+            train_loss_sum += float(row_loss_tensor.detach().sum().item())
             train_seen += len(row_losses)
 
         train_loss = train_loss_sum / max(1, train_seen)
 
         model.eval()
-        val_losses: list[float] = []
+        val_loss_sum = 0.0
+        val_seen = 0
         with torch.no_grad():
             for batch_ids in rollout_batches(val_ids, effective_val_batch):
                 x, y, lengths = collate_rollout_batch(prepared, batch_ids, device)
                 logits = model(x, lengths)
-                val_losses.extend(
-                    float(value.detach().cpu())
-                    for value in batch_losses(batch_ids, logits, y, lengths)
-                )
-        val_loss = float(np.mean(val_losses)) if val_losses else float("inf")
+                row_losses = batch_losses(batch_ids, logits, y, lengths)
+                row_loss_tensor = torch.stack(row_losses)
+                # Again synchronize once per batch, not once per rollout.
+                val_loss_sum += float(row_loss_tensor.detach().sum().item())
+                val_seen += len(row_losses)
+        val_loss = val_loss_sum / val_seen if val_seen else float("inf")
         if epoch == 1 or epoch % 25 == 0:
             logger(
                 f"{progress_label} epoch={epoch}/{epochs} "

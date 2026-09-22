@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
 import json
 import math
@@ -113,7 +114,13 @@ def _run_configuration(
     events: Sequence[Mapping[str, Any]],
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    checkpoint_root: Path,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     target_config = config["target"]
     training = config["training"]
     data_config = config["data"]
@@ -132,6 +139,7 @@ def _run_configuration(
 
     per_repeat: list[dict[str, Any]] = []
     predictions: list[dict[str, Any]] = []
+    all_failure_predictions: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
     seed0 = int(training.get("seed", 17))
     for repeat in range(repeats):
@@ -142,6 +150,13 @@ def _run_configuration(
             train_fraction=float(training.get("train_fraction", 0.70)),
             val_fraction=float(training.get("val_fraction", 0.15)),
         )
+        forced_train_ids = [
+            rollout_id
+            for rollout_id in data_config.get("force_train_rollout_ids", [])
+            if rollout_id in base_failure
+        ]
+        if forced_train_ids:
+            split = core.force_train_rollouts(split, forced_train_ids)
         failure_train_ids = list(split["train"])
         mean, std = core.standardization_stats(base_failure, failure_train_ids)
         pos_weight = _positive_weight(base_failure, failure_train_ids)
@@ -193,19 +208,58 @@ def _run_configuration(
             progress_label=f"{stage_name}/{config_id}/repeat{repeat}",
             logger=log,
         )
+        checkpoint_dir = checkpoint_root / config_id
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / f"repeat_{repeat:02d}.pt"
+        checkpoint_rel = checkpoint_path.relative_to(checkpoint_root.parent.parent).as_posix()
+        torch.save(
+            {
+                "schema_version": 1,
+                "stage": stage_name,
+                "config_id": config_id,
+                "repeat": repeat,
+                "seed": seed,
+                "config": copy.deepcopy(dict(config)),
+                "split": copy.deepcopy(split),
+                "failure_train_ids": list(failure_train_ids),
+                "success_train_ids": list(success_ids),
+                "forced_train_ids": list(split.get("forced_train", [])),
+                "normalization_mean": torch.from_numpy(np.asarray(mean, dtype=np.float32).copy()),
+                "normalization_std": torch.from_numpy(np.asarray(std, dtype=np.float32).copy()),
+                "model_state_dict": {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.state_dict().items()
+                },
+                "train_meta": copy.deepcopy(train_meta),
+            },
+            checkpoint_path,
+        )
+
+        all_rollout_ids = sorted(failure_dataset)
         logits_by_rollout = core.batched_logits(
             model,
             failure_dataset,
-            split["test"],
+            all_rollout_ids,
             mean,
             std,
             device,
             int(training.get("batch_size", 32)),
         )
-        repeat_predictions = []
-        for rollout_id in split["test"]:
+        train_set = set(split["train"])
+        val_set = set(split["val"])
+        test_set = set(split["test"])
+        repeat_all_predictions: list[dict[str, Any]] = []
+        for rollout_id in all_rollout_ids:
             logits = logits_by_rollout[rollout_id]
             prediction = int(torch.argmax(logits).item())
+            if rollout_id in train_set:
+                split_role = "train"
+            elif rollout_id in val_set:
+                split_role = "val"
+            elif rollout_id in test_set:
+                split_role = "test"
+            else:
+                split_role = "unknown"
             row = metrics.prediction_row(
                 failure_dataset,
                 rollout_id,
@@ -216,8 +270,15 @@ def _run_configuration(
                 "stage": stage_name,
                 "config_id": config_id,
                 "repeat": repeat,
+                "split_role": split_role,
+                "seen_in_train": split_role == "train",
+                "forced_into_train": rollout_id in set(split.get("forced_train", [])),
+                "checkpoint": checkpoint_rel,
             })
-            repeat_predictions.append(row)
+            repeat_all_predictions.append(row)
+        repeat_predictions = [
+            row for row in repeat_all_predictions if row["split_role"] == "test"
+        ]
         metric_row = metrics.summary(repeat_predictions)
         metric_row.update({
             "stage": stage_name,
@@ -234,6 +295,7 @@ def _run_configuration(
         })
         per_repeat.append(metric_row)
         predictions.extend(repeat_predictions)
+        all_failure_predictions.extend(repeat_all_predictions)
         records.append({
             "stage": stage_name,
             "config_id": config_id,
@@ -241,12 +303,70 @@ def _run_configuration(
             "split": split,
             "failure_train_ids": failure_train_ids,
             "success_train_ids": success_ids,
+            "forced_train_ids": list(split.get("forced_train", [])),
+            "checkpoint": checkpoint_rel,
         })
     summary = _aggregate(per_repeat)
     flat: dict[str, Any] = {}
     _flatten("", config, flat)
     summary.update({"stage": stage_name, "config_id": config_id, **flat})
-    return summary, predictions, records
+    return summary, predictions, all_failure_predictions, records
+
+
+def _run_configuration_concurrent(
+    *,
+    config: Mapping[str, Any],
+    config_id: str,
+    stage_name: str,
+    repeats: int,
+    signals: Mapping[str, Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+    no_event_failures: Sequence[Mapping[str, Any]],
+    clean_rollouts: Sequence[Mapping[str, Any]],
+    checkpoint_root: Path,
+    use_cuda_stream: bool,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Run one configuration, optionally on its own CUDA stream.
+
+    Worker threads share one CUDA context, so this avoids the large overhead of
+    spawning one process/context per tiny BiLSTM while still allowing kernels
+    from independent configurations to overlap.
+    """
+    training = config["training"]
+    device = core.resolve_device(str(training.get("device", "auto")))
+    if not use_cuda_stream or device.type != "cuda":
+        return _run_configuration(
+            config=config,
+            config_id=config_id,
+            stage_name=stage_name,
+            repeats=repeats,
+            signals=signals,
+            events=events,
+            no_event_failures=no_event_failures,
+            clean_rollouts=clean_rollouts,
+            checkpoint_root=checkpoint_root,
+        )
+
+    stream = torch.cuda.Stream(device=device)
+    with torch.cuda.device(device), torch.cuda.stream(stream):
+        result = _run_configuration(
+            config=config,
+            config_id=config_id,
+            stage_name=stage_name,
+            repeats=repeats,
+            signals=signals,
+            events=events,
+            no_event_failures=no_event_failures,
+            clean_rollouts=clean_rollouts,
+            checkpoint_root=checkpoint_root,
+        )
+    stream.synchronize()
+    return result
 
 
 def run_spec(
@@ -279,6 +399,7 @@ def run_spec(
 
     all_summary: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
+    all_failure_predictions: list[dict[str, Any]] = []
     all_records: list[dict[str, Any]] = []
     stage_manifest: list[dict[str, Any]] = []
     inherited = copy.deepcopy(normalized["base"])
@@ -287,6 +408,7 @@ def run_spec(
         "name": "main",
         "base": {},
         "sweep": normalized["sweep"],
+        "variants": normalized["variants"],
         "select": {
             "metric": "in_interval_rate_mean",
             "mode": "max",
@@ -305,26 +427,83 @@ def run_spec(
             stage.get("sweep", []),
             stage.get("variants", []),
         )
-        log(f"stage={stage_name} configurations={len(configurations)} repeats={normalized['repeats']}")
-        stage_rows = []
+        requested_workers = int(
+            stage_base.get("training", {}).get("parallel_workers", 4)
+        )
+        effective_workers = max(1, min(requested_workers, len(configurations)))
+        log(
+            f"stage={stage_name} configurations={len(configurations)} "
+            f"repeats={normalized['repeats']} workers={effective_workers}"
+        )
+
         configs_by_id: dict[str, dict[str, Any]] = {}
+        jobs: list[tuple[int, str, dict[str, Any]]] = []
         for config_index, config in enumerate(configurations):
             specs.validate_config(config)
             config_id = f"s{stage_index + 1:02d}_c{config_index + 1:03d}"
             configs_by_id[config_id] = config
-            summary, predictions, records = _run_configuration(
-                config=config,
-                config_id=config_id,
-                stage_name=stage_name,
-                repeats=int(normalized["repeats"]),
-                signals=signals,
-                events=events,
-                no_event_failures=no_event_failures,
-                clean_rollouts=clean_rollouts,
-            )
+            jobs.append((config_index, config_id, config))
+
+        completed: list[
+            tuple[
+                dict[str, Any],
+                list[dict[str, Any]],
+                list[dict[str, Any]],
+                list[dict[str, Any]],
+            ] | None
+        ] = [None] * len(jobs)
+
+        if effective_workers == 1:
+            for config_index, config_id, config in jobs:
+                log(f"stage={stage_name} start={config_id}")
+                completed[config_index] = _run_configuration_concurrent(
+                    config=config,
+                    config_id=config_id,
+                    stage_name=stage_name,
+                    repeats=int(normalized["repeats"]),
+                    signals=signals,
+                    events=events,
+                    no_event_failures=no_event_failures,
+                    clean_rollouts=clean_rollouts,
+                    checkpoint_root=out / "checkpoints" / stage_name,
+                    use_cuda_stream=False,
+                )
+                log(f"stage={stage_name} done={config_id}")
+        else:
+            with ThreadPoolExecutor(
+                max_workers=effective_workers,
+                thread_name_prefix=f"localization-{stage_index + 1}",
+            ) as executor:
+                futures = {
+                    executor.submit(
+                        _run_configuration_concurrent,
+                        config=config,
+                        config_id=config_id,
+                        stage_name=stage_name,
+                        repeats=int(normalized["repeats"]),
+                        signals=signals,
+                        events=events,
+                        no_event_failures=no_event_failures,
+                        clean_rollouts=clean_rollouts,
+                        checkpoint_root=out / "checkpoints" / stage_name,
+                        use_cuda_stream=True,
+                    ): (config_index, config_id)
+                    for config_index, config_id, config in jobs
+                }
+                for future in as_completed(futures):
+                    config_index, config_id = futures[future]
+                    completed[config_index] = future.result()
+                    log(f"stage={stage_name} done={config_id}")
+
+        stage_rows: list[dict[str, Any]] = []
+        for result in completed:
+            if result is None:
+                raise RuntimeError(f"stage {stage_name} has an incomplete worker result")
+            summary, predictions, challenge_predictions, records = result
             stage_rows.append(summary)
             all_summary.append(summary)
             all_predictions.extend(predictions)
+            all_failure_predictions.extend(challenge_predictions)
             all_records.extend(records)
         selector = stage.get("select") or {}
         best_row = min(stage_rows, key=lambda row: _selector_key(row, selector))
@@ -333,6 +512,7 @@ def run_spec(
         stage_manifest.append({
             "stage": stage_name,
             "configuration_count": len(configurations),
+            "parallel_workers": effective_workers,
             "selector": selector,
             "best_config_id": best_row["config_id"],
             "best_config": best_config,
@@ -355,6 +535,7 @@ def run_spec(
     )
     _write_csv(out / "summary.csv", all_summary)
     _write_csv(out / "per_rollout_predictions.csv", all_predictions)
+    _write_csv(out / "all_failure_predictions.csv", all_failure_predictions)
     metadata = {
         "schema_version": 1,
         "analysis": "robo_localization_experiment",
@@ -364,6 +545,11 @@ def run_spec(
         "selection_mode": "latest_usable_fused_per_rollout",
         "configuration_count": len(all_summary),
         "training_run_count": len(all_records),
+        "all_failure_prediction_count": len(all_failure_predictions),
+        "checkpoint_count": len(all_records),
+        "parallel_workers": int(
+            normalized["base"].get("training", {}).get("parallel_workers", 4)
+        ),
         "provenance": provenance,
         "outputs": [
             "config.json",
@@ -371,6 +557,8 @@ def run_spec(
             "training_records.json",
             "summary.csv",
             "per_rollout_predictions.csv",
+            "all_failure_predictions.csv",
+            "checkpoints/",
         ],
     }
     (out / "metadata.json").write_text(
