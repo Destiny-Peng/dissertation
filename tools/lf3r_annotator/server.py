@@ -5216,7 +5216,7 @@ class AnalysisJobService:
     ) -> dict[str, Any]:
         allowed_fields = {
             "analysis_kind", "output_label", "device", "repeats", "epochs",
-            "patience", "learning_rate", "weight_decay", "grad_clip",
+            "patience", "learning_rate", "weight_decay", "grad_clip", "batch_size",
             "tau_event", "distance_weight", "ranking_weight", "ranking_margin",
             "run_asymmetric_if_soft_improves",
         }
@@ -5248,6 +5248,7 @@ class AnalysisJobService:
         repeats = self._integer(payload.get("repeats", 5), "repeats", 1, 50)
         epochs = self._integer(payload.get("epochs", 300), "epochs", 1, 5000)
         patience = self._integer(payload.get("patience", 35), "patience", 1, 1000)
+        batch_size = self._integer(payload.get("batch_size", 32), "batch_size", 1, 128)
         try:
             learning_rate = float(payload.get("learning_rate", 0.003))
             weight_decay = float(payload.get("weight_decay", 1e-4))
@@ -5316,6 +5317,7 @@ class AnalysisJobService:
             "--learning-rate", str(learning_rate),
             "--weight-decay", str(weight_decay),
             "--grad-clip", str(grad_clip),
+            "--batch-size", str(batch_size),
             "--tau-event", str(tau_event),
             "--distance-weight", str(distance_weight),
             "--ranking-weight", str(ranking_weight),
@@ -5352,6 +5354,7 @@ class AnalysisJobService:
                     "learning_rate": learning_rate,
                     "weight_decay": weight_decay,
                     "grad_clip": grad_clip,
+                    "batch_size": batch_size,
                     "tau_event": tau_event,
                     "distance_weight": distance_weight,
                     "ranking_weight": ranking_weight,
