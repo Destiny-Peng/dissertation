@@ -578,6 +578,9 @@ def run_one_setting(
             "best_epoch": training["best_epoch"],
             "best_val_bce": training["best_val_bce"],
             "pos_weight": training["pos_weight"],
+            "batch_size": training["batch_size"],
+            "effective_train_batch_size": training["effective_train_batch_size"],
+            "optimizer_steps_per_epoch": training["optimizer_steps_per_epoch"],
         }
     )
     return metrics, rows, training
@@ -1023,7 +1026,7 @@ def analyze(args: argparse.Namespace) -> Path:
                     "then non-held-out fallback successes if required"
                 ),
                 "prediction": "rollout-global argmax of per-timestep BiLSTM score",
-                "loss": "positive-class-weighted BCE, unchanged",
+                "loss": "positive-class-weighted BCE via shared rollout-minibatch trainer",
             },
             "training": {
                 "epochs_max": args.epochs,
@@ -1031,6 +1034,11 @@ def analyze(args: argparse.Namespace) -> Path:
                 "learning_rate": args.learning_rate,
                 "weight_decay": args.weight_decay,
                 "grad_clip": args.grad_clip,
+                "batch_size": args.batch_size,
+                "batching": (
+                    "variable-length rollout mini-batches using "
+                    "pack_padded_sequence; rollout-weighted mean loss"
+                ),
                 "repeats": args.repeats,
                 "train_fraction": args.train_fraction,
                 "val_fraction": args.val_fraction,
