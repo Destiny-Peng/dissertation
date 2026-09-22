@@ -534,6 +534,14 @@ def infer_rollout(
         print(f"Raw Robo-Dopamine {mode} output: {prediction}", flush=True)
     if fused_path is not None:
         print(f"Fused Robo-Dopamine output: {fused_path}", flush=True)
+    if localization_prediction is not None:
+        print(
+            "Localization checkpoint prediction: "
+            f"frame={localization_prediction['predicted_frame']} "
+            f"index={localization_prediction['predicted_index']} "
+            f"checkpoint={localization_prediction['checkpoint']}",
+            flush=True,
+        )
     return {
         "official_output_dir": str(official_output_dir),
         "raw_model_output": str(raw_model_output),
