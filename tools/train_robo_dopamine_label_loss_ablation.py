@@ -1491,7 +1491,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8,
+        default=32,
         help="Number of variable-length rollout sequences per optimizer step.",
     )
     parser.add_argument(
