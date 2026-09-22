@@ -14,6 +14,8 @@ DEFAULT_BASE = {
     "data": {
         "population": "failure_only",
         "success_ratio": 0.0,
+        "challenge_set_name": "",
+        "force_train_rollout_ids": [],
     },
     "target": {
         "kind": "hard",
@@ -269,6 +271,12 @@ def validate_config(config: Mapping[str, Any]) -> None:
     ratio = _finite(data.get("success_ratio", 0.0), "data.success_ratio", minimum=0.0)
     if population == "failure_only" and ratio != 0:
         raise ValueError("failure_only requires data.success_ratio=0")
+    forced_ids = data.get("force_train_rollout_ids", [])
+    if not isinstance(forced_ids, list) or any(not isinstance(value, str) or not value for value in forced_ids):
+        raise ValueError("data.force_train_rollout_ids must be an array of rollout-id strings")
+    challenge_name = str(data.get("challenge_set_name", "") or "")
+    if challenge_name and not NAME_RE.fullmatch(challenge_name):
+        raise ValueError("data.challenge_set_name is invalid")
 
     kind = str(target.get("kind", "hard"))
     if kind not in {"hard", "gaussian"}:
