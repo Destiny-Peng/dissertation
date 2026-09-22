@@ -6,6 +6,7 @@
     challengeSets: [],
     runs: [],
     challengeData: null,
+    activeRunResult: null,
     selectedChallengeRollouts: new Set(),
     currentJob: null,
     polling: false,
@@ -922,6 +923,89 @@
   }
 
 
+  function formatMetric(value, percent) {
+    if (value == null || !Number.isFinite(Number(value))) return "—";
+    var number = Number(value);
+    return percent ? (100 * number).toFixed(1) + "%" : number.toFixed(3).replace(/\.000$/, "");
+  }
+
+  function renderRunResult(result) {
+    state.activeRunResult = result;
+    var shell = node("localizationRunResult");
+    var host = node("localizationRunResultContent");
+    if (!result) {
+      shell.classList.add("hidden");
+      host.innerHTML = "";
+      return;
+    }
+    shell.classList.remove("hidden");
+    var header =
+      '<div class="analysis-card-heading localization-run-result-heading">'
+      + '<div><p class="eyebrow">RUN RESULT</p><h4>' + esc(result.name || result.run_id) + '</h4>'
+      + '<small>' + esc(result.generated_at || "") + ' · '
+      + esc(result.configuration_count || 0) + ' config(s) · '
+      + esc(result.training_run_count || 0) + ' training run(s)'
+      + (result.checkpoint_count != null ? ' · ' + esc(result.checkpoint_count) + ' checkpoint(s)' : "")
+      + '</small></div>'
+      + '<div class="localization-run-result-actions">'
+      + (result.challenge_available
+          ? '<button type="button" class="ghost-button" data-open-challenge-run="' + esc(result.run_id) + '">Open Challenge Set</button>'
+          : '')
+      + '</div></div>';
+
+    var stages = (result.stages || []).map(function (stage) {
+      var rows = stage.rows || [];
+      var selector = stage.selector || {};
+      var selectorText = selector.metric
+        ? ('Select by ' + selector.metric + ' ' + (selector.mode || 'max'))
+        : '';
+      return '<section class="localization-run-stage">'
+        + '<div class="localization-run-stage-heading"><div><h5>' + esc(stage.stage || "main") + '</h5>'
+        + '<small>' + esc(rows.length) + ' config(s)'
+        + (stage.parallel_workers != null ? ' · workers ' + esc(stage.parallel_workers) : '')
+        + (selectorText ? ' · ' + esc(selectorText) : '')
+        + '</small></div>'
+        + (stage.best_config_id ? '<span class="analysis-badge">Best ' + esc(stage.best_config_id) + '</span>' : '')
+        + '</div>'
+        + '<div class="analysis-table-wrap"><table class="analysis-table localization-run-result-table"><thead><tr>'
+        + '<th>Config</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
+        + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
+        + '<th>Batch</th><th>Best</th>'
+        + '</tr></thead><tbody>'
+        + rows.map(function (row) {
+          return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
+            + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
+            + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.in_interval_rate_mean, true) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.first_event_in_interval_rate_mean, true) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.within_3_mean, true) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.median_absolute_interval_error_samples_mean, false) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.mae_samples_mean, false) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.mse_samples_mean, false) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.before_interval_rate_mean, true) + '</td>'
+            + '<td class="numeric">' + formatMetric(row.after_interval_rate_mean, true) + '</td>'
+            + '<td class="numeric">' + esc(row["training.batch_size"] == null ? "—" : row["training.batch_size"]) + '</td>'
+            + '<td>' + (row.best ? '<strong>Selected</strong>' : '') + '</td>'
+            + '</tr>';
+        }).join("")
+        + '</tbody></table></div></section>';
+    }).join("");
+
+    host.innerHTML = header + stages;
+  }
+
+  async function loadRunResult(runId) {
+    if (!runId) return;
+    node("localizationRunResult").classList.remove("hidden");
+    node("localizationRunResultContent").innerHTML =
+      '<p class="analysis-card-note">Loading run result…</p>';
+    var payload = await fetchJson(
+      "/api/analysis/localization/result/" + encodeURIComponent(runId),
+      { cache: "no-store" }
+    );
+    renderRunResult(payload.result || null);
+  }
+
   async function runExperiment() {
     var spec = currentSpec();
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(spec.name)) {
@@ -961,6 +1045,12 @@
         return;
       }
       await loadRuns();
+      if (job.status === "complete") {
+        var runId = String(job.output_dir || "").split("/").filter(Boolean).pop();
+        if (runId) {
+          try { await loadRunResult(runId); } catch (_error) {}
+        }
+      }
     } catch (error) {
       node("localizationJobBadge").textContent = "failed";
       node("localizationJobLog").textContent += "\n" + error.message;
@@ -988,12 +1078,13 @@
       host.innerHTML = '<p class="analysis-empty">No completed Localization Lab experiments yet.</p>';
       return;
     }
-    host.innerHTML = '<table class="analysis-table"><thead><tr><th>Experiment</th><th>Generated</th><th>Configs</th><th>Train runs</th><th>Artifacts</th></tr></thead><tbody>'
+    host.innerHTML = '<table class="analysis-table"><thead><tr><th>Experiment</th><th>Generated</th><th>Configs</th><th>Train runs</th><th>Results</th><th>Artifacts</th></tr></thead><tbody>'
       + runs.map(function (run) {
         return '<tr><td><strong>' + esc(run.name || run.directory) + '</strong><br><small>' + esc(run.directory) + '</small></td>'
           + '<td>' + esc(run.generated_at || "") + '</td>'
           + '<td class="numeric">' + esc(run.configuration_count) + '</td>'
           + '<td class="numeric">' + esc(run.training_run_count) + '</td>'
+          + '<td><button type="button" class="ghost-button" data-view-localization-result="' + esc(run.run_id) + '">View results</button></td>'
           + '<td><a href="' + esc(run.summary_url) + '" download>summary.csv</a> · '
           + '<a href="' + esc(run.manifest_url) + '" download>manifest</a>'
           + (run.all_failure_url ? ' · <a href="' + esc(run.all_failure_url) + '" download>all failures</a>' : "")
@@ -1067,6 +1158,26 @@
     });
     node("localizationRefreshRuns").addEventListener("click", function () {
       loadRuns().catch(function (error) { node("localizationJobLog").textContent = error.message; });
+    });
+    node("localizationRunsList").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-view-localization-result]");
+      if (!button) return;
+      loadRunResult(button.dataset.viewLocalizationResult).catch(function (error) {
+        node("localizationRunResult").classList.remove("hidden");
+        node("localizationRunResultContent").innerHTML =
+          '<div class="analysis-status error">' + esc(error.message) + '</div>';
+      });
+    });
+    node("localizationRunResult").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-open-challenge-run]");
+      if (!button) return;
+      var runId = button.dataset.openChallengeRun;
+      node("localizationChallengeRun").value = runId;
+      setLabTab("challenge");
+      loadChallengeRun().catch(function (error) {
+        node("localizationChallengeStatus").textContent = error.message;
+        node("localizationChallengeStatus").className = "analysis-status error";
+      });
     });
     node("localizationChallengeRefresh").addEventListener("click", function () {
       Promise.all([loadRuns(), loadChallengeSets()]).then(loadChallengeRun).catch(function (error) {
