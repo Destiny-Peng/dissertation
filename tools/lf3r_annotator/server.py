@@ -21,6 +21,7 @@ import os
 import re
 import signal
 import sqlite3
+import statistics
 import subprocess
 import sys
 import time
@@ -4694,6 +4695,9 @@ class AnalysisJobService:
         self.localization_root = self.project_root / "outputs" / "robo_localization"
         self.localization_preset_root = (
             self.project_root / "config" / "robo_localization_presets"
+        )
+        self.localization_challenge_root = (
+            self.project_root / "config" / "robo_localization_challenge_sets"
         )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
