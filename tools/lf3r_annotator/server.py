@@ -4691,6 +4691,10 @@ class AnalysisJobService:
         self.robo_label_loss_root = (
             self.project_root / "outputs" / "robo_dopamine_label_loss_ablation"
         )
+        self.localization_root = self.project_root / "outputs" / "robo_localization"
+        self.localization_preset_root = (
+            self.project_root / "config" / "robo_localization_presets"
+        )
         self.log_root = self.project_root / "logs" / "baselines" / "analysis_web"
         configured_python = (
             analysis_python
@@ -5395,9 +5399,219 @@ class AnalysisJobService:
             raise
         return dict(job)
 
+    @staticmethod
+    def _localization_builtin_presets() -> dict[str, dict[str, Any]]:
+        base = {
+            "data": {"population": "failure_only", "success_ratio": 0.0},
+            "target": {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
+            "model": {"hidden": 16},
+            "loss": {"name": "bce", "distance_weight": 1.0, "ranking_weight": 1.0, "ranking_margin": 1.0},
+            "training": {
+                "device": "auto", "batch_size": 32, "epochs": 300, "patience": 35,
+                "learning_rate": 0.003, "weight_decay": 0.0001, "grad_clip": 5.0,
+                "seed": 17, "train_fraction": 0.70, "val_fraction": 0.15,
+            },
+        }
+        return {
+            "bilstm_default": {
+                "schema_version": 1, "name": "bilstm_default", "base": base,
+                "sweep": [], "stages": [], "repeats": 5, "builtin": True,
+            },
+            "label_loss_default": {
+                "schema_version": 1, "name": "label_loss_default", "base": base,
+                "sweep": [], "repeats": 5, "builtin": True,
+                "stages": [
+                    {
+                        "name": "label_selection",
+                        "sweep": [{"path": "target", "values": [
+                            {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
+                            {"kind": "gaussian", "sigma_pre": 1.0, "sigma_post": 1.0, "tau_event": 20.0},
+                            {"kind": "gaussian", "sigma_pre": 2.0, "sigma_post": 2.0, "tau_event": 20.0},
+                            {"kind": "gaussian", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
+                            {"kind": "gaussian", "sigma_pre": 5.0, "sigma_post": 5.0, "tau_event": 20.0},
+                        ]}],
+                        "select": {"metric": "in_interval_rate_mean", "mode": "max", "tie_breakers": [
+                            {"metric": "mae_samples_mean", "mode": "min"},
+                            {"metric": "mse_samples_mean", "mode": "min"},
+                        ]},
+                    },
+                    {
+                        "name": "loss_selection",
+                        "sweep": [{"path": "loss.name", "values": [
+                            "bce", "temporal_softmax_ce", "temporal_softmax_ce_distance",
+                            "temporal_softmax_ce_squared_distance", "temporal_softmax_ce_ranking",
+                            "temporal_softmax_ce_distance_ranking",
+                        ]}],
+                        "select": {"metric": "in_interval_rate_mean", "mode": "max", "tie_breakers": [
+                            {"metric": "mae_samples_mean", "mode": "min"},
+                            {"metric": "mse_samples_mean", "mode": "min"},
+                        ]},
+                    },
+                ],
+            },
+            "success_ratio_default": {
+                "schema_version": 1, "name": "success_ratio_default",
+                "base": {**base, "data": {"population": "failure_success", "success_ratio": 0.0}},
+                "sweep": [
+                    {"path": "data.success_ratio", "values": [0.0, 0.5, 1.0, 2.0]},
+                    {"path": "model.hidden", "values": [16, 32]},
+                ],
+                "stages": [], "repeats": 5, "builtin": True,
+            },
+        }
+
+    def localization_presets(self) -> list[dict[str, Any]]:
+        presets = self._localization_builtin_presets()
+        self.localization_preset_root.mkdir(parents=True, exist_ok=True)
+        for path in sorted(self.localization_preset_root.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                payload = dict(payload)
+                payload["builtin"] = False
+                presets[path.stem] = payload
+        return [presets[name] for name in sorted(presets)]
+
+    def save_localization_preset(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("spec"), dict):
+            raise ValidationError("Preset request requires a spec object")
+        name = str(payload["spec"].get("name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name):
+            raise ValidationError("Invalid preset name")
+        if name in self._localization_builtin_presets():
+            raise ValidationError("Built-in presets cannot be overwritten")
+        self.localization_preset_root.mkdir(parents=True, exist_ok=True)
+        path = self.localization_preset_root / f"{name}.json"
+        overwrite = bool(payload.get("overwrite", False))
+        if path.exists() and not overwrite:
+            raise ValidationError("Preset already exists; set overwrite=true to replace it")
+        spec = dict(payload["spec"])
+        spec["schema_version"] = 1
+        path.write_text(json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {**spec, "builtin": False}
+
+    def delete_localization_preset(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValidationError("Preset delete request must be an object")
+        name = str(payload.get("name") or "").strip()
+        if name in self._localization_builtin_presets():
+            raise ValidationError("Built-in presets cannot be deleted")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name):
+            raise ValidationError("Invalid preset name")
+        path = self.localization_preset_root / f"{name}.json"
+        if not path.is_file():
+            raise ValidationError("Preset does not exist")
+        path.unlink()
+        return {"name": name, "deleted": True}
+
+    def localization_results(self) -> dict[str, Any]:
+        if not self.localization_root.is_dir():
+            return {"available": False, "runs": []}
+        rows = []
+        for metadata_path in self.localization_root.glob("*/metadata.json"):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if metadata.get("analysis") != "robo_localization_experiment":
+                continue
+            directory = metadata_path.parent
+            rows.append({
+                "directory": self._relative(directory),
+                "name": metadata.get("name"),
+                "generated_at": metadata.get("generated_at"),
+                "configuration_count": metadata.get("configuration_count"),
+                "training_run_count": metadata.get("training_run_count"),
+                "summary_url": "/api/analysis/localization/artifacts/" + directory.name + "/summary.csv",
+                "manifest_url": "/api/analysis/localization/artifacts/" + directory.name + "/experiment_manifest.json",
+            })
+        rows.sort(key=lambda row: str(row.get("generated_at") or ""), reverse=True)
+        return {"available": bool(rows), "runs": rows[:50]}
+
+    def localization_artifact(self, run_name: str, artifact_name: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", run_name) or not re.fullmatch(r"[A-Za-z0-9._-]+", artifact_name):
+            raise FileNotFoundError(artifact_name)
+        path = (self.localization_root / run_name / artifact_name).resolve()
+        try:
+            path.relative_to(self.localization_root.resolve())
+        except ValueError as exc:
+            raise FileNotFoundError(artifact_name) from exc
+        if not path.is_file():
+            raise FileNotFoundError(artifact_name)
+        return path
+
+    def start_localization_spec_run(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("spec"), dict):
+            raise ValidationError("Localization run requires a spec object")
+        spec = dict(payload["spec"])
+        name = str(spec.get("name") or "localization_experiment").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name):
+            raise ValidationError("Invalid experiment name")
+        pool_root = self.baselines.baseline_root
+        if not pool_root.is_dir():
+            raise ValidationError("Baseline output pool does not exist")
+        script = self.project_root / "tools" / "train_robo_localization.py"
+        if not script.is_file():
+            raise ValidationError("Localization trainer is missing")
+        job_id = "analysis-localization-" + uuid.uuid4().hex[:12]
+        workspace = self.localization_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.localization_root / (
+            dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_" + name + "_" + job_id[-8:]
+        )
+        workspace.mkdir(parents=True, exist_ok=False)
+        spec_path = workspace / "experiment_spec.json"
+        spec_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+        command = [
+            str(self.robo_python), str(script),
+            "--spec", str(spec_path),
+            "--run-pool-root", str(pool_root),
+            "--manifest", str(self.manifest_path),
+            "--annotations", str(self.annotation_root / "records"),
+            "--output-dir", str(output_temp),
+        ]
+        self.localization_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "robo_localization_experiment",
+                "status": "queued",
+                "parameters": {"experiment_name": name, "spec": spec},
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "spec_path": self._relative(spec_path),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None, "finished_at": None, "return_code": None, "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.robo_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job, command, self.log_root / f"{job_id}.log",
+                interpreter=str(self.robo_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll, on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
+        if payload.get("analysis_kind") == "robo_localization_experiment":
+            return self.start_localization_spec_run(payload)
         if payload.get("analysis_kind") == "robo_bilstm_success_ablation":
             return self.start_robo_localization_head_run(payload)
         if payload.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
@@ -5549,7 +5763,13 @@ class AnalysisJobService:
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                if job.get("analysis_kind") == "robo_bilstm_success_ablation":
+                if job.get("analysis_kind") == "robo_localization_experiment":
+                    required = (
+                        "metadata.json", "config.json", "experiment_manifest.json",
+                        "training_records.json", "summary.csv", "per_rollout_predictions.csv",
+                    )
+                    missing_message = "Localization experiment completed without all required artifacts"
+                elif job.get("analysis_kind") == "robo_bilstm_success_ablation":
                     required = ROBO_LOCALIZATION_HEAD_REQUIRED_FILES
                     missing_message = (
                         "BiLSTM localization-head training completed without all required artifacts"
@@ -5589,7 +5809,9 @@ class AnalysisJobService:
                 job["status"] = "complete"
             else:
                 job["status"] = "failed"
-                if job.get("analysis_kind") == "robo_bilstm_success_ablation":
+                if job.get("analysis_kind") == "robo_localization_experiment":
+                    label = "Localization experiment"
+                elif job.get("analysis_kind") == "robo_bilstm_success_ablation":
                     label = "BiLSTM localization-head training"
                 elif job.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
                     label = "BiLSTM label/loss ablation"
