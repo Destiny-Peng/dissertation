@@ -275,3 +275,88 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     overflow: auto;
   }
 }
+
+/* Optional LF3R localization head attached to Robo-Dopamine Results. */
+.evaluation-localization-summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: .3rem .65rem;
+  margin: .45rem 0 .7rem;
+  padding: .55rem .65rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 6px;
+  font-size: .6875rem;
+}
+
+.evaluation-localization-summary-label {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.evaluation-localization-summary strong {
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .75rem;
+}
+
+.evaluation-localization-summary > span:not(.evaluation-localization-summary-label) {
+  min-width: 0;
+  color: var(--muted);
+}
+
+.evaluation-localization-summary small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .59375rem;
+}
+
+.evaluation-localization-pin {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  transform: translateX(-1px);
+  opacity: .98;
+  pointer-events: auto;
+}
+
+.evaluation-localization-pin::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  border-radius: 50%;
+}
+
+.evaluation-localization-pin > span {
+  position: absolute;
+  top: 7px;
+  left: 4px;
+  padding: 1px 4px;
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 3px;
+  font: 600 .5625rem/1.25 "SFMono-Regular", Consolas, monospace;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .evaluation-localization-summary {
+    grid-template-columns: 1fr auto;
+  }
+
+  .evaluation-localization-summary > span:not(.evaluation-localization-summary-label) {
+    grid-column: 1 / -1;
+  }
+}
