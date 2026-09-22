@@ -195,7 +195,8 @@
           "BiLSTM training " + job.status + " · latest fused per rollout · "
           + (job.parameters.device || "auto")
           + " · ratios 0," + ((job.parameters.success_ratios || []).join(",") || "?")
-          + " · repeats " + (job.parameters.repeats || "?"),
+          + " · repeats " + (job.parameters.repeats || "?")
+          + " · batch " + (job.parameters.batch_size || "?"),
           ""
         );
         window.setTimeout(function () {
@@ -265,6 +266,7 @@
       repeats: Number(node("analysisBiLstmRepeats").value),
       epochs: Number(node("analysisBiLstmEpochs").value),
       patience: Number(node("analysisBiLstmPatience").value),
+      batch_size: Number(node("analysisBiLstmBatchSize").value),
       learning_rate: Number(node("analysisBiLstmLearningRate").value),
       weight_decay: Number(node("analysisBiLstmWeightDecay").value),
       grad_clip: Number(node("analysisBiLstmGradClip").value)
