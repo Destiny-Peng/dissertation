@@ -5824,7 +5824,7 @@ class AnalysisJobService:
             "model.hidden", "loss.distance_weight", "loss.ranking_weight",
             "loss.ranking_margin", "training.batch_size",
             "training.parallel_workers", "training.learning_rate",
-            "training.weight_decay", "training.grad_clip",
+            "training.weight_decay", "training.grad_clip", "training.seed",
             "training.epochs", "training.patience",
             "best_repeat", "best_repeat_seed", "best_repeat_test_n",
             "best_repeat_in_interval_rate",
@@ -5902,6 +5902,11 @@ class AnalysisJobService:
                 else:
                     row["best_repeat"] = best_repeats.get((stage, config_id))
                 row["repeats"] = repeat_metrics.get((stage, config_id), [])
+                base_seed = row.get("training.seed")
+                if base_seed is not None:
+                    for repeat_row in row["repeats"]:
+                        if repeat_row.get("seed") is None:
+                            repeat_row["seed"] = int(base_seed) + int(repeat_row["repeat"])
                 rows.append(row)
 
         stage_order: list[str] = []
