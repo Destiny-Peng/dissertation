@@ -5402,7 +5402,10 @@ class AnalysisJobService:
     @staticmethod
     def _localization_builtin_presets() -> dict[str, dict[str, Any]]:
         base = {
-            "data": {"population": "failure_only", "success_ratio": 0.0},
+            "data": {
+                "population": "failure_only", "success_ratio": 0.0,
+                "challenge_set_name": "", "force_train_rollout_ids": [],
+            },
             "target": {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
             "model": {"hidden": 16},
             "loss": {"name": "bce", "distance_weight": 1.0, "ranking_weight": 1.0, "ranking_margin": 1.0},
