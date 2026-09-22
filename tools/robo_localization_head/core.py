@@ -102,6 +102,62 @@ def rollout_split(
     }
 
 
+def force_train_rollouts(
+    split: Mapping[str, Any],
+    forced_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Move selected rollouts into train while keeping val/test sizes when possible.
+
+    This is intended for diagnostic challenge-set experiments, not held-out
+    generalization estimates. Rollouts moved out of val/test are replaced by
+    deterministic non-forced train rollouts when enough candidates exist.
+    """
+    result = dict(split)
+    train = set(split.get("train", []))
+    val = set(split.get("val", []))
+    test = set(split.get("test", []))
+    all_ids = train | val | test
+    forced = set(forced_ids) & all_ids
+    target_val_n = len(val)
+    target_test_n = len(test)
+
+    val.difference_update(forced)
+    test.difference_update(forced)
+    train.update(forced)
+
+    candidates = sorted(train - forced)
+    rng = random.Random(int(split.get("seed", 0)) + 104729)
+    rng.shuffle(candidates)
+
+    def refill(target: set[str], target_n: int) -> None:
+        while len(target) < target_n and candidates:
+            rollout_id = candidates.pop()
+            if rollout_id not in train:
+                continue
+            train.remove(rollout_id)
+            target.add(rollout_id)
+
+    refill(val, target_val_n)
+    refill(test, target_test_n)
+
+    if not train:
+        raise ValueError("forcing challenge rollouts into train left training empty")
+    if not val:
+        raise ValueError(
+            "forcing challenge rollouts into train left validation empty; "
+            "reduce the forced challenge set or add more failure rollouts"
+        )
+
+    result["train"] = sorted(train)
+    result["val"] = sorted(val)
+    result["test"] = sorted(test)
+    result["forced_train"] = sorted(forced)
+    result["kind"] = (
+        "rollout_random_force_train" if forced else str(split.get("kind") or "rollout_random")
+    )
+    return result
+
+
 def standardization_stats(
     dataset: Mapping[str, Mapping[str, Any]],
     rollout_ids: Sequence[str],
