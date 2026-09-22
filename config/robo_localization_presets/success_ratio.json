@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "success_ratio",
+  "base": {
+    "data": {
+      "population": "failure_success",
+      "success_ratio": 0,
+      "challenge_set_name": "",
+      "force_train_rollout_ids": []
+    },
+    "target": {
+      "kind": "gaussian",
+      "sigma_pre": 3,
+      "sigma_post": 3,
+      "tau_event": 20
+    },
+    "model": {
+      "hidden": 16
+    },
+    "loss": {
+      "name": "bce",
+      "distance_weight": 0,
+      "ranking_weight": 0,
+      "ranking_margin": 0
+    },
+    "training": {
+      "device": "auto",
+      "batch_size": 16,
+      "parallel_workers": 5,
+      "epochs": 500,
+      "patience": 100,
+      "learning_rate": 0.003,
+      "weight_decay": 0.0001,
+      "grad_clip": 5,
+      "seed": 17,
+      "train_fraction": 0.7,
+      "val_fraction": 0.15
+    }
+  },
+  "sweep": [
+    {
+      "path": "data.success_ratio",
+      "values": [
+        0,
+        0.1,
+        0.2,
+        0.3,
+        0.5
+      ]
+    }
+  ],
+  "variants": [],
+  "stages": [],
+  "repeats": 5
+}

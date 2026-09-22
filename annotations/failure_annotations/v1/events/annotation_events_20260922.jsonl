@@ -30,3 +30,7 @@
 {"timestamp": "2026-09-22T11:33:34.923531+00:00", "rollout_id": "libero_10-task03-ep013-natural-860070549d", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
 {"timestamp": "2026-09-22T11:37:19.211042+00:00", "rollout_id": "libero_10-task00-ep006-natural-e14d5cb3b5", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 3}
 {"timestamp": "2026-09-22T11:37:39.902294+00:00", "rollout_id": "libero_10-task00-ep006-natural-e14d5cb3b5", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 3}
+{"timestamp": "2026-09-22T11:45:40.449459+00:00", "rollout_id": "libero_10-task00-ep005-natural-bbd48af9e8", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-22T11:45:44.516624+00:00", "rollout_id": "libero_10-task00-ep005-natural-bbd48af9e8", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-22T11:45:48.190959+00:00", "rollout_id": "libero_10-task00-ep005-natural-bbd48af9e8", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-22T11:46:38.607622+00:00", "rollout_id": "libero_10-task04-ep005-natural-b0b95493b0", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
