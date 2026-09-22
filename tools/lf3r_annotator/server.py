@@ -6351,6 +6351,7 @@ class AnalysisJobService:
                     required = (
                         "metadata.json", "config.json", "experiment_manifest.json",
                         "training_records.json", "summary.csv", "per_rollout_predictions.csv",
+                        "all_failure_predictions.csv",
                     )
                     missing_message = "Localization experiment completed without all required artifacts"
                 elif job.get("analysis_kind") == "robo_bilstm_success_ablation":
@@ -6387,6 +6388,11 @@ class AnalysisJobService:
                     )
                 if not all((output_temp / name).is_file() for name in required):
                     raise OSError(missing_message)
+                if (
+                    job.get("analysis_kind") == "robo_localization_experiment"
+                    and not (output_temp / "checkpoints").is_dir()
+                ):
+                    raise OSError("Localization experiment completed without checkpoints")
                 if output_final.exists():
                     raise OSError(f"Analysis output already exists: {output_final}")
                 os.replace(output_temp, output_final)
