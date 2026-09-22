@@ -1323,7 +1323,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
     def test_label_loss_ablation_web_job_and_snapshot(self) -> None:
         self.seed_baseline_outputs()
         self.app.analysis_jobs.robo_python = Path(sys.executable)
-        script = self.root / "tools" / "train_robo_dopamine_label_loss_ablation.py"
+        script = self.root / "tools" / "train_robo_localization.py"
         script.parent.mkdir(parents=True, exist_ok=True)
         script.write_text(
             """import argparse
@@ -1466,6 +1466,9 @@ print('fake label loss ablation complete')
         self.assertEqual(job["parameters"]["training_population"], "failure_only")
         self.assertEqual(job["parameters"]["batch_size"], 32)
         self.assertEqual(job["parameters"]["tau_event"], 20.0)
+        self.assertIn("--experiment", job["command"])
+        experiment_index = job["command"].index("--experiment")
+        self.assertEqual(job["command"][experiment_index + 1], "label_loss")
         self.assertIn("--batch-size", job["command"])
         batch_index = job["command"].index("--batch-size")
         self.assertEqual(job["command"][batch_index + 1], "32")
