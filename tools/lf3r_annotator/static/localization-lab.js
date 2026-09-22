@@ -9,7 +9,7 @@
     activeRunResult: null,
     selectedChallengeRollouts: new Set(),
     currentJob: null,
-    polling: false,
+    pollingToken: 0,
     activeTab: "builder"
   };
 
@@ -1031,7 +1031,7 @@
     state.currentJob = payload.job;
     node("localizationJobBadge").textContent = state.currentJob.status || "queued";
     setLabTab("runs");
-    pollJob(state.currentJob.job_id);
+    beginJobPolling(state.currentJob.job_id);
   }
 
   async function loadJobLog(jobId) {
@@ -1039,21 +1039,34 @@
     node("localizationJobLog").textContent = payload.log ? payload.log.text : "";
   }
 
-  async function pollJob(jobId) {
-    if (state.polling) return;
-    state.polling = true;
+  function beginJobPolling(jobId) {
+    state.pollingToken += 1;
+    var token = state.pollingToken;
+    pollJob(jobId, token);
+  }
+
+  async function pollJob(jobId, token) {
+    if (token !== state.pollingToken) return;
     try {
-      var payload = await fetchJson("/api/analysis-jobs/" + encodeURIComponent(jobId), { cache: "no-store" });
+      var payload = await fetchJson(
+        "/api/analysis-jobs/" + encodeURIComponent(jobId),
+        { cache: "no-store" }
+      );
+      if (token !== state.pollingToken) return;
       var job = payload.job;
       if (!job || job.analysis_kind !== "robo_localization_experiment") return;
       state.currentJob = job;
       node("localizationJobBadge").textContent = job.status || "unknown";
       await loadJobLog(jobId);
+      if (token !== state.pollingToken) return;
       if (job.status === "queued" || job.status === "running") {
-        window.setTimeout(function () { state.polling = false; pollJob(jobId); }, 1500);
+        window.setTimeout(function () {
+          pollJob(jobId, token);
+        }, 1500);
         return;
       }
       await loadRuns();
+      if (token !== state.pollingToken) return;
       if (job.status === "complete") {
         var runId = String(job.output_dir || "").split("/").filter(Boolean).pop();
         if (runId) {
@@ -1061,10 +1074,9 @@
         }
       }
     } catch (error) {
+      if (token !== state.pollingToken) return;
       node("localizationJobBadge").textContent = "failed";
       node("localizationJobLog").textContent += "\n" + error.message;
-    } finally {
-      if (!state.currentJob || ["queued", "running"].indexOf(state.currentJob.status) === -1) state.polling = false;
     }
   }
 
@@ -1110,7 +1122,7 @@
       if (!jobs.length) return;
       state.currentJob = jobs[0];
       node("localizationJobBadge").textContent = state.currentJob.status || "unknown";
-      if (state.currentJob.status === "queued" || state.currentJob.status === "running") pollJob(state.currentJob.job_id);
+      if (state.currentJob.status === "queued" || state.currentJob.status === "running") beginJobPolling(state.currentJob.job_id);
       else loadJobLog(state.currentJob.job_id);
     } catch (_error) {}
   }
