@@ -369,3 +369,18 @@
     align-items: flex-start;
   }
 }
+
+
+.localization-result-metric {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+
+.localization-result-metric small {
+  margin-top: .15rem;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 400;
+}
