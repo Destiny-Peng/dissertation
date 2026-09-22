@@ -42,6 +42,23 @@ class LocalizationSpecTests(unittest.TestCase):
         self.assertEqual(configs[0]["loss"]["name"], "bce")
         self.assertEqual(configs[1]["loss"]["name"], "temporal_softmax_ce")
 
+    def test_parallel_workers_default_and_validation(self) -> None:
+        normalized = specs.normalize_spec({
+            "name": "workers",
+            "base": {},
+            "repeats": 1,
+            "sweep": [],
+            "stages": [],
+        })
+        self.assertEqual(normalized["base"]["training"]["parallel_workers"], 4)
+
+        invalid = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"training": {"parallel_workers": 9}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(invalid)
+
     def test_stage_spec_is_valid(self) -> None:
         spec = specs.BUILTIN_PRESETS["label_loss_default"]
         normalized = specs.normalize_spec(spec)
