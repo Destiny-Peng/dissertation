@@ -13,7 +13,7 @@
   if (!document.querySelector('link[data-runs-tools-style="true"]')) {
     var styleLink = document.createElement("link");
     styleLink.rel = "stylesheet";
-    styleLink.href = "/static/styles-tools.css?v=non-analysis-tools-20260916";
+    styleLink.href = "/static/styles-tools.css?v=batch-h264-manifest-selection-v1-20260923";
     styleLink.dataset.runsToolsStyle = "true";
     document.head.appendChild(styleLink);
   }
@@ -167,9 +167,14 @@
           '<div class="runs-tool-action"><span>Diagnostic sweep only; it does not claim detector performance.</span><button id="roboSweepRun" class="save-button" type="button">Run interval sweep</button></div>',
         '</section>',
         '<section class="runs-tool-card">',
-          '<div class="runs-tool-card-heading"><div><h3>Batch H.264 transcode</h3><p>Convert only the canonical <code>video_path</code> entries from every manifest currently loaded by this WebUI. Multiview files are ignored.</p></div></div>',
+          '<div class="runs-tool-card-heading"><div><h3>Batch H.264 transcode</h3><p>Choose which loaded manifests to process. Only each selected manifest\'s canonical <code>video_path</code> entries are used; multiview files are ignored.</p></div></div>',
+          '<div class="runs-manifest-choice-toolbar">',
+            '<div><strong>Manifest selection</strong><span id="batchManifestTranscodeSelectionCount">Loading manifests…</span></div>',
+            '<div><button id="batchManifestTranscodeSelectAll" class="ghost-button" type="button">Select all</button><button id="batchManifestTranscodeSelectNone" class="ghost-button" type="button">Clear</button></div>',
+          '</div>',
+          '<div id="batchManifestTranscodeManifests" class="runs-manifest-choice-list"><div class="runs-manifest-choice-empty">Loading loaded manifests…</div></div>',
           '<div id="batchManifestTranscodeSummary" class="runs-manifest-summary">Already-H.264 videos are skipped. Existing <code>.orig.mp4</code> backups are never overwritten.</div>',
-          '<div class="runs-tool-action"><span>Runs sequentially as one persistent background job and reuses the existing single-video transcode path.</span><button id="batchManifestTranscodeRun" class="save-button" type="button">Transcode manifest videos</button></div>',
+          '<div class="runs-tool-action"><span>Runs sequentially as one persistent background job; duplicate <code>video_path</code> values across selected manifests are converted only once.</span><button id="batchManifestTranscodeRun" class="save-button" type="button">Transcode selected manifests</button></div>',
         '</section>',
         '<section class="runs-tool-card runs-maintenance-card">',
           '<div class="runs-tool-card-heading"><div><h3>Validation & maintenance</h3><p>Bounded checks around existing project artifacts. No Analysis jobs are launched here.</p></div></div>',
@@ -482,6 +487,7 @@
             await loadRollouts(preferredId);
           }
           await loadRolloutOptions();
+          await loadBatchManifestOptions(true);
           var afterCount = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
             ? state.rollouts.length
             : null;
@@ -599,33 +605,132 @@
     }).catch(function () {});
   });
 
-  document.getElementById("batchManifestTranscodeRun").addEventListener("click", async function () {
+  var batchManifestCatalog = [];
+
+  function selectedBatchManifestPaths() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll("#batchManifestTranscodeManifests input[data-manifest-path]:checked")
+    ).map(function (input) { return input.dataset.manifestPath; });
+  }
+
+  function updateBatchManifestSelectionCount() {
+    var selected = selectedBatchManifestPaths();
+    var selectedRows = batchManifestCatalog.reduce(function (total, item) {
+      return selected.indexOf(item.path) >= 0 ? total + Number(item.rollouts || 0) : total;
+    }, 0);
+    var node = document.getElementById("batchManifestTranscodeSelectionCount");
+    if (node) {
+      node.textContent = selected.length + " / " + batchManifestCatalog.length
+        + " manifest(s) selected · " + selectedRows + " manifest row(s)";
+    }
     var button = document.getElementById("batchManifestTranscodeRun");
-    var summaryNode = document.getElementById("batchManifestTranscodeSummary");
-    if (button) button.disabled = true;
+    if (button) button.disabled = selected.length === 0;
+  }
+
+  function renderBatchManifestOptions(manifests, preserveSelection) {
+    var host = document.getElementById("batchManifestTranscodeManifests");
+    if (!host) return;
+    var previous = preserveSelection ? selectedBatchManifestPaths() : [];
+    batchManifestCatalog = (manifests || []).filter(function (item) {
+      return item && item.exists && item.path;
+    });
+    host.innerHTML = "";
+    if (!batchManifestCatalog.length) {
+      var empty = document.createElement("div");
+      empty.className = "runs-manifest-choice-empty";
+      empty.textContent = "No loaded manifest files are available.";
+      host.appendChild(empty);
+      updateBatchManifestSelectionCount();
+      return;
+    }
+
+    batchManifestCatalog.forEach(function (item) {
+      var label = document.createElement("label");
+      label.className = "runs-manifest-choice";
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.manifestPath = String(item.path);
+      input.checked = previous.length ? previous.indexOf(String(item.path)) >= 0 : true;
+      input.addEventListener("change", updateBatchManifestSelectionCount);
+
+      var copy = document.createElement("span");
+      var title = document.createElement("strong");
+      title.textContent = String(item.label || item.path);
+      var meta = document.createElement("small");
+      meta.textContent = String(item.path)
+        + " · " + Number(item.rollouts || 0) + " rollout(s)"
+        + (item.primary ? " · primary" : "");
+      copy.appendChild(title);
+      copy.appendChild(meta);
+      label.appendChild(input);
+      label.appendChild(copy);
+      host.appendChild(label);
+    });
+    updateBatchManifestSelectionCount();
+  }
+
+  async function loadBatchManifestOptions(preserveSelection) {
+    var host = document.getElementById("batchManifestTranscodeManifests");
     try {
       var response = await fetch("/api/manifests", { cache: "no-store" });
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not read loaded manifests");
-      var manifests = (payload.manifests || [])
-        .filter(function (item) { return item && item.exists && item.path; })
-        .map(function (item) { return item.path; });
-      if (!manifests.length) throw new Error("No loaded manifest files are available");
+      renderBatchManifestOptions(payload.manifests || [], Boolean(preserveSelection));
+    } catch (error) {
+      batchManifestCatalog = [];
+      if (host) {
+        host.innerHTML = "";
+        var empty = document.createElement("div");
+        empty.className = "runs-manifest-choice-empty error";
+        empty.textContent = "Manifest options unavailable: " + String(error.message || error);
+        host.appendChild(empty);
+      }
+      updateBatchManifestSelectionCount();
+    }
+  }
 
-      var rolloutCount = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
-        ? state.rollouts.length
-        : null;
-      var message = "Transcode canonical video_path files from " + manifests.length + " loaded manifest(s)?\n\n"
-        + "Already-H.264 videos will be skipped. Existing .orig.mp4 backups will not be overwritten."
-        + (rolloutCount == null ? "" : "\n\nCurrently loaded rollouts: " + rolloutCount);
-      if (!window.confirm(message)) return;
+  document.getElementById("batchManifestTranscodeSelectAll").addEventListener("click", function () {
+    Array.prototype.slice.call(
+      document.querySelectorAll("#batchManifestTranscodeManifests input[data-manifest-path]")
+    ).forEach(function (input) { input.checked = true; });
+    updateBatchManifestSelectionCount();
+  });
 
-      if (summaryNode) summaryNode.textContent = "Submitting batch H.264 transcode for " + manifests.length + " manifest(s)…";
+  document.getElementById("batchManifestTranscodeSelectNone").addEventListener("click", function () {
+    Array.prototype.slice.call(
+      document.querySelectorAll("#batchManifestTranscodeManifests input[data-manifest-path]")
+    ).forEach(function (input) { input.checked = false; });
+    updateBatchManifestSelectionCount();
+  });
+
+  document.getElementById("batchManifestTranscodeRun").addEventListener("click", async function () {
+    var button = document.getElementById("batchManifestTranscodeRun");
+    var summaryNode = document.getElementById("batchManifestTranscodeSummary");
+    var manifests = selectedBatchManifestPaths();
+    if (!manifests.length) {
+      if (summaryNode) summaryNode.textContent = "Select at least one manifest before starting batch H.264 transcode.";
+      return;
+    }
+    var selectedRows = batchManifestCatalog.reduce(function (total, item) {
+      return manifests.indexOf(item.path) >= 0 ? total + Number(item.rollouts || 0) : total;
+    }, 0);
+    var message = "Transcode canonical video_path files from " + manifests.length + " selected manifest(s)?\n\n"
+      + "Selected manifest rows: " + selectedRows
+      + "\nDuplicate video_path values are deduplicated."
+      + "\nAlready-H.264 videos will be skipped. Existing .orig.mp4 backups will not be overwritten.";
+    if (!window.confirm(message)) return;
+
+    if (button) button.disabled = true;
+    try {
+      if (summaryNode) {
+        summaryNode.textContent = "Submitting batch H.264 transcode for "
+          + manifests.length + " selected manifest(s)…";
+      }
       await submitTool("transcode_manifest_videos", { manifest_paths: manifests });
     } catch (error) {
       if (summaryNode) summaryNode.textContent = "Batch H.264 transcode could not start: " + String(error.message || error);
     } finally {
-      if (button) button.disabled = false;
+      updateBatchManifestSelectionCount();
     }
   });
 
@@ -673,4 +778,5 @@
   setMode(currentMode);
   refreshToolJobs().then(function () { if (activeToolJobId) pollToolJob(); });
   loadRolloutOptions();
+  loadBatchManifestOptions(false);
 })();
