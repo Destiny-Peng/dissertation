@@ -9,13 +9,14 @@ TOOL_ROOT = Path(__file__).resolve().parents[1]
 
 class ProgressiveBaselineResultsContractTest(unittest.TestCase):
     def test_server_exposes_only_completed_rollouts_from_running_runs(self) -> None:
-        source = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
-        self.assertIn('_PROGRESSIVE_RUN_STATUSES = set(server.BASELINE_RUN_STATUSES) | {"running"}', source)
+        source = (TOOL_ROOT / "webui_baseline.py").read_text(encoding="utf-8")
+        self.assertIn("class WebUIBaselineService(server.BaselineService):", source)
+        self.assertIn("server.BASELINE_READABLE_RUN_STATUSES", source)
         self.assertIn('workers_root.glob("worker-*/jobs.jsonl")', source)
         self.assertIn('row.get("status") != "complete"', source)
-        self.assertIn('rollout_id not in server.run_rollout_ids(run_path)', source)
-        self.assertIn('server.BaselineService._run_candidates = _progressive_run_candidates', source)
-        self.assertIn('server.BaselineService._read_method = _read_only_completed_progressive_rollout', source)
+        self.assertIn("self._completed_run_rollout_ids(run_path)", source)
+        self.assertIn("def _run_candidates(", source)
+        self.assertIn("def _read_method(", source)
 
         base_source = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
         self.assertIn("def _valid_result_rollout_ids(", base_source)
