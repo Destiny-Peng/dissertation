@@ -36,6 +36,7 @@ from robo_dopamine_multi_perspective import (
 
 
 ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "outputs" / "robodopamine_goal"
+ROBO_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
 
 
 def resolve_goal_image(
@@ -88,6 +89,47 @@ def resolve_goal_image(
     return default_goal
 
 
+def resolve_robo_camera_inputs(
+    record: dict[str, Any],
+    args: argparse.Namespace,
+    canonical_video: Path,
+) -> tuple[dict[str, str], str]:
+    """Resolve Robo-Dopamine's fixed three camera slots from the manifest."""
+    raw = record.get("camera_video_paths")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    present = [
+        slot for slot in ROBO_CAMERA_SLOTS
+        if isinstance(raw.get(slot), str) and str(raw.get(slot)).strip()
+    ]
+    if present and len(present) != len(ROBO_CAMERA_SLOTS):
+        missing = [slot for slot in ROBO_CAMERA_SLOTS if slot not in present]
+        raise ValueError(
+            "Incomplete Robo-Dopamine camera_video_paths for "
+            f"{record.get('id') or record.get('rollout_id')}: "
+            f"present={present}, missing={missing}"
+        )
+
+    if not present:
+        canonical = str(canonical_video)
+        return {
+            "cam_high": canonical,
+            "cam_left_wrist": canonical,
+            "cam_right_wrist": canonical,
+        }, "single_view"
+
+    resolved: dict[str, str] = {}
+    for slot in ROBO_CAMERA_SLOTS:
+        path = resolve_record_path(str(raw[slot]), args.data_root)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Robo-Dopamine camera input {slot} does not exist: {path}"
+            )
+        resolved[slot] = str(path)
+    return resolved, "multi_view"
+
+
 def build_job_specs(
     records: list[dict[str, Any]],
     args: argparse.Namespace,
@@ -105,6 +147,11 @@ def build_job_specs(
         video = resolve_record_path(str(video_value), args.data_root)
         if not video.is_file():
             raise FileNotFoundError(f"Input for {rollout_id} does not exist: {video}")
+        camera_inputs, camera_input_mode = resolve_robo_camera_inputs(
+            record,
+            args,
+            video,
+        )
         task = record.get("task", record.get("task_description"))
         if task is None:
             raise ValueError(f"Robo-Dopamine job {rollout_id} is missing task description")
@@ -123,6 +170,10 @@ def build_job_specs(
             "job_index": int(record.get("job_index", index)),
             "rollout_id": rollout_id,
             "video_path": str(video),
+            "cam_high_path": camera_inputs["cam_high"],
+            "cam_left_path": camera_inputs["cam_left_wrist"],
+            "cam_right_path": camera_inputs["cam_right_wrist"],
+            "camera_input_mode": camera_input_mode,
             "task": str(task),
             "raw_output_dir": str(output_dir),
             "goal_image": str(goal),
