@@ -2275,7 +2275,7 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " A three-view review video (agent + side + wrist) is generated afterward by replaying the recorded actions; canonical policy video and baseline input remain unchanged."
+      ? " Three separate camera videos (agentview, sideview, and wrist) are generated afterward by replaying the recorded actions; canonical policy video and baseline input remain unchanged."
       : " Only the canonical single-view replay video is generated.";
     description.textContent = (isSpatial
       ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
@@ -2298,7 +2298,7 @@ function updateRolloutGenerationSelection() {
   note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
     + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
     + ", record " + recordResolution + "x" + recordResolution
-    + ", review " + (videoViewMode === "libero_three_view" ? "3-view" : "single-view")
+    + ", camera videos " + (videoViewMode === "libero_three_view" ? "3 separate views" : "canonical only")
     + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
@@ -2321,7 +2321,7 @@ function rolloutGenerationJobMessage(job) {
   var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
   var resolution = "render " + (job.render_resolution || "?") + "x" + (job.render_resolution || "?")
     + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?")
-    + ", review " + (job.video_view_mode === "libero_three_view" ? "3-view" : "single-view");
+    + ", camera videos " + (job.video_view_mode === "libero_three_view" ? "3 separate views" : "canonical only");
   if (job.status === "queued") return suite + " generation queued (" + resolution + ") - " + progress + " rollout(s) complete...";
   if (job.status === "running") return "Generating " + suite + " rollouts (" + resolution + ") - " + progress + " complete...";
   if (job.status === "complete") {
