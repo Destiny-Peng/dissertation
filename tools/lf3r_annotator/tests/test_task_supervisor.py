@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -146,6 +147,38 @@ class TmuxJobSupervisorTest(unittest.TestCase):
             self.assertEqual(recovered["status"], "failed")
             self.assertEqual(recovered["tmux_state"], "missing")
             self.assertTrue(recovered["finished_at"])
+
+    def test_async_submit_returns_before_tmux_launch_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "project_env.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+            supervisor = TmuxJobSupervisor(root, tmux_binary="/bin/echo")
+            started = threading.Event()
+            release = threading.Event()
+
+            def slow_tmux(_args, check=False):
+                started.set()
+                release.wait(timeout=2)
+                return subprocess.CompletedProcess(["tmux"], 0, stdout="", stderr="")
+
+            with mock.patch.object(supervisor, "_tmux", side_effect=slow_tmux):
+                before = time.monotonic()
+                job = supervisor.submit_async(
+                    {
+                        "job_id": "async-submit-test",
+                        "job_type": "test",
+                        "status": "queued",
+                        "submitted_at": "2026-09-23T00:00:00+00:00",
+                    },
+                    ["bash", "-c", "true"],
+                    root / "logs" / "async.log",
+                )
+                elapsed = time.monotonic() - before
+                self.assertLess(elapsed, 0.5)
+                self.assertEqual(job["status"], "queued")
+                self.assertEqual(job["tmux_state"], "launch_pending")
+                self.assertTrue(started.wait(timeout=1))
+                release.set()
 
     def test_tmux_control_command_timeout_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
