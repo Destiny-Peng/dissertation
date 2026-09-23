@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""LF3R annotator entrypoint with live baseline progress and cancellation.
+"""Live baseline progress and cancellation extensions for the WebUI.
 
-This module builds on ``server_entry.py`` so the existing ProcVLM LoRA and
-non-Analysis tool integrations remain intact. It adds two operational fixes for
-the Runs console:
+Loaded after ``webui_integrations``. It adds two operational features for the
+Runs console:
 
 - live baseline progress is refreshed from the runner's per-rollout/state files
   instead of relying only on the final ``run.json`` snapshot;
@@ -22,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-import server_entry  # noqa: F401  # Apply the existing compatibility patches first.
+import webui_integrations  # noqa: F401  # Install integrations before job extensions.
 import server
 
 
@@ -292,7 +291,3 @@ def _do_post_with_baseline_cancel(self: server.LF3RHandler) -> None:
 
 
 server.LF3RHandler.do_POST = _do_post_with_baseline_cancel
-
-
-if __name__ == "__main__":
-    server.main()

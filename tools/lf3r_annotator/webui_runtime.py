@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LF3R annotator entrypoint with concurrent generation and progressive baseline results.
 
-Builds on ``server_entry_v3``. Rollout generation still has exclusive ownership
+Builds on ``webui_manifests``. Rollout generation still has exclusive ownership
 of manifest *writes* relative to another rollout-generation job, but it no
 longer blocks independent baseline/analysis compute for the full generation
 lifetime. While a generation job is active, the multi-manifest catalog is held
@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import server
-import server_entry_v3
+import webui_manifests
 
 
 def _acquire_concurrent_manifest_writer(
@@ -44,12 +44,12 @@ server.JobCoordinator.acquire = _acquire_concurrent_manifest_writer
 
 
 _original_refresh_manifest_catalog = (
-    server_entry_v3.MultiManifestApplication._refresh_manifest_catalog
+    webui_manifests.MultiManifestApplication._refresh_manifest_catalog
 )
 
 
 def _refresh_manifest_catalog_from_stable_snapshot(
-    self: server_entry_v3.MultiManifestApplication,
+    self: webui_manifests.MultiManifestApplication,
     force: bool = False,
 ) -> list[dict[str, Any]]:
     """Do not rebuild the aggregate catalog while generation owns the manifest writer.
@@ -68,7 +68,7 @@ def _refresh_manifest_catalog_from_stable_snapshot(
     return _original_refresh_manifest_catalog(self, force=force)
 
 
-server_entry_v3.MultiManifestApplication._refresh_manifest_catalog = (
+webui_manifests.MultiManifestApplication._refresh_manifest_catalog = (
     _refresh_manifest_catalog_from_stable_snapshot
 )
 
@@ -194,8 +194,4 @@ server.BaselineService._read_method = _read_only_completed_progressive_rollout
 
 
 def main() -> None:
-    server_entry_v3.main()
-
-
-if __name__ == "__main__":
-    main()
+    webui_manifests.main()

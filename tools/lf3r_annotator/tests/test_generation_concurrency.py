@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 import server
-import server_entry_v4  # noqa: F401  # installs the v4 coordinator semantics
+import webui_runtime  # noqa: F401  # installs the runtime coordinator semantics
 
 
 class GenerationConcurrencyTest(unittest.TestCase):

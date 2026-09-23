@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""LF3R annotator entrypoint with multi-manifest support and raw video serving.
+"""Multi-manifest application and raw video serving for the WebUI.
 
-Builds on ``server_entry_v2`` so the ProcVLM LoRA, project tools, live baseline
-progress, and cancellation patches remain intact.
+Loaded after ``webui_jobs`` so integrations, project tools, live progress, and
+cancellation behavior are already installed.
 
 Runtime video probing/transcoding is deliberately absent. ``/api/videos/<id>``
 serves canonical ``video_path`` by default; ``?camera=<slot>`` explicitly
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-import server_entry_v2  # noqa: F401  # Apply all previous WebUI compatibility patches first.
+import webui_jobs  # noqa: F401  # Install integrations and job extensions first.
 import non_analysis_tools
 import server
 
@@ -507,7 +507,3 @@ def main() -> None:
         pass
     finally:
         http_server.server_close()
-
-
-if __name__ == "__main__":
-    main()
