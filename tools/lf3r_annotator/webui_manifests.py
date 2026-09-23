@@ -507,7 +507,3 @@ def main() -> None:
         pass
     finally:
         http_server.server_close()
-
-
-if __name__ == "__main__":
-    main()
