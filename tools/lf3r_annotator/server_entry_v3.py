@@ -28,7 +28,7 @@ from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import server_entry_v2  # noqa: F401  # Apply all previous WebUI compatibility patches first.
 import non_analysis_tools
@@ -397,14 +397,18 @@ def _do_get_with_multi_manifest(self: server.LF3RHandler) -> None:
         if not rollout:
             self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
             return
-        review_video = rollout.get("multiview_video_path")
-        if isinstance(review_video, str) and review_video:
-            candidate = self.app.resolve_project_file(review_video, ".mp4")
-            video = (
-                candidate
-                if candidate.is_file()
-                else self.app.resolve_project_file(rollout["video_path"], ".mp4")
-            )
+        query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        camera = str(query.get("camera", [""])[0] or "").strip()
+        if camera:
+            camera_paths = rollout.get("camera_video_paths")
+            value = camera_paths.get(camera) if isinstance(camera_paths, dict) else None
+            if not isinstance(value, str) or not value:
+                self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
+                return
+            video = self.app.resolve_project_file(value, ".mp4")
+            if not video.is_file():
+                self.json_error(HTTPStatus.NOT_FOUND, "Camera video file is unavailable")
+                return
         else:
             video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
         self.serve_video(video)
