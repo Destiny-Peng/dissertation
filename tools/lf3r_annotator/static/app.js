@@ -14,6 +14,8 @@ var state = {
   instructionCondition: "full_instruction",
   evaluationRequest: 0,
   evaluationSignalVisibility: {},
+  baselineCollapsed: {},
+  roboPosthocCheckpoint: "",
   baselineRuns: null,
   baselineRunsCondition: null,
   baselineRunsLoading: null,
@@ -1460,6 +1462,55 @@ async function loadBaselineRunCatalog(condition) {
   return state.baselineRunsLoading;
 }
 
+function renderPosthocLocalizationControls(method, result) {
+  if (method !== "robo_dopamine" || !result || !result.available) return "";
+  var history = Array.isArray(result.posthoc_localizations)
+    ? result.posthoc_localizations : [];
+  var active = result.localization_prediction || null;
+  var selectedCheckpoint = state.roboPosthocCheckpoint
+    || (active && active.checkpoint) || "";
+  var historyHtml = "";
+  if (history.length) {
+    historyHtml = '<label><span>Saved prediction</span><select data-posthoc-localization-select>'
+      + history.map(function (row, index) {
+        var frame = Number(row.predicted_frame);
+        var checkpoint = String(row.checkpoint || "");
+        var label = "frame " + (Number.isFinite(frame) ? Math.round(frame) : "?")
+          + " · " + (row.checkpoint_config_id || checkpoint.split("/").slice(-2).join("/"));
+        var activeMatch = active
+          && String(active.checkpoint_sha256 || active.checkpoint || "")
+            === String(row.checkpoint_sha256 || row.checkpoint || "");
+        return '<option value="' + index + '"' + (activeMatch ? " selected" : "")
+          + '>' + escapeHtml(label) + '</option>';
+      }).join("")
+      + '</select></label>';
+  }
+  return '<div class="evaluation-posthoc-localization">'
+    + '<div class="evaluation-posthoc-heading"><strong>Post-hoc localization</strong>'
+    + '<span>No Robo-Dopamine rerun; uses saved fused progress + hop.</span></div>'
+    + '<div class="evaluation-posthoc-controls">'
+    + '<label class="evaluation-posthoc-checkpoint"><span>Localization checkpoint</span>'
+    + '<input type="text" data-posthoc-localization-ckpt value="' + escapeHtml(selectedCheckpoint)
+    + '" placeholder="outputs/robo_localization/.../repeat_XX.pt"></label>'
+    + historyHtml
+    + '<button type="button" class="ghost-button" data-run-posthoc-localization="current">Current rollout</button>'
+    + '<button type="button" class="ghost-button" data-run-posthoc-localization="all">All in this run</button>'
+    + '</div><div class="evaluation-meta" data-posthoc-localization-status></div></div>';
+}
+
+function baselineCardCollapsed(method) {
+  return Boolean(state.baselineCollapsed && state.baselineCollapsed[method]);
+}
+
+function persistBaselineCollapsed() {
+  try {
+    sessionStorage.setItem(
+      "lf3r.results.baselineCollapsed",
+      JSON.stringify(state.baselineCollapsed || {})
+    );
+  } catch (_error) {}
+}
+
 function renderEvaluationHistory(result) {
   var samples = result.samples || [];
   if (!samples.length) return '<div class="evaluation-empty">No per-frame output history.</div>';
@@ -1486,7 +1537,8 @@ function renderEvaluationCard(method, result, record) {
     : '<span class="evaluation-meta">Condition view only</span>';
   var body = renderBaselineRunControls(method, result, record);
   if (available) {
-    body += renderLocalizationPredictionSummary(method, result)
+    body += renderPosthocLocalizationControls(method, result)
+      + renderLocalizationPredictionSummary(method, result)
       + renderSignalChart(method, result, record)
       + '<div class="evaluation-current">'
       + '<div class="evaluation-current-body">'
@@ -1498,11 +1550,18 @@ function renderEvaluationCard(method, result, record) {
   if (validation.message && available && status !== "ok") {
     body += '<div class="evaluation-meta">' + escapeHtml(validation.message) + "</div>";
   }
-  return '<article class="evaluation-card ' + (available ? "available" : "unavailable") + '" data-evaluation-method="' + escapeHtml(method) + '">'
+  var collapsed = baselineCardCollapsed(method);
+  return '<article class="evaluation-card ' + (available ? "available" : "unavailable")
+    + (collapsed ? ' is-collapsed' : '') + '" data-evaluation-method="' + escapeHtml(method) + '">'
     + '<div class="evaluation-card-header"><div class="evaluation-card-title">' + escapeHtml(result.label || method)
     + ' <span class="evaluation-badge ' + escapeHtml(status) + '">' + escapeHtml(status) + "</span></div>"
-    + '<div class="evaluation-card-actions">' + action + "</div></div>"
-    + body + "</article>";
+    + '<div class="evaluation-card-actions">' + action
+    + '<button type="button" class="ghost-button evaluation-card-toggle" data-toggle-baseline-card="'
+    + escapeHtml(method) + '" aria-expanded="' + String(!collapsed)
+    + '" title="' + (collapsed ? "Expand" : "Collapse") + ' baseline result">'
+    + (collapsed ? "Expand" : "Collapse") + '</button></div></div>'
+    + '<div class="evaluation-card-body"' + (collapsed ? ' hidden' : '') + '>'
+    + body + "</div></article>";
 }
 
 function renderEvaluationPanel(payload) {
@@ -1556,6 +1615,71 @@ function updateEvaluationCurrent() {
       output.hidden = !text.trim();
     }
   });
+}
+
+async function runPosthocLocalization(scope, button) {
+  var record = selectedRollout();
+  if (!record || !state.evaluation || !state.evaluation.methods) return;
+  var result = state.evaluation.methods.robo_dopamine;
+  if (!result || !result.available || !result.run || !result.run.run_root) return;
+  var card = button.closest("[data-evaluation-method]");
+  var input = card && card.querySelector("[data-posthoc-localization-ckpt]");
+  var status = card && card.querySelector("[data-posthoc-localization-status]");
+  var checkpoint = input ? input.value.trim() : "";
+  if (!checkpoint) {
+    if (status) status.textContent = "Enter a localization checkpoint first.";
+    return;
+  }
+  state.roboPosthocCheckpoint = checkpoint;
+  try {
+    sessionStorage.setItem("lf3r.results.roboPosthocCheckpoint", checkpoint);
+  } catch (_error) {}
+  var original = button.textContent;
+  button.disabled = true;
+  button.textContent = scope === "all" ? "Applying…" : "Running…";
+  if (status) {
+    status.textContent = scope === "all"
+      ? "Applying checkpoint to every saved fused rollout in this Robo-Dopamine run…"
+      : "Running localization head on this saved fused result…";
+  }
+  try {
+    var response = await fetch(
+      "/api/baselines/posthoc-localization/" + encodeURIComponent(record.id),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          run_root: result.run.run_root,
+          checkpoint: checkpoint,
+          scope: scope
+        })
+      }
+    );
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Post-hoc localization failed");
+    var data = payload.posthoc_localization || {};
+    var completed = Array.isArray(data.results) ? data.results.length : 0;
+    var failed = Array.isArray(data.errors) ? data.errors.length : 0;
+    state.baselineRunNotice = "Post-hoc localization: " + completed
+      + " result(s)" + (failed ? ", " + failed + " skipped/failed" : "");
+    await loadEvaluation(record.id);
+  } catch (error) {
+    if (status) status.textContent = "Post-hoc localization error: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function selectPosthocLocalization(select) {
+  if (!state.evaluation || !state.evaluation.methods) return;
+  var result = state.evaluation.methods.robo_dopamine;
+  if (!result || !Array.isArray(result.posthoc_localizations)) return;
+  var index = Number(select.value);
+  var chosen = result.posthoc_localizations[index];
+  if (!chosen) return;
+  result.localization_prediction = chosen;
+  renderEvaluationPanel(state.evaluation);
 }
 
 async function loadEvaluation(rolloutId) {
@@ -2354,6 +2478,16 @@ async function pollBaselineJob(jobId, rolloutId) {
 
 
 function installEvents() {
+  try {
+    var collapsed = JSON.parse(
+      sessionStorage.getItem("lf3r.results.baselineCollapsed") || "{}"
+    );
+    if (collapsed && typeof collapsed === "object") {
+      state.baselineCollapsed = collapsed;
+    }
+    state.roboPosthocCheckpoint =
+      sessionStorage.getItem("lf3r.results.roboPosthocCheckpoint") || "";
+  } catch (_error) {}
   ["searchInput", "originFilter", "manifestFilter", "outcomeFilter", "reviewFilter"].forEach(function (id) {
     byId(id).addEventListener(id === "searchInput" ? "input" : "change", applyFilters);
   });
@@ -2450,6 +2584,11 @@ function installEvents() {
     loadEvaluation(record.id);
   });
   byId("evaluationMethods").addEventListener("change", function (event) {
+    var posthocSelect = event.target.closest("[data-posthoc-localization-select]");
+    if (posthocSelect) {
+      selectPosthocLocalization(posthocSelect);
+      return;
+    }
     var select = event.target.closest("[data-evaluation-run-select]");
     if (!select) return;
     var record = selectedRollout();
@@ -2460,6 +2599,26 @@ function installEvents() {
     loadEvaluation(record.id);
   });
   byId("evaluationMethods").addEventListener("click", function (event) {
+    var collapseButton = event.target.closest("[data-toggle-baseline-card]");
+    if (collapseButton) {
+      var methodName = collapseButton.dataset.toggleBaselineCard;
+      state.baselineCollapsed[methodName] = !baselineCardCollapsed(methodName);
+      persistBaselineCollapsed();
+      var card = collapseButton.closest("[data-evaluation-method]");
+      var body = card && card.querySelector(".evaluation-card-body");
+      var collapsed = baselineCardCollapsed(methodName);
+      if (card) card.classList.toggle("is-collapsed", collapsed);
+      if (body) body.hidden = collapsed;
+      collapseButton.textContent = collapsed ? "Expand" : "Collapse";
+      collapseButton.setAttribute("aria-expanded", String(!collapsed));
+      collapseButton.title = (collapsed ? "Expand" : "Collapse") + " baseline result";
+      return;
+    }
+    var posthocButton = event.target.closest("[data-run-posthoc-localization]");
+    if (posthocButton) {
+      runPosthocLocalization(posthocButton.dataset.runPosthocLocalization, posthocButton);
+      return;
+    }
     var applyButton = event.target.closest("[data-apply-baseline-run]");
     if (applyButton) {
       var record = selectedRollout();
