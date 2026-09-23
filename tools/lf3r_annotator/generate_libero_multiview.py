@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create three-view LIBERO review videos by replaying recorded rollout actions.
+"""Create separate per-camera LIBERO videos by replaying recorded rollout actions.
 
 This is intentionally a post-processing step. It does not query OpenVLA and it
 never changes the canonical single-view MP4 used by LF3R baselines.
@@ -92,21 +92,12 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
     return np.ascontiguousarray(image[::-1, ::-1])
 
 
-def compose_frame(obs: dict) -> np.ndarray:
-    frames = [oriented_rgb(obs, camera) for camera in CAMERAS]
-    height = frames[0].shape[0]
-    width = frames[0].shape[1]
-    for camera, frame in zip(CAMERAS, frames):
-        if frame.shape != (height, width, 3):
-            raise ValueError(f"Camera {camera} has inconsistent frame shape {frame.shape}")
-    return np.concatenate(frames, axis=1)
-
-
-def sidecar_paths(video: Path) -> tuple[Path, Path]:
-    return (
-        video.with_name(video.stem + ".multiview.mp4"),
-        video.with_name(video.stem + ".multiview.json"),
-    )
+def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
+    camera_paths = {
+        camera: video.with_name(video.stem + f".{camera}.mp4")
+        for camera in CAMERAS
+    }
+    return camera_paths, video.with_name(video.stem + ".multiview.json")
 
 
 def rollout_videos(run_dir: Path) -> Iterable[Path]:
@@ -121,7 +112,7 @@ def record_rollout(
     video: Path,
     record_resolution: int,
     fps: float,
-) -> Path:
+) -> dict[str, Path]:
     match = ROLLOUT_RE.fullmatch(video.name)
     if match is None:
         raise ValueError(f"Unexpected rollout filename: {video.name}")
@@ -134,14 +125,16 @@ def record_rollout(
             f"Episode index {episode_idx} exceeds available initial states for task {task_id}"
         )
     actions = read_actions(video.with_suffix(".csv"))
-    output_path, metadata_path = sidecar_paths(video)
-    if output_path.exists() or metadata_path.exists():
+    camera_paths, metadata_path = sidecar_paths(video)
+    existing = [path for path in [*camera_paths.values(), metadata_path] if path.exists()]
+    if existing:
+        names = ", ".join(path.name for path in existing)
         raise FileExistsError(
-            f"Refusing to overwrite existing three-view artifact for {video.name}"
+            f"Refusing to overwrite existing multiview artifact(s) for {video.name}: {names}"
         )
 
     env = make_env(task, record_resolution)
-    writer = None
+    writers: dict[str, object] = {}
     frame_count = 0
     try:
         env.reset()
@@ -149,28 +142,37 @@ def record_rollout(
         for _ in range(10):
             obs, _, _, _ = env.step([0, 0, 0, 0, 0, 0, -1])
 
-        writer = imageio.get_writer(str(output_path), fps=fps)
+        writers = {
+            camera: imageio.get_writer(str(path), fps=fps)
+            for camera, path in camera_paths.items()
+        }
         for action in actions:
-            writer.append_data(compose_frame(obs))
+            for camera in CAMERAS:
+                writers[camera].append_data(oriented_rgb(obs, camera))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
     except Exception:
-        if output_path.exists():
-            output_path.unlink()
+        for path in camera_paths.values():
+            if path.exists():
+                path.unlink()
         raise
     finally:
-        if writer is not None:
+        for writer in writers.values():
             writer.close()
         env.close()
 
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "video_view_mode": "libero_three_view",
-        "multiview_layout": "horizontal_triptych",
+        "multiview_layout": "separate_videos",
         "multiview_cameras": list(CAMERAS),
+        "camera_video_paths": {
+            camera: path.name
+            for camera, path in camera_paths.items()
+        },
         "record_resolution": int(record_resolution),
-        "composite_width": int(record_resolution) * len(CAMERAS),
-        "composite_height": int(record_resolution),
+        "camera_width": int(record_resolution),
+        "camera_height": int(record_resolution),
         "fps": float(fps),
         "frames": frame_count,
         "source_video": video.name,
@@ -185,11 +187,12 @@ def record_rollout(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    outputs = ",".join(f"{camera}={path.name}" for camera, path in camera_paths.items())
     print(
         "LF3R_MULTIVIEW_RECORDED "
-        f"source={video.name} output={output_path.name} frames={frame_count}"
+        f"source={video.name} outputs={outputs} frames={frame_count}"
     )
-    return output_path
+    return camera_paths
 
 
 def main() -> None:

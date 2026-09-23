@@ -606,8 +606,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         multiview = (TOOL_ROOT / "generate_libero_multiview.py").read_text(encoding="utf-8")
         self.assertIn('CAMERAS = ("agentview", "sideview", "robot0_eye_in_hand")', multiview)
         self.assertIn("ACTION_FIELDS", multiview)
-        self.assertIn("horizontal_triptych", multiview)
-        self.assertIn(".multiview.mp4", multiview)
+        self.assertIn('"multiview_layout": "separate_videos"', multiview)
+        self.assertIn('"camera_video_paths"', multiview)
+        self.assertIn('video.stem + f".{camera}.mp4"', multiview)
+        self.assertNotIn(".multiview.mp4", multiview)
         self.assertNotIn("save_safe_features=True", readme)
         self.assertIn("official .pkl", readme)
 

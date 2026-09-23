@@ -398,21 +398,31 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/16")
             self.assertEqual(response.read(), b"2345")
 
-    def test_video_endpoint_prefers_multiview_and_falls_back_to_canonical(self) -> None:
-        multiview = self.root / "outputs" / "sample.multiview.mp4"
-        multiview.write_bytes(b"THREEVIEW")
-        self.rollout["multiview_video_path"] = "outputs/sample.multiview.mp4"
+    def test_video_endpoint_uses_canonical_by_default_and_explicit_camera_path(self) -> None:
+        side = self.root / "outputs" / "sample.sideview.mp4"
+        wrist = self.root / "outputs" / "sample.robot0_eye_in_hand.mp4"
+        side.write_bytes(b"SIDEVIEW")
+        wrist.write_bytes(b"WRIST")
+        self.rollout["camera_video_paths"] = {
+            "sideview": "outputs/sample.sideview.mp4",
+            "robot0_eye_in_hand": "outputs/sample.robot0_eye_in_hand.mp4",
+        }
+        self.rollout["multiview_video_path"] = "outputs/legacy-composite.mp4"
+        (self.root / "outputs" / "legacy-composite.mp4").write_bytes(b"LEGACY")
         self.app.manifest_path.write_text(
             json.dumps(self.rollout) + "\n",
             encoding="utf-8",
         )
 
         with self.request("/api/videos/sample-rollout") as response:
-            self.assertEqual(response.read(), b"THREEVIEW")
-
-        multiview.unlink()
-        with self.request("/api/videos/sample-rollout") as response:
             self.assertEqual(response.read(), b"0123456789abcdef")
+        with self.request("/api/videos/sample-rollout?camera=sideview") as response:
+            self.assertEqual(response.read(), b"SIDEVIEW")
+        with self.request("/api/videos/sample-rollout?camera=robot0_eye_in_hand") as response:
+            self.assertEqual(response.read(), b"WRIST")
+        with self.assertRaises(urllib.error.HTTPError) as context:
+            self.request("/api/videos/sample-rollout?camera=missing")
+        self.assertEqual(context.exception.code, 404)
 
     def test_instruction_variant_selector_is_explicit_and_does_not_reuse_full_outputs(self) -> None:
         variant_root = self.root / "tools" / "lf3r_annotator" / "instruction_variants" / "libero_10_v1"
@@ -2241,7 +2251,7 @@ print('fake label loss ablation complete')
         self.assertEqual(job["render_resolution"], 320)
         self.assertEqual(job["record_resolution"], 192)
         self.assertEqual(job["video_view_mode"], "libero_three_view")
-        self.assertEqual(job["multiview_layout"], "horizontal_triptych")
+        self.assertEqual(job["multiview_layout"], "separate_videos")
         self.assertEqual(
             job["multiview_cameras"],
             ["agentview", "sideview", "robot0_eye_in_hand"],
