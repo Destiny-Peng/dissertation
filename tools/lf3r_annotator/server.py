@@ -7141,7 +7141,7 @@ class RolloutGenerationService:
             "record_resolution": record_resolution,
             "video_view_mode": video_view_mode,
             "multiview_layout": (
-                "horizontal_triptych"
+                "separate_videos"
                 if video_view_mode == "libero_three_view"
                 else None
             ),
