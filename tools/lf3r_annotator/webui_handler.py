@@ -147,8 +147,14 @@ class WebUIHandler(server.LF3RHandler):
         except KeyError:
             self.json_error(HTTPStatus.NOT_FOUND, "Unknown project-tool job")
             return
+        except server.ValidationError as exc:
+            self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
         except (TypeError, ValueError) as exc:
             self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
+        except OSError as exc:
+            self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
             return
 
         super().do_GET()
@@ -245,6 +251,13 @@ class WebUIHandler(server.LF3RHandler):
             path == "/api/baselines/run-batch"
             or path.startswith("/api/baselines/run/")
         ):
-            self.app.refresh_manifest_catalog()
+            try:
+                self.app.refresh_manifest_catalog()
+            except server.ValidationError as exc:
+                self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            except OSError as exc:
+                self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+                return
 
         super().do_POST()
