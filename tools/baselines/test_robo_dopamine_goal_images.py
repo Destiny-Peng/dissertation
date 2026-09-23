@@ -112,22 +112,23 @@ def test_non_libero10_keeps_blank_goal_fallback() -> None:
 
 
 
-def test_robo_camera_inputs_use_official_three_view_slots() -> None:
+def test_robo_camera_inputs_use_shared_wrist_for_three_slots() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
         canonical = root / "canonical.mp4"
+        high = root / "cam_high.mp4"
+        wrist = root / "cam_left_wrist.mp4"
         canonical.touch()
-        paths = {}
-        for slot in robo_dopamine_runner.ROBO_CAMERA_SLOTS:
-            path = root / f"{slot}.mp4"
-            path.touch()
-            paths[slot] = path
+        high.touch()
+        wrist.touch()
 
         resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
             {
                 "id": "multi-rollout",
                 "camera_video_paths": {
-                    slot: path.name for slot, path in paths.items()
+                    "cam_high": high.name,
+                    "cam_left_wrist": wrist.name,
+                    "cam_right_wrist": wrist.name,
                 },
             },
             make_args(root),
@@ -136,8 +137,11 @@ def test_robo_camera_inputs_use_official_three_view_slots() -> None:
 
         assert mode == "multi_view"
         assert resolved == {
-            slot: str(path.resolve()) for slot, path in paths.items()
+            "cam_high": str(high.resolve()),
+            "cam_left_wrist": str(wrist.resolve()),
+            "cam_right_wrist": str(wrist.resolve()),
         }
+        assert resolved["cam_left_wrist"] == resolved["cam_right_wrist"]
 
 
 def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     test_explicit_goal_image_overrides_task_default()
     test_missing_libero10_task_goal_fails_loudly()
     test_non_libero10_keeps_blank_goal_fallback()
-    test_robo_camera_inputs_use_official_three_view_slots()
+    test_robo_camera_inputs_use_shared_wrist_for_three_slots()
     test_robo_camera_inputs_repeat_canonical_for_single_view()
     test_robo_camera_inputs_reject_partial_official_mapping()
     print("ROBODOPAMINE_GOAL_IMAGE_TESTS_OK")
