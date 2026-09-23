@@ -21,20 +21,20 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
         suite_dir.mkdir(parents=True)
         canonical = suite_dir / "task0--ep0--succ1.mp4"
         canonical.write_bytes(b"canonical")
+        high = suite_dir / "task0--ep0--succ1.cam_high.mp4"
+        wrist = suite_dir / "task0--ep0--succ1.cam_left_wrist.mp4"
+        high.write_bytes(b"high")
+        wrist.write_bytes(b"wrist")
         cameras = {
-            slot: suite_dir / f"task0--ep0--succ1.{slot}.mp4"
-            for slot in build_manifest.ROBO_DOPAMINE_CAMERA_SLOTS
+            "cam_high": high,
+            "cam_left_wrist": wrist,
+            "cam_right_wrist": wrist,
         }
-        for path in cameras.values():
-            path.write_bytes(b"camera")
         metadata = {
             "schema_version": 1,
             "camera_video_paths": {
                 slot: path.name for slot, path in cameras.items()
             },
-            "camera_source_names": dict(
-                build_manifest.ROBO_DOPAMINE_CAMERA_SOURCES
-            ),
             "consumer_interface": "robo_dopamine_three_view",
         }
         canonical.with_name(canonical.stem + ".camera_videos.json").write_text(
@@ -43,7 +43,7 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
         )
         return canonical, cameras
 
-    def test_build_record_emits_robo_dopamine_camera_video_paths(self) -> None:
+    def test_build_record_emits_shared_wrist_camera_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             canonical, cameras = self.make_rollout(root)
@@ -51,7 +51,7 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
                 build_manifest,
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
-            ):
+            ) as probe:
                 record = build_manifest.build_record(canonical, root, {})
 
             self.assertIsNotNone(record)
@@ -65,21 +65,18 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
                 },
             )
             self.assertEqual(
-                record["camera_source_names"],
-                build_manifest.ROBO_DOPAMINE_CAMERA_SOURCES,
+                record["camera_video_paths"]["cam_left_wrist"],
+                record["camera_video_paths"]["cam_right_wrist"],
             )
-            for removed in (
-                "multiview_video_path",
-                "multiview_layout",
-                "multiview_cameras",
-            ):
-                self.assertNotIn(removed, record)
+            self.assertNotIn("camera_source_names", record)
+            # canonical + two unique camera files; shared wrist is probed once.
+            self.assertEqual(probe.call_count, 3)
 
-    def test_build_record_rejects_partial_robo_camera_set(self) -> None:
+    def test_build_record_rejects_missing_shared_wrist_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             canonical, cameras = self.make_rollout(root)
-            cameras["cam_right_wrist"].unlink()
+            cameras["cam_left_wrist"].unlink()
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
