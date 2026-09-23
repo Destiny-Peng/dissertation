@@ -171,7 +171,23 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         label_loss_analysis = (TOOL_ROOT / "static/analysis-robo-label-loss.js").read_text(encoding="utf-8")
-        server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
+        server = "\n".join(
+            (TOOL_ROOT / name).read_text(encoding="utf-8")
+            for name in [
+                "server.py",
+                "backend_core.py",
+                "stores.py",
+                "baseline_constants.py",
+                "baseline_index.py",
+                "baseline_service.py",
+                "analysis_constants.py",
+                "analysis_service.py",
+                "analysis_jobs.py",
+                "rollout_service.py",
+                "application.py",
+                "http_handler.py",
+            ]
+        )
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
 
         for route in ["#/review", "#/analysis", "#/settings"]:
