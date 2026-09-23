@@ -414,6 +414,101 @@ body[data-view="runs"] .runs-manifest-summary {
   border-radius: 7px;
 }
 
+body[data-view="runs"] .runs-manifest-choice-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .55rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-toolbar > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: .16rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-toolbar strong {
+  color: #cfd8de;
+  font-size: .78rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-toolbar span {
+  color: #7f8c96;
+  font-size: .7rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-toolbar > div:last-child {
+  display: flex;
+  gap: .4rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-toolbar .ghost-button {
+  width: auto;
+  min-height: 32px;
+  padding: .34rem .6rem;
+  font-size: .72rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-list {
+  display: grid;
+  gap: .4rem;
+  max-height: 15rem;
+  overflow: auto;
+  padding: .45rem;
+  background: #0d141a;
+  border: 1px solid #27343d;
+  border-radius: 8px;
+}
+
+body[data-view="runs"] .runs-manifest-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  padding: .5rem .55rem;
+  background: #121920;
+  border: 1px solid #242f39;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+body[data-view="runs"] .runs-manifest-choice:hover {
+  border-color: #3c4b57;
+}
+
+body[data-view="runs"] .runs-manifest-choice input {
+  flex: 0 0 auto;
+  margin-top: .16rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice > span {
+  min-width: 0;
+  display: grid;
+  gap: .14rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice strong {
+  color: #cbd5dc;
+  font-size: .76rem;
+  font-weight: 650;
+}
+
+body[data-view="runs"] .runs-manifest-choice small,
+body[data-view="runs"] .runs-manifest-choice-empty {
+  color: #7f8c96;
+  font-size: .69rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+body[data-view="runs"] .runs-manifest-choice-empty {
+  padding: .45rem .5rem;
+}
+
+body[data-view="runs"] .runs-manifest-choice-empty.error {
+  color: #d29a91;
+}
+
 @media (max-width: 1180px) {
   body[data-view="runs"] .runs-custom-layout { grid-template-columns: 1fr; }
   body[data-view="runs"] .runs-tool-activity { position: static; }
