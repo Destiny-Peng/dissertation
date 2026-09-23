@@ -11,8 +11,16 @@ from unittest import mock
 import robo_dopamine_runner
 
 
-def make_args(root: Path, goal_image: Path | None = None) -> argparse.Namespace:
-    return argparse.Namespace(data_root=root, goal_image=goal_image)
+def make_args(
+    root: Path,
+    goal_image: Path | None = None,
+    camera_mode: str = "auto",
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        data_root=root,
+        goal_image=goal_image,
+        robo_camera_mode=camera_mode,
+    )
 
 
 def make_config(root: Path) -> dict[str, Path]:
@@ -160,6 +168,52 @@ def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
         assert set(resolved.values()) == {str(canonical.resolve())}
 
 
+
+def test_robo_camera_inputs_force_single_view_even_when_multiview_exists() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        canonical = root / "canonical.mp4"
+        high = root / "cam_high.mp4"
+        wrist = root / "cam_wrist.mp4"
+        canonical.touch()
+        high.touch()
+        wrist.touch()
+
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {
+                "id": "force-single",
+                "camera_video_paths": {
+                    "cam_high": high.name,
+                    "cam_wrist": wrist.name,
+                },
+            },
+            make_args(root, camera_mode="single_view"),
+            canonical,
+        )
+
+        assert mode == "single_view"
+        assert set(resolved.values()) == {str(canonical.resolve())}
+
+
+def test_robo_camera_inputs_require_multiview_when_requested() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        canonical = root / "canonical.mp4"
+        canonical.touch()
+
+        try:
+            robo_dopamine_runner.resolve_robo_camera_inputs(
+                {"id": "missing-multiview"},
+                make_args(root, camera_mode="multi_view"),
+                canonical,
+            )
+        except ValueError as error:
+            assert "multi_view requires camera_video_paths" in str(error)
+            assert "cam_high" in str(error)
+            assert "cam_wrist" in str(error)
+        else:
+            raise AssertionError("Explicit multi_view did not reject missing camera videos")
+
 def test_robo_camera_inputs_reject_partial_dataset_mapping() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
@@ -191,5 +245,7 @@ if __name__ == "__main__":
     test_non_libero10_keeps_blank_goal_fallback()
     test_robo_camera_inputs_adapt_physical_wrist_to_three_slots()
     test_robo_camera_inputs_repeat_canonical_for_single_view()
+    test_robo_camera_inputs_force_single_view_even_when_multiview_exists()
+    test_robo_camera_inputs_require_multiview_when_requested()
     test_robo_camera_inputs_reject_partial_dataset_mapping()
     print("ROBODOPAMINE_GOAL_IMAGE_TESTS_OK")
