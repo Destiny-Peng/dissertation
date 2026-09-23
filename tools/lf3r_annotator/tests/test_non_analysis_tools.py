@@ -124,7 +124,7 @@ class NonAnalysisToolTests(unittest.TestCase):
         )
         self.assertIn("transcode_manifest_videos_h264.py", command[1])
         self.assertEqual(command.count("--manifest"), 1)
-        self.assertNotIn("multiview_video_path", " ".join(command))
+        self.assertNotIn("camera_video_paths", " ".join(command))
 
     def test_manifest_batch_transcode_requires_existing_jsonl(self):
         with self.assertRaisesRegex(ValueError, "manifest does not exist"):
