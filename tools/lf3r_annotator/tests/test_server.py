@@ -17,7 +17,7 @@ from http.server import ThreadingHTTPServer
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import LF3RApplication, make_handler
+from server import LF3RApplication, LF3RHandler, make_handler
 
 
 class ServerTest(unittest.TestCase):
@@ -360,6 +360,30 @@ class ServerTest(unittest.TestCase):
                 {"baseline": "not-a-baseline", "gpu": "0", "memory_utilization": 0.65},
             )
         self.assertEqual(caught.exception.code, 400)
+
+    def test_json_response_ignores_client_disconnects(self) -> None:
+        class ResetWriter:
+            def write(self, _data: bytes) -> int:
+                raise ConnectionResetError(104, "Connection reset by peer")
+
+        handler = object.__new__(LF3RHandler)
+        handler.wfile = ResetWriter()
+        handler.close_connection = False
+        handler.send_response = lambda *_args, **_kwargs: None
+        handler.send_header = lambda *_args, **_kwargs: None
+        handler.end_headers = lambda: None
+
+        handler.json_response(200, {"ok": True})
+        self.assertTrue(handler.close_connection)
+
+        handler.close_connection = False
+
+        def broken_headers() -> None:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        handler.end_headers = broken_headers
+        handler.json_response(200, {"ok": True})
+        self.assertTrue(handler.close_connection)
 
     def test_control_prefixed_http_requestline_is_recovered(self) -> None:
         address = ("127.0.0.1", self.server.server_port)
