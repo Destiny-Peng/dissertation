@@ -511,14 +511,14 @@ class JobCoordinator:
         self.active_jobs: dict[str, str] = {}
 
     def acquire(self, job_id: str, role: str = "compute") -> None:
+        """Serialize manifest writers only; independent compute may overlap."""
         with self.lock:
-            if role == "manifest_writer" and self.active_jobs:
+            if role == "manifest_writer" and any(
+                active_role == "manifest_writer"
+                for active_role in self.active_jobs.values()
+            ):
                 raise JobConflictError(
-                    "Rollout generation is exclusive because it rebuilds the manifest"
-                )
-            if any(active_role == "manifest_writer" for active_role in self.active_jobs.values()):
-                raise JobConflictError(
-                    "A rollout-generation job is rebuilding the manifest"
+                    "Another rollout-generation job is already rebuilding the manifest"
                 )
             self.active_jobs[job_id] = role
 
@@ -535,10 +535,26 @@ class JobCoordinator:
             return dict(self.active_jobs)
 
 
+DYNAMIC_SCOPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+RESERVED_RUN_SCOPES = {"all", "controlled_analysis"}
+
+
+def _is_controlled_record(record: dict[str, Any]) -> bool:
+    return (
+        record.get("analysis_partition") == "controlled_analysis"
+        or record.get("source_kind") == "controlled_injected"
+    )
+
+
 def validate_run_scope(scope: Any) -> str:
-    value = str(scope or "libero_10")
-    if value not in RUN_SCOPES:
-        raise ValidationError("scope must be one of: " + ", ".join(RUN_SCOPES))
+    value = str(scope or "all").strip()
+    if value in RESERVED_RUN_SCOPES:
+        return value
+    if not DYNAMIC_SCOPE_RE.fullmatch(value):
+        raise ValidationError(
+            "scope must be 'all', 'controlled_analysis', or a task_suite name "
+            "present in the loaded manifests"
+        )
     return value
 
 
@@ -553,11 +569,15 @@ def validate_instruction_condition(condition: Any) -> str:
 
 
 def record_matches_scope(record: dict[str, Any], scope: str) -> bool:
+    scope = validate_run_scope(scope)
     if scope == "all":
         return True
-    if scope in {"libero_10", "libero_spatial"}:
-        return record.get("task_suite") == scope
-    return record.get("analysis_partition") == scope
+    if scope == "controlled_analysis":
+        return _is_controlled_record(record)
+    return (
+        str(record.get("task_suite") or "") == scope
+        and not _is_controlled_record(record)
+    )
 
 
 def select_scope_records(records: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
@@ -584,23 +604,36 @@ def load_manifest_records(path: Path) -> list[dict[str, Any]]:
 
 
 def run_rollout_ids(run_path: Path) -> set[str]:
-    jobs_path = run_path / "jobs.jsonl"
-    if not jobs_path.is_file():
-        return set()
+    """Return rollout IDs whose worker records are already complete."""
     result: set[str] = set()
-    try:
-        with jobs_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                if row.get("status") != "complete":
-                    continue
-                rollout_id = row.get("rollout_id", row.get("id"))
-                if isinstance(rollout_id, str) and ROLLOUT_ID_RE.fullmatch(rollout_id):
-                    result.add(rollout_id)
-    except (OSError, json.JSONDecodeError):
-        return set()
+    paths = [run_path / "jobs.jsonl"]
+    workers_root = run_path / "workers"
+    if workers_root.is_dir():
+        paths.extend(sorted(workers_root.glob("worker-*/jobs.jsonl")))
+
+    for jobs_path in paths:
+        if not jobs_path.is_file():
+            continue
+        try:
+            with jobs_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Readers may race the final append of one JSONL row.
+                        continue
+                    if row.get("status") != "complete":
+                        continue
+                    rollout_id = row.get("rollout_id", row.get("id"))
+                    if (
+                        isinstance(rollout_id, str)
+                        and ROLLOUT_ID_RE.fullmatch(rollout_id)
+                    ):
+                        result.add(rollout_id)
+        except OSError:
+            continue
     return result
 
 
@@ -7261,6 +7294,10 @@ class RolloutGenerationService:
 
 
 class LF3RApplication:
+    coordinator_class = JobCoordinator
+    baseline_service_class = BaselineService
+    project_tool_service_class = None
+
     def __init__(
         self,
         project_root: Path,
@@ -7284,9 +7321,9 @@ class LF3RApplication:
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
-        self.job_coordinator = JobCoordinator()
+        self.job_coordinator = self.coordinator_class()
         self.tmux = TmuxJobSupervisor(self.project_root, tmux_binary=tmux_binary)
-        self.baselines = BaselineService(
+        self.baselines = self.baseline_service_class(
             self.project_root,
             self.manifest_path,
             self.job_coordinator,
@@ -7310,6 +7347,11 @@ class LF3RApplication:
         self.rollout_jobs = RolloutGenerationService(
             self.project_root, self.manifest_path, self.job_coordinator, self.tmux
         )
+        if self.project_tool_service_class is not None:
+            self.project_tools = self.project_tool_service_class(
+                self.project_root,
+                self.tmux,
+            )
         self.tmux.recover()
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
