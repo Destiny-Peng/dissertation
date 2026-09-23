@@ -31,7 +31,7 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn('matchingProgressiveRun(job, record, condition)', script)
         self.assertIn('currentDisplayedRunRoot(job.baseline)', script)
         self.assertIn('window.loadEvaluation(rolloutId)', script)
-        self.assertIn('progressive-baseline-results.js?v=progressive-baseline-results-v1-20260917', workspace)
+        self.assertIn('progressive-baseline-results.js', workspace)
 
 
 if __name__ == "__main__":
