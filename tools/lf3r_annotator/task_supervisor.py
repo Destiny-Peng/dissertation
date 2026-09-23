@@ -301,6 +301,110 @@ class TmuxJobSupervisor:
         self._start_monitor(job_id, on_poll, on_finished)
         return dict(job)
 
+    def submit_async(
+        self,
+        job: dict[str, Any],
+        command: list[str],
+        log_path: Path,
+        interpreter: str | None = None,
+        environment: dict[str, str] | None = None,
+        on_poll: Callable[[dict[str, Any]], None] | None = None,
+        on_finished: Callable[[dict[str, Any], int | None, str | None], None] | None = None,
+    ) -> dict[str, Any]:
+        """Register a persistent queued job and launch tmux off the request thread."""
+        job_id = str(job["job_id"])
+        if not self.available:
+            raise TmuxSupervisorError(
+                "tmux is required for annotator jobs but was not found on PATH"
+            )
+        log_path = self._project_path(log_path)
+        with self.lock:
+            if job_id in self.jobs or self._record_path(job_id).exists():
+                raise TmuxSupervisorError(f"Job already exists: {job_id}")
+            session = self.SESSION_PREFIX + job_id
+            wrapper = self._write_wrapper(job_id, command, log_path, environment)
+            now = dt.datetime.now(dt.timezone.utc).isoformat()
+            job.update(
+                {
+                    "tmux_session": session,
+                    "tmux_state": "launch_pending",
+                    "persistent": True,
+                    "job_record_path": self._relative(self._record_path(job_id)),
+                    "wrapper_path": self._relative(wrapper),
+                    "exit_code_path": self._relative(self._exit_path(job_id)),
+                    "finished_at_path": self._relative(self._finished_path(job_id)),
+                    "argv": [str(item) for item in command],
+                    "working_directory": str(self.project_root),
+                    "tmux_created_at": now,
+                    "supervisor_status": "launch_pending",
+                }
+            )
+            if interpreter:
+                job["interpreter"] = interpreter
+            self.jobs[job_id] = job
+            self.persist(job)
+
+        threading.Thread(
+            target=self._launch_async_job,
+            args=(job_id, on_poll, on_finished),
+            name=f"lf3r-tmux-launch-{job_id}",
+            daemon=True,
+        ).start()
+        return dict(job)
+
+    def _launch_async_job(
+        self,
+        job_id: str,
+        on_poll: Callable[[dict[str, Any]], None] | None,
+        on_finished: Callable[[dict[str, Any], int | None, str | None], None] | None,
+    ) -> None:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                return
+            session = str(job["tmux_session"])
+            wrapper = self._wrapper_path(job_id)
+
+        try:
+            self._tmux(
+                ["new-session", "-d", "-s", session, "bash", str(wrapper)],
+                check=True,
+            )
+        except Exception as error:
+            with self.lock:
+                job = self.jobs.get(job_id)
+                if job is None:
+                    return
+                job["status"] = "failed"
+                job["tmux_state"] = "launch_failed"
+                job["supervisor_status"] = "launch_failed"
+                job["error"] = str(error)
+                job["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+                self.persist(job)
+            if on_finished:
+                try:
+                    on_finished(job, None, str(error))
+                except Exception as callback_error:
+                    with self.lock:
+                        current = self.jobs.get(job_id)
+                        if current is not None:
+                            current["error"] = str(callback_error)
+                            current["status"] = "failed"
+                            self.persist(current)
+            return
+
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                return
+            now = dt.datetime.now(dt.timezone.utc).isoformat()
+            job["status"] = "running"
+            job["tmux_state"] = "running"
+            job["supervisor_status"] = "monitoring"
+            job["started_at"] = job.get("started_at") or now
+            self.persist(job)
+        self._start_monitor(job_id, on_poll, on_finished)
+
     def _read_exit_code(self, job_id: str) -> int | None:
         path = self._exit_path(job_id)
         if not path.is_file():
