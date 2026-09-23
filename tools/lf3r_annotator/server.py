@@ -2852,6 +2852,19 @@ class BaselineService:
             self.baseline_root / "instruction_variants" / "libero_10"
         )
         self.web_logs_root = self.project_root / "logs" / "baselines" / "web_runs"
+        robo_python = os.environ.get("LF3R_ROBODOPAMINE_PYTHON")
+        if robo_python:
+            self.robo_python = Path(
+                os.path.abspath(Path(robo_python).expanduser())
+            )
+        else:
+            self.robo_python = (
+                self.project_root
+                / "conda_envs"
+                / "LF3R-robo-dopamine"
+                / "bin"
+                / "python"
+            )
         self.run_index = BaselineRunIndex(self.project_root, self.baseline_root)
         self.jobs: dict[str, dict[str, Any]] = {}
         self.jobs_lock = threading.Lock()
@@ -2980,6 +2993,151 @@ class BaselineService:
             "procedure_mode": metadata.get("procedure_mode") or metadata.get("arguments", {}).get("procvlm_procedure_mode"),
             "procedure_config": metadata.get("procedure_config") or metadata.get("arguments", {}).get("procvlm_procedure_config"),
         }
+
+    @staticmethod
+    def _posthoc_localization_summary(path: Path) -> dict[str, Any] | None:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        frame = payload.get("predicted_frame")
+        if frame is None:
+            return None
+        return {
+            key: payload.get(key)
+            for key in (
+                "generated_at",
+                "checkpoint",
+                "checkpoint_sha256",
+                "checkpoint_stage",
+                "checkpoint_config_id",
+                "checkpoint_repeat",
+                "checkpoint_seed",
+                "predicted_index",
+                "predicted_frame",
+                "predicted_logit",
+                "predicted_sigmoid",
+                "frame_count",
+                "source_prediction",
+            )
+        } | {"output_path": str(path)}
+
+    def _posthoc_localization_history(
+        self,
+        run_path: Path,
+        rollout_id: str,
+    ) -> list[dict[str, Any]]:
+        root = run_path / "raw" / rollout_id / "posthoc_localization"
+        if not root.is_dir():
+            return []
+        rows: list[dict[str, Any]] = []
+        for path in root.glob("*.json"):
+            summary = self._posthoc_localization_summary(path)
+            if summary is not None:
+                rows.append(summary)
+        rows.sort(
+            key=lambda row: str(row.get("generated_at") or ""),
+            reverse=True,
+        )
+        return rows
+
+    def run_posthoc_localization(
+        self,
+        rollout: dict[str, Any],
+        payload: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValidationError("Post-hoc localization request must be an object")
+        run_root = str(payload.get("run_root") or "").strip()
+        checkpoint_value = str(payload.get("checkpoint") or "").strip()
+        scope = str(payload.get("scope") or "current").strip()
+        if not run_root:
+            raise ValidationError("run_root is required")
+        if not checkpoint_value:
+            raise ValidationError("checkpoint is required")
+        if scope not in {"current", "all"}:
+            raise ValidationError("scope must be current or all")
+
+        run_path = self._project_path(run_root)
+        try:
+            run_path.relative_to(self.baseline_root)
+        except ValueError as error:
+            raise ValidationError("run_root must be inside outputs/baselines") from error
+        if not run_path.is_dir():
+            raise ValidationError("Selected Robo-Dopamine run does not exist")
+
+        checkpoint = self._project_path(checkpoint_value)
+        if not checkpoint.is_file():
+            raise ValidationError("Localization checkpoint does not exist")
+        if checkpoint.suffix.lower() not in {".pt", ".pth"}:
+            raise ValidationError("Localization checkpoint must be .pt or .pth")
+
+        python = self.robo_python
+        if not python.is_file() or not os.access(python, os.X_OK):
+            raise ValidationError(
+                "Robo-Dopamine Python is unavailable: " + str(python)
+            )
+        script = self.project_root / "tools" / "baselines" / "posthoc_robo_localization.py"
+        if not script.is_file():
+            raise ValidationError("Post-hoc localization helper is not installed")
+
+        if scope == "current":
+            worker_results = [
+                run_path / "raw" / str(rollout["id"]) / "worker_result.json"
+            ]
+        else:
+            worker_results = sorted(
+                path
+                for path in (run_path / "raw").glob("*/worker_result.json")
+                if path.is_file()
+            )
+        worker_results = [path for path in worker_results if path.is_file()]
+        if not worker_results:
+            raise ValidationError(
+                "No saved Robo-Dopamine worker_result.json was found for this selection"
+            )
+
+        command = [
+            str(python),
+            str(script),
+            "--project-root",
+            str(self.project_root),
+            "--checkpoint",
+            str(checkpoint),
+        ]
+        for path in worker_results:
+            command.extend(["--worker-result", str(path)])
+
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=str(self.project_root),
+                env={**os.environ, "CUDA_VISIBLE_DEVICES": ""},
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ValidationError(
+                "Post-hoc localization process failed to start: " + str(error)
+            ) from error
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise ValidationError(
+                "Post-hoc localization failed: " + detail[-4000:]
+            )
+        try:
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError) as error:
+            raise ValidationError(
+                "Post-hoc localization returned invalid JSON"
+            ) from error
+        if not isinstance(result, dict):
+            raise ValidationError("Post-hoc localization returned invalid payload")
+        return result
 
     def _pack(
         self,
@@ -3215,8 +3373,26 @@ class BaselineService:
             "_total_frames": total_frames,
             "kind": "model_scores_and_progress",
         }
+        posthoc_localizations = self._posthoc_localization_history(
+            run_path,
+            str(rollout["id"]),
+        )
+        if posthoc_localizations:
+            extra["posthoc_localizations"] = posthoc_localizations
+            latest_posthoc = dict(posthoc_localizations[0])
+            predicted_frame = latest_posthoc.get("predicted_frame")
+            if predicted_frame is not None:
+                latest_posthoc["predicted_frame"] = min(
+                    max(int(predicted_frame), 0),
+                    total_frames - 1,
+                )
+                extra["localization_prediction"] = latest_posthoc
+
         localization = result.get("localization_prediction")
-        if isinstance(localization, dict):
+        if (
+            "localization_prediction" not in extra
+            and isinstance(localization, dict)
+        ):
             localization = dict(localization)
             output_value = localization.get("output_path")
             if output_value:
