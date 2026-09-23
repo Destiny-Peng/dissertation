@@ -7140,13 +7140,17 @@ class RolloutGenerationService:
             "policy_resolution": config["policy_resolution"],
             "record_resolution": record_resolution,
             "video_view_mode": video_view_mode,
-            "multiview_layout": (
-                "separate_videos"
+            "camera_video_slots": (
+                ["cam_high", "cam_left_wrist", "cam_right_wrist"]
                 if video_view_mode == "libero_three_view"
                 else None
             ),
-            "multiview_cameras": (
-                ["agentview", "sideview", "robot0_eye_in_hand"]
+            "camera_source_names": (
+                {
+                    "cam_high": "agentview",
+                    "cam_left_wrist": "robot0_eye_in_hand",
+                    "cam_right_wrist": "sideview",
+                }
                 if video_view_mode == "libero_three_view"
                 else None
             ),
