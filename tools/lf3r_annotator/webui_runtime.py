@@ -195,7 +195,3 @@ server.BaselineService._read_method = _read_only_completed_progressive_rollout
 
 def main() -> None:
     webui_manifests.main()
-
-
-if __name__ == "__main__":
-    main()
