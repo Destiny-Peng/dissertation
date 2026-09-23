@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """WebUI integrations for baseline options and non-Analysis project tools.
 
-The core server remains the stable implementation. This entrypoint keeps the
-ProcVLM LoRA compatibility layer and adds bounded non-Analysis project-tool
-endpoints used by the Runs console.
+The core server remains the stable implementation. This module installs the
+ProcVLM LoRA option handling and bounded non-Analysis project-tool endpoints
+used by the Runs console.
 """
 
 from __future__ import annotations
