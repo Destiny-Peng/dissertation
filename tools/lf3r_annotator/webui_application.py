@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import server
+from non_analysis_tools import NonAnalysisToolService
 from webui_baseline import WebUIBaselineService
 
 
@@ -41,6 +42,7 @@ class WebUIApplication(server.LF3RApplication):
     """LF3R WebUI application exposing several manifests as one catalog."""
 
     baseline_service_class = WebUIBaselineService
+    project_tool_service_class = NonAnalysisToolService
 
     def __init__(
         self,
