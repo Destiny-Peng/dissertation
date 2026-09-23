@@ -45,6 +45,23 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             for needle in forbidden:
                 self.assertNotIn(needle, source, f"{name}: {needle}")
 
+    def test_obsolete_patch_modules_are_removed(self) -> None:
+        for name in [
+            "webui_integrations.py",
+            "webui_jobs.py",
+            "webui_manifests.py",
+        ]:
+            self.assertFalse((TOOL_ROOT / name).exists(), name)
+
+    def test_application_wires_explicit_service_subclass(self) -> None:
+        application = (TOOL_ROOT / "webui_application.py").read_text(encoding="utf-8")
+        handler = (TOOL_ROOT / "webui_handler.py").read_text(encoding="utf-8")
+        runtime = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
+        self.assertIn("baseline_service_class = WebUIBaselineService", application)
+        self.assertIn("class WebUIHandler(server.LF3RHandler):", handler)
+        self.assertIn("WebUIApplication(", runtime)
+        self.assertIn("_make_handler(app)", runtime)
+
     def test_scripts_use_only_stable_entrypoint(self) -> None:
         run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")
         stop_server = (TOOL_ROOT / "stop_server.sh").read_text(encoding="utf-8")
