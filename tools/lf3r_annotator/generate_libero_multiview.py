@@ -21,12 +21,9 @@ from libero.libero import benchmark, get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
 
 
-ROBO_CAMERA_SOURCES = {
-    "cam_high": "agentview",
-    "cam_left_wrist": "robot0_eye_in_hand",
-    "cam_right_wrist": "sideview",
-}
-CAMERA_SLOTS = tuple(ROBO_CAMERA_SOURCES)
+HIGH_CAMERA = "agentview"
+WRIST_CAMERA = "robot0_eye_in_hand"
+CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
 ACTION_FIELDS = (
     "action/dx",
     "action/dy",
@@ -76,7 +73,7 @@ def make_env(task, resolution: int) -> OffScreenRenderEnv:
     )
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
-        camera_names=list(dict.fromkeys(ROBO_CAMERA_SOURCES.values())),
+        camera_names=[HIGH_CAMERA, WRIST_CAMERA],
         camera_heights=resolution,
         camera_widths=resolution,
     )
@@ -98,9 +95,12 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
 
 
 def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
+    high_path = video.with_name(video.stem + ".cam_high.mp4")
+    wrist_path = video.with_name(video.stem + ".cam_left_wrist.mp4")
     camera_paths = {
-        slot: video.with_name(video.stem + f".{slot}.mp4")
-        for slot in CAMERA_SLOTS
+        "cam_high": high_path,
+        "cam_left_wrist": wrist_path,
+        "cam_right_wrist": wrist_path,
     }
     return camera_paths, video.with_name(video.stem + ".camera_videos.json")
 
@@ -131,7 +131,8 @@ def record_rollout(
         )
     actions = read_actions(video.with_suffix(".csv"))
     camera_paths, metadata_path = sidecar_paths(video)
-    existing = [path for path in [*camera_paths.values(), metadata_path] if path.exists()]
+    physical_paths = list(dict.fromkeys(camera_paths.values()))
+    existing = [path for path in [*physical_paths, metadata_path] if path.exists()]
     if existing:
         names = ", ".join(path.name for path in existing)
         raise FileExistsError(
@@ -148,16 +149,19 @@ def record_rollout(
             obs, _, _, _ = env.step([0, 0, 0, 0, 0, 0, -1])
 
         writers = {
-            camera: imageio.get_writer(str(path), fps=fps)
-            for camera, path in camera_paths.items()
+            "cam_high": imageio.get_writer(str(camera_paths["cam_high"]), fps=fps),
+            "cam_left_wrist": imageio.get_writer(
+                str(camera_paths["cam_left_wrist"]),
+                fps=fps,
+            ),
         }
         for action in actions:
-            for slot, source_camera in ROBO_CAMERA_SOURCES.items():
-                writers[slot].append_data(oriented_rgb(obs, source_camera))
+            writers["cam_high"].append_data(oriented_rgb(obs, HIGH_CAMERA))
+            writers["cam_left_wrist"].append_data(oriented_rgb(obs, WRIST_CAMERA))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
     except Exception:
-        for path in camera_paths.values():
+        for path in physical_paths:
             if path.exists():
                 path.unlink()
         raise
@@ -172,7 +176,6 @@ def record_rollout(
             slot: path.name
             for slot, path in camera_paths.items()
         },
-        "camera_source_names": dict(ROBO_CAMERA_SOURCES),
         "record_resolution": int(record_resolution),
         "camera_width": int(record_resolution),
         "camera_height": int(record_resolution),
