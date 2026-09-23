@@ -193,6 +193,13 @@
       "description": "Fused runs the official incremental, forward, and backward perspectives once per rollout and averages their native progress outputs. The other values retain the single-perspective compatibility modes.",
       "forwarded_as": "--eval-mode fused; wrapper expands to --eval-modes incremental forward backward"
     },
+    "robo_camera_mode": {
+      "cli": "--robo-camera-mode {auto,single_view,multi_view}",
+      "default": "auto",
+      "applies_to": "Robo-Dopamine; batch and single-rollout Runs",
+      "description": "Selects the physical camera inputs independently of Robo-Dopamine evaluation perspective. auto uses cam_high + cam_wrist when both are present in the manifest and otherwise repeats canonical video_path. multi_view strictly requires both physical camera paths. single_view always repeats canonical video_path for all three Robo-Dopamine input slots.",
+      "forwarded_as": "Robo-Dopamine adapter maps cam_high -> cam_high_path and cam_wrist -> both cam_left_path and cam_right_path"
+    },
     "goal_image": {
       "cli": "--goal-image PATH",
       "default": "LIBERO-10: outputs/robodopamine_goal/libero-10-task{task_id}.jpg; other suites: examples/blank_goal.png",
