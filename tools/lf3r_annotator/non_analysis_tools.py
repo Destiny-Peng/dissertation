@@ -427,6 +427,16 @@ class NonAnalysisToolService:
                         "another H.264 transcode job is already active: "
                         + str(existing.get("job_id") or "unknown")
                     )
+        if action == "rebuild_manifest":
+            for existing in self.tmux.list(job_type=TOOL_JOB_TYPE):
+                if (
+                    existing.get("action") == "rebuild_manifest"
+                    and existing.get("status") in {"queued", "running"}
+                ):
+                    raise ValueError(
+                        "another manifest rebuild is already active: "
+                        + str(existing.get("job_id") or "unknown")
+                    )
         payload = dict(payload or {})
         command = TOOL_BUILDERS[action](payload)
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
