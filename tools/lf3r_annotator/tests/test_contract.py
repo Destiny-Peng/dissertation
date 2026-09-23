@@ -179,6 +179,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 "stores.py",
                 "baseline_constants.py",
                 "baseline_index.py",
+                "baseline_results.py",
+                "baseline_jobs.py",
                 "baseline_service.py",
                 "analysis_constants.py",
                 "analysis_service.py",
