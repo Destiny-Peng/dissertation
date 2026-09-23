@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import unittest
 from pathlib import Path
 
@@ -24,7 +23,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "webui_manifests.py",
             "webui_runtime.py",
         ]:
-            self.assertTrue((TOOL_ROOT / name).is_file(), name)
+            path = TOOL_ROOT / name
+            self.assertTrue(path.is_file(), name)
+            self.assertNotIn('if __name__ == "__main__"', path.read_text(encoding="utf-8"))
 
     def test_scripts_use_only_stable_entrypoint(self) -> None:
         run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")
