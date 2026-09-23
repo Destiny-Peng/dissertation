@@ -650,7 +650,9 @@
       var input = document.createElement("input");
       input.type = "checkbox";
       input.dataset.manifestPath = String(item.path);
-      input.checked = previous.length ? previous.indexOf(String(item.path)) >= 0 : true;
+      input.checked = preserveSelection
+        ? previous.indexOf(String(item.path)) >= 0
+        : true;
       input.addEventListener("change", updateBatchManifestSelectionCount);
 
       var copy = document.createElement("span");
