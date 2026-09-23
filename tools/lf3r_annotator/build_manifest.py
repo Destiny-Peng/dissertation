@@ -24,7 +24,12 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
-MULTIVIEW_CAMERAS = ("agentview", "sideview", "robot0_eye_in_hand")
+ROBO_DOPAMINE_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
+ROBO_DOPAMINE_CAMERA_SOURCES = {
+    "cam_high": "agentview",
+    "cam_left_wrist": "robot0_eye_in_hand",
+    "cam_right_wrist": "sideview",
+}
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
         "type": "action_freeze",
@@ -135,42 +140,44 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     first_timestep, last_timestep = csv_timesteps(csv_path)
     dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
-    multiview_metadata_path = video.with_name(video.stem + ".multiview.json")
-    multiview_metadata: dict[str, Any] = {}
-    if multiview_metadata_path.is_file():
+    camera_metadata_path = video.with_name(video.stem + ".camera_videos.json")
+    camera_metadata: dict[str, Any] = {}
+    if camera_metadata_path.is_file():
         try:
-            value = json.loads(multiview_metadata_path.read_text(encoding="utf-8"))
+            value = json.loads(camera_metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
-            raise RuntimeError(f"Invalid multiview metadata: {multiview_metadata_path}") from error
+            raise RuntimeError(f"Invalid multiview metadata: {camera_metadata_path}") from error
         if isinstance(value, dict):
-            multiview_metadata = value
+            camera_metadata = value
 
-    metadata_camera_paths = multiview_metadata.get("camera_video_paths")
+    metadata_camera_paths = camera_metadata.get("camera_video_paths")
     camera_video_files: dict[str, Path] = {}
-    for camera in MULTIVIEW_CAMERAS:
+    for slot in ROBO_DOPAMINE_CAMERA_SLOTS:
         declared = (
-            metadata_camera_paths.get(camera)
+            metadata_camera_paths.get(slot)
             if isinstance(metadata_camera_paths, dict)
             else None
         )
         candidate = (
             video.parent / str(declared)
             if isinstance(declared, str) and declared.strip()
-            else video.with_name(video.stem + f".{camera}.mp4")
+            else video.with_name(video.stem + f".{slot}.mp4")
         )
-        camera_video_files[camera] = candidate.resolve()
+        camera_video_files[slot] = candidate.resolve()
 
-    existing_cameras = [
-        camera for camera, path in camera_video_files.items() if path.is_file()
+    existing_slots = [
+        slot for slot, path in camera_video_files.items() if path.is_file()
     ]
-    if existing_cameras and len(existing_cameras) != len(MULTIVIEW_CAMERAS):
-        missing = [camera for camera in MULTIVIEW_CAMERAS if camera not in existing_cameras]
+    if existing_slots and len(existing_slots) != len(ROBO_DOPAMINE_CAMERA_SLOTS):
+        missing = [
+            slot for slot in ROBO_DOPAMINE_CAMERA_SLOTS if slot not in existing_slots
+        ]
         raise RuntimeError(
-            f"Incomplete multiview camera set for {video}: "
-            f"present={existing_cameras}, missing={missing}"
+            f"Incomplete Robo-Dopamine camera set for {video}: "
+            f"present={existing_slots}, missing={missing}"
         )
-    has_multiview = len(existing_cameras) == len(MULTIVIEW_CAMERAS)
-    if has_multiview:
+    has_robo_camera_set = len(existing_slots) == len(ROBO_DOPAMINE_CAMERA_SLOTS)
+    if has_robo_camera_set:
         for camera, camera_video in camera_video_files.items():
             try:
                 camera_video.relative_to(project_root.resolve())
@@ -202,24 +209,17 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         "analysis_partition": partition,
         "dataset_role": dataset_role,
         "video_path": str(relative),
-        "multiview_video_path": None,
-        "video_view_mode": (
-            str(multiview_metadata.get("video_view_mode") or "libero_three_view")
-            if has_multiview
-            else "single_view"
-        ),
-        "multiview_layout": (
-            str(multiview_metadata.get("multiview_layout") or "separate_videos")
-            if has_multiview
-            else None
-        ),
-        "multiview_cameras": list(MULTIVIEW_CAMERAS) if has_multiview else None,
         "camera_video_paths": (
             {
-                camera: str(path.relative_to(project_root.resolve()))
-                for camera, path in camera_video_files.items()
+                slot: str(path.relative_to(project_root.resolve()))
+                for slot, path in camera_video_files.items()
             }
-            if has_multiview
+            if has_robo_camera_set
+            else None
+        ),
+        "camera_source_names": (
+            dict(ROBO_DOPAMINE_CAMERA_SOURCES)
+            if has_robo_camera_set
             else None
         ),
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
