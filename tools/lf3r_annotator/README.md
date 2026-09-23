@@ -439,6 +439,8 @@ Controlled injected rollouts use a separate run-name registry in `build_manifest
 
 Externally created rollout videos can be added without using the WebUI generator. In **Runs → Utilities → Import / rescan external rollouts**, the two standard roots (`outputs/openvla_libero` and `outputs/openvla_libero_spatial_native`) are always scanned, and optional additional project-local roots can be entered one per line. The WebUI forwards the complete root set to `build_manifest.py`, keeps the standard roots even when extras are present, and automatically reloads the rollout catalog after a successful rebuild. Additional roots are remembered in browser local storage. Imported files must still follow the manifest builder's normal layout and naming contract: `<root>/<natural-run>/<suite>/taskN--epM--succ0|1.mp4`.
 
+**Runs → Utilities → Batch H.264 transcode** processes only the canonical `video_path` entries from every manifest currently loaded by the WebUI; `multiview_video_path` is ignored. Paths are deduplicated, already-H.264 files are skipped, and each conversion reuses `transcode_video_h264.sh`: the original becomes `.orig.mp4` and the H.264/yuv420p replacement keeps the original manifest path. Existing `.orig.mp4` backups are treated as conflicts and are never overwritten. Single-video and batch transcode jobs are mutually exclusive to prevent two ffmpeg jobs from racing the same file.
+
 ## Validation
 
 Run the standard-library test suite:

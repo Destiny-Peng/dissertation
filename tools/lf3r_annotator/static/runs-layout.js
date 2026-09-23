@@ -166,6 +166,11 @@
           '</div>',
           '<div class="runs-tool-action"><span>Diagnostic sweep only; it does not claim detector performance.</span><button id="roboSweepRun" class="save-button" type="button">Run interval sweep</button></div>',
         '</section>',
+        '<section class="runs-tool-card">',
+          '<div class="runs-tool-card-heading"><div><h3>Batch H.264 transcode</h3><p>Convert only the canonical <code>video_path</code> entries from every manifest currently loaded by this WebUI. Multiview files are ignored.</p></div></div>',
+          '<div id="batchManifestTranscodeSummary" class="runs-manifest-summary">Already-H.264 videos are skipped. Existing <code>.orig.mp4</code> backups are never overwritten.</div>',
+          '<div class="runs-tool-action"><span>Runs sequentially as one persistent background job and reuses the existing single-video transcode path.</span><button id="batchManifestTranscodeRun" class="save-button" type="button">Transcode manifest videos</button></div>',
+        '</section>',
         '<section class="runs-tool-card runs-maintenance-card">',
           '<div class="runs-tool-card-heading"><div><h3>Validation & maintenance</h3><p>Bounded checks around existing project artifacts. No Analysis jobs are launched here.</p></div></div>',
           '<div class="runs-maintenance-actions runs-maintenance-validation">',
@@ -428,6 +433,27 @@
         if (nodes.log) nodes.log.textContent = logText;
       });
       await refreshToolJobs();
+      if (job.action === "transcode_manifest_videos") {
+        var batchSummary = document.getElementById("batchManifestTranscodeSummary");
+        if (batchSummary) {
+          var match = logText.match(
+            /BATCH_H264_SUMMARY selected=(\d+) converted=(\d+) already_h264=(\d+) conflicts=(\d+) missing=(\d+) failed=(\d+)/
+          );
+          if (match) {
+            batchSummary.textContent = "Selected " + match[1]
+              + " · converted " + match[2]
+              + " · already H.264 " + match[3]
+              + " · backup conflicts " + match[4]
+              + " · missing " + match[5]
+              + " · failed " + match[6]
+              + " · " + (job.status || "unknown");
+          } else if (job.status === "queued" || job.status === "running") {
+            batchSummary.textContent = "Batch H.264 transcode " + job.status + "… see Tool activity for per-video progress.";
+          } else if (job.status === "failed") {
+            batchSummary.textContent = "Batch H.264 transcode failed: " + (job.error || "see Tool activity log");
+          }
+        }
+      }
       if (
         job.action === "rebuild_manifest"
         && job.status === "failed"
@@ -571,6 +597,36 @@
       memory_utilization: numberValue("roboSweepMemory", 0.6),
       output_dir: text("roboSweepOutput")
     }).catch(function () {});
+  });
+
+  document.getElementById("batchManifestTranscodeRun").addEventListener("click", async function () {
+    var button = document.getElementById("batchManifestTranscodeRun");
+    var summaryNode = document.getElementById("batchManifestTranscodeSummary");
+    if (button) button.disabled = true;
+    try {
+      var response = await fetch("/api/manifests", { cache: "no-store" });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not read loaded manifests");
+      var manifests = (payload.manifests || [])
+        .filter(function (item) { return item && item.exists && item.path; })
+        .map(function (item) { return item.path; });
+      if (!manifests.length) throw new Error("No loaded manifest files are available");
+
+      var rolloutCount = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
+        ? state.rollouts.length
+        : null;
+      var message = "Transcode canonical video_path files from " + manifests.length + " loaded manifest(s)?\n\n"
+        + "Already-H.264 videos will be skipped. Existing .orig.mp4 backups will not be overwritten."
+        + (rolloutCount == null ? "" : "\n\nCurrently loaded rollouts: " + rolloutCount);
+      if (!window.confirm(message)) return;
+
+      if (summaryNode) summaryNode.textContent = "Submitting batch H.264 transcode for " + manifests.length + " manifest(s)…";
+      await submitTool("transcode_manifest_videos", { manifest_paths: manifests });
+    } catch (error) {
+      if (summaryNode) summaryNode.textContent = "Batch H.264 transcode could not start: " + String(error.message || error);
+    } finally {
+      if (button) button.disabled = false;
+    }
   });
 
   document.getElementById("validateBaselinesRun").addEventListener("click", function () { submitTool("validate_baselines", { check_environments: true }).catch(function () {}); });

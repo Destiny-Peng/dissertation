@@ -115,6 +115,41 @@ class NonAnalysisToolTests(unittest.TestCase):
                 {"extra_scan_roots": ["outputs/definitely-not-a-real-rollout-root"]}
             )
 
+    def test_manifest_batch_transcode_command_uses_only_manifest_paths(self):
+        manifest = tools.PROJECT_ROOT / "datasets" / "lf3r_failure_rollouts" / "v1" / "manifest.jsonl"
+        if not manifest.is_file():
+            self.skipTest("project manifest is unavailable")
+        command = tools.transcode_manifest_videos_command(
+            {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]}
+        )
+        self.assertIn("transcode_manifest_videos_h264.py", command[1])
+        self.assertEqual(command.count("--manifest"), 1)
+        self.assertNotIn("multiview_video_path", " ".join(command))
+
+    def test_manifest_batch_transcode_requires_existing_jsonl(self):
+        with self.assertRaisesRegex(ValueError, "manifest does not exist"):
+            tools.transcode_manifest_videos_command(
+                {"manifest_paths": ["datasets/lf3r_failure_rollouts/v1/not-real.jsonl"]}
+            )
+        with self.assertRaisesRegex(ValueError, "manifest_paths must be a non-empty list"):
+            tools.transcode_manifest_videos_command({"manifest_paths": []})
+
+    def test_batch_transcode_is_serialized(self):
+        tmux = FakeTmux()
+        service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
+        manifest = tools.PROJECT_ROOT / "datasets" / "lf3r_failure_rollouts" / "v1" / "manifest.jsonl"
+        if not manifest.is_file():
+            self.skipTest("project manifest is unavailable")
+        service.submit(
+            "transcode_manifest_videos",
+            {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]},
+        )
+        with self.assertRaisesRegex(ValueError, "another H.264 transcode job is already active"):
+            service.submit(
+                "transcode_manifest_videos",
+                {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]},
+            )
+
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
@@ -134,6 +169,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("await loadRolloutOptions()", source)
         self.assertIn("lf3r.runs.extraManifestScanRoots", source)
         self.assertIn("Manifest rebuild failed:", source)
+        self.assertIn("batchManifestTranscodeRun", source)
+        self.assertIn("transcode_manifest_videos", source)
+        self.assertIn("canonical <code>video_path</code>", source)
+        self.assertIn("BATCH_H264_SUMMARY", source)
 
 
 if __name__ == "__main__":
