@@ -2241,7 +2241,7 @@ print('fake label loss ablation complete')
         self.assertEqual(job["render_resolution"], 320)
         self.assertEqual(job["record_resolution"], 192)
         self.assertEqual(job["video_view_mode"], "libero_three_view")
-        self.assertEqual(job["multiview_layout"], "horizontal_triptych")
+        self.assertEqual(job["multiview_layout"], "separate_videos")
         self.assertEqual(
             job["multiview_cameras"],
             ["agentview", "sideview", "robot0_eye_in_hand"],
