@@ -63,6 +63,44 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("WebUIApplication(", runtime)
         self.assertIn("_make_handler(app)", runtime)
 
+    def test_server_is_thin_compatibility_facade(self) -> None:
+        server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
+        self.assertLess(len(server.splitlines()), 250)
+        for module in [
+            "baseline_service",
+            "analysis_service",
+            "analysis_jobs",
+            "rollout_service",
+            "application",
+            "http_handler",
+        ]:
+            self.assertIn("from " + module + " import", server)
+        for class_name in [
+            "BaselineService",
+            "AnalysisService",
+            "AnalysisJobService",
+            "RolloutGenerationService",
+            "LF3RApplication",
+            "LF3RHandler",
+        ]:
+            self.assertNotIn("class " + class_name + ":", server)
+
+    def test_backend_service_modules_exist(self) -> None:
+        for name in [
+            "backend_core.py",
+            "stores.py",
+            "baseline_constants.py",
+            "baseline_index.py",
+            "baseline_service.py",
+            "analysis_constants.py",
+            "analysis_service.py",
+            "analysis_jobs.py",
+            "rollout_service.py",
+            "application.py",
+            "http_handler.py",
+        ]:
+            self.assertTrue((TOOL_ROOT / name).is_file(), name)
+
     def test_scripts_use_only_stable_entrypoint(self) -> None:
         run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")
         stop_server = (TOOL_ROOT / "stop_server.sh").read_text(encoding="utf-8")
