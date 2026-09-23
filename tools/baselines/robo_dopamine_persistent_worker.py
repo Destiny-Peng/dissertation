@@ -354,7 +354,9 @@ def cleanup_official_frame_cache(output_dir: Path) -> tuple[int, int]:
 def _run_official_mode(
     *,
     model: Any,
-    video: str,
+    cam_high: str,
+    cam_left: str,
+    cam_right: str,
     goal_image: str,
     output_dir: Path,
     task: str,
@@ -365,9 +367,9 @@ def _run_official_mode(
 ) -> tuple[Path, float]:
     started = time.perf_counter()
     output = model.run_pipeline(
-        cam_high_path=video,
-        cam_left_path=video,
-        cam_right_path=video,
+        cam_high_path=cam_high,
+        cam_left_path=cam_left,
+        cam_right_path=cam_right,
         out_root=str(output_dir),
         task=task,
         frame_interval=frame_interval,
@@ -393,6 +395,10 @@ def infer_rollout(
     output_dir = Path(job["raw_output_dir"]).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     video = str(Path(job["video_path"]).resolve())
+    cam_high = str(Path(job.get("cam_high_path", video)).resolve())
+    cam_left = str(Path(job.get("cam_left_path", video)).resolve())
+    cam_right = str(Path(job.get("cam_right_path", video)).resolve())
+    camera_input_mode = str(job.get("camera_input_mode", "single_view"))
     goal_image = str(Path(job.get("goal_image", args.goal_image)).resolve())
     frame_interval = int(job.get("frame_interval", args.frame_interval))
     batch_size = int(job.get("batch_size", args.batch_size))
@@ -409,7 +415,9 @@ def infer_rollout(
     for mode in eval_modes:
         prediction, elapsed = _run_official_mode(
             model=model,
-            video=video,
+            cam_high=cam_high,
+            cam_left=cam_left,
+            cam_right=cam_right,
             goal_image=goal_image,
             output_dir=output_dir,
             task=task,
@@ -511,6 +519,12 @@ def infer_rollout(
         "checkpoint": str(args.model_path.resolve()),
         "source_commit": official_source_revision(args.repo),
         "video_path": video,
+        "camera_input_mode": camera_input_mode,
+        "camera_video_paths": {
+            "cam_high": cam_high,
+            "cam_left_wrist": cam_left,
+            "cam_right_wrist": cam_right,
+        },
         "task": task,
         "eval_mode": eval_mode,
     }
