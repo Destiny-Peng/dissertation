@@ -112,12 +112,12 @@ def test_non_libero10_keeps_blank_goal_fallback() -> None:
 
 
 
-def test_robo_camera_inputs_use_shared_wrist_for_three_slots() -> None:
+def test_robo_camera_inputs_adapt_physical_wrist_to_three_slots() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
         canonical = root / "canonical.mp4"
         high = root / "cam_high.mp4"
-        wrist = root / "cam_left_wrist.mp4"
+        wrist = root / "cam_wrist.mp4"
         canonical.touch()
         high.touch()
         wrist.touch()
@@ -127,8 +127,7 @@ def test_robo_camera_inputs_use_shared_wrist_for_three_slots() -> None:
                 "id": "multi-rollout",
                 "camera_video_paths": {
                     "cam_high": high.name,
-                    "cam_left_wrist": wrist.name,
-                    "cam_right_wrist": wrist.name,
+                    "cam_wrist": wrist.name,
                 },
             },
             make_args(root),
@@ -161,7 +160,7 @@ def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
         assert set(resolved.values()) == {str(canonical.resolve())}
 
 
-def test_robo_camera_inputs_reject_partial_official_mapping() -> None:
+def test_robo_camera_inputs_reject_partial_dataset_mapping() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
         canonical = root / "canonical.mp4"
@@ -179,9 +178,8 @@ def test_robo_camera_inputs_reject_partial_official_mapping() -> None:
                 canonical,
             )
         except ValueError as error:
-            assert "Incomplete Robo-Dopamine camera_video_paths" in str(error)
-            assert "cam_left_wrist" in str(error)
-            assert "cam_right_wrist" in str(error)
+            assert "Incomplete camera_video_paths" in str(error)
+            assert "cam_wrist" in str(error)
         else:
             raise AssertionError("Partial Robo-Dopamine camera mapping was not rejected")
 
@@ -191,7 +189,7 @@ if __name__ == "__main__":
     test_explicit_goal_image_overrides_task_default()
     test_missing_libero10_task_goal_fails_loudly()
     test_non_libero10_keeps_blank_goal_fallback()
-    test_robo_camera_inputs_use_shared_wrist_for_three_slots()
+    test_robo_camera_inputs_adapt_physical_wrist_to_three_slots()
     test_robo_camera_inputs_repeat_canonical_for_single_view()
-    test_robo_camera_inputs_reject_partial_official_mapping()
+    test_robo_camera_inputs_reject_partial_dataset_mapping()
     print("ROBODOPAMINE_GOAL_IMAGE_TESTS_OK")
