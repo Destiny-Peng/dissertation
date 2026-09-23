@@ -94,19 +94,20 @@ def resolve_robo_camera_inputs(
     args: argparse.Namespace,
     canonical_video: Path,
 ) -> tuple[dict[str, str], str]:
-    """Resolve Robo-Dopamine's fixed three camera slots from the manifest."""
+    """Adapt dataset camera facts to Robo-Dopamine's fixed three input slots."""
     raw = record.get("camera_video_paths")
     if not isinstance(raw, dict):
         raw = {}
 
+    dataset_slots = ("cam_high", "cam_wrist")
     present = [
-        slot for slot in ROBO_CAMERA_SLOTS
+        slot for slot in dataset_slots
         if isinstance(raw.get(slot), str) and str(raw.get(slot)).strip()
     ]
-    if present and len(present) != len(ROBO_CAMERA_SLOTS):
-        missing = [slot for slot in ROBO_CAMERA_SLOTS if slot not in present]
+    if present and len(present) != len(dataset_slots):
+        missing = [slot for slot in dataset_slots if slot not in present]
         raise ValueError(
-            "Incomplete Robo-Dopamine camera_video_paths for "
+            "Incomplete camera_video_paths for "
             f"{record.get('id') or record.get('rollout_id')}: "
             f"present={present}, missing={missing}"
         )
@@ -119,15 +120,20 @@ def resolve_robo_camera_inputs(
             "cam_right_wrist": canonical,
         }, "single_view"
 
-    resolved: dict[str, str] = {}
-    for slot in ROBO_CAMERA_SLOTS:
-        path = resolve_record_path(str(raw[slot]), args.data_root)
+    cam_high = resolve_record_path(str(raw["cam_high"]), args.data_root)
+    cam_wrist = resolve_record_path(str(raw["cam_wrist"]), args.data_root)
+    for slot, path in (("cam_high", cam_high), ("cam_wrist", cam_wrist)):
         if not path.is_file():
             raise FileNotFoundError(
                 f"Robo-Dopamine camera input {slot} does not exist: {path}"
             )
-        resolved[slot] = str(path)
-    return resolved, "multi_view"
+
+    wrist = str(cam_wrist)
+    return {
+        "cam_high": str(cam_high),
+        "cam_left_wrist": wrist,
+        "cam_right_wrist": wrist,
+    }, "multi_view"
 
 
 def build_job_specs(
