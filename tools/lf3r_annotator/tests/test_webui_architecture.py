@@ -91,6 +91,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "stores.py",
             "baseline_constants.py",
             "baseline_index.py",
+            "baseline_results.py",
+            "baseline_jobs.py",
             "baseline_service.py",
             "analysis_constants.py",
             "analysis_service.py",
@@ -100,6 +102,20 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "http_handler.py",
         ]:
             self.assertTrue((TOOL_ROOT / name).is_file(), name)
+
+    def test_baseline_service_is_thin_composition(self) -> None:
+        service = (TOOL_ROOT / "baseline_service.py").read_text(encoding="utf-8")
+        results = (TOOL_ROOT / "baseline_results.py").read_text(encoding="utf-8")
+        jobs = (TOOL_ROOT / "baseline_jobs.py").read_text(encoding="utf-8")
+        self.assertLess(len(service.splitlines()), 180)
+        self.assertIn(
+            "class BaselineService(BaselineResultsMixin, BaselineJobsMixin):",
+            service,
+        )
+        self.assertIn("class BaselineResultsMixin:", results)
+        self.assertIn("class BaselineJobsMixin:", jobs)
+        self.assertNotIn("baseline_service", results)
+        self.assertNotIn("baseline_service", jobs)
 
     def test_scripts_use_only_stable_entrypoint(self) -> None:
         run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")
