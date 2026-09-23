@@ -170,9 +170,16 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("lf3r.runs.extraManifestScanRoots", source)
         self.assertIn("Manifest rebuild failed:", source)
         self.assertIn("batchManifestTranscodeRun", source)
+        self.assertIn("batchManifestTranscodeManifests", source)
+        self.assertIn("batchManifestTranscodeSelectAll", source)
+        self.assertIn("batchManifestTranscodeSelectNone", source)
+        self.assertIn("selectedBatchManifestPaths", source)
+        self.assertIn("loadBatchManifestOptions", source)
+        self.assertIn("manifest_paths: manifests", source)
         self.assertIn("transcode_manifest_videos", source)
         self.assertIn("canonical <code>video_path</code>", source)
         self.assertIn("BATCH_H264_SUMMARY", source)
+        self.assertNotIn("multiview_video_path ||", source)
 
 
 if __name__ == "__main__":
