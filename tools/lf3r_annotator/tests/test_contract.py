@@ -453,8 +453,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "tp_jaccard",
         ]:
             self.assertNotIn(obsolete, hop_analysis)
-        manifest_module = (TOOL_ROOT / "webui_manifests.py").read_text(encoding="utf-8")
-        self.assertIn('kwargs.get("rollout_ids") is not None', manifest_module)
+        baseline_module = (TOOL_ROOT / "webui_baseline.py").read_text(encoding="utf-8")
+        self.assertIn('rollout_ids is not None', baseline_module)
         for marker in [
             "--font-scale",
             "--review-font-scale",
