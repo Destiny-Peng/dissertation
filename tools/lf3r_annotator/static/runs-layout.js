@@ -416,6 +416,13 @@
       if (!response.ok) throw new Error(payload.error || "Could not read project-tool jobs");
       var jobs = payload.jobs || [];
       if (!activeToolJobId && jobs.length) activeToolJobId = jobs[0].job_id;
+      var rebuildButton = document.getElementById("rebuildManifestRun");
+      if (rebuildButton) {
+        rebuildButton.disabled = jobs.some(function (job) {
+          return job.action === "rebuild_manifest"
+            && (job.status === "queued" || job.status === "running");
+        });
+      }
       renderToolJobs(jobs);
     } catch (_) {}
   }
@@ -518,25 +525,90 @@
     }
   }
 
+  function waitMs(milliseconds) {
+    return new Promise(function (resolve) {
+      window.setTimeout(resolve, milliseconds);
+    });
+  }
+
+  function makeToolClientRequestId(action) {
+    return "web:" + action + ":" + Date.now() + ":" + Math.random().toString(36).slice(2, 10);
+  }
+
+  async function recoverToolSubmission(action, clientRequestId) {
+    for (var attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        var response = await fetch("/api/tool-jobs", { cache: "no-store" });
+        var payload = await response.json();
+        if (response.ok) {
+          var jobs = payload.jobs || [];
+          var match = jobs.find(function (job) {
+            return job
+              && job.action === action
+              && job.client_request_id === clientRequestId;
+          });
+          if (match) return match;
+        }
+      } catch (_) {}
+      if (attempt < 4) await waitMs(250 * (attempt + 1));
+    }
+    return null;
+  }
+
   async function submitTool(action, options) {
     activityNodes().forEach(function (nodes) {
       if (nodes.status) nodes.status.textContent = "Submitting " + action + "…";
     });
-    var response = await fetch("/api/tools/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: action, options: options || {} })
-    });
-    var payload = await response.json();
-    if (!response.ok) {
-      var message = payload.error || "Project-tool request failed";
-      activityNodes().forEach(function (nodes) { if (nodes.status) nodes.status.textContent = message; });
-      throw new Error(message);
+
+    var clientRequestId = makeToolClientRequestId(action);
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timeoutId = window.setTimeout(function () {
+      if (controller) controller.abort();
+    }, 8000);
+    var job = null;
+
+    try {
+      var response = await fetch("/api/tools/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: action,
+          options: options || {},
+          client_request_id: clientRequestId
+        }),
+        signal: controller ? controller.signal : undefined
+      });
+      var payload = await response.json();
+      if (!response.ok) {
+        var message = payload.error || "Project-tool request failed";
+        activityNodes().forEach(function (nodes) {
+          if (nodes.status) nodes.status.textContent = message;
+        });
+        throw new Error(message);
+      }
+      job = payload.job;
+    } catch (error) {
+      job = await recoverToolSubmission(action, clientRequestId);
+      if (!job) {
+        var message = error && error.name === "AbortError"
+          ? "Project-tool submission timed out before a job could be confirmed."
+          : "Project-tool submission failed: " + String(error.message || error);
+        activityNodes().forEach(function (nodes) {
+          if (nodes.status) nodes.status.textContent = message;
+        });
+        throw new Error(message);
+      }
+      activityNodes().forEach(function (nodes) {
+        if (nodes.status) nodes.status.textContent = "Recovered submitted " + action + " job.";
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-    activeToolJobId = payload.job.job_id;
+
+    activeToolJobId = job.job_id;
     await refreshToolJobs();
     pollToolJob();
-    return payload.job;
+    return job;
   }
 
   var prepareStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "_");
@@ -739,6 +811,8 @@
   document.getElementById("validateBaselinesRun").addEventListener("click", function () { submitTool("validate_baselines", { check_environments: true }).catch(function () {}); });
   document.getElementById("validateVariantsRun").addEventListener("click", function () { submitTool("validate_variants", {}).catch(function () {}); });
   document.getElementById("rebuildManifestRun").addEventListener("click", function () {
+    var rebuildButton = document.getElementById("rebuildManifestRun");
+    if (rebuildButton) rebuildButton.disabled = true;
     var rawRoots = text("rebuildManifestExtraRoots");
     var extraRoots = rawRoots
       .split(/[\n,]+/)
@@ -755,8 +829,12 @@
     submitTool("rebuild_manifest", { extra_scan_roots: extraRoots })
       .then(function (job) {
         manifestRebuildBefore[job.job_id] = beforeCount;
+        if (summaryNode) {
+          summaryNode.textContent = "Manifest rebuild running · " + job.job_id;
+        }
       })
       .catch(function (error) {
+        if (rebuildButton) rebuildButton.disabled = false;
         if (summaryNode) summaryNode.textContent = "Manifest rebuild failed to start: " + String(error.message || error);
       });
   });

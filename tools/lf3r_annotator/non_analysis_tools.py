@@ -408,7 +408,13 @@ class NonAnalysisToolService:
             job["status"] = "failed"
             job["error"] = f"command exited with status {return_code}"
 
-    def submit(self, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def submit(
+        self,
+        action: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        client_request_id: str | None = None,
+    ) -> dict[str, Any]:
         if action not in TOOL_BUILDERS:
             raise ValueError(f"unknown project tool action: {action}")
         if action in {"transcode_video", "transcode_manifest_videos"}:
@@ -419,6 +425,16 @@ class NonAnalysisToolService:
                 ):
                     raise ValueError(
                         "another H.264 transcode job is already active: "
+                        + str(existing.get("job_id") or "unknown")
+                    )
+        if action == "rebuild_manifest":
+            for existing in self.tmux.list(job_type=TOOL_JOB_TYPE):
+                if (
+                    existing.get("action") == "rebuild_manifest"
+                    and existing.get("status") in {"queued", "running"}
+                ):
+                    raise ValueError(
+                        "another manifest rebuild is already active: "
                         + str(existing.get("job_id") or "unknown")
                     )
         payload = dict(payload or {})
@@ -436,6 +452,8 @@ class NonAnalysisToolService:
             "log_path": str(log_path.relative_to(self.project_root)),
             "request": payload,
         }
+        if client_request_id:
+            job["client_request_id"] = str(client_request_id)
         return self.tmux.submit(
             job,
             command,

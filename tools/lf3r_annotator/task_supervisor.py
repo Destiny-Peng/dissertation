@@ -35,6 +35,7 @@ class TmuxJobSupervisor:
     """
 
     SESSION_PREFIX = "lf3r-annotator-"
+    TMUX_COMMAND_TIMEOUT_SECONDS = 5.0
     JOB_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
     ACTIVE_STATUSES = {"queued", "running"}
     TERMINAL_STATUSES = {"complete", "complete_with_errors", "failed", "memory_blocked"}
@@ -176,14 +177,23 @@ class TmuxJobSupervisor:
             raise TmuxSupervisorError(
                 "tmux is required for annotator jobs but was not found on PATH"
             )
-        return subprocess.run(
-            [str(self.tmux_binary), *args],
-            cwd=str(self.project_root),
-            env=os.environ.copy(),
-            text=True,
-            capture_output=True,
-            check=check,
-        )
+        command = [str(self.tmux_binary), *args]
+        try:
+            return subprocess.run(
+                command,
+                cwd=str(self.project_root),
+                env=os.environ.copy(),
+                text=True,
+                capture_output=True,
+                check=check,
+                timeout=self.TMUX_COMMAND_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise TmuxSupervisorError(
+                "tmux command timed out after "
+                f"{self.TMUX_COMMAND_TIMEOUT_SECONDS:.1f}s: "
+                + shlex.join(command)
+            ) from error
 
     def has_session(self, session_name: str) -> bool:
         result = self._tmux(["has-session", "-t", session_name])

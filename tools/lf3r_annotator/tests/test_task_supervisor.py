@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from tools.lf3r_annotator.task_supervisor import TmuxJobSupervisor, TmuxSupervisorError
@@ -144,6 +146,23 @@ class TmuxJobSupervisorTest(unittest.TestCase):
             self.assertEqual(recovered["status"], "failed")
             self.assertEqual(recovered["tmux_state"], "missing")
             self.assertTrue(recovered["finished_at"])
+
+    def test_tmux_control_command_timeout_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            supervisor = TmuxJobSupervisor(Path(directory), tmux_binary="/bin/echo")
+            with mock.patch(
+                "tools.lf3r_annotator.task_supervisor.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["/bin/echo", "list-sessions"], 5.0),
+            ) as run:
+                with self.assertRaisesRegex(
+                    TmuxSupervisorError,
+                    "tmux command timed out",
+                ):
+                    supervisor._tmux(["list-sessions"])
+            self.assertEqual(
+                run.call_args.kwargs["timeout"],
+                supervisor.TMUX_COMMAND_TIMEOUT_SECONDS,
+            )
 
     def test_missing_tmux_does_not_fallback_to_background_process(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
