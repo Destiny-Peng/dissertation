@@ -10,6 +10,7 @@ from typing import Any
 
 from analysis_constants import (
     ANALYSIS_ARTIFACT_NAMES,
+    ANALYSIS_BASELINE_METHODS,
     ANALYSIS_DETAIL_FILTERS,
     ANALYSIS_DETAIL_KINDS,
     ANALYSIS_DETAIL_SORTS,

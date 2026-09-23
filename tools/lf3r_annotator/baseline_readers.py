@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from backend_core import (
+    INSTRUCTION_VARIANT_CONDITIONS,
     ValidationError,
     run_rollout_ids,
     validate_instruction_condition,
