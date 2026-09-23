@@ -502,8 +502,18 @@ Baseline signals have separate raw-value vertical axes, visibility toggles and a
 Results offers `Lock video while scrolling`. It pins the shared player, playback controls and frame slider at the top of the Results scroll area, with a compact video height. The preference is stored in this browser and applies only to Results. Turn it off to restore normal scrolling.
 
 
-### Robo-Dopamine three-view camera videos
+### LIBERO camera videos for Robo-Dopamine
 
-Rollout generation supports the default `single_view` recording and `libero_three_view`. LIBERO only provides one wrist camera for this setup, so the three Robo-Dopamine input slots are represented by two physical MP4 files: `<stem>.cam_high.mp4` and `<stem>.cam_left_wrist.mp4`. In `camera_video_paths`, `cam_high` points to the high-view video while both `cam_left_wrist` and `cam_right_wrist` point to the same wrist MP4. No separate right-wrist or side-view video is generated.
+Rollout generation supports the default `single_view` recording and `libero_three_view`. LIBERO provides one high camera and one wrist camera in this setup, so LF3R records the two physical videos as `<stem>.cam_high.mp4` and `<stem>.cam_wrist.mp4`.
 
-The manifest contains only the camera paths needed by consumers; it does not contain camera-source metadata. Robo-Dopamine reads the three official keys from `camera_video_paths`; when no official three-view mapping is present it follows the upstream single-view pattern and repeats canonical `video_path` for all three inputs. The existing Review player remains canonical by default; a specific camera slot can be served explicitly with `/api/videos/<rollout-id>?camera=<slot>`.
+The dataset sidecar and manifest describe only those physical facts:
+
+```json
+"camera_video_paths": {
+  "cam_high": "...cam_high.mp4",
+  "cam_wrist": "...cam_wrist.mp4"
+}
+```
+
+Robo-Dopamine's adapter owns the consumer-specific three-slot mapping: `cam_high_path <- cam_high`, while both `cam_left_path` and `cam_right_path` receive `cam_wrist`. When no camera pair is present, the existing single-view fallback repeats canonical `video_path` for all three Robo-Dopamine inputs. The Review player remains canonical by default; a physical camera video can be served explicitly with `/api/videos/<rollout-id>?camera=cam_high` or `?camera=cam_wrist`.
+
