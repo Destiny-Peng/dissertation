@@ -14,6 +14,7 @@ import datetime as dt
 import os
 import shutil
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -384,21 +385,33 @@ TOOL_LABELS = {
 class NonAnalysisToolService:
     """Persistent wrappers around existing non-Analysis project scripts."""
 
+    ACTIVE_STATUSES = {"queued", "running"}
+
     def __init__(self, project_root: Path, tmux: Any) -> None:
         self.project_root = project_root.resolve()
         self.tmux = tmux
+        self.lock = threading.Lock()
+        self.jobs: dict[str, dict[str, Any]] = {}
         self.tmux.register_handler(
             TOOL_JOB_TYPE,
             self._on_loaded,
             on_finished=self._on_finished,
         )
 
-    @staticmethod
-    def _on_loaded(job: dict[str, Any]) -> None:
-        job.setdefault("tool_label", TOOL_LABELS.get(str(job.get("action")), "Project tool"))
+    def _on_loaded(self, job: dict[str, Any]) -> None:
+        job.setdefault(
+            "tool_label",
+            TOOL_LABELS.get(str(job.get("action")), "Project tool"),
+        )
+        with self.lock:
+            self.jobs[str(job["job_id"])] = job
 
-    @staticmethod
-    def _on_finished(job: dict[str, Any], return_code: int | None, reason: str | None) -> None:
+    def _on_finished(
+        self,
+        job: dict[str, Any],
+        return_code: int | None,
+        reason: str | None,
+    ) -> None:
         if reason:
             job["status"] = "failed"
             job["error"] = reason
@@ -407,6 +420,25 @@ class NonAnalysisToolService:
         else:
             job["status"] = "failed"
             job["error"] = f"command exited with status {return_code}"
+        with self.lock:
+            self.jobs[str(job["job_id"])] = job
+
+    def _active_conflict(self, action: str) -> dict[str, Any] | None:
+        with self.lock:
+            jobs = [dict(job) for job in self.jobs.values()]
+        for existing in jobs:
+            existing_action = str(existing.get("action") or "")
+            status = str(existing.get("status") or "")
+            if status not in self.ACTIVE_STATUSES:
+                continue
+            if (
+                action in {"transcode_video", "transcode_manifest_videos"}
+                and existing_action in {"transcode_video", "transcode_manifest_videos"}
+            ):
+                return existing
+            if action == "rebuild_manifest" and existing_action == "rebuild_manifest":
+                return existing
+        return None
 
     def submit(
         self,
@@ -417,28 +449,20 @@ class NonAnalysisToolService:
     ) -> dict[str, Any]:
         if action not in TOOL_BUILDERS:
             raise ValueError(f"unknown project tool action: {action}")
-        if action in {"transcode_video", "transcode_manifest_videos"}:
-            for existing in self.tmux.list(job_type=TOOL_JOB_TYPE):
-                if (
-                    existing.get("action") in {"transcode_video", "transcode_manifest_videos"}
-                    and existing.get("status") in {"queued", "running"}
-                ):
-                    raise ValueError(
-                        "another H.264 transcode job is already active: "
-                        + str(existing.get("job_id") or "unknown")
-                    )
-        if action == "rebuild_manifest":
-            for existing in self.tmux.list(job_type=TOOL_JOB_TYPE):
-                if (
-                    existing.get("action") == "rebuild_manifest"
-                    and existing.get("status") in {"queued", "running"}
-                ):
-                    raise ValueError(
-                        "another manifest rebuild is already active: "
-                        + str(existing.get("job_id") or "unknown")
-                    )
+
+        conflict = self._active_conflict(action)
+        if conflict is not None:
+            if action == "rebuild_manifest":
+                raise ValueError(
+                    "another manifest rebuild is already active: "
+                    + str(conflict.get("job_id") or "unknown")
+                )
+            raise ValueError(
+                "another H.264 transcode job is already active: "
+                + str(conflict.get("job_id") or "unknown")
+            )
+
         payload = dict(payload or {})
-        command = TOOL_BUILDERS[action](payload)
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
         job_id = f"tool-{action}-{stamp}-{uuid.uuid4().hex[:8]}"
         log_path = self.project_root / "logs/annotator_tools" / f"{job_id}.log"
@@ -448,28 +472,87 @@ class NonAnalysisToolService:
             "action": action,
             "tool_label": TOOL_LABELS[action],
             "status": "queued",
+            "supervisor_status": "preparing",
             "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "log_path": str(log_path.relative_to(self.project_root)),
             "request": payload,
         }
         if client_request_id:
             job["client_request_id"] = str(client_request_id)
-        return self.tmux.submit_async(
-            job,
-            command,
-            log_path,
-            interpreter=command[0],
-            on_finished=self._on_finished,
-        )
+
+        with self.lock:
+            self.jobs[job_id] = job
+
+        threading.Thread(
+            target=self._prepare_and_launch,
+            args=(job_id, payload, log_path),
+            name=f"lf3r-project-tool-{job_id}",
+            daemon=True,
+        ).start()
+        return dict(job)
+
+    def _prepare_and_launch(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+        log_path: Path,
+    ) -> None:
+        with self.lock:
+            job = self.jobs.get(job_id)
+        if job is None:
+            return
+
+        try:
+            command = TOOL_BUILDERS[str(job["action"])](payload)
+            with self.lock:
+                current = self.jobs.get(job_id)
+                if current is None:
+                    return
+                current["argv"] = [str(item) for item in command]
+                current["supervisor_status"] = "launch_pending"
+
+            launched = self.tmux.submit_async(
+                current,
+                command,
+                log_path,
+                interpreter=command[0],
+                on_finished=self._on_finished,
+            )
+            with self.lock:
+                current = self.jobs.get(job_id)
+                if current is not None:
+                    current.update(launched)
+        except Exception as error:
+            with self.lock:
+                current = self.jobs.get(job_id)
+                if current is None:
+                    return
+                current["status"] = "failed"
+                current["supervisor_status"] = "prepare_failed"
+                current["error"] = str(error)
+                current["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
 
     def get(self, job_id: str) -> dict[str, Any]:
-        job = self.tmux.get(job_id)
-        if job.get("job_type") != TOOL_JOB_TYPE:
-            raise KeyError(job_id)
-        return job
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            return dict(job)
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
-        return self.tmux.list(job_type=TOOL_JOB_TYPE, status=status)
+        with self.lock:
+            jobs = [dict(job) for job in self.jobs.values()]
+        if status:
+            jobs = [job for job in jobs if job.get("status") == status]
+        jobs.sort(
+            key=lambda job: str(
+                job.get("submitted_at")
+                or job.get("tmux_created_at")
+                or job.get("job_id")
+            ),
+            reverse=True,
+        )
+        return jobs
 
     def log(self, job_id: str, tail: int = 240) -> dict[str, Any]:
         job = self.get(job_id)
