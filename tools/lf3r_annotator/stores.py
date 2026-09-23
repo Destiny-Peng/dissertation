@@ -77,39 +77,24 @@ class SettingsStore:
                 details.append("missing: " + ", ".join(missing))
             if unknown:
                 details.append("unknown: " + ", ".join(unknown))
-            raise ValidationError(
-                "Settings fields are invalid (" + "; ".join(details) + ")"
-            )
-
+            raise ValidationError("Settings fields are invalid (" + "; ".join(details) + ")")
         clean: dict[str, Any] = {}
         for field in SETTING_COLOR_FIELDS:
             value = payload[field]
-            if (
-                not isinstance(value, str)
-                or not SETTING_COLOR_RE.fullmatch(value)
-            ):
-                raise ValidationError(
-                    f"{field} must be a six-digit hex color"
-                )
+            if not isinstance(value, str) or not SETTING_COLOR_RE.fullmatch(value):
+                raise ValidationError(f"{field} must be a six-digit hex color")
             clean[field] = value.lower()
-
-        def validate_scale(
-            field: str,
-            minimum: float,
-            maximum: float,
-        ) -> float:
+        def validate_scale(field: str, minimum: float, maximum: float) -> float:
             value = payload[field]
             if isinstance(value, bool):
                 raise ValidationError(
-                    f"{field} must be a number from {minimum:.2f} "
-                    f"to {maximum:.2f} in 0.05 steps"
+                    f"{field} must be a number from {minimum:.2f} to {maximum:.2f} in 0.05 steps"
                 )
             try:
                 value = float(value)
             except (TypeError, ValueError) as error:
                 raise ValidationError(
-                    f"{field} must be a number from {minimum:.2f} "
-                    f"to {maximum:.2f} in 0.05 steps"
+                    f"{field} must be a number from {minimum:.2f} to {maximum:.2f} in 0.05 steps"
                 ) from error
             step_position = (value - minimum) / 0.05
             if (
@@ -118,31 +103,16 @@ class SettingsStore:
                 or abs(step_position - round(step_position)) > 1e-8
             ):
                 raise ValidationError(
-                    f"{field} must be a number from {minimum:.2f} "
-                    f"to {maximum:.2f} in 0.05 steps"
+                    f"{field} must be a number from {minimum:.2f} to {maximum:.2f} in 0.05 steps"
                 )
             return round(value, 2)
 
-        clean["font_scale"] = validate_scale(
-            "font_scale",
-            0.75,
-            1.60,
-        )
-        for field in (
-            "review_font_scale",
-            "analysis_font_scale",
-            "control_font_scale",
-        ):
+        clean["font_scale"] = validate_scale("font_scale", 0.75, 1.60)
+        for field in ("review_font_scale", "analysis_font_scale", "control_font_scale"):
             clean[field] = validate_scale(field, 0.85, 1.30)
-
         density = payload["density"]
-        if (
-            not isinstance(density, str)
-            or density not in SETTING_DENSITIES
-        ):
-            raise ValidationError(
-                "density must be compact, comfortable, or spacious"
-            )
+        if not isinstance(density, str) or density not in SETTING_DENSITIES:
+            raise ValidationError("density must be compact, comfortable, or spacious")
         clean["density"] = density
         return clean
 
@@ -150,14 +120,10 @@ class SettingsStore:
         if not self.path.exists():
             return dict(DEFAULT_SETTINGS), None
         try:
-            payload = json.loads(
-                self.path.read_text(encoding="utf-8")
-            )
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(payload, dict):
                 optional_font_fields = {
-                    "review_font_scale",
-                    "analysis_font_scale",
-                    "control_font_scale",
+                    "review_font_scale", "analysis_font_scale", "control_font_scale"
                 }
                 missing = set(DEFAULT_SETTINGS) - set(payload)
                 if missing and missing.issubset(optional_font_fields):
@@ -166,8 +132,7 @@ class SettingsStore:
         except (OSError, json.JSONDecodeError, ValidationError):
             return dict(DEFAULT_SETTINGS), None
         updated_at = dt.datetime.fromtimestamp(
-            self.path.stat().st_mtime,
-            tz=dt.timezone.utc,
+            self.path.stat().st_mtime, tz=dt.timezone.utc
         ).isoformat()
         return settings, updated_at
 
@@ -183,18 +148,11 @@ class SettingsStore:
         settings = self._validate(payload)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(
-            prefix=".lf3r_annotator_settings.",
-            suffix=".tmp",
-            dir=self.path.parent,
+            prefix=".lf3r_annotator_settings.", suffix=".tmp", dir=self.path.parent
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(
-                    settings,
-                    handle,
-                    indent=2,
-                    ensure_ascii=False,
-                )
+                json.dump(settings, handle, indent=2, ensure_ascii=False)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -203,7 +161,6 @@ class SettingsStore:
             if os.path.exists(temp_name):
                 os.unlink(temp_name)
         return settings
-
 
 class AnnotationStore:
     def __init__(self, root: Path) -> None:
@@ -225,11 +182,7 @@ class AnnotationStore:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
 
-    def write(
-        self,
-        rollout: dict[str, Any],
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
+    def write(self, rollout: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         rollout_id = rollout["id"]
         clean = validate_annotation(payload, rollout)
         now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -238,27 +191,16 @@ class AnnotationStore:
             "schema_version": 2,
             "rollout_id": rollout_id,
             "updated_at": now,
-            "created_at": (
-                previous.get("created_at", now)
-                if previous
-                else now
-            ),
+            "created_at": previous.get("created_at", now) if previous else now,
             **clean,
         }
         target = self.path_for(rollout_id)
         fd, temp_name = tempfile.mkstemp(
-            prefix=f".{rollout_id}.",
-            suffix=".tmp",
-            dir=self.records_dir,
+            prefix=f".{rollout_id}.", suffix=".tmp", dir=self.records_dir
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(
-                    record,
-                    handle,
-                    indent=2,
-                    ensure_ascii=False,
-                )
+                json.dump(record, handle, indent=2, ensure_ascii=False)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -282,55 +224,33 @@ class AnnotationStore:
         }
         with path.open("a", encoding="utf-8") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            handle.write(
-                json.dumps(event, ensure_ascii=False) + "\n"
-            )
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def optional_frame(
-    value: Any,
-    name: str,
-    total_frames: int,
-) -> int | None:
+def optional_frame(value: Any, name: str, total_frames: int) -> int | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(
-            f"{name} must be an integer frame or null"
-        )
+        raise ValidationError(f"{name} must be an integer frame or null")
     if value < 0 or value >= total_frames:
-        raise ValidationError(
-            f"{name} must be between 0 and {total_frames - 1}"
-        )
+        raise ValidationError(f"{name} must be between 0 and {total_frames - 1}")
     return value
 
 
 def validate_failure_event(
-    value: Any,
-    index: int,
-    total_frames: int,
-    default_failure_type: str,
+    value: Any, index: int, total_frames: int, default_failure_type: str
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValidationError(
-            f"failure_events[{index}] must be an object"
-        )
-    failure_type = value.get(
-        "failure_type",
-        default_failure_type,
-    )
+        raise ValidationError(f"failure_events[{index}] must be an object")
+    failure_type = value.get("failure_type", default_failure_type)
     if failure_type not in FAILURE_TYPES:
-        raise ValidationError(
-            f"failure_events[{index}].failure_type is invalid"
-        )
+        raise ValidationError(f"failure_events[{index}].failure_type is invalid")
     prefix = f"failure_events[{index}]"
     causal = optional_frame(
-        value.get("causal_onset_frame"),
-        f"{prefix}.causal_onset_frame",
-        total_frames,
+        value.get("causal_onset_frame"), f"{prefix}.causal_onset_frame", total_frames
     )
     observable = optional_frame(
         value.get("observable_onset_frame"),
@@ -343,44 +263,20 @@ def validate_failure_event(
         total_frames,
     )
     recovery = optional_frame(
-        value.get("recovery_frame"),
-        f"{prefix}.recovery_frame",
-        total_frames,
+        value.get("recovery_frame"), f"{prefix}.recovery_frame", total_frames
     )
-    if (
-        causal is not None
-        and observable is not None
-        and causal > observable
-    ):
-        raise ValidationError(
-            f"{prefix}: causal onset cannot be after observable onset"
-        )
+    if causal is not None and observable is not None and causal > observable:
+        raise ValidationError(f"{prefix}: causal onset cannot be after observable onset")
     onset = observable if observable is not None else causal
-    if (
-        onset is not None
-        and terminal is not None
-        and onset > terminal
-    ):
-        raise ValidationError(
-            f"{prefix}: onset cannot be after terminal failure"
-        )
-    if (
-        onset is not None
-        and recovery is not None
-        and onset > recovery
-    ):
-        raise ValidationError(
-            f"{prefix}: onset cannot be after recovery"
-        )
+    if onset is not None and terminal is not None and onset > terminal:
+        raise ValidationError(f"{prefix}: onset cannot be after terminal failure")
+    if onset is not None and recovery is not None and onset > recovery:
+        raise ValidationError(f"{prefix}: onset cannot be after recovery")
     if terminal is not None and recovery is not None:
-        raise ValidationError(
-            f"{prefix}: terminal failure and recovery are mutually exclusive"
-        )
+        raise ValidationError(f"{prefix}: terminal failure and recovery are mutually exclusive")
     notes = str(value.get("notes", ""))
     if len(notes) > 1000:
-        raise ValidationError(
-            f"{prefix}.notes must be at most 1000 characters"
-        )
+        raise ValidationError(f"{prefix}.notes must be at most 1000 characters")
     return {
         "failure_type": failure_type,
         "causal_onset_frame": causal,
@@ -391,61 +287,34 @@ def validate_failure_event(
     }
 
 
-def validate_annotation(
-    payload: Any,
-    rollout: dict[str, Any],
-) -> dict[str, Any]:
+def validate_annotation(payload: Any, rollout: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
-        raise ValidationError(
-            "Annotation must be a JSON object"
-        )
+        raise ValidationError("Annotation must be a JSON object")
     total_frames = int(rollout["total_frames"])
     annotator = str(payload.get("annotator", "")).strip()
     if not annotator or len(annotator) > 100:
-        raise ValidationError(
-            "annotator is required and must be at most 100 characters"
-        )
-    review_status = payload.get(
-        "review_status",
-        "in_progress",
-    )
+        raise ValidationError("annotator is required and must be at most 100 characters")
+    review_status = payload.get("review_status", "in_progress")
     if review_status not in REVIEW_STATUSES:
         raise ValidationError("Invalid review_status")
-    outcome_label = payload.get(
-        "outcome_label",
-        "uncertain",
-    )
+    outcome_label = payload.get("outcome_label", "uncertain")
     if outcome_label not in OUTCOME_LABELS:
         raise ValidationError("Invalid outcome_label")
     failure_type = payload.get("failure_type", "other")
     if failure_type not in FAILURE_TYPES:
         raise ValidationError("Invalid failure_type")
-
     confidence = payload.get("confidence")
     if confidence in ("", None):
         confidence = None
-    elif (
-        isinstance(confidence, bool)
-        or not isinstance(confidence, int)
-        or not 1 <= confidence <= 5
-    ):
-        raise ValidationError(
-            "confidence must be an integer from 1 to 5 or null"
-        )
-
+    elif isinstance(confidence, bool) or not isinstance(confidence, int) or not 1 <= confidence <= 5:
+        raise ValidationError("confidence must be an integer from 1 to 5 or null")
     raw_events = payload.get("failure_events")
     if raw_events is None:
         legacy_values = {
             "failure_type": failure_type,
-            "causal_onset_frame": payload.get(
-                "causal_onset_frame"
-            ),
-            "observable_onset_frame": payload.get(
-                "observable_onset_frame"
-            ),
-            "terminal_failure_frame": payload.get(
-                "terminal_failure_frame"
-            ),
+            "causal_onset_frame": payload.get("causal_onset_frame"),
+            "observable_onset_frame": payload.get("observable_onset_frame"),
+            "terminal_failure_frame": payload.get("terminal_failure_frame"),
             "recovery_frame": payload.get("recovery_frame"),
             "notes": "",
         }
@@ -458,71 +327,33 @@ def validate_annotation(
                 "recovery_frame",
             )
         )
-        raw_events = (
-            [legacy_values]
-            if has_legacy_boundary
-            else []
-        )
-
+        raw_events = [legacy_values] if has_legacy_boundary else []
     if not isinstance(raw_events, list):
-        raise ValidationError(
-            "failure_events must be an array"
-        )
+        raise ValidationError("failure_events must be an array")
     failure_events = [
-        validate_failure_event(
-            event,
-            index,
-            total_frames,
-            failure_type,
-        )
+        validate_failure_event(event, index, total_frames, failure_type)
         for index, event in enumerate(raw_events)
     ]
-
-    if (
-        outcome_label == "recovered_success"
-        and not failure_events
+    if outcome_label == "recovered_success" and not failure_events:
+        raise ValidationError("recovered_success requires at least one failure event")
+    if outcome_label == "recovered_success" and any(
+        event["terminal_failure_frame"] is not None for event in failure_events
     ):
-        raise ValidationError(
-            "recovered_success requires at least one failure event"
-        )
-    if (
-        outcome_label == "recovered_success"
-        and any(
-            event["terminal_failure_frame"] is not None
-            for event in failure_events
-        )
-    ):
-        raise ValidationError(
-            "recovered_success events cannot be terminal failures"
-        )
-
+        raise ValidationError("recovered_success events cannot be terminal failures")
     first_event = failure_events[0] if failure_events else {}
     notes = str(payload.get("notes", ""))
     if len(notes) > 5000:
-        raise ValidationError(
-            "notes must be at most 5000 characters"
-        )
+        raise ValidationError("notes must be at most 5000 characters")
     return {
         "annotator": annotator,
         "review_status": review_status,
         "outcome_label": outcome_label,
-        "failure_type": first_event.get(
-            "failure_type",
-            failure_type,
-        ),
+        "failure_type": first_event.get("failure_type", failure_type),
         "confidence": confidence,
         "failure_events": failure_events,
-        "causal_onset_frame": first_event.get(
-            "causal_onset_frame"
-        ),
-        "observable_onset_frame": first_event.get(
-            "observable_onset_frame"
-        ),
-        "terminal_failure_frame": first_event.get(
-            "terminal_failure_frame"
-        ),
-        "recovery_frame": first_event.get(
-            "recovery_frame"
-        ),
+        "causal_onset_frame": first_event.get("causal_onset_frame"),
+        "observable_onset_frame": first_event.get("observable_onset_frame"),
+        "terminal_failure_frame": first_event.get("terminal_failure_frame"),
+        "recovery_frame": first_event.get("recovery_frame"),
         "notes": notes,
     }
