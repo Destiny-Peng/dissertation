@@ -20,11 +20,7 @@ class BaselineRunIndex:
     once when no catalog exists, or explicitly through rebuild().
     """
 
-    def __init__(
-        self,
-        project_root: Path,
-        baseline_root: Path,
-    ) -> None:
+    def __init__(self, project_root: Path, baseline_root: Path) -> None:
         self.project_root = project_root.resolve()
         self.baseline_root = baseline_root.resolve()
         self.path = (
@@ -34,20 +30,12 @@ class BaselineRunIndex:
             / "baseline_runs.sqlite3"
         )
         self.lock = threading.RLock()
-        self.path.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            self.path,
-            timeout=5.0,
-        )
-        connection.execute(
-            "PRAGMA busy_timeout = 5000"
-        )
+        connection = sqlite3.connect(self.path, timeout=5.0)
+        connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
     def _initialize(self) -> None:
@@ -77,11 +65,7 @@ class BaselineRunIndex:
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS baseline_runs_method_status
-                ON baseline_runs (
-                    baseline,
-                    status,
-                    sort_time DESC
-                )
+                ON baseline_runs (baseline, status, sort_time DESC)
                 """
             )
             connection.execute(
@@ -97,44 +81,27 @@ class BaselineRunIndex:
                 """
             )
 
-    def _relative_run_root(
-        self,
-        run_path: Path,
-    ) -> str:
+    def _relative_run_root(self, run_path: Path) -> str:
         resolved = run_path.resolve()
         try:
-            resolved.relative_to(
-                self.baseline_root
-            )
-            return str(
-                resolved.relative_to(
-                    self.project_root
-                )
-            )
+            resolved.relative_to(self.baseline_root)
+            return str(resolved.relative_to(self.project_root))
         except ValueError as error:
             raise ValidationError(
                 "Baseline run index path must be inside outputs/baselines"
             ) from error
 
     @staticmethod
-    def _selected_rollouts(
-        metadata: dict[str, Any],
-    ) -> int:
+    def _selected_rollouts(metadata: dict[str, Any]) -> int:
         try:
-            return int(
-                metadata.get(
-                    "selected_rollouts"
-                )
-                or 0
-            )
+            return int(metadata.get("selected_rollouts") or 0)
         except (TypeError, ValueError):
             return 0
 
     def _built(self) -> bool:
         with self.lock, self._connect() as connection:
             row = connection.execute(
-                "SELECT value FROM baseline_run_index_meta "
-                "WHERE key = 'scan_complete'"
+                "SELECT value FROM baseline_run_index_meta WHERE key = 'scan_complete'"
             ).fetchone()
         return bool(row and row[0] == "1")
 
@@ -151,9 +118,7 @@ class BaselineRunIndex:
         metadata_path = run_path / "run.json"
         if not metadata_path.is_file():
             return False
-        relative_run_root = self._relative_run_root(
-            run_path
-        )
+        relative_run_root = self._relative_run_root(run_path)
         try:
             stat = metadata_path.stat()
         except OSError:
@@ -170,35 +135,22 @@ class BaselineRunIndex:
             ).fetchone()
             if (
                 existing is not None
-                and int(existing[0])
-                == stat.st_mtime_ns
-                and int(existing[1])
-                == stat.st_size
+                and int(existing[0]) == stat.st_mtime_ns
+                and int(existing[1]) == stat.st_size
             ):
                 return False
 
         if metadata is None:
             try:
-                value = json.loads(
-                    metadata_path.read_text(
-                        encoding="utf-8"
-                    )
-                )
-            except (
-                OSError,
-                json.JSONDecodeError,
-            ):
+                value = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
                 return False
             if not isinstance(value, dict):
                 return False
             metadata = value
 
-        baseline = str(
-            metadata.get("baseline") or ""
-        ).strip()
-        status = str(
-            metadata.get("status") or ""
-        ).strip()
+        baseline = str(metadata.get("baseline") or "").strip()
+        status = str(metadata.get("status") or "").strip()
         if not baseline:
             return False
         sort_time = str(
@@ -206,24 +158,14 @@ class BaselineRunIndex:
             or metadata.get("created_at")
             or ""
         )
-        payload = json.dumps(
-            metadata,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+        payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
 
         with self.lock, self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO baseline_runs (
-                    run_root,
-                    baseline,
-                    status,
-                    sort_time,
-                    selected_rollouts,
-                    metadata_mtime_ns,
-                    metadata_size,
-                    metadata_json
+                    run_root, baseline, status, sort_time, selected_rollouts,
+                    metadata_mtime_ns, metadata_size, metadata_json
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_root) DO UPDATE SET
@@ -240,9 +182,7 @@ class BaselineRunIndex:
                     baseline,
                     status,
                     sort_time,
-                    self._selected_rollouts(
-                        metadata
-                    ),
+                    self._selected_rollouts(metadata),
                     stat.st_mtime_ns,
                     stat.st_size,
                     payload,
@@ -252,76 +192,28 @@ class BaselineRunIndex:
 
     def rebuild(self) -> dict[str, int]:
         rows: list[
-            tuple[
-                str,
-                str,
-                str,
-                str,
-                int,
-                int,
-                int,
-                str,
-            ]
+            tuple[str, str, str, str, int, int, int, str]
         ] = []
         scanned = 0
         if self.baseline_root.is_dir():
-            for metadata_path in (
-                self.baseline_root.rglob(
-                    "run.json"
-                )
-            ):
+            for metadata_path in self.baseline_root.rglob("run.json"):
                 scanned += 1
                 try:
-                    run_path = (
-                        metadata_path
-                        .parent
-                        .resolve()
-                    )
-                    relative_run_root = (
-                        self._relative_run_root(
-                            run_path
-                        )
-                    )
-                    stat = (
-                        metadata_path.stat()
-                    )
-                    metadata = json.loads(
-                        metadata_path.read_text(
-                            encoding="utf-8"
-                        )
-                    )
-                except (
-                    OSError,
-                    json.JSONDecodeError,
-                    ValidationError,
-                ):
+                    run_path = metadata_path.parent.resolve()
+                    relative_run_root = self._relative_run_root(run_path)
+                    stat = metadata_path.stat()
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, ValidationError):
                     continue
-                if not isinstance(
-                    metadata,
-                    dict,
-                ):
+                if not isinstance(metadata, dict):
                     continue
-                baseline = str(
-                    metadata.get(
-                        "baseline"
-                    )
-                    or ""
-                ).strip()
+                baseline = str(metadata.get("baseline") or "").strip()
                 if not baseline:
                     continue
-                status = str(
-                    metadata.get(
-                        "status"
-                    )
-                    or ""
-                ).strip()
+                status = str(metadata.get("status") or "").strip()
                 sort_time = str(
-                    metadata.get(
-                        "completed_at"
-                    )
-                    or metadata.get(
-                        "created_at"
-                    )
+                    metadata.get("completed_at")
+                    or metadata.get("created_at")
                     or ""
                 )
                 rows.append(
@@ -330,38 +222,25 @@ class BaselineRunIndex:
                         baseline,
                         status,
                         sort_time,
-                        self._selected_rollouts(
-                            metadata
-                        ),
+                        self._selected_rollouts(metadata),
                         stat.st_mtime_ns,
                         stat.st_size,
                         json.dumps(
                             metadata,
                             ensure_ascii=False,
-                            separators=(
-                                ",",
-                                ":",
-                            ),
+                            separators=(",", ":"),
                         ),
                     )
                 )
 
         with self.lock, self._connect() as connection:
-            connection.execute(
-                "DELETE FROM baseline_runs"
-            )
+            connection.execute("DELETE FROM baseline_runs")
             if rows:
                 connection.executemany(
                     """
                     INSERT INTO baseline_runs (
-                        run_root,
-                        baseline,
-                        status,
-                        sort_time,
-                        selected_rollouts,
-                        metadata_mtime_ns,
-                        metadata_size,
-                        metadata_json
+                        run_root, baseline, status, sort_time, selected_rollouts,
+                        metadata_mtime_ns, metadata_size, metadata_json
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
@@ -369,35 +248,20 @@ class BaselineRunIndex:
                 )
             connection.execute(
                 """
-                INSERT INTO baseline_run_index_meta (
-                    key,
-                    value
-                )
+                INSERT INTO baseline_run_index_meta (key, value)
                 VALUES ('scan_complete', '1')
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """
             )
             connection.execute(
                 """
-                INSERT INTO baseline_run_index_meta (
-                    key,
-                    value
-                )
+                INSERT INTO baseline_run_index_meta (key, value)
                 VALUES ('last_scan_at', ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
-                (
-                    dt.datetime.now(
-                        dt.timezone.utc
-                    ).isoformat(),
-                ),
+                (dt.datetime.now(dt.timezone.utc).isoformat(),),
             )
-        return {
-            "scanned": scanned,
-            "indexed": len(rows),
-        }
+        return {"scanned": scanned, "indexed": len(rows)}
 
     def cached_rollout_details(
         self,
@@ -410,67 +274,33 @@ class BaselineRunIndex:
             return None
         try:
             stat = jobs_path.stat()
-            run_root = self._relative_run_root(
-                run_path
-            )
+            run_root = self._relative_run_root(run_path)
         except (OSError, ValidationError):
             return None
-
         with self.lock, self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT
-                    jobs_mtime_ns,
-                    jobs_size,
-                    rollout_ids_json,
-                    robo_signal_ids_json
+                SELECT jobs_mtime_ns, jobs_size, rollout_ids_json, robo_signal_ids_json
                 FROM baseline_run_rollout_cache
                 WHERE run_root = ?
                 """,
                 (run_root,),
             ).fetchone()
-
         if row is None:
             return None
-        if (
-            int(row[0]) != stat.st_mtime_ns
-            or int(row[1]) != stat.st_size
-        ):
+        if int(row[0]) != stat.st_mtime_ns or int(row[1]) != stat.st_size:
             return None
-
         try:
             rollout_ids = json.loads(row[2])
-            robo_signal_ids = (
-                json.loads(row[3])
-                if row[3]
-                else None
-            )
-        except (
-            TypeError,
-            json.JSONDecodeError,
+            robo_signal_ids = json.loads(row[3]) if row[3] else None
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(rollout_ids, list) or not all(
+            isinstance(value, str) for value in rollout_ids
         ):
             return None
-
-        if (
-            not isinstance(
-                rollout_ids,
-                list,
-            )
-            or not all(
-                isinstance(value, str)
-                for value in rollout_ids
-            )
-        ):
+        if robo_signal_ids is not None and not isinstance(robo_signal_ids, dict):
             return None
-        if (
-            robo_signal_ids is not None
-            and not isinstance(
-                robo_signal_ids,
-                dict,
-            )
-        ):
-            return None
-
         return {
             "rollout_ids": rollout_ids,
             "robo_signal_ids": robo_signal_ids,
@@ -480,9 +310,7 @@ class BaselineRunIndex:
         self,
         run_path: Path,
         rollout_ids: set[str],
-        robo_signal_ids: (
-            Mapping[str, set[str]] | None
-        ) = None,
+        robo_signal_ids: Mapping[str, set[str]] | None = None,
     ) -> bool:
         """Persist rollout inventory so catalog reads avoid raw-tree probing."""
         run_path = run_path.resolve()
@@ -491,39 +319,27 @@ class BaselineRunIndex:
             return False
         try:
             stat = jobs_path.stat()
-            run_root = self._relative_run_root(
-                run_path
-            )
+            run_root = self._relative_run_root(run_path)
         except (OSError, ValidationError):
             return False
-
         signal_payload = (
             json.dumps(
                 {
-                    str(mode): sorted(
-                        set(ids)
-                    )
-                    for mode, ids
-                    in robo_signal_ids.items()
+                    str(mode): sorted(set(ids))
+                    for mode, ids in robo_signal_ids.items()
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            if robo_signal_ids
-            is not None
+            if robo_signal_ids is not None
             else None
         )
-
         with self.lock, self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO baseline_run_rollout_cache (
-                    run_root,
-                    jobs_mtime_ns,
-                    jobs_size,
-                    rollout_ids_json,
-                    robo_signal_ids_json,
-                    updated_at
+                    run_root, jobs_mtime_ns, jobs_size, rollout_ids_json,
+                    robo_signal_ids_json, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_root) DO UPDATE SET
@@ -538,227 +354,109 @@ class BaselineRunIndex:
                     stat.st_mtime_ns,
                     stat.st_size,
                     json.dumps(
-                        sorted(
-                            set(
-                                rollout_ids
-                            )
-                        ),
+                        sorted(set(rollout_ids)),
                         ensure_ascii=False,
-                        separators=(
-                            ",",
-                            ":",
-                        ),
+                        separators=(",", ":"),
                     ),
                     signal_payload,
-                    dt.datetime.now(
-                        dt.timezone.utc
-                    ).isoformat(),
+                    dt.datetime.now(dt.timezone.utc).isoformat(),
                 ),
             )
         return True
 
     def clear_rollout_cache(self) -> None:
         with self.lock, self._connect() as connection:
-            connection.execute(
-                "DELETE FROM "
-                "baseline_run_rollout_cache"
-            )
+            connection.execute("DELETE FROM baseline_run_rollout_cache")
 
-    def _delete_roots(
-        self,
-        run_roots: list[str],
-    ) -> None:
+    def _delete_roots(self, run_roots: list[str]) -> None:
         if not run_roots:
             return
         with self.lock, self._connect() as connection:
             connection.executemany(
-                "DELETE FROM baseline_runs "
-                "WHERE run_root = ?",
-                [
-                    (run_root,)
-                    for run_root
-                    in run_roots
-                ],
+                "DELETE FROM baseline_runs WHERE run_root = ?",
+                [(run_root,) for run_root in run_roots],
             )
             connection.executemany(
-                "DELETE FROM "
-                "baseline_run_rollout_cache "
-                "WHERE run_root = ?",
-                [
-                    (run_root,)
-                    for run_root
-                    in run_roots
-                ],
+                "DELETE FROM baseline_run_rollout_cache WHERE run_root = ?",
+                [(run_root,) for run_root in run_roots],
             )
 
     def candidates(
         self,
         method: str,
         statuses: set[str],
-    ) -> list[
-        tuple[
-            Path,
-            dict[str, Any],
-        ]
-    ]:
+    ) -> list[tuple[Path, dict[str, Any]]]:
         self.ensure_built()
         if not statuses:
             return []
-
-        placeholders = ",".join(
-            "?" for _ in statuses
-        )
-        parameters: list[Any] = [
-            method,
-            *sorted(statuses),
-        ]
+        placeholders = ",".join("?" for _ in statuses)
+        parameters: list[Any] = [method, *sorted(statuses)]
         query = f"""
-            SELECT
-                run_root,
-                metadata_mtime_ns,
-                metadata_size,
-                metadata_json
+            SELECT run_root, metadata_mtime_ns, metadata_size, metadata_json
             FROM baseline_runs
-            WHERE baseline = ?
-              AND status IN ({placeholders})
-            ORDER BY
-                sort_time DESC,
-                selected_rollouts DESC,
-                run_root DESC
+            WHERE baseline = ? AND status IN ({placeholders})
+            ORDER BY sort_time DESC, selected_rollouts DESC, run_root DESC
         """
-
         with self.lock, self._connect() as connection:
-            rows = connection.execute(
-                query,
-                parameters,
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
 
-        result: list[
-            tuple[
-                Path,
-                dict[str, Any],
-            ]
-        ] = []
+        result: list[tuple[Path, dict[str, Any]]] = []
         remove_roots: list[str] = []
-
-        for (
-            run_root,
-            mtime_ns,
-            size,
-            metadata_json,
-        ) in rows:
-            run_path = (
-                self.project_root
-                / str(run_root)
-            ).resolve()
-            metadata_path = (
-                run_path / "run.json"
-            )
+        for run_root, mtime_ns, size, metadata_json in rows:
+            run_path = (self.project_root / str(run_root)).resolve()
+            metadata_path = run_path / "run.json"
             if not metadata_path.is_file():
-                remove_roots.append(
-                    str(run_root)
-                )
+                remove_roots.append(str(run_root))
                 continue
             try:
                 stat = metadata_path.stat()
             except OSError:
                 continue
 
-            metadata: (
-                dict[str, Any] | None
-            ) = None
-            if (
-                stat.st_mtime_ns
-                == int(mtime_ns)
-                and stat.st_size
-                == int(size)
-            ):
+            metadata: dict[str, Any] | None = None
+            if stat.st_mtime_ns == int(mtime_ns) and stat.st_size == int(size):
                 try:
-                    cached = json.loads(
-                        metadata_json
-                    )
+                    cached = json.loads(metadata_json)
                 except json.JSONDecodeError:
                     cached = None
                 if isinstance(cached, dict):
                     metadata = cached
             else:
                 try:
-                    current = json.loads(
-                        metadata_path.read_text(
-                            encoding="utf-8"
-                        )
-                    )
-                except (
-                    OSError,
-                    json.JSONDecodeError,
-                ):
+                    current = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    # run.json may be between atomic rewrites. Keep the cached
+                    # row for this request and retry naturally on the next one.
                     try:
-                        cached = json.loads(
-                            metadata_json
-                        )
+                        cached = json.loads(metadata_json)
                     except json.JSONDecodeError:
                         cached = None
-                    if isinstance(
-                        cached,
-                        dict,
-                    ):
+                    if isinstance(cached, dict):
                         metadata = cached
                 else:
-                    if isinstance(
-                        current,
-                        dict,
-                    ):
-                        self.upsert(
-                            run_path,
-                            current,
-                        )
+                    if isinstance(current, dict):
+                        self.upsert(run_path, current)
                         metadata = current
                     else:
-                        remove_roots.append(
-                            str(run_root)
-                        )
+                        remove_roots.append(str(run_root))
 
             if metadata is None:
                 continue
-            if (
-                metadata.get("baseline")
-                != method
-            ):
+            if metadata.get("baseline") != method:
                 continue
-            if (
-                str(
-                    metadata.get(
-                        "status"
-                    )
-                    or ""
-                )
-                not in statuses
-            ):
+            if str(metadata.get("status") or "") not in statuses:
                 continue
-            result.append(
-                (
-                    run_path,
-                    metadata,
-                )
-            )
+            result.append((run_path, metadata))
 
-        self._delete_roots(
-            remove_roots
-        )
+        self._delete_roots(remove_roots)
         result.sort(
             key=lambda item: (
                 str(
-                    item[1].get(
-                        "completed_at"
-                    )
-                    or item[1].get(
-                        "created_at"
-                    )
+                    item[1].get("completed_at")
+                    or item[1].get("created_at")
                     or ""
                 ),
-                self._selected_rollouts(
-                    item[1]
-                ),
+                self._selected_rollouts(item[1]),
                 str(item[0]),
             ),
             reverse=True,
