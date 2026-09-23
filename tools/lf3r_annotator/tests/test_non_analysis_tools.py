@@ -134,6 +134,22 @@ class NonAnalysisToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest_paths must be a non-empty list"):
             tools.transcode_manifest_videos_command({"manifest_paths": []})
 
+    def test_batch_transcode_is_serialized(self):
+        tmux = FakeTmux()
+        service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
+        manifest = tools.PROJECT_ROOT / "datasets" / "lf3r_failure_rollouts" / "v1" / "manifest.jsonl"
+        if not manifest.is_file():
+            self.skipTest("project manifest is unavailable")
+        service.submit(
+            "transcode_manifest_videos",
+            {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]},
+        )
+        with self.assertRaisesRegex(ValueError, "another H.264 transcode job is already active"):
+            service.submit(
+                "transcode_manifest_videos",
+                {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]},
+            )
+
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
