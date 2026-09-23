@@ -183,6 +183,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 "baseline_jobs.py",
                 "baseline_service.py",
                 "analysis_constants.py",
+                "analysis_snapshots.py",
+                "analysis_details.py",
                 "analysis_service.py",
                 "analysis_robo_jobs.py",
                 "analysis_localization.py",
