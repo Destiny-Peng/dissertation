@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 from task_supervisor import TmuxJobSupervisor, TmuxSupervisorError
+from non_analysis_tools import NonAnalysisToolService, gpu_status
 
 
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +67,7 @@ BASELINE_LABELS = {
     "densereward": "DenseReward",
 }
 BASELINE_RUN_STATUSES = {"complete", "complete_with_errors"}
+BASELINE_READABLE_RUN_STATUSES = BASELINE_RUN_STATUSES | {"running"}
 BASELINE_RESULT_FILTERS = {"all", "missing_valid"}
 INSTRUCTION_VARIANT_CONDITIONS = ("full_instruction", "subtask_a", "subtask_b")
 INSTRUCTION_VARIANT_LABELS = {
@@ -94,7 +96,7 @@ BASELINE_METHOD_OPTION_FIELDS = {
         "procvlm_procedure_mode", "procvlm_procedure_config",
         "procvlm_tracker_support_threshold", "procvlm_tracker_window_size",
         "procvlm_tracker_max_forward_jump",
-        "render_video", "validate_environment", "dry_run",
+        "procvlm_use_lora", "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
         "model_path", "rynn_num_frames", "rynn_num_steps", "rynn_evaluation_interval", "rynn_batch_size",
@@ -120,6 +122,7 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
+    "procvlm_use_lora",
     "procvlm_procedure_mode",
     "procvlm_procedure_config",
     "procvlm_tracker_support_threshold",
@@ -511,14 +514,14 @@ class JobCoordinator:
         self.active_jobs: dict[str, str] = {}
 
     def acquire(self, job_id: str, role: str = "compute") -> None:
+        """Serialize manifest writers only; independent compute may overlap."""
         with self.lock:
-            if role == "manifest_writer" and self.active_jobs:
+            if role == "manifest_writer" and any(
+                active_role == "manifest_writer"
+                for active_role in self.active_jobs.values()
+            ):
                 raise JobConflictError(
-                    "Rollout generation is exclusive because it rebuilds the manifest"
-                )
-            if any(active_role == "manifest_writer" for active_role in self.active_jobs.values()):
-                raise JobConflictError(
-                    "A rollout-generation job is rebuilding the manifest"
+                    "Another rollout-generation job is already rebuilding the manifest"
                 )
             self.active_jobs[job_id] = role
 
@@ -535,10 +538,26 @@ class JobCoordinator:
             return dict(self.active_jobs)
 
 
+DYNAMIC_SCOPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+RESERVED_RUN_SCOPES = {"all", "controlled_analysis"}
+
+
+def _is_controlled_record(record: dict[str, Any]) -> bool:
+    return (
+        record.get("analysis_partition") == "controlled_analysis"
+        or record.get("source_kind") == "controlled_injected"
+    )
+
+
 def validate_run_scope(scope: Any) -> str:
-    value = str(scope or "libero_10")
-    if value not in RUN_SCOPES:
-        raise ValidationError("scope must be one of: " + ", ".join(RUN_SCOPES))
+    value = str(scope or "all").strip()
+    if value in RESERVED_RUN_SCOPES:
+        return value
+    if not DYNAMIC_SCOPE_RE.fullmatch(value):
+        raise ValidationError(
+            "scope must be 'all', 'controlled_analysis', or a task_suite name "
+            "present in the loaded manifests"
+        )
     return value
 
 
@@ -553,11 +572,15 @@ def validate_instruction_condition(condition: Any) -> str:
 
 
 def record_matches_scope(record: dict[str, Any], scope: str) -> bool:
+    scope = validate_run_scope(scope)
     if scope == "all":
         return True
-    if scope in {"libero_10", "libero_spatial"}:
-        return record.get("task_suite") == scope
-    return record.get("analysis_partition") == scope
+    if scope == "controlled_analysis":
+        return _is_controlled_record(record)
+    return (
+        str(record.get("task_suite") or "") == scope
+        and not _is_controlled_record(record)
+    )
 
 
 def select_scope_records(records: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
@@ -7261,6 +7284,9 @@ class RolloutGenerationService:
 
 
 class LF3RApplication:
+    coordinator_class = JobCoordinator
+    baseline_service_class = BaselineService
+
     def __init__(
         self,
         project_root: Path,
@@ -7284,9 +7310,9 @@ class LF3RApplication:
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
-        self.job_coordinator = JobCoordinator()
+        self.job_coordinator = self.coordinator_class()
         self.tmux = TmuxJobSupervisor(self.project_root, tmux_binary=tmux_binary)
-        self.baselines = BaselineService(
+        self.baselines = self.baseline_service_class(
             self.project_root,
             self.manifest_path,
             self.job_coordinator,
@@ -7310,6 +7336,7 @@ class LF3RApplication:
         self.rollout_jobs = RolloutGenerationService(
             self.project_root, self.manifest_path, self.job_coordinator, self.tmux
         )
+        self.project_tools = NonAnalysisToolService(self.project_root, self.tmux)
         self.tmux.recover()
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
