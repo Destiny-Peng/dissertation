@@ -21,7 +21,12 @@ from libero.libero import benchmark, get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
 
 
-CAMERAS = ("agentview", "sideview", "robot0_eye_in_hand")
+ROBO_CAMERA_SOURCES = {
+    "cam_high": "agentview",
+    "cam_left_wrist": "robot0_eye_in_hand",
+    "cam_right_wrist": "sideview",
+}
+CAMERA_SLOTS = tuple(ROBO_CAMERA_SOURCES)
 ACTION_FIELDS = (
     "action/dx",
     "action/dy",
@@ -71,7 +76,7 @@ def make_env(task, resolution: int) -> OffScreenRenderEnv:
     )
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
-        camera_names=list(CAMERAS),
+        camera_names=list(dict.fromkeys(ROBO_CAMERA_SOURCES.values())),
         camera_heights=resolution,
         camera_widths=resolution,
     )
@@ -94,10 +99,10 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
 
 def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
     camera_paths = {
-        camera: video.with_name(video.stem + f".{camera}.mp4")
-        for camera in CAMERAS
+        slot: video.with_name(video.stem + f".{slot}.mp4")
+        for slot in CAMERA_SLOTS
     }
-    return camera_paths, video.with_name(video.stem + ".multiview.json")
+    return camera_paths, video.with_name(video.stem + ".camera_videos.json")
 
 
 def rollout_videos(run_dir: Path) -> Iterable[Path]:
@@ -147,8 +152,8 @@ def record_rollout(
             for camera, path in camera_paths.items()
         }
         for action in actions:
-            for camera in CAMERAS:
-                writers[camera].append_data(oriented_rgb(obs, camera))
+            for slot, source_camera in ROBO_CAMERA_SOURCES.items():
+                writers[slot].append_data(oriented_rgb(obs, source_camera))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
     except Exception:
@@ -162,14 +167,12 @@ def record_rollout(
         env.close()
 
     metadata = {
-        "schema_version": 2,
-        "video_view_mode": "libero_three_view",
-        "multiview_layout": "separate_videos",
-        "multiview_cameras": list(CAMERAS),
+        "schema_version": 1,
         "camera_video_paths": {
-            camera: path.name
-            for camera, path in camera_paths.items()
+            slot: path.name
+            for slot, path in camera_paths.items()
         },
+        "camera_source_names": dict(ROBO_CAMERA_SOURCES),
         "record_resolution": int(record_resolution),
         "camera_width": int(record_resolution),
         "camera_height": int(record_resolution),
@@ -182,12 +185,13 @@ def record_rollout(
         "episode_index": episode_idx,
         "replay_only": True,
         "policy_inference_reused": True,
+        "consumer_interface": "robo_dopamine_three_view",
     }
     metadata_path.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    outputs = ",".join(f"{camera}={path.name}" for camera, path in camera_paths.items())
+    outputs = ",".join(f"{slot}={path.name}" for slot, path in camera_paths.items())
     print(
         "LF3R_MULTIVIEW_RECORDED "
         f"source={video.name} outputs={outputs} frames={frame_count}"
