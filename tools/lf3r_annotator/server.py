@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 from task_supervisor import TmuxJobSupervisor, TmuxSupervisorError
-from non_analysis_tools import NonAnalysisToolService
 
 
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -67,7 +66,6 @@ BASELINE_LABELS = {
     "densereward": "DenseReward",
 }
 BASELINE_RUN_STATUSES = {"complete", "complete_with_errors"}
-BASELINE_READABLE_RUN_STATUSES = BASELINE_RUN_STATUSES | {"running"}
 BASELINE_RESULT_FILTERS = {"all", "missing_valid"}
 INSTRUCTION_VARIANT_CONDITIONS = ("full_instruction", "subtask_a", "subtask_b")
 INSTRUCTION_VARIANT_LABELS = {
@@ -96,7 +94,7 @@ BASELINE_METHOD_OPTION_FIELDS = {
         "procvlm_procedure_mode", "procvlm_procedure_config",
         "procvlm_tracker_support_threshold", "procvlm_tracker_window_size",
         "procvlm_tracker_max_forward_jump",
-        "procvlm_use_lora", "render_video", "validate_environment", "dry_run",
+        "render_video", "validate_environment", "dry_run",
     },
     "rynnvalue": {
         "model_path", "rynn_num_frames", "rynn_num_steps", "rynn_evaluation_interval", "rynn_batch_size",
@@ -122,7 +120,6 @@ BASELINE_ADVANCED_FIELDS = {
     "procvlm_max_sampled_frames",
     "procvlm_max_new_tokens",
     "procvlm_enable_value_head",
-    "procvlm_use_lora",
     "procvlm_procedure_mode",
     "procvlm_procedure_config",
     "procvlm_tracker_support_threshold",
@@ -7299,6 +7296,7 @@ class RolloutGenerationService:
 class LF3RApplication:
     coordinator_class = JobCoordinator
     baseline_service_class = BaselineService
+    project_tool_service_class = None
 
     def __init__(
         self,
@@ -7349,7 +7347,11 @@ class LF3RApplication:
         self.rollout_jobs = RolloutGenerationService(
             self.project_root, self.manifest_path, self.job_coordinator, self.tmux
         )
-        self.project_tools = NonAnalysisToolService(self.project_root, self.tmux)
+        if self.project_tool_service_class is not None:
+            self.project_tools = self.project_tool_service_class(
+                self.project_root,
+                self.tmux,
+            )
         self.tmux.recover()
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
