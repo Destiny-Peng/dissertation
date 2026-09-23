@@ -2316,6 +2316,12 @@ def parse_args() -> argparse.Namespace:
         help="Robo-Dopamine mode; fused runs incremental, forward, and backward then averages progress",
     )
     parser.add_argument(
+        "--robo-camera-mode",
+        choices=("auto", "single_view", "multi_view"),
+        default="auto",
+        help="Robo-Dopamine camera input: auto uses physical multiview when available, single_view repeats video_path, multi_view requires cam_high + cam_wrist",
+    )
+    parser.add_argument(
         "--robo-eval-modes",
         nargs="+",
         choices=("incremental", "forward", "backward"),
