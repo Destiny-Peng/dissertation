@@ -95,6 +95,21 @@ def resolve_robo_camera_inputs(
     canonical_video: Path,
 ) -> tuple[dict[str, str], str]:
     """Adapt dataset camera facts to Robo-Dopamine's fixed three input slots."""
+    requested_mode = str(getattr(args, "robo_camera_mode", "auto") or "auto").strip()
+    if requested_mode not in {"auto", "single_view", "multi_view"}:
+        raise ValueError(
+            "Robo-Dopamine camera mode must be auto, single_view, or multi_view; "
+            f"got {requested_mode!r}"
+        )
+
+    if requested_mode == "single_view":
+        canonical = str(canonical_video)
+        return {
+            "cam_high": canonical,
+            "cam_left_wrist": canonical,
+            "cam_right_wrist": canonical,
+        }, "single_view"
+
     raw = record.get("camera_video_paths")
     if not isinstance(raw, dict):
         raw = {}
@@ -113,6 +128,11 @@ def resolve_robo_camera_inputs(
         )
 
     if not present:
+        if requested_mode == "multi_view":
+            raise ValueError(
+                "Robo-Dopamine multi_view requires camera_video_paths with "
+                f"cam_high and cam_wrist for {record.get('id') or record.get('rollout_id')}"
+            )
         canonical = str(canonical_video)
         return {
             "cam_high": canonical,
@@ -589,6 +609,7 @@ def resume_run(args: argparse.Namespace) -> int:
                 f"{args.tensor_parallel_size} distinct GPUs in --gpu; got {args.gpu!r}"
             )
     args.robo_eval_mode = str(stored_arguments.get("robo_eval_mode", FUSED_EVAL_MODE))
+    args.robo_camera_mode = str(stored_arguments.get("robo_camera_mode", "auto"))
     stored_modes = stored_arguments.get("robo_eval_modes")
     args.robo_eval_modes = list(stored_modes) if stored_modes else None
     stored_goal = stored_arguments.get("goal_image")
