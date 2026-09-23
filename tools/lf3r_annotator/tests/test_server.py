@@ -2258,14 +2258,7 @@ print('fake label loss ablation complete')
             job["camera_video_slots"],
             ["cam_high", "cam_left_wrist", "cam_right_wrist"],
         )
-        self.assertEqual(
-            job["camera_source_names"],
-            {
-                "cam_high": "agentview",
-                "cam_left_wrist": "robot0_eye_in_hand",
-                "cam_right_wrist": "sideview",
-            },
-        )
+        self.assertNotIn("camera_source_names", job)
         self.assertNotIn("multiview_layout", job)
         self.assertNotIn("multiview_cameras", job)
         self.assertIn("--video-view-mode", job["command"])
