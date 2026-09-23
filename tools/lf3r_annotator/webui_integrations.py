@@ -373,7 +373,3 @@ def _do_post_with_tools(self: server.LF3RHandler) -> None:
 
 
 server.LF3RHandler.do_POST = _do_post_with_tools
-
-
-if __name__ == "__main__":
-    server.main()
