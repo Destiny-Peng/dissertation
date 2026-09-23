@@ -416,6 +416,13 @@
       if (!response.ok) throw new Error(payload.error || "Could not read project-tool jobs");
       var jobs = payload.jobs || [];
       if (!activeToolJobId && jobs.length) activeToolJobId = jobs[0].job_id;
+      var rebuildButton = document.getElementById("rebuildManifestRun");
+      if (rebuildButton) {
+        rebuildButton.disabled = jobs.some(function (job) {
+          return job.action === "rebuild_manifest"
+            && (job.status === "queued" || job.status === "running");
+        });
+      }
       renderToolJobs(jobs);
     } catch (_) {}
   }
@@ -804,6 +811,8 @@
   document.getElementById("validateBaselinesRun").addEventListener("click", function () { submitTool("validate_baselines", { check_environments: true }).catch(function () {}); });
   document.getElementById("validateVariantsRun").addEventListener("click", function () { submitTool("validate_variants", {}).catch(function () {}); });
   document.getElementById("rebuildManifestRun").addEventListener("click", function () {
+    var rebuildButton = document.getElementById("rebuildManifestRun");
+    if (rebuildButton) rebuildButton.disabled = true;
     var rawRoots = text("rebuildManifestExtraRoots");
     var extraRoots = rawRoots
       .split(/[\n,]+/)
@@ -820,8 +829,12 @@
     submitTool("rebuild_manifest", { extra_scan_roots: extraRoots })
       .then(function (job) {
         manifestRebuildBefore[job.job_id] = beforeCount;
+        if (summaryNode) {
+          summaryNode.textContent = "Manifest rebuild running · " + job.job_id;
+        }
       })
       .catch(function (error) {
+        if (rebuildButton) rebuildButton.disabled = false;
         if (summaryNode) summaryNode.textContent = "Manifest rebuild failed to start: " + String(error.message || error);
       });
   });
