@@ -341,12 +341,29 @@ def _do_post_with_tools(self: server.LF3RHandler) -> None:
                 for character in client_request_id
             ):
                 raise ValueError("invalid client_request_id")
+        self.log_message(
+            "project-tool submit received action=%s client_request_id=%s",
+            action,
+            client_request_id or "-",
+        )
         job = self.app.project_tools.submit(
             action,
             options,
             client_request_id=client_request_id or None,
         )
-        self.json_response(HTTPStatus.ACCEPTED, {"job": job})
+        self.log_message(
+            "project-tool submit registered action=%s job_id=%s status=%s",
+            action,
+            job.get("job_id"),
+            job.get("status"),
+        )
+        self.json_response(
+            HTTPStatus.ACCEPTED,
+            {
+                "job": job,
+                "project_tools_protocol": "immediate-registry-v1",
+            },
+        )
     except server.TmuxSupervisorError as exc:
         self.json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
