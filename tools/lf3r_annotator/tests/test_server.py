@@ -424,15 +424,12 @@ class ServerTest(unittest.TestCase):
 
     def test_video_endpoint_uses_canonical_by_default_and_explicit_camera_path(self) -> None:
         high = self.root / "outputs" / "sample.cam_high.mp4"
-        left = self.root / "outputs" / "sample.cam_left_wrist.mp4"
-        right = self.root / "outputs" / "sample.cam_right_wrist.mp4"
+        wrist = self.root / "outputs" / "sample.cam_wrist.mp4"
         high.write_bytes(b"HIGH")
-        left.write_bytes(b"LEFT")
-        right.write_bytes(b"RIGHT")
+        wrist.write_bytes(b"WRIST")
         self.rollout["camera_video_paths"] = {
             "cam_high": "outputs/sample.cam_high.mp4",
-            "cam_left_wrist": "outputs/sample.cam_left_wrist.mp4",
-            "cam_right_wrist": "outputs/sample.cam_right_wrist.mp4",
+            "cam_wrist": "outputs/sample.cam_wrist.mp4",
         }
         self.app.manifest_path.write_text(
             json.dumps(self.rollout) + "\n",
@@ -443,8 +440,8 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.read(), b"0123456789abcdef")
         with self.request("/api/videos/sample-rollout?camera=cam_high") as response:
             self.assertEqual(response.read(), b"HIGH")
-        with self.request("/api/videos/sample-rollout?camera=cam_left_wrist") as response:
-            self.assertEqual(response.read(), b"LEFT")
+        with self.request("/api/videos/sample-rollout?camera=cam_wrist") as response:
+            self.assertEqual(response.read(), b"WRIST")
         with self.request("/api/videos/sample-rollout?camera=cam_right_wrist") as response:
             self.assertEqual(response.read(), b"RIGHT")
         with self.assertRaises(urllib.error.HTTPError) as context:
@@ -2280,7 +2277,7 @@ print('fake label loss ablation complete')
         self.assertEqual(job["video_view_mode"], "libero_three_view")
         self.assertEqual(
             job["camera_video_slots"],
-            ["cam_high", "cam_left_wrist", "cam_right_wrist"],
+            ["cam_high", "cam_wrist"],
         )
         self.assertNotIn("camera_source_names", job)
         self.assertNotIn("multiview_layout", job)
