@@ -105,6 +105,9 @@
         + points + '"/></svg>'
         + '<div class="evaluation-chart-markers" data-evaluation-onset-markers data-frame-max="'
         + domain + '">' + renderEvaluationOnsetMarkers(record, domain)
+        + (typeof renderLocalizationPredictionMarker === "function"
+          ? renderLocalizationPredictionMarker(method, result, domain)
+          : "")
         + '</div><div class="signal-playhead" data-signal-playhead style="left:'
         + (Math.max(0, Math.min(domain, currentFrame())) / domain * 100)
         + '%"></div></div></div></div>'

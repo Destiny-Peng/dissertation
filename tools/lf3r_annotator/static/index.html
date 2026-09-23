@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LF3R Failure Review</title>
   <meta name="description" content="Local annotation workspace for LF3R robot failure rollouts">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=robo-localization-point-v1-20260922">
 </head>
 
 <body>
@@ -435,8 +435,11 @@
                 <option value="backward">Backward</option>
               </select></label>
             <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image
-                (optional)</span><input data-batch-option="goal_image" type="text"
-                placeholder="Project-relative image path"></label>
+                override (optional)</span><input data-batch-option="goal_image" type="text"
+                placeholder="Leave empty: LIBERO-10 uses task-specific goal"></label>
+            <label data-batch-methods="robo_dopamine"><span>Localization checkpoint (optional)</span><input
+                data-batch-option="robo_localization_ckpt" type="text"
+                placeholder="outputs/robo_localization/.../repeat_XX.pt"></label>
           </div>
           <div class="batch-check-grid">
             <label data-cli-help="baseline.render_video"><input data-batch-option="render_video" type="checkbox"> Render
@@ -518,13 +521,15 @@
           <p class="page-subtitle">Conclusion-first view of the annotated LIBERO-10 set. Detailed rows, legacy
             comparisons, and downloadable artifacts are available on demand.</p>
         </div>
-        <button id="analysisRefresh" class="ghost-button" type="button">Refresh analysis</button>
+        <button id="analysisRefresh" class="ghost-button" type="button" data-analysis-legacy-global>Refresh analysis</button>
       </div>
 
-      <div id="analysisStatus" class="analysis-status" role="status">Loading analysis...</div>
+      <div id="analysisStatus" class="analysis-status" role="status" data-analysis-legacy-global>Loading analysis...</div>
+
 
       <nav class="analysis-subtabs" aria-label="Analysis sections">
-        <a href="#/analysis/overview" data-analysis-tab="overview" class="active" aria-current="page">Overview</a>
+        <a href="#/analysis/localization" data-analysis-tab="localization" class="active" aria-current="page">Localization Lab</a>
+        <a href="#/analysis/overview" data-analysis-tab="overview">Overview</a>
         <a href="#/analysis/comparison" data-analysis-tab="comparison">Method comparison</a>
         <a href="#/analysis/failures" data-analysis-tab="failures">Failure types</a>
         <a href="#/analysis/events" data-analysis-tab="events">Event explorer</a>
@@ -532,7 +537,288 @@
         <a href="#/analysis/archive" data-analysis-tab="archive">Archive &amp; downloads</a>
       </nav>
 
-      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle">
+      <section id="analysisTabLocalization" class="analysis-tab-panel" data-analysis-panel="localization">
+        <section class="analysis-card localization-lab-shell">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">EXPERIMENT DESIGN</p>
+              <h3>Localization Lab</h3>
+              <p class="analysis-card-note">Build training experiments from a base preset, fixed parameters, sweeps, repeats, and optional sequential stages.</p>
+            </div>
+            <span id="localizationJobBadge" class="analysis-badge">Idle</span>
+          </div>
+
+          <nav class="analysis-subtabs localization-lab-tabs" aria-label="Localization Lab sections">
+            <button type="button" data-localization-tab="builder" class="active">Experiment Builder</button>
+            <button type="button" data-localization-tab="runs">Runs</button>
+            <button type="button" data-localization-tab="challenge">Challenge Set</button>
+            <button type="button" data-localization-tab="presets">Presets</button>
+          </nav>
+
+          <section data-localization-panel="builder">
+            <div class="analysis-run-grid localization-builder-grid">
+              <label><span>Experiment name</span>
+                <input id="localizationExperimentName" type="text" value="localization_experiment" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>Base preset</span>
+                <select id="localizationPresetSelect"><option value="">Loading presets…</option></select>
+              </label>
+              <label><span>Repeats</span>
+                <input id="localizationRepeats" type="number" min="1" max="50" value="5" step="1">
+              </label>
+              <div class="analysis-run-field">
+                <span>Estimated work</span>
+                <strong id="localizationEstimate">1 configuration × 5 repeats</strong>
+                <small id="localizationEstimateWarning" class="analysis-run-field-help"></small>
+              </div>
+            </div>
+
+            <details open class="analysis-result-details localization-section">
+              <summary>Fixed configuration</summary>
+              <div class="localization-config-groups">
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Data</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Training population</span>
+                      <select id="localizationPopulation">
+                        <option value="failure_only">Failure only</option>
+                        <option value="failure_success">Failure + clean success</option>
+                      </select>
+                    </label>
+                    <label><span>Success ratio</span>
+                      <input id="localizationSuccessRatio" type="number" min="0" step="0.1" value="0">
+                    </label>
+                    <label><span>Challenge set</span>
+                      <select id="localizationChallengeTrainSet">
+                        <option value="">None</option>
+                      </select>
+                      <small class="analysis-run-field-help">Saved diagnostic challenge sets.</small>
+                    </label>
+                    <label class="localization-checkbox-field"><span>Challenge training</span>
+                      <span><input id="localizationForceChallengeTrain" type="checkbox"> Force every challenge rollout into train</span>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Target</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Target</span>
+                      <select id="localizationTargetKind">
+                        <option value="hard">Hard interval</option>
+                        <option value="gaussian">Gaussian interval</option>
+                      </select>
+                    </label>
+                    <label><span>Gaussian σ pre</span>
+                      <input id="localizationSigmaPre" type="number" min="0.01" step="0.5" value="3">
+                    </label>
+                    <label><span>Gaussian σ post</span>
+                      <input id="localizationSigmaPost" type="number" min="0.01" step="0.5" value="3">
+                    </label>
+                    <label><span>Event decay τ</span>
+                      <input id="localizationTauEvent" type="number" min="0.01" step="1" value="20">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group localization-config-group-wide">
+                  <h5 class="localization-config-group-title">Model &amp; loss</h5>
+                  <div class="analysis-run-grid localization-model-grid">
+                    <label><span>Hidden size</span>
+                      <input id="localizationHidden" type="number" min="1" max="512" step="1" value="16">
+                    </label>
+                    <label class="localization-loss-field"><span>Loss</span>
+                      <select id="localizationLoss">
+                        <option value="bce">BCE</option>
+                        <option value="temporal_softmax_ce">Temporal softmax CE</option>
+                        <option value="temporal_softmax_ce_distance">Temporal CE + distance</option>
+                        <option value="temporal_softmax_ce_squared_distance">Temporal CE + squared distance</option>
+                        <option value="temporal_softmax_ce_ranking">Temporal CE + ranking</option>
+                        <option value="temporal_softmax_ce_distance_ranking">Temporal CE + distance + ranking</option>
+                      </select>
+                    </label>
+                    <label><span>Distance weight</span>
+                      <input id="localizationDistanceWeight" type="number" min="0" step="0.1" value="1">
+                    </label>
+                    <label><span>Ranking weight</span>
+                      <input id="localizationRankingWeight" type="number" min="0" step="0.1" value="1">
+                    </label>
+                    <label><span>Ranking margin</span>
+                      <input id="localizationRankingMargin" type="number" min="0" step="0.1" value="1">
+                    </label>
+                  </div>
+                </section>
+
+                <section class="localization-config-group">
+                  <h5 class="localization-config-group-title">Runtime</h5>
+                  <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Device</span>
+                      <select id="localizationDevice">
+                        <option value="auto">auto</option><option value="cuda">cuda</option>
+                        <option value="cuda:0">cuda:0</option><option value="cuda:1">cuda:1</option>
+                        <option value="cpu">cpu</option>
+                      </select>
+                    </label>
+                    <label><span>Batch size</span>
+                      <input id="localizationBatchSize" type="number" min="1" max="128" value="32" step="1">
+                    </label>
+                    <label><span>Parallel workers</span>
+                      <input id="localizationParallelWorkers" type="number" min="1" max="8" value="4" step="1">
+                      <small class="analysis-run-field-help">1–8 independent configs per stage; 4 recommended for this tiny BiLSTM.</small>
+                    </label>
+                  </div>
+                </section>
+              </div>
+
+              <details class="analysis-result-details localization-advanced-settings">
+                <summary>Advanced training settings</summary>
+                <div class="analysis-run-grid localization-advanced-grid">
+                  <label><span>Epochs</span><input id="localizationEpochs" type="number" min="1" value="300"></label>
+                  <label><span>Patience</span><input id="localizationPatience" type="number" min="1" value="35"></label>
+                  <label><span>Learning rate</span><input id="localizationLearningRate" type="number" min="0.000001" step="0.0001" value="0.003"></label>
+                  <label><span>Weight decay</span><input id="localizationWeightDecay" type="number" min="0" step="0.0001" value="0.0001"></label>
+                  <label><span>Gradient clip</span><input id="localizationGradClip" type="number" min="0.01" step="0.1" value="5"></label>
+                  <label><span>Seed</span><input id="localizationSeed" type="number" min="0" step="1" value="17"></label>
+                  <label><span>Train fraction</span><input id="localizationTrainFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.70"></label>
+                  <label><span>Validation fraction</span><input id="localizationValFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.15"></label>
+                </div>
+              </details>
+            </details>
+
+            <details id="localizationSweepSection" open class="analysis-result-details localization-section">
+              <summary>Sweep dimensions</summary>
+              <p class="analysis-card-note">Each dimension forms a Cartesian product. Values are comma-separated; strings such as loss names may be entered directly.</p>
+              <h5 class="localization-subsection-title">Independent sweep dimensions</h5>
+              <div id="localizationSweepRows" class="localization-sweep-list"></div>
+              <button id="localizationAddSweep" class="ghost-button" type="button">Add sweep dimension</button>
+
+              <div class="localization-variant-section">
+                <h5 class="localization-subsection-title">Coupled target variants</h5>
+                <p class="analysis-card-note">Use this when target kind, σ pre/post, and event-decay τ must change together. Each row is one candidate configuration.</p>
+                <div id="localizationTargetVariants" class="localization-target-variant-list"></div>
+                <button id="localizationAddTargetVariant" class="ghost-button" type="button">Add target variant</button>
+              </div>
+            </details>
+
+            <details class="analysis-result-details localization-section">
+              <summary>Sequential stages</summary>
+              <label class="localization-stage-toggle"><input id="localizationUseStages" type="checkbox"> Use sequential stages instead of the top-level sweep</label>
+              <p class="analysis-card-note">Each stage inherits the best configuration from the previous stage. Selection defaults to max in-interval rate, then min MAE, then min MSE.</p>
+              <div id="localizationStages" class="localization-stage-list hidden"></div>
+              <button id="localizationAddStage" class="ghost-button hidden" type="button">Add stage</button>
+            </details>
+
+            <details class="analysis-result-details localization-section">
+              <summary>Experiment spec preview</summary>
+              <pre id="localizationSpecPreview" class="job-log localization-spec-preview"></pre>
+            </details>
+
+            <div class="settings-actions localization-builder-actions">
+              <button id="localizationSavePresetFromBuilder" class="ghost-button" type="button">Save as preset</button>
+              <span class="settings-actions-spacer"></span>
+              <button id="localizationRunExperiment" class="save-button" type="button">Run experiment</button>
+            </div>
+            <div id="localizationBuilderStatus" class="analysis-status" role="status">Ready.</div>
+          </section>
+
+          <section data-localization-panel="runs" class="hidden">
+            <div class="analysis-card-heading">
+              <div><h4>Experiment runs</h4><small>Unified outputs under outputs/robo_localization.</small></div>
+              <button id="localizationRefreshRuns" class="ghost-button" type="button">Refresh</button>
+            </div>
+            <div id="localizationRunsList" class="analysis-table-wrap"></div>
+            <section id="localizationRunResult" class="localization-run-result hidden" aria-live="polite">
+              <div id="localizationRunResultContent"></div>
+            </section>
+            <pre id="localizationJobLog" class="job-log" aria-label="Localization experiment log"></pre>
+          </section>
+
+          <section data-localization-panel="challenge" class="hidden">
+            <div class="analysis-card-heading">
+              <div>
+                <h4>Localization challenge set</h4>
+                <small>Mine persistent hard cases from all-failure inference across every repeat. Challenge rollouts may also be used in training.</small>
+              </div>
+              <button id="localizationChallengeRefresh" class="ghost-button" type="button">Refresh</button>
+            </div>
+
+            <div class="localization-challenge-filter-stack">
+              <section class="localization-filter-group">
+                <h5 class="localization-config-group-title">Source</h5>
+                <div class="analysis-run-grid localization-challenge-source-grid">
+                  <label class="localization-run-select-field"><span>Experiment run</span>
+                    <select id="localizationChallengeRun"></select>
+                  </label>
+                  <label><span>Failure criterion</span>
+                    <select id="localizationChallengeCriterion">
+                      <option value="outside_interval">Outside annotated interval</option>
+                      <option value="outside_3">Outside ±3 samples</option>
+                    </select>
+                  </label>
+                  <label><span>Challenge size</span>
+                    <input id="localizationChallengeSize" type="number" min="1" max="100" value="18" step="1">
+                  </label>
+                </div>
+              </section>
+              <section class="localization-filter-group">
+                <h5 class="localization-config-group-title">Filters</h5>
+                <div class="analysis-run-grid localization-challenge-filter-grid">
+                  <label><span>Task</span>
+                    <select id="localizationChallengeTask"><option value="">All tasks</option></select>
+                  </label>
+                  <label><span>Failure type</span>
+                    <select id="localizationChallengeFailureType"><option value="">All failure types</option></select>
+                  </label>
+                  <label><span>Case flags</span>
+                    <select id="localizationChallengeCaseFlag">
+                      <option value="">All cases</option>
+                      <option value="multi_event">Multi-event only</option>
+                      <option value="recovery_like">Recovery-like only</option>
+                    </select>
+                  </label>
+                  <label class="localization-checkbox-field"><span>Table filter</span>
+                    <span><input id="localizationChallengePersistentOnly" type="checkbox" checked> Persistent common failures only</span>
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <div class="localization-challenge-config-block">
+              <h5 class="localization-subsection-title">Selected training results</h5>
+              <p class="analysis-card-note">A rollout is a common persistent failure only when it fails across all repeats for every checked config.</p>
+              <div id="localizationChallengeConfigs" class="localization-challenge-configs"></div>
+            </div>
+
+            <div class="settings-actions localization-challenge-actions">
+              <button id="localizationChallengePropose" class="ghost-button" type="button">Propose challenge set</button>
+              <label class="localization-inline-name"><span>Name</span>
+                <input id="localizationChallengeName" type="text" value="localization_challenge_v1" maxlength="64">
+              </label>
+              <button id="localizationChallengeSave" class="save-button" type="button">Save selected set</button>
+            </div>
+
+            <div id="localizationChallengeStatus" class="analysis-status" role="status">Select a completed run with all-failure predictions.</div>
+            <div id="localizationChallengeComposition" class="localization-challenge-composition"></div>
+            <div id="localizationChallengeTable" class="analysis-table-wrap"></div>
+          </section>
+
+          <section data-localization-panel="presets" class="hidden">
+            <div class="analysis-card-heading">
+              <div><h4>Presets</h4><small>Built-in presets plus reusable project-local presets.</small></div>
+            </div>
+            <div class="analysis-run-grid">
+              <label><span>Preset name</span>
+                <input id="localizationPresetName" type="text" maxlength="64" placeholder="my_experiment">
+              </label>
+              <button id="localizationSavePreset" class="save-button" type="button">Save current spec</button>
+            </div>
+            <div id="localizationPresetList" class="analysis-table-wrap"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle" data-analysis-legacy-global>
         <div class="analysis-card-heading">
           <div>
             <p class="eyebrow">LIVE SCOPE</p>
@@ -572,14 +858,15 @@
       </section>
 
       <section id="analysisTabOverview" class="analysis-tab-panel" data-analysis-panel="overview">
-        <section class="analysis-card analysis-run-card" aria-labelledby="analysisRunTitle">
-          <div class="analysis-card-heading">
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisRunTitle">
+          <summary class="analysis-run-summary">
             <div>
               <p class="eyebrow">TEMPORAL ANALYSIS RUNNER</p>
               <h3 id="analysisRunTitle">Run temporal analysis</h3>
+              <small>Baseline-aligned temporal diagnostics</small>
             </div>
             <span id="analysisRunBadge" class="analysis-badge">Idle</span>
-          </div>
+          </summary>
           <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a
             run for each method and keep the default LIBERO-10 scope for a fair comparison.</p>
           <p id="analysisEnvironmentStatus" class="analysis-run-selection" role="status">Checking the dedicated Analysis
@@ -633,6 +920,67 @@
           <pre id="analysisRunLog" class="job-log" aria-label="Latest temporal analysis log"></pre>
           <div id="analysisRunJobs" class="persistent-job-list" aria-live="polite"
             aria-label="Persistent temporal analysis jobs"></div>
+        </details>
+
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisHopTitle">
+          <summary class="analysis-run-summary">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE FUSED HOP</p>
+              <h3 id="analysisHopTitle">Failure detection and ensemble analysis</h3>
+              <small>Sweep, ensemble, and offline localization</small>
+            </div>
+            <span id="analysisHopBadge" class="analysis-badge">Idle</span>
+          </summary>
+          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
+            <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
+            events use rollout-start detection latency. The detector is searched as
+            <strong>stagnation OR short/strong regression</strong>, with grasp-failure Recall@10/eventual as the
+            primary selection targets. No inference is rerun.</p>
+          <form id="analysisHopForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Rollout scope</span>
+                <select id="analysisHopScope">
+                  <option value="libero_10" selected>LIBERO-10 (default)</option>
+                  <option value="all">All loaded rollouts</option>
+                  <option value="libero_spatial">LIBERO-Spatial</option>
+                  <option value="controlled_analysis">Controlled</option>
+                </select>
+              </label>
+              <label><span>Robo-Dopamine run</span>
+                <select id="analysisHopRun">
+                  <option value="">Loading compatible runs...</option>
+                </select>
+                <small class="analysis-run-field-help">Choose a completed Robo-Dopamine run with saved fused
+                  hop output for the selected rollout scope.</small>
+              </label>
+              <label><span>Output label</span>
+                <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>CPU limit</span>
+                <input id="analysisHopCpuLimit" type="number" value="4" min="1" max="16" step="1">
+                <small class="analysis-run-field-help">Maximum logical CPUs for this analysis process. Default: 4.</small>
+              </label>
+              <label><span>Generalization</span>
+                <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
+              </label>
+            </div>
+            <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
+              Robo-Dopamine runs.</p>
+            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run fused-hop analysis</button>
+          </form>
+          <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
+        </details>
+
+        <section class="analysis-card analysis-result-card" aria-labelledby="analysisHopResultsTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">ROBO-DOPAMINE ANALYSIS RESULTS</p>
+              <h3 id="analysisHopResultsTitle">Latest fused-hop sweep snapshot</h3>
+            </div>
+          </div>
+          <div id="analysisHopResults" class="analysis-table-wrap"></div>
+          <div id="analysisHopArtifacts" class="analysis-provenance"></div>
         </section>
 
         <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
@@ -1125,8 +1473,10 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=procvlm-external-history-20260918" defer></script>
-  <script src="/static/workspace.js?v=procvlm-external-history-20260918" defer></script>
+  <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v10-20260922">
+  <script src="/static/localization-lab.js?v=localization-lab-v11-20260922" defer></script>
+  <script src="/static/app.js?v=robo-localization-point-v1-20260922" defer></script>
+  <script src="/static/workspace.js?v=robo-localization-ckpt-v1-20260922" defer></script>
 </body>
 
 </html>

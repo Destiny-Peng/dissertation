@@ -51,6 +51,7 @@ export LF3R_ENV_SAFE="${CONDA_ENVS}/LF3R-safe"
 export LF3R_SAFE_PYTHON="${LF3R_ENV_SAFE}/bin/python"
 export LF3R_ENV_OPENVLA="${CONDA_ENVS}/LF3R-openvla"
 export LF3R_ENV_ROBODOPAMINE="${CONDA_ENVS}/LF3R-robo-dopamine"
+export LF3R_ROBODOPAMINE_PYTHON="${LF3R_ENV_ROBODOPAMINE}/bin/python"
 # Project-local uv venv used by temporal analysis. The path preserves the requested ananlyse spelling.
 export LF3R_ENV_ANALYSE="${CONDA_ENVS}/LF3R-ananlyse"
 export LF3R_ANALYSIS_PYTHON="${LF3R_ENV_ANALYSE}/bin/python"

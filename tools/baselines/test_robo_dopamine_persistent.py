@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from procvlm_worker import FATAL_EXIT_CODE, load_jsonl
+import robo_dopamine_persistent_worker as worker
 from robo_dopamine_persistent_worker import run_persistent_jobs
 
 
@@ -51,9 +52,18 @@ def make_args(root: Path) -> argparse.Namespace:
         goal_image=root / "goal.png",
         frame_interval=4,
         batch_size=1,
+        tp=1,
         eval_mode="forward",
         render_video=False,
         vllm_total_memory_fraction=0.55,
+        vllm_free_memory_fraction=0.8,
+        vllm_memory_safety_buffer_mib=2048,
+        memory_budget={
+            "scope": "free_gpu_memory",
+            "requested_free_fraction": 0.8,
+            "resolved_total_fraction": None,
+            "resolution": "worker_immediately_before_vllm_init",
+        },
     )
 
 
@@ -91,6 +101,54 @@ def run_worker(root: Path, jobs: list[dict[str, object]], initialize, infer):
         infer_one=infer,
     )
     return return_code, jobs_path, progress_path, state_path
+
+
+def test_worker_memory_budget_uses_latest_snapshot_and_safety_buffer() -> None:
+    original = worker.query_worker_gpu_memory
+    try:
+        worker.query_worker_gpu_memory = lambda: [
+            {"gpu": 0, "total_mib": 20000, "free_mib": 10000}
+        ]
+        fraction, budget = worker.resolve_worker_vllm_memory_budget(0.99, 2048)
+    finally:
+        worker.query_worker_gpu_memory = original
+
+    # 99% of free would request 9900 MiB, but the 2 GiB safety reserve caps
+    # the vLLM target at 7952 MiB = 0.3976 of total memory.
+    assert fraction == 0.3976
+    assert budget["resolution"] == "worker_immediately_before_vllm_init"
+    assert budget["safety_buffer_mib_per_gpu"] == 2048
+    assert budget["per_gpu_limits"][0]["effective_target_mib"] == 7952
+
+
+def test_worker_records_actual_resolved_budget() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-persistent-budget-") as temporary:
+        root = Path(temporary)
+        (root / "goal.png").touch()
+        jobs = make_jobs(root, 1)
+        actual_budget = {
+            "scope": "free_gpu_memory",
+            "requested_free_fraction": 0.8,
+            "resolved_total_fraction": 0.42,
+            "resolution": "worker_immediately_before_vllm_init",
+            "selected_gpus": [{"gpu": 0, "total_mib": 20000, "free_mib": 12000}],
+        }
+
+        def initialize(args):
+            args.resolved_memory_budget = actual_budget
+            return object()
+
+        def infer(job, args, model):
+            return write_raw(job)
+
+        _, _, progress_path, state_path = run_worker(root, jobs, initialize, infer)
+        progress = load_jsonl(progress_path)
+        initialized = next(
+            event for event in progress if event.get("event") == "engine_initialized"
+        )
+        assert initialized["memory_budget"] == actual_budget
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["engine_memory_budget"] == actual_budget
 
 
 def test_one_engine_is_reused() -> None:
@@ -249,6 +307,8 @@ def test_fatal_initialization_failure_saves_pending_state() -> None:
 
 
 def main() -> None:
+    test_worker_memory_budget_uses_latest_snapshot_and_safety_buffer()
+    test_worker_records_actual_resolved_budget()
     test_one_engine_is_reused()
     test_recoverable_error_does_not_stop_later_jobs()
     test_fatal_error_saves_progress_and_resume_skips_completed_jobs()

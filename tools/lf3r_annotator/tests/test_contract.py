@@ -131,6 +131,11 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("baselineBatchUsesWorkers", javascript)
         self.assertIn("parallel_workers", javascript)
         self.assertIn("workers", javascript)
+        self.assertIn("renderRepeatDetails", javascript)
+        self.assertIn("Show all ", javascript)
+        self.assertIn('data-batch-option="robo_localization_ckpt"', html)
+        self.assertIn("renderLocalizationPredictionMarker", javascript)
+        self.assertIn("renderLocalizationPredictionSummary", javascript)
         for method in ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"]:
             self.assertIn('value="' + method + '"', html)
 
@@ -150,12 +155,18 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             ".persistent-job-workers",
             ".batch-resource-warning",
             ".evaluation-run-controls",
+            ".evaluation-localization-summary",
+            ".evaluation-localization-pin",
+            ".localization-repeat-details",
+            ".localization-repeat-table",
         ]:
             self.assertIn(marker, styles)
 
     def test_workspace_navigation_settings_and_analysis_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
+        label_loss_analysis = (TOOL_ROOT / "static/analysis-robo-label-loss.js").read_text(encoding="utf-8")
         server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
 
@@ -189,6 +200,37 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisEnvironmentStatus",
             "analysisRunLog",
             "analysisRunJobs",
+            "analysisHopForm",
+            "analysisHopScope",
+            "analysisHopRun",
+            "analysisHopOutputLabel",
+            "analysisHopTaskCv",
+            "analysisHopRunButton",
+            "analysisHopBadge",
+            "analysisHopSelection",
+            "analysisHopLog",
+            "analysisHopResults",
+            "analysisHopArtifacts",
+            "analysisLabelLossForm",
+            "analysisLabelLossDevice",
+            "analysisLabelLossTauEvent",
+            "analysisLabelLossRepeats",
+            "analysisLabelLossEpochs",
+            "analysisLabelLossPatience",
+            "analysisLabelLossLearningRate",
+            "analysisLabelLossWeightDecay",
+            "analysisLabelLossGradClip",
+            "analysisLabelLossDistanceWeight",
+            "analysisLabelLossRankingWeight",
+            "analysisLabelLossRankingMargin",
+            "analysisLabelLossAsymmetric",
+            "analysisLabelLossOutputLabel",
+            "analysisLabelLossRunButton",
+            "analysisLabelLossBadge",
+            "analysisLabelLossSelection",
+            "analysisLabelLossLog",
+            "analysisLabelLossResults",
+            "analysisLabelLossArtifacts",
             "analysisSnapshotMethod",
             "analysisSnapshotOutcome",
             "analysisSnapshotTask",
@@ -255,6 +297,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         ]:
             self.assertIn('id="' + element_id + '"', html)
         self.assertIn('/static/workspace.js', html)
+        self.assertIn('/static/analysis-robo-hop.js', workspace)
+        self.assertIn('/static/analysis-robo-label-loss.js', workspace)
         for marker in [
             "/api/settings",
             "/api/analysis",
@@ -290,6 +334,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('multiple size="5"', html)
         for endpoint in [
             'path == "/api/settings"', 'path == "/api/analysis"',
+            'path == "/api/analysis/robo-label-loss"',
             'path == "/api/baselines/runs"', 'path == "/api/baselines/result-coverage"', '"/api/baselines/run-batch"',
             '"/api/analysis/run"', 'analysis-jobs', 'rollout-jobs', '"/api/rollouts/generate"', '"/api/jobs"', 'worker_assignments', 'parallel_workers', 'CHANGEPOINT_TABLE_FILES', 'changepoint_summary.csv', 'comparison_with_full_136_20260827', 'primary_analysis_type', 'event_triggered_available', 'EVENT_TRIGGERED_TABLE_FILES', 'event_triggered_curves.csv', 'os.replace(temp_name, self.path)'
         ]:
@@ -305,9 +350,105 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "missing_valid",
             "localization_event_metrics",
             "localization_summary",
+            "ROBO_HOP_REQUIRED_FILES",
+            "ROBO_HOP_EXTENDED_FILES",
+            "ROBO_LABEL_LOSS_REQUIRED_FILES",
+            "start_robo_label_loss_run",
+            "robo_bilstm_label_loss_ablation",
+            "robo_label_loss_response",
+            "robo_label_loss_artifact_path",
+            "start_robo_hop_run",
+            "robo_hop_comparison",
+            "fused_scope_rollout_count",
+            "sweep_summary.csv",
+            "best_configs.csv",
+            "no_event_failure_results.csv",
+            "ensemble_sweep.csv",
+            "ensemble_selected.csv",
+            "ensemble_by_failure_type.csv",
+            "interval_localization_ranking.csv",
+            '"interval_localization_rows": interval_localization_rows',
+            "grasp_event_features.csv",
+            "grasp_detected_vs_missed.csv",
+            "grasp_matched_control.csv",
+            "grasp_failure_categories.csv",
+            "grasp_event_heatmap.png",
+            "cpu_limit",
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            '"search_cache": metadata.get("search_cache") or {}',
         ]:
             self.assertIn(marker, server)
-
+        self.assertNotIn("window.workspaceLoadBaselineRuns", hop_analysis)
+        self.assertIn("/api/baselines/runs?scope=", hop_analysis)
+        for marker in [
+            'analysis_kind: "robo_hop_comparison"',
+            "/api/analysis/run",
+            "analysisHopRunButton",
+            "analysisHopCpuLimit",
+            "cpu_limit: cpuLimit",
+            "fused_scope_rollout_count",
+            "Failed-rollout interval localization",
+            "analysisHopIntervalRankPopulation",
+            "analysisHopIntervalRankSort",
+            "analysisHopIntervalRankDirection",
+            "analysisHopIntervalRankLimit",
+            "sortedRankingRows",
+            "rankingControlsHtml",
+            "Stagnation OR regression",
+            "localizationFamilyLabel",
+            "localizationConfigLabel",
+            "stagnation: ",
+            "regression: ",
+            "in_interval_rate",
+            "median_signed_interval_error_samples",
+            "trigger_coverage",
+            "within_3",
+            "search cache HIT",
+            "reused prior search",
+            "search computed",
+            "workspaceLoadAnalysis(true)",
+        ]:
+            self.assertIn(marker, hop_analysis)
+        for marker in [
+            'analysis_kind: "robo_bilstm_label_loss_ablation"',
+            "/api/analysis/run",
+            "/api/analysis/robo-label-loss",
+            "analysisLabelLossRunButton",
+            "analysisLabelLossTauEvent",
+            "analysisLabelLossDistanceWeight",
+            "analysisLabelLossRankingWeight",
+            "analysisLabelLossRankingMargin",
+            "label_ablation",
+            "loss_ablation",
+            "first_event_in_interval_rate_mean",
+            "pseudo_no_event_frame0_rollout_n",
+            "recoverLatestJob",
+            "fetchJson",
+            "readAnalysisJob",
+            "/api/jobs?job_type=analysis",
+            "returned non-JSON",
+        ]:
+            self.assertIn(marker, label_loss_analysis)
+        self.assertNotIn("workspaceLoadBaselineRuns", label_loss_analysis)
+        self.assertNotIn("modeOrder", hop_analysis)
+        self.assertNotIn("pairwise_overlap", hop_analysis)
+        for obsolete in [
+            "analysisHopPointRank",
+            "unconstrained_localization",
+            "progress_peak_localization",
+            "Earliest global progress maximum",
+            "oracle_recall_at_",
+            "FPR-unconstrained oracle",
+            "event_recall_at_",
+            "grasp_recall_at_",
+            "grasp_gain_vs_best_",
+            "overall_failed_rollout_coverage",
+            "event_median_delay_samples",
+            "tp_jaccard",
+        ]:
+            self.assertNotIn(obsolete, hop_analysis)
         server_v3 = (TOOL_ROOT / "server_entry_v3.py").read_text(encoding="utf-8")
         self.assertIn('kwargs.get("rollout_ids") is not None', server_v3)
         for marker in [
@@ -366,6 +507,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
         for route in [
             "#/analysis/overview",
@@ -388,6 +530,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisDetailsPrevious",
             "analysisDetailsNext",
             "analysisArchiveLinks",
+            "analysisHopForm",
+            "analysisHopResults",
+            "analysisHopArtifacts",
         ]:
             self.assertIn('id="' + element_id + '"', html)
         for marker in [
@@ -404,8 +549,11 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysis-download-grid",
             "clipPath",
             "workspaceDashboardRenderSnapshot",
+            "Failure detection and ensemble analysis",
+            "analysisHopCpuLimit",
+            "fused",
         ]:
-            self.assertIn(marker, html + workspace)
+            self.assertIn(marker, html + workspace + hop_analysis)
         self.assertNotIn('transform="rotate(', workspace)
         self.assertNotIn(".analysis-chart > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)
         self.assertNotIn(".analysis-chart-scroll > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)

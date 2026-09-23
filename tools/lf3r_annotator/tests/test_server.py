@@ -218,10 +218,17 @@ class ServerTest(unittest.TestCase):
         )
         self.assertTrue(index_path.is_file())
 
-        with mock.patch.object(
-            Path,
-            "rglob",
-            side_effect=AssertionError("baseline tree should not be rescanned"),
+        with (
+            mock.patch.object(
+                Path,
+                "rglob",
+                side_effect=AssertionError("baseline tree should not be rescanned"),
+            ),
+            mock.patch.object(
+                self.app.baselines,
+                "_robo_run_signal_ids",
+                side_effect=AssertionError("Fused signal inventory should come from cache"),
+            ),
         ):
             with self.request(
                 "/api/baselines/runs?scope=libero_10&condition=full_instruction"
@@ -748,6 +755,174 @@ class ServerTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def install_fake_robo_hop_analyzer(self) -> None:
+        script = self.root / "tools" / "analyze_robo_dopamine_incremental_hop.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import csv
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', type=Path, required=True)
+parser.add_argument('--selection', type=Path, required=True)
+parser.add_argument('--run-root', type=Path, required=True)
+args = parser.parse_known_args()[0]
+args.output_dir.mkdir(parents=True, exist_ok=True)
+selection = json.loads(args.selection.read_text())
+metadata = {
+    'signal': {
+        'name': 'Robo-Dopamine fused hop failure detection',
+        'modes': ['fused'],
+        'common_rollout_n': len(selection['selection']),
+    },
+    'input': {'run_root': str(args.run_root), 'selection': str(args.selection)},
+    'counts_by_signal_mode': {
+        'fused': {
+            'usable_rollout_n': len(selection['selection']),
+            'event_n': 1,
+            'no_event_failure_rollout_n': 1,
+            'clean_rollout_n': 1,
+        }
+    },
+    'detector_config_n_per_signal': 1,
+    'detector_config_n_total': 1,
+    'selected_config_n': 1,
+    'generalization': {'task_cv_enabled': False},
+}
+(args.output_dir / 'metadata.json').write_text(json.dumps(metadata))
+
+best_fields = [
+    'signal_mode', 'detector_family', 'clean_fpr_constraint', 'selection_status',
+    'config_id', 'epsilon', 'n', 'event_n',
+    'grasp_recall_at_10', 'grasp_recall_eventual',
+    'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+    'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
+    'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
+    'overall_failed_rollout_coverage', 'median_delay_samples',
+    'no_event_median_delay_samples', 'clean_rollout_fpr'
+]
+best_row = {
+    'signal_mode': 'fused', 'detector_family': 'stagnation_consecutive',
+    'clean_fpr_constraint': 0.1, 'selection_status': 'selected',
+    'config_id': 'cfg0001', 'epsilon': 0.0, 'n': 3, 'event_n': 1,
+    'event_recall_at_1': 0.25, 'event_recall_at_3': 0.5,
+    'event_recall_at_5': 0.75, 'event_recall_at_10': 0.9,
+    'event_recall_at_20': 1.0, 'event_recall_eventual': 1.0,
+    'grasp_recall_at_10': 1.0, 'grasp_recall_eventual': 1.0,
+    'no_event_recall_at_1': 0.0, 'no_event_recall_at_3': 0.5,
+    'no_event_recall_at_5': 1.0, 'no_event_recall_at_10': 1.0,
+    'no_event_recall_at_20': 1.0, 'no_event_recall_eventual': 1.0,
+    'overall_failed_rollout_coverage': 1.0,
+    'median_delay_samples': 2, 'no_event_median_delay_samples': 3,
+    'clean_rollout_fpr': 0.0,
+}
+with (args.output_dir / 'best_configs.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=best_fields)
+    writer.writeheader()
+    writer.writerow(best_row)
+with (args.output_dir / 'sweep_summary.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=best_fields)
+    writer.writeheader()
+    writer.writerow(best_row)
+
+ensemble_fields = [
+    'signal_mode', 'ensemble_logic', 'detector_a_family', 'detector_b_family',
+    'clean_fpr_constraint', 'selection_target', 'selection_status',
+    'event_recall_at_1', 'event_recall_at_3', 'event_recall_at_5',
+    'event_recall_at_10', 'event_recall_at_20', 'event_recall_eventual',
+    'grasp_recall_at_10', 'grasp_recall_eventual',
+    'no_event_recall_at_1', 'no_event_recall_at_3', 'no_event_recall_at_5',
+    'no_event_recall_at_10', 'no_event_recall_at_20', 'no_event_recall_eventual',
+    'overall_failed_rollout_coverage', 'clean_rollout_fpr',
+    'event_median_delay_samples', 'no_event_median_delay_samples',
+    'fp_overlap_n', 'a_config_id', 'b_config_id'
+]
+ensemble_row = {
+    'signal_mode': 'fused', 'ensemble_logic': 'OR',
+    'detector_a_family': 'stagnation_consecutive',
+    'detector_b_family': 'regression_window_min', 'clean_fpr_constraint': 0.2,
+    'selection_target': 'grasp_recall_eventual',
+    'selection_status': 'selected', 'event_recall_at_1': 0.5,
+    'event_recall_at_3': 0.75, 'event_recall_at_5': 1.0,
+    'event_recall_at_10': 1.0, 'event_recall_at_20': 1.0,
+    'event_recall_eventual': 1.0, 'grasp_recall_at_10': 1.0,
+    'grasp_recall_eventual': 1.0, 'no_event_recall_at_1': 0.0,
+    'no_event_recall_at_3': 0.5, 'no_event_recall_at_5': 1.0,
+    'no_event_recall_at_10': 1.0, 'no_event_recall_at_20': 1.0,
+    'no_event_recall_eventual': 1.0, 'overall_failed_rollout_coverage': 1.0,
+    'clean_rollout_fpr': 0.2, 'event_median_delay_samples': 2,
+    'no_event_median_delay_samples': 3, 'fp_overlap_n': 0,
+    'a_config_id': 'a1', 'b_config_id': 'b1',
+}
+for name in ('ensemble_sweep.csv', 'ensemble_selected.csv'):
+    with (args.output_dir / name).open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=ensemble_fields)
+        writer.writeheader()
+        writer.writerow(ensemble_row)
+with (args.output_dir / 'ensemble_by_failure_type.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=[
+        'signal_mode', 'clean_fpr_constraint', 'selected_for',
+        'detector_a_family', 'detector_b_family', 'failure_type', 'horizon',
+        'event_n', 'overlap_n', 'a_only_n', 'b_only_n', 'or_recall', 'tp_jaccard'
+    ])
+    writer.writeheader()
+    writer.writerow({
+        'signal_mode': 'fused', 'clean_fpr_constraint': 0.2,
+        'selected_for': 'grasp_recall_eventual',
+        'detector_a_family': 'stagnation_consecutive',
+        'detector_b_family': 'regression_window_min', 'failure_type': 'grasp_failure',
+        'horizon': 'eventual', 'event_n': 1, 'overlap_n': 0,
+        'a_only_n': 1, 'b_only_n': 0, 'or_recall': 1.0, 'tp_jaccard': 0.0,
+    })
+interval_fields = [
+    'population', 'config_id', 'detector_family', 'parameters_json',
+    'eligible_event_n', 'triggered_n', 'no_trigger_n', 'trigger_coverage',
+    'in_interval_n', 'in_interval_rate',
+    'within_1_n', 'within_1', 'within_3_n', 'within_3',
+    'within_5_n', 'within_5',
+    'before_interval_n', 'before_interval_rate',
+    'after_interval_n', 'after_interval_rate',
+    'median_signed_interval_error_samples',
+    'median_absolute_interval_error_samples',
+    'mae_samples', 'mse_samples',
+    'rank_mse', 'rank_mae', 'rank_median_abs_error'
+]
+with (args.output_dir / 'interval_localization_ranking.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=interval_fields)
+    writer.writeheader()
+    writer.writerow({
+        'population': 'first_eligible_event_per_failed_rollout',
+        'config_id': 'cfg1', 'detector_family': 'consecutive',
+        'parameters_json': '{{"epsilon":0,"n":1}}',
+        'eligible_event_n': 4, 'triggered_n': 4, 'no_trigger_n': 0,
+        'trigger_coverage': 1.0,
+        'in_interval_n': 2, 'in_interval_rate': 0.5,
+        'within_1_n': 3, 'within_1': 0.75,
+        'within_3_n': 4, 'within_3': 1.0,
+        'within_5_n': 4, 'within_5': 1.0,
+        'before_interval_n': 1, 'before_interval_rate': 0.25,
+        'after_interval_n': 1, 'after_interval_rate': 0.25,
+        'median_signed_interval_error_samples': 0,
+        'median_absolute_interval_error_samples': 0.5,
+        'mae_samples': 0.75, 'mse_samples': 1.25,
+        'rank_mse': 1, 'rank_mae': 1, 'rank_median_abs_error': 1,
+    })
+for name in (
+    'event_results.csv', 'no_event_failure_results.csv',
+    'clean_rollout_results.csv', 'recovery_results.csv', 'breakdown_summary.csv',
+    'grasp_event_features.csv', 'grasp_detected_vs_missed.csv',
+    'grasp_matched_control.csv', 'grasp_matched_control_summary.csv',
+    'grasp_failure_categories.csv', 'grasp_failure_category_summary.csv'
+):
+    (args.output_dir / name).write_text('signal_mode,config_id\\n')
+print('fake fused-hop failure analysis complete')
+""",
+            encoding="utf-8",
+        )
+
     def install_fake_rollout_generator(self, exit_code: int = 0) -> None:
         script = self.root / "tools" / "lf3r_annotator" / "generate_libero10_natural.sh"
         script.parent.mkdir(parents=True, exist_ok=True)
@@ -931,7 +1106,10 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(incomplete_coverage["complete_annotation_rollouts"], 1)
         self.assertEqual(incomplete_coverage["incomplete_annotation_rollouts"], 1)
         self.assertEqual(incomplete_coverage["missing_valid_result_rollouts"], 0)
-        self.assertEqual(incomplete_coverage["incomplete_source_rollout_ids"], ["sample-rollout-2"])
+        self.assertEqual(
+            incomplete_coverage["incomplete_source_rollout_ids"],
+            ["sample-rollout-2"],
+        )
 
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.request(
@@ -1163,6 +1341,349 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             analysis = json.load(response)["analysis"]
         self.assertTrue(analysis["available"])
         self.assertEqual(analysis["source"]["selection_count"], 1)
+
+    def test_label_loss_ablation_web_job_and_snapshot(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.analysis_jobs.robo_python = Path(sys.executable)
+        script = self.root / "tools" / "train_robo_localization.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import csv
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', type=Path, required=True)
+args = parser.parse_known_args()[0]
+out = args.output_dir
+out.mkdir(parents=True, exist_ok=True)
+
+metadata = {
+    'analysis': 'robo_dopamine_bilstm_label_loss_ablation',
+    'generated_at': '2026-09-21T00:00:00+00:00',
+    'source_root': 'outputs/baselines',
+    'selection_mode': 'latest_usable_signal_per_rollout',
+}
+(out / 'metadata.json').write_text(json.dumps(metadata), encoding='utf-8')
+
+label_fields = [
+    'label_config', 'loss', 'repeat_n', 'in_interval_rate_mean',
+    'first_event_in_interval_rate_mean', 'within_1_mean', 'within_3_mean',
+    'within_5_mean', 'before_interval_rate_mean', 'after_interval_rate_mean',
+    'median_absolute_interval_error_samples_mean', 'mae_samples_mean',
+    'mse_samples_mean'
+]
+with (out / 'label_ablation.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=label_fields)
+    writer.writeheader()
+    writer.writerow({
+        'label_config': 'hard_weighted_interval',
+        'loss': 'bce',
+        'repeat_n': 1,
+        'in_interval_rate_mean': 0.5,
+        'first_event_in_interval_rate_mean': 0.5,
+        'within_1_mean': 0.5,
+        'within_3_mean': 1.0,
+        'within_5_mean': 1.0,
+        'before_interval_rate_mean': 0.25,
+        'after_interval_rate_mean': 0.25,
+        'median_absolute_interval_error_samples_mean': 1.0,
+        'mae_samples_mean': 1.0,
+        'mse_samples_mean': 2.0,
+    })
+with (out / 'loss_ablation.csv').open('w', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=label_fields)
+    writer.writeheader()
+    writer.writerow({
+        'label_config': 'gaussian_sigma_2',
+        'loss': 'temporal_softmax_ce',
+        'repeat_n': 1,
+        'in_interval_rate_mean': 0.75,
+        'first_event_in_interval_rate_mean': 0.5,
+        'within_1_mean': 0.75,
+        'within_3_mean': 1.0,
+        'within_5_mean': 1.0,
+        'before_interval_rate_mean': 0.0,
+        'after_interval_rate_mean': 0.25,
+        'median_absolute_interval_error_samples_mean': 0.0,
+        'mae_samples_mean': 0.5,
+        'mse_samples_mean': 1.0,
+    })
+
+(out / 'per_split_metrics.csv').write_text(
+    'split_id,label_config,loss,in_interval_rate\nseed17,gaussian_sigma_2,temporal_softmax_ce,0.75\n',
+    encoding='utf-8'
+)
+(out / 'per_rollout_predictions.csv').write_text(
+    'rollout_id,predicted_index,in_interval\nsample-rollout,0,true\n',
+    encoding='utf-8'
+)
+(out / 'dataset_targets.csv').write_text(
+    'rollout_id,event_count,pseudo_event_n\nsample-rollout,1,1\n',
+    encoding='utf-8'
+)
+(out / 'dataset_target_summary.json').write_text(json.dumps({
+    'failure_rollout_n': 4,
+    'annotated_failure_event_n': 5,
+    'multi_event_rollout_n': 1,
+    'pseudo_no_event_frame0_rollout_n': 1,
+    'tau_event_native_samples': 20,
+}), encoding='utf-8')
+(out / 'training_records.json').write_text('[]', encoding='utf-8')
+(out / 'split_manifest.json').write_text(json.dumps({
+    'random_splits': [{'split_id': 'seed17'}]
+}), encoding='utf-8')
+(out / 'best_configuration.json').write_text(json.dumps({
+    'best_label': {
+        'label_config': 'gaussian_sigma_2',
+        'in_interval_rate_mean': 0.75,
+        'mae_samples_mean': 0.5,
+    },
+    'best_loss': {
+        'label_config': 'gaussian_sigma_2',
+        'loss': 'temporal_softmax_ce',
+        'in_interval_rate_mean': 0.75,
+        'mae_samples_mean': 0.5,
+    },
+    'asymmetric_followup_ran': False,
+}), encoding='utf-8')
+(out / 'best_configuration.md').write_text(
+    '# fake best configuration\n',
+    encoding='utf-8'
+)
+print('fake label loss ablation complete')
+""",
+            encoding="utf-8",
+        )
+
+        with self.request(
+            "/api/analysis/run",
+            {
+                "analysis_kind": "robo_bilstm_label_loss_ablation",
+                "output_label": "web_test_label_loss",
+                "device": "cpu",
+                "repeats": 1,
+                "epochs": 2,
+                "patience": 1,
+                "batch_size": 32,
+                "learning_rate": 0.003,
+                "weight_decay": 0.0001,
+                "grad_clip": 5.0,
+                "tau_event": 20.0,
+                "distance_weight": 1.0,
+                "ranking_weight": 1.0,
+                "ranking_margin": 1.0,
+                "run_asymmetric_if_soft_improves": True,
+            },
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+
+        self.assertEqual(
+            job["analysis_kind"],
+            "robo_bilstm_label_loss_ablation",
+        )
+        self.assertEqual(job["parameters"]["model"], "tiny_bilstm_h16")
+        self.assertEqual(job["parameters"]["training_population"], "failure_only")
+        self.assertEqual(job["parameters"]["batch_size"], 32)
+        self.assertEqual(job["parameters"]["tau_event"], 20.0)
+        self.assertIn("--experiment", job["command"])
+        experiment_index = job["command"].index("--experiment")
+        self.assertEqual(job["command"][experiment_index + 1], "label_loss")
+        self.assertIn("--batch-size", job["command"])
+        batch_index = job["command"].index("--batch-size")
+        self.assertEqual(job["command"][batch_index + 1], "32")
+        self.assertIn("--tau-event", job["command"])
+        self.assertIn("--run-asymmetric-if-soft-improves", job["command"])
+
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        self.assertIn(
+            "robo_dopamine_label_loss_ablation",
+            final["output_dir"],
+        )
+
+        with self.request("/api/analysis/robo-label-loss") as response:
+            snapshot = json.load(response)["label_loss"]
+        self.assertTrue(snapshot["available"])
+        self.assertEqual(len(snapshot["label_ablation"]), 1)
+        self.assertEqual(len(snapshot["loss_ablation"]), 1)
+        self.assertEqual(
+            snapshot["dataset_summary"]["pseudo_no_event_frame0_rollout_n"],
+            1,
+        )
+        self.assertEqual(
+            snapshot["best_configuration"]["best_loss"]["loss"],
+            "temporal_softmax_ce",
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "loss_ablation.csv"
+                for item in snapshot["artifacts"]
+            )
+        )
+
+        with self.request(
+            "/api/analysis/robo-label-loss/artifacts/loss_ablation.csv"
+        ) as response:
+            artifact_text = response.read().decode("utf-8")
+        self.assertIn("temporal_softmax_ce", artifact_text)
+
+        with self.request(
+            "/api/analysis-jobs/" + job["job_id"] + "/log?tail=20"
+        ) as response:
+            log = json.load(response)["log"]
+        self.assertIn("fake label loss ablation complete", log["text"])
+
+    def test_robo_hop_analysis_uses_fused_saved_output_only(self) -> None:
+        self.install_fake_robo_hop_analyzer()
+        roots = self.seed_analysis_runs()
+        extra_rollout = {
+            **self.rollout,
+            "id": "sample-rollout-without-fused",
+            "episode_index": 1,
+        }
+        with (self.root / "manifest.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(extra_rollout) + "\n")
+
+        robo_root = self.root / roots["robo_dopamine"]
+        raw_root = robo_root / "raw" / self.rollout["id"]
+        fused_path = raw_root / "fused" / "pred_vllm.json"
+        fused_path.parent.mkdir(parents=True, exist_ok=True)
+        fused_path.write_text(
+            json.dumps([
+                {
+                    "id": "sample-af_000002",
+                    "image": ["", "", "", "", "", "frame_000002.png"],
+                    "hop": -0.12,
+                    "progress": 0.35,
+                    "pred": "<score>0%</score>",
+                }
+            ]),
+            encoding="utf-8",
+        )
+        (raw_root / "worker_result.json").write_text(
+            json.dumps(
+                {
+                    "eval_mode": "fused",
+                    "raw_model_output": str(fused_path),
+                    "fused_model_output": str(fused_path),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.request("/api/baselines/runs?scope=libero_10") as response:
+            discovered = json.load(response)["runs"]
+        robo_run = next(
+            row for row in discovered
+            if row["baseline"] == "robo_dopamine"
+            and row["run_root"] == roots["robo_dopamine"]
+        )
+        self.assertFalse(robo_run["compatible"])
+        self.assertFalse(robo_run["fused_compatible"])
+        self.assertEqual(robo_run["fused_rollout_count"], 1)
+        self.assertEqual(robo_run["fused_scope_rollout_count"], 1)
+        self.assertEqual(robo_run["fused_missing_rollouts"], 1)
+        self.assertEqual(robo_run["fused_scope_coverage"], 0.5)
+        self.assertEqual(
+            robo_run["hop_signal_rollout_counts"],
+            {"fused": 1},
+        )
+
+        with self.request(
+            "/api/analysis/run",
+            {
+                "analysis_kind": "robo_hop_comparison",
+                "scope": "libero_10",
+                "runs": {"robo_dopamine": roots["robo_dopamine"]},
+                "task_cv": False,
+                "cpu_limit": 2,
+                "output_label": "hop_test",
+            },
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+
+        self.assertEqual(job["analysis_kind"], "robo_hop_comparison")
+        self.assertEqual(job["requested_rollouts"], 2)
+        self.assertEqual(job["selected_rollouts"], 1)
+        self.assertEqual(job["fused_coverage"], 0.5)
+        self.assertIn("--selection", job["command"])
+        self.assertIn("--run-root", job["command"])
+        self.assertIn("--cpu-limit", job["command"])
+        cpu_flag = job["command"].index("--cpu-limit")
+        self.assertEqual(job["command"][cpu_flag + 1], "2")
+        self.assertEqual(job["parameters"]["cpu_limit"], 2)
+        self.assertEqual(job["parameters"]["nice_target"], 10)
+        self.assertNotIn("--safe-run", job["command"])
+        self.assertNotIn("--procvlm-run", job["command"])
+        self.assertNotIn("--rynnvalue-run", job["command"])
+
+        selection_path = self.root / job["selection_path"]
+        selection_doc = json.loads(selection_path.read_text())
+        self.assertEqual(
+            selection_doc["selection"],
+            [{"id": self.rollout["id"]}],
+        )
+        self.assertEqual(selection_doc["requested_rollouts"], 2)
+        self.assertEqual(selection_doc["available_fused_rollouts"], 1)
+
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        with self.request("/api/analysis") as response:
+            analysis = json.load(response)["analysis"]
+        self.assertTrue(analysis["robo_hop_available"])
+        hop = analysis["robo_hop"]
+        self.assertTrue(hop["available"])
+        self.assertEqual(
+            {row["signal_mode"] for row in hop["selected_configs"]},
+            {"fused"},
+        )
+        self.assertEqual(len(hop["sweep_summary"]), 1)
+        self.assertEqual(
+            hop["selected_configs"][0]["overall_failed_rollout_coverage"],
+            1.0,
+        )
+        self.assertEqual(len(hop["ensemble_selected"]), 1)
+        self.assertEqual(
+            hop["ensemble_selected"][0]["selection_target"],
+            "grasp_recall_eventual",
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "no_event_failure_results.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "ensemble_selected.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "grasp_event_features.csv"
+                for item in hop["artifacts"]
+            )
+        )
+        self.assertEqual(
+            hop["interval_localization_rows"][0]["config_id"],
+            "cfg1",
+        )
+        self.assertEqual(
+            hop["interval_localization_rows"][0]["rank_mse"],
+            1,
+        )
+        self.assertTrue(
+            any(
+                item["name"] == "interval_localization_ranking.csv"
+                for item in hop["artifacts"]
+            )
+        )
+
 
     def test_analysis_run_rejects_missing_ids_and_paths(self) -> None:
         self.install_fake_temporal_analyzer()
@@ -1860,6 +2381,163 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             analysis = json.load(response)["analysis"]
         self.assertFalse(analysis["available"])
         self.assertIn("No complete baseline analysis snapshot", analysis["message"])
+
+    def test_localization_lab_preset_and_spec_job(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.analysis_jobs.robo_python = Path(sys.executable)
+        script = self.root / "tools" / "train_robo_localization.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            """import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--spec', type=Path, required=True)
+parser.add_argument('--output-dir', type=Path, required=True)
+args, _unknown = parser.parse_known_args()
+spec = json.loads(args.spec.read_text(encoding='utf-8'))
+out = args.output_dir
+out.mkdir(parents=True, exist_ok=True)
+(out / 'config.json').write_text(json.dumps(spec), encoding='utf-8')
+(out / 'experiment_manifest.json').write_text(json.dumps({
+    'stages': [{'stage': 'main', 'best_config_id': 's01_c001'}]
+}), encoding='utf-8')
+(out / 'training_records.json').write_text('[]', encoding='utf-8')
+(out / 'summary.csv').write_text(
+    'stage,config_id,in_interval_rate_mean,mae_samples_mean\n'
+    'main,s01_c001,0.75,1.0\n',
+    encoding='utf-8',
+)
+(out / 'per_rollout_predictions.csv').write_text(
+    'stage,config_id,repeat,rollout_id,interval_error_samples,first_event_in_interval,checkpoint\n'
+    'main,s01_c001,0,r0-a,0,true,checkpoints/main/s01_c001/repeat_00.pt\n'
+    'main,s01_c001,0,r0-b,2,false,checkpoints/main/s01_c001/repeat_00.pt\n'
+    'main,s01_c001,1,r1-a,0,true,checkpoints/main/s01_c001/repeat_01.pt\n'
+    'main,s01_c001,1,r1-b,0,true,checkpoints/main/s01_c001/repeat_01.pt\n',
+    encoding='utf-8',
+)
+(out / 'metadata.json').write_text(json.dumps({
+    'schema_version': 1,
+    'analysis': 'robo_localization_experiment',
+    'name': spec.get('name'),
+    'generated_at': '2026-09-22T06:00:00+00:00',
+    'configuration_count': 1,
+    'training_run_count': 1,
+}), encoding='utf-8')
+print('fake localization experiment complete')
+""",
+            encoding="utf-8",
+        )
+
+        with self.request("/api/analysis/localization/presets") as response:
+            self.assertEqual(response.headers.get("Connection"), "close")
+            presets = json.load(response)["presets"]
+        self.assertTrue(any(item["name"] == "bilstm_default" for item in presets))
+        self.assertTrue(any(item["name"] == "label_loss_default" for item in presets))
+
+        spec = {
+            "schema_version": 1,
+            "name": "web_builder_test",
+            "base": {
+                "data": {"population": "failure_only", "success_ratio": 0},
+                "target": {
+                    "kind": "hard",
+                    "sigma_pre": 3,
+                    "sigma_post": 3,
+                    "tau_event": 20,
+                },
+                "model": {"hidden": 16},
+                "loss": {
+                    "name": "bce",
+                    "distance_weight": 1,
+                    "ranking_weight": 1,
+                    "ranking_margin": 1,
+                },
+                "training": {
+                    "device": "cpu",
+                    "batch_size": 32,
+                    "epochs": 2,
+                    "patience": 1,
+                    "learning_rate": 0.003,
+                    "weight_decay": 0.0001,
+                    "grad_clip": 5,
+                    "seed": 17,
+                    "train_fraction": 0.7,
+                    "val_fraction": 0.15,
+                },
+            },
+            "sweep": [],
+            "stages": [],
+            "repeats": 1,
+        }
+
+        with self.request(
+            "/api/analysis/localization/presets/save",
+            {"spec": spec, "overwrite": False},
+        ) as response:
+            saved = json.load(response)["preset"]
+        self.assertEqual(saved["name"], "web_builder_test")
+        self.assertTrue(
+            (self.root / "config" / "robo_localization_presets" / "web_builder_test.json").is_file()
+        )
+
+        with self.request(
+            "/api/analysis/localization/run",
+            {"spec": spec},
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+        self.assertEqual(job["analysis_kind"], "robo_localization_experiment")
+        self.assertIn("--spec", job["command"])
+        self.assertEqual(job["parameters"]["experiment_name"], "web_builder_test")
+
+        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+        output_dir = self.root / final["output_dir"]
+        self.assertTrue((output_dir / "metadata.json").is_file())
+        self.assertTrue((output_dir / "summary.csv").is_file())
+
+        with self.request("/api/analysis/localization") as response:
+            runs = json.load(response)["localization"]["runs"]
+        self.assertTrue(any(item["name"] == "web_builder_test" for item in runs))
+
+        run_name = Path(final["output_dir"]).name
+        with self.request(
+            "/api/analysis/localization/artifacts/" + run_name + "/summary.csv"
+        ) as response:
+            self.assertIn("s01_c001", response.read().decode("utf-8"))
+
+        # Old-style runs do not need to be retrained: the result endpoint
+        # derives the best observed repeat from per_rollout_predictions.csv.
+        with self.request(
+            "/api/analysis/localization/result/" + run_name
+        ) as response:
+            result = json.load(response)["result"]
+        config_row = result["stages"][0]["rows"][0]
+        best_repeat = config_row["best_repeat"]
+        self.assertEqual(best_repeat["repeat"], 1)
+        self.assertEqual(best_repeat["in_interval_rate"], 1.0)
+        self.assertEqual(best_repeat["mae_samples"], 0.0)
+        self.assertTrue(best_repeat["checkpoint"].endswith("repeat_01.pt"))
+        self.assertEqual(
+            best_repeat["selection"],
+            "test_in_interval_desc_mae_mse_asc",
+        )
+        repeats = config_row["repeats"]
+        self.assertEqual([row["repeat"] for row in repeats], [0, 1])
+        self.assertEqual(repeats[0]["within_1"], 0.5)
+        self.assertEqual(repeats[0]["within_3"], 1.0)
+        self.assertEqual(repeats[1]["within_5"], 1.0)
+        self.assertEqual(repeats[1]["in_interval_rate"], 1.0)
+
+        with self.request(
+            "/api/analysis/localization/presets/delete",
+            {"name": "web_builder_test"},
+        ) as response:
+            deleted = json.load(response)
+        self.assertTrue(deleted["deleted"])
+
 
 if __name__ == "__main__":
     unittest.main()

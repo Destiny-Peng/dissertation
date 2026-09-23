@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "rollout_id": "libero_10-task04-ep001-natural-dc5113f085",
-  "updated_at": "2026-08-25T09:57:42.851631+00:00",
+  "updated_at": "2026-09-22T11:02:03.177593+00:00",
   "created_at": "2026-08-25T09:57:42.851631+00:00",
   "annotator": "Jacy",
   "review_status": "complete",
@@ -13,6 +13,14 @@
       "failure_type": "grasp_failure",
       "causal_onset_frame": 31,
       "observable_onset_frame": 51,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    },
+    {
+      "failure_type": "timeout_no_progress",
+      "causal_onset_frame": 72,
+      "observable_onset_frame": 123,
       "terminal_failure_frame": null,
       "recovery_frame": null,
       "notes": ""

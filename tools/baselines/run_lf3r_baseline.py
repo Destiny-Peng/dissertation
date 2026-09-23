@@ -1797,8 +1797,18 @@ def run_persistent_parallel(
             )
 
         setup_error: str | None = None
-        if args.dry_run and args.baseline in VLLM_BASELINES:
+        if args.baseline == "robo_dopamine":
             memory_budget: dict[str, Any] = {
+                "scope": "free_gpu_memory",
+                "requested_free_fraction": args.vllm_free_memory_fraction,
+                "resolved_total_fraction": None,
+                "resolution": "worker_immediately_before_vllm_init",
+                "safety_buffer_mib_per_gpu": 2048,
+                "gpu_selection": str(assignment["gpu"]),
+            }
+            total_memory_fraction = None
+        elif args.dry_run and args.baseline in VLLM_BASELINES:
+            memory_budget = {
                 "scope": "free_gpu_memory",
                 "requested_free_fraction": args.vllm_free_memory_fraction,
                 "resolved_total_fraction": None,
@@ -1860,7 +1870,6 @@ def run_persistent_parallel(
                 worker_progress_path,
                 worker_state_path,
                 memory_budget,
-                total_memory_fraction,
                 resume=False,
             )
         else:
@@ -2314,6 +2323,12 @@ def parse_args() -> argparse.Namespace:
         help="Run official Robo-Dopamine perspectives in one persistent model instance; pass all three for fusion",
     )
     parser.add_argument("--goal-image", type=Path, default=None)
+    parser.add_argument(
+        "--robo-localization-ckpt",
+        type=Path,
+        default=None,
+        help="Optional saved LF3R BiLSTM localization checkpoint for fused Robo-Dopamine output",
+    )
     args = parser.parse_args()
     if args.resume_run is None:
         if args.manifest is None:
@@ -2373,11 +2388,49 @@ def parse_args() -> argparse.Namespace:
     ):
         if getattr(args, name) < 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
+    if args.robo_localization_ckpt is not None:
+        if args.baseline != "robo_dopamine":
+            parser.error("--robo-localization-ckpt is only valid for --baseline robo_dopamine")
+        effective_fused = (
+            args.robo_eval_mode == "fused"
+            or (
+                args.robo_eval_modes is not None
+                and set(args.robo_eval_modes) == {"incremental", "forward", "backward"}
+            )
+        )
+        if not effective_fused:
+            parser.error(
+                "--robo-localization-ckpt requires fused Robo-Dopamine output"
+            )
     if args.robo_eval_modes:
         if len(set(args.robo_eval_modes)) != len(args.robo_eval_modes):
             parser.error("--robo-eval-modes must not contain duplicates")
         if len(args.robo_eval_modes) > 1 and set(args.robo_eval_modes) != {"incremental", "forward", "backward"}:
             parser.error("multi-perspective Robo-Dopamine requires incremental, forward, and backward")
+    if (
+        args.resume_run is None
+        and args.baseline == "robo_dopamine"
+        and args.tensor_parallel_size > 1
+    ):
+        if args.worker_spec or args.parallel_workers != 1:
+            parser.error(
+                "Robo-Dopamine tensor parallelism cannot be combined with "
+                "--worker-spec or --parallel-workers > 1; use one persistent "
+                "worker that sees all TP GPUs"
+            )
+        try:
+            tp_gpus = selected_gpu_ids(args.gpu or "0")
+        except ValueError as error:
+            parser.error(str(error))
+        if (
+            len(tp_gpus) != args.tensor_parallel_size
+            or len(set(tp_gpus)) != args.tensor_parallel_size
+        ):
+            parser.error(
+                "Robo-Dopamine tensor parallelism requires exactly "
+                "--tensor-parallel-size distinct GPU IDs in --gpu; "
+                "for TP=2 use --gpu 0,1 --tensor-parallel-size 2"
+            )
     if args.baseline == "rynnvalue":
         if args.rynn_num_frames < 1:
             parser.error("--rynn-num-frames must be positive; zero/all-frame mode is not supported")
@@ -2409,6 +2462,12 @@ def main() -> int:
     args.logs_dir = args.logs_dir.expanduser().resolve()
     if args.goal_image is not None:
         args.goal_image = args.goal_image.expanduser().resolve()
+    if args.robo_localization_ckpt is not None:
+        args.robo_localization_ckpt = args.robo_localization_ckpt.expanduser().resolve()
+        if not args.robo_localization_ckpt.is_file():
+            raise FileNotFoundError(
+                f"Localization checkpoint does not exist: {args.robo_localization_ckpt}"
+            )
     if args.baseline == "procvlm" and args.procvlm_procedure_mode == "baseline":
         # Baseline mode must remain independent of canonical/tracker state.
         # Ignore any stale procedure path supplied by an old WebUI/session.

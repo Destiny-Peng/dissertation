@@ -185,6 +185,27 @@ def _validate_baseline_options(
             )
         options["goal_image"] = str(resolved)
 
+    if "robo_localization_ckpt" in options and options["robo_localization_ckpt"] not in (None, ""):
+        if baseline != "robo_dopamine":
+            raise server.ValidationError(
+                "robo_localization_ckpt is only valid for Robo-Dopamine"
+            )
+        resolved = self._project_path(str(options["robo_localization_ckpt"]))
+        if not resolved.is_file():
+            raise server.ValidationError(
+                "robo_localization_ckpt does not exist inside the project: "
+                + str(options["robo_localization_ckpt"])
+            )
+        if resolved.suffix.lower() not in {".pt", ".pth"}:
+            raise server.ValidationError(
+                "robo_localization_ckpt must be a .pt or .pth checkpoint"
+            )
+        if options.get("robo_eval_mode", "fused") != "fused":
+            raise server.ValidationError(
+                "robo_localization_ckpt requires Robo-Dopamine eval mode = fused"
+            )
+        options["robo_localization_ckpt"] = str(resolved)
+
     return options
 
 

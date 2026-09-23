@@ -50,3 +50,4 @@ __pycache__/
 *.log
 Robo-Dopamine-Bench/**
 *.zip
+*.tar.gz

@@ -230,13 +230,44 @@ The API equivalent is `POST /api/baselines/run-batch` with `baseline`, `scope`, 
       "options": {"rynn_batch_size": 1, "rynn_num_frames": 16, "rynn_evaluation_interval": 4}
     }
 
-`GET /api/baselines/runs?scope=<scope>` discovers project-local completed runs and reports method, run root, status, selection/completion/failure counts, timestamps, manifest hash, rollout-ID coverage, and whether the run covers the requested scope. `GET /api/baselines/result-coverage?baseline=<method>&scope=<scope>&condition=<condition>` reports source rollout IDs with and without a parseable valid result and drives the missing-result batch filter. Paths outside the project or outside `outputs/baselines` are rejected. `GET /api/baseline-jobs/<job-id>` reports aggregate and per-worker progress; `/log` returns the recent log tail. All methods keep their existing advanced fields, and all visible fields use the canonical CLI metadata in `static/parameter_help.json`. Worker rows are forwarded as repeated `--worker-spec GPU:START:END` arguments for every method.
+`GET /api/baselines/runs?scope=<scope>` discovers project-local completed runs and reports method, run root, status, selection/completion/failure counts, timestamps, manifest hash, rollout-ID coverage, and whether the run covers the requested scope. Paths outside the project or outside `outputs/baselines` are rejected. `GET /api/baseline-jobs/<job-id>` reports aggregate and per-worker progress; `/log` returns the recent log tail. All methods keep their existing advanced fields, and all visible fields use the canonical CLI metadata in `static/parameter_help.json`. Worker rows are forwarded as repeated `--worker-spec GPU:START:END` arguments for every method.
 
 ### CLI parameter help
 
 All baseline and rollout-generation fields with a help marker show a body-mounted tooltip on hover or keyboard focus. The tooltip reports the exact command-line flag, default, scope, effect, and, where applicable, the upstream flag received by the existing worker. The canonical metadata is static/parameter_help.json; tools/baselines/README.md remains the detailed command reference and links back to this file.
 
 ### Running temporal analysis from Analysis
+
+### Robo-Dopamine four-signal hop analysis
+
+Analysis Overview includes a separate **Four-signal failure evidence** runner for saved Robo-Dopamine multi-perspective outputs. It applies the same detector families and parameter sweep independently to four saved hop signals: `incremental`, `forward`, `backward`, and `fused`.
+
+The runner is CPU-only and reuses the persistent Analysis tmux/job/log infrastructure. It never starts Robo-Dopamine inference. For a fair comparison it analyzes only the rollout intersection that has all four signals, so event N, clean-rollout N, recall, FPR, and delay are directly comparable across modes.
+
+Signal semantics are preserved rather than redefined:
+
+- `incremental.hop`: official raw incremental model score. Legacy percentage-point storage is normalized to `[-1,1]` only when confirmed.
+- `forward.hop`: saved difference of consecutive forward progress predictions.
+- `backward.hop`: saved difference of consecutive backward-derived progress values.
+- `fused.hop`: saved difference of consecutive arithmetic-mean fused progress values.
+
+Forward/backward/fused hop are used on their saved native scale and are not rescaled from `<score>` text.
+
+The WebUI payload uses the existing `POST /api/analysis/run` endpoint:
+
+    {
+      "analysis_kind": "robo_hop_comparison",
+      "scope": "libero_10",
+      "runs": {
+        "robo_dopamine": "outputs/baselines/..."
+      },
+      "task_cv": false,
+      "output_label": "web_robo_hop"
+    }
+
+Run discovery reports per-mode coverage plus the common four-signal coverage. A run is selectable when the requested scope contains at least one rollout with all four signals; partial scope coverage is allowed, but the four signals are always evaluated on the same common rollout subset.
+
+The output remains under `outputs/robo_dopamine_incremental_hop/web_<timestamp>_<label>_<suffix>/` for compatibility. Every CSV row includes `signal_mode`. The Analysis page renders separate Incremental, Forward, Backward, and Fused sections, while the full sweep, event, clean-rollout, recovery, breakdown, and optional task-CV tables remain downloadable artifacts.
 
 ### Robo-Dopamine multi-perspective outputs
 
@@ -429,7 +460,7 @@ The Review rollout-generation form exposes the same choice as task_suite=libero_
 
 ### Rollout generation from Review
 
-The Review page's Generate rollouts panel is a browser form over the existing suite-aware wrapper -> runner -> official evaluator -> build_manifest.py flow. Select either OpenVLA + LIBERO-10 natural or OpenVLA + LIBERO-Spatial natural native-256 data. Both suites accept one numeric GPU id, task start/end 0-9 inclusive, 1-50 trials per task, a non-negative seed, an optional short label, and a review-video mode. The default `single_view` path is unchanged. `libero_three_view` first runs the same OpenVLA rollout, then replays the recorded 7-D actions in the same LIBERO task/initial state without model inference and writes a horizontal `agentview + sideview + robot0_eye_in_hand` composite beside the canonical MP4. The manifest keeps `video_path` as the canonical single-view baseline input and stores the review artifact in `multiview_video_path`; the Review player prefers the multiview file when present and falls back to `video_path`. The service creates a suite-specific provenance prefix, rejects path-like labels and existing output directories, keeps each run under its dedicated output root, and refreshes the manifest and Review queue after success.
+The Review page's Generate rollouts panel is a browser form over the existing suite-aware wrapper -> runner -> official evaluator -> build_manifest.py flow. Select either OpenVLA + LIBERO-10 natural or OpenVLA + LIBERO-Spatial natural native-256 data. Both suites accept one numeric GPU id, task start/end 0-9 inclusive, 1-50 trials per task, a non-negative seed, and an optional short label. The service creates a suite-specific provenance prefix, rejects path-like labels and existing output directories, keeps each run under its dedicated output root, and refreshes the manifest and Review queue after success.
 
 
 POST /api/rollouts/generate starts the selected suite; GET /api/rollout-jobs/<job-id> and /log expose progress and recent output. A web submission is passed to the same TmuxJobSupervisor.submit() used by baseline jobs: it creates lf3r-annotator-<job-id>, runs a project-local wrapper, persists the job record, and reattaches monitoring after a server restart. The direct shell wrapper remains a normal CLI entry point; only web-started jobs are tmux-managed. Generation is the manifest/media writer and is mutually exclusive with any active baseline or temporal-analysis job. SAFE, ProcVLM, RynnValue, and Robo-Dopamine jobs may otherwise be submitted independently, including with overlapping user-specified GPU IDs; the server does not schedule or reject GPU contention. Jobs expose task suite, resolution metadata, requested/completed counts, run root, command, log, tmux session, return code, manifest rebuild state, and the memory-only gate. Failed or memory-blocked jobs leave existing rollout and annotation files untouched. The browser has no cancel action; command-line recovery remains supported.
@@ -446,7 +477,7 @@ Externally created rollout videos can be added without using the WebUI generator
 Run the standard-library test suite:
 
     python3 -m unittest discover -s tools/lf3r_annotator/tests -p 'test_*.py' -v
-    python3 -m py_compile tools/lf3r_annotator/server.py tools/lf3r_annotator/task_supervisor.py tools/lf3r_annotator/verify_pipeline.py tools/lf3r_annotator/generate_libero_multiview.py tools/analyze_baseline_temporal_signals.py
+    python3 -m py_compile tools/lf3r_annotator/server.py tools/lf3r_annotator/task_supervisor.py tools/lf3r_annotator/verify_pipeline.py tools/analyze_baseline_temporal_signals.py
 
 The tests cover manifest loading, byte-range video delivery, atomic annotation persistence, validation failures, project-root path confinement, parsing the four baseline output formats through the evaluation API, shared Settings round trips/validation, complete-snapshot selection, event-metric compaction, baseline run discovery/batch validation/job progress, temporal-analysis selection/atomic output, rollout-generation validation/progress/logging/memory blocking, persistent tmux job records and recovery behavior, parameter metadata, and the three-page frontend contract.
 
@@ -469,3 +500,8 @@ This change was reviewed statically only; no tests or inference were run, as req
 Baseline signals have separate raw-value vertical axes, visibility toggles and a shared video-frame domain. The white cursor follows playback and seeking. Click a plot to seek, or focus it and use arrow/Home/End keys. Existing nearest-sample/value readouts distinguish the current video frame from sampled inference points. No interpolation or signal normalization is applied.
 
 Results offers `Lock video while scrolling`. It pins the shared player, playback controls and frame slider at the top of the Results scroll area, with a compact video height. The preference is stored in this browser and applies only to Results. Turn it off to restore normal scrolling.
+
+
+### Review video modes
+
+Rollout generation supports the default `single_view` recording and `libero_three_view`. The three-view mode preserves the canonical single-view rollout and policy input, then replays recorded actions without model inference to create a horizontal `agentview + sideview + robot0_eye_in_hand` review video. The manifest keeps `video_path` as the canonical baseline input and stores the review artifact in `multiview_video_path`; Review prefers the multiview video when available and falls back to the canonical MP4.

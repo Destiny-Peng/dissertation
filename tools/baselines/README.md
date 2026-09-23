@@ -63,7 +63,7 @@ For model baselines, omitting `--model-path` selects the configured local checkp
 
 | Option                                  | Default  | Applies to             | Meaning and effect                                                                                                                                                                                                                                                           |
 | --------------------------------------- | -------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--vllm-free-memory-fraction VALUE`   | `0.80` | ProcVLM, Robo-Dopamine | Target fraction of GPU memory that is free at worker startup. It must be in`(0, 1]`. The runner reads current `nvidia-smi` `memory.free` and `memory.total` immediately before the persistent vLLM worker, then converts the target to the total-memory fraction expected by vLLM. |
+| `--vllm-free-memory-fraction VALUE`   | `0.80` | ProcVLM, Robo-Dopamine | Target fraction of currently free GPU memory. ProcVLM retains runner-side conversion. Robo-Dopamine passes this free-memory target into the persistent worker, which measures `nvidia-smi` immediately before `vllm.LLM(...)`, reserves 2048 MiB per selected GPU, and only then resolves the total-memory fraction. |
 | `--vllm-gpu-memory-utilization VALUE` | alias    | ProcVLM, Robo-Dopamine | Backward-compatible spelling for the same free-memory target. Despite the legacy name, the runner does not interpret this value as a fraction of total GPU memory.                                                                                                           |
 
 The conversion is:
@@ -74,9 +74,9 @@ vllm_total_fraction = floor_6(
 )
 ```
 
-For example, with 71,842 MiB free out of 97,887 MiB total on GPU0, `0.80` becomes `0.587142` for vLLM. This requests about 80% of the memory free at measurement time and leaves the remaining free-memory fraction as headroom for other workloads. With multiple selected GPUs, the smallest free/total ratio is used. GPU utilization percentage is recorded for monitoring only and is not a gate. A failure to query memory or an invalid GPU selection stops before model loading.
+For example, without a binding safety reserve, 71,842 MiB free out of 97,887 MiB total and a requested `0.80` corresponds to about `0.587142` of total memory. Robo-Dopamine performs that conversion inside the child worker immediately before vLLM engine construction and additionally caps the target at `free_memory - 2048 MiB` on every selected GPU. With tensor parallel GPUs, the smallest safe total-memory fraction is used. GPU utilization percentage is informational and is not a gate.
 
-The resolved value is recorded in `commands.jsonl` under `vllm_memory_budget`, together with the requested free-memory fraction and per-GPU snapshot. The raw downstream command therefore contains a converted `--gpu_memory_utilization` or `--gpu-memory-utilization` value; that downstream value is a total-memory fraction, not the user-facing free-memory target. ProcVLM and Robo-Dopamine resolve this once per persistent worker; each engine is then reused for that worker's assigned rollout set. GPU utilization percentage is informational and is not a gate.
+The command/job plan records the requested free-memory target. ProcVLM continues to record its runner-resolved budget. Robo-Dopamine initially records a deferred budget, then the worker writes the actual per-GPU snapshot and resolved total-memory fraction to `robo_dopamine_progress.jsonl`, `robo_dopamine_state.json`, and final `run.json` once engine initialization starts. Each engine is reused for that worker's assigned rollout set.
 
 ### ProcVLM parameters
 
@@ -138,7 +138,7 @@ bash tools/baselines/run_baseline.sh \
   --continue-on-error
 ```
 
-The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE, Robo-Dopamine, and DenseReward; the worker table in the annotator sends these flags for all five methods. A legacy invocation with no worker options keeps the existing single-worker behavior, including ProcVLM/Robo-Dopamine multi-GPU tensor parallel configuration.
+The automatic assignment is `[0,10)` on GPU 0 and `[10,20)` on GPU 1. For exact placement, use `--worker-spec 0:0:10 --worker-spec 1:10:20`. The same syntax is valid for SAFE, Robo-Dopamine, and DenseReward; the worker table in the annotator sends these flags for all five methods. A single-worker invocation supports ProcVLM/Robo-Dopamine tensor parallelism. For Robo-Dopamine on GPU 0 and 1, use `--gpu 0,1 --parallel-workers 1 --tensor-parallel-size 2`; the persistent worker forwards `--tp 2` into vLLM. This is different from `--gpu 0,1 --parallel-workers 2 --tensor-parallel-size 1`, which launches two independent model replicas for rollout throughput. Robo-Dopamine rejects TP>1 together with multiple rollout workers.
 
 RynnValue keeps its existing temporal semantics inside each rollout worker: `--rynn-batch-size` is the prefix batch size, and `--rynn-evaluation-interval` is converted to the official sampler's approximate endpoint count. Each RynnValue rollout subprocess receives one `CUDA_VISIBLE_DEVICES` value.
 
@@ -162,9 +162,20 @@ Each rollout writes `raw/<rollout-id>/densereward_raw.jsonl` and `worker_result.
 | `--robo-frame-interval N` | `4`                       | `--frame-interval N` | Samples every`N` source frames. The upstream sampler always includes frame 0 and ensures the final source frame is included, so smaller values produce more prediction samples and require more time and memory.                                                                                                                               |
 | `--robo-batch-size N`     | `1`                       | `--batch-size N`     | Number of sampled inputs per inference batch. Increase only when GPU memory allows; lower values reduce peak memory.                                                                                                                                                                                                                             |
 | `--robo-eval-mode MODE`   | `fused`                   | `--eval-mode MODE`   | `fused` runs `incremental`, `forward`, and `backward` with one persistent model and averages their native progress outputs. Explicit `forward`, `incremental`, or `backward` retains the single-perspective compatibility mode. |
-| `--goal-image PATH`       | `examples/blank_goal.png` | `--goal-image PATH`  | Goal/reference image for the official pipeline. If omitted, the blank goal image is used. The wrapper passes the same LF3R video for all three camera streams because LF3R supplies one view.                                                                                                                                                    |
+| `--goal-image PATH`       | task-specific for LIBERO-10 | per-rollout job plan | Optional global override. If omitted for LIBERO-10, task `k` automatically uses `output/robodopamine_goal/libero-10-task{k}.jpg`; a missing task image is an error. Other suites retain `examples/blank_goal.png`. The resolved path is saved in each persistent job so resume reuses the exact same goal. |
 
 Robo-Dopamine writes the official `pred_vllm.json` under its native timestamped output subdirectory and records that location in `worker_result.json`. The official pipeline also materializes sampled camera frames under that subdirectory's `.cache/`; LF3R removes this extracted-frame cache immediately after `pred_vllm.json` is confirmed present. Prediction JSON, optional rendered video, and wrapper-derived fused JSON/CSV/plots are retained. The image-path strings inside `pred_vllm.json` remain unchanged and are used only for native frame-index provenance by LF3R analysis.
+
+An optional LF3R localization head can be attached with
+`--robo-localization-ckpt PATH`. This does **not** replace Robo-Dopamine's GRM
+checkpoint. It consumes the wrapper's fused `progress + hop` sequence after the
+incremental/forward/backward outputs have been fused, loads the saved tiny BiLSTM
+and its normalization statistics on CPU, and writes
+`raw/<rollout-id>/localization_prediction.json`. The selected point is the native
+Robo-Dopamine sampled frame at `argmax(logits)`; `worker_result.json` records
+the checkpoint and predicted frame so the Results UI can overlay it on the
+Robo-Dopamine curves. Non-fused modes are rejected when this option is set.
+
 
 ### Robo-Dopamine persistent execution and resume
 
@@ -356,7 +367,7 @@ bash tools/baselines/run_baseline.sh \
 
 The same interface selects `safe`, `procvlm`, `robo_dopamine`, `rynnvalue`, or `densereward`. Natural rollouts are the default. Use `--dataset-role libero_10`, repeated `--rollout-id`, or `--start-index` plus `--limit` to create reproducible chunks. Pass `--model-path` to override a local checkpoint. Optional visualization is disabled by default; `--render-video` enables it without changing raw-output capture.
 
-The current dense-sampling smoke defaults are deliberate: ProcVLM uses `--procvlm-window-size 4` and omits `--procvlm-max-sampled-frames`, leaving its upstream cap of 512 so short rollouts are sampled densely; `--procvlm-max-sampled-frames` is available only as an explicit optional cap. Robo-Dopamine uses `--robo-frame-interval 4`. DenseReward uses the official three-consecutive-frame prompt with `--densereward-frame-interval 1` by default and `--densereward-max-new-tokens 32`; it is not vLLM-backed and does not use the free-memory conversion. Both vLLM-backed workers default to `--vllm-free-memory-fraction 0.80` (the older `--vllm-gpu-memory-utilization` spelling remains an alias). For actual inference, the runner reads current `nvidia-smi` free/total memory immediately before the persistent worker and converts the target to the vLLM total-memory parameter; the measured budget is recorded in `commands.jsonl`. Each selected ProcVLM or Robo-Dopamine run creates one vLLM process and reuses its engine across all selected rollouts. Dry-run plans defer this conversion.
+The current dense-sampling smoke defaults are deliberate: ProcVLM uses `--procvlm-window-size 4` and omits `--procvlm-max-sampled-frames`, leaving its upstream cap of 512 so short rollouts are sampled densely; `--procvlm-max-sampled-frames` is available only as an explicit optional cap. Robo-Dopamine uses `--robo-frame-interval 4`. DenseReward uses the official three-consecutive-frame prompt with `--densereward-frame-interval 1` by default and `--densereward-max-new-tokens 32`; it is not vLLM-backed and does not use the free-memory conversion. Both vLLM-backed workers default to `--vllm-free-memory-fraction 0.80` (the older `--vllm-gpu-memory-utilization` spelling remains an alias). For actual inference, ProcVLM retains the existing runner-side free/total conversion. Robo-Dopamine defers the conversion until the persistent worker is already running and calls `nvidia-smi` immediately before constructing the official vLLM engine; the actual resolved budget is then persisted in worker progress/state and final run metadata. Each selected run creates one persistent engine and reuses it across its assigned rollouts.
 
 ## Run artifacts
 

@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_10-task00-ep032-natural-db06957831",
+  "updated_at": "2026-09-21T12:54:22.712919+00:00",
+  "created_at": "2026-09-21T12:54:22.712919+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "grasp_failure",
+  "confidence": 5,
+  "failure_events": [
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 63,
+      "observable_onset_frame": 80,
+      "terminal_failure_frame": null,
+      "recovery_frame": 85,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 124,
+      "observable_onset_frame": 135,
+      "terminal_failure_frame": null,
+      "recovery_frame": 144,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 180,
+      "observable_onset_frame": 209,
+      "terminal_failure_frame": null,
+      "recovery_frame": 237,
+      "notes": ""
+    },
+    {
+      "failure_type": "timeout_no_progress",
+      "causal_onset_frame": 359,
+      "observable_onset_frame": 414,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 63,
+  "observable_onset_frame": 80,
+  "terminal_failure_frame": null,
+  "recovery_frame": 85,
+  "notes": ""
+}

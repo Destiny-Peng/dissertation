@@ -133,7 +133,7 @@ var workspaceState = {
     event_group: "terminal_failure",
     scale: "all"
   },
-  analysisTab: "overview",
+  analysisTab: "localization",
   analysisDetails: {
     kind: "changepoint_events",
     page: 1,
@@ -2078,8 +2078,12 @@ function workspaceJobIsActive(job) {
   return job && (job.status === "queued" || job.status === "running");
 }
 
+function workspaceIsTemporalAnalysisJob(job) {
+  return Boolean(job && job.job_type === "analysis" && !job.analysis_kind);
+}
+
 function workspaceJobChanged(job) {
-  if (!job || job.job_type !== "analysis") return;
+  if (!workspaceIsTemporalAnalysisJob(job)) return;
   var previous = workspaceState.analysisRunJobs[job.job_id];
   workspaceState.analysisRunJobs[job.job_id] = job;
   var current = workspaceState.analysisRunJob;
@@ -2109,14 +2113,10 @@ function workspaceJobChanged(job) {
 }
 
 function workspaceJobsChanged(jobs) {
-  (jobs || []).filter(function (job) {
-    return job.job_type === "analysis";
-  }).forEach(function (job) {
+  (jobs || []).filter(workspaceIsTemporalAnalysisJob).forEach(function (job) {
     workspaceJobChanged(job);
   });
-  var analysisJobs = (jobs || []).filter(function (job) {
-    return job.job_type === "analysis";
-  });
+  var analysisJobs = (jobs || []).filter(workspaceIsTemporalAnalysisJob);
   if (!workspaceState.analysisRunJob && analysisJobs.length) {
     workspaceState.analysisRunJob = analysisJobs[0];
   }
@@ -2303,10 +2303,19 @@ function workspacePopulateAnalysisRunSelectors() {
 
 async function workspaceLoadBaselineRuns(scope, force) {
   scope = scope || workspaceState.analysisRunScope || "natural_observation";
-  if (workspaceState.baselineRunsLoading && !force) return;
+  if (
+    workspaceState.baselineRunsLoading
+    && !force
+    && workspaceState.baselineRunsScope === scope
+  ) {
+    while (workspaceState.baselineRunsLoading) {
+      await new Promise(function (resolve) { window.setTimeout(resolve, 20); });
+    }
+    return workspaceState.baselineRuns;
+  }
   if (!force && workspaceState.baselineRunsScope === scope && workspaceState.baselineRunsLoaded) {
     workspaceRenderAnalysisRunPanel();
-    return;
+    return workspaceState.baselineRuns;
   }
   var requestId = ++workspaceState.baselineRunsRequest;
   workspaceState.analysisRunScope = scope;
@@ -2339,6 +2348,7 @@ async function workspaceLoadBaselineRuns(scope, force) {
       workspaceRenderAnalysisRunPanel();
     }
   }
+  return workspaceState.baselineRuns;
 }
 
 async function workspaceLoadAnalysisRunLog(jobId) {
@@ -3776,16 +3786,16 @@ function workspaceParseRoute() {
   var parts = raw.split("/");
   var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
   if (view === "review") view = "annotate";
-  var analysisTabs = ["overview", "comparison", "failures", "events", "signals", "archive"];
-  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "overview";
+  var analysisTabs = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
+  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "localization";
   var id = ["annotate", "results"].indexOf(view) !== -1 && parts.length > 1 && parts[1]
     ? decodeURIComponent(parts.slice(1).join("/")) : null;
   return { view: view, id: id, analysisTab: analysisTab, hash: hash };
 }
 
 function workspaceRenderAnalysisTabs(tab) {
-  var allowed = ["overview", "comparison", "failures", "events", "signals", "archive"];
-  if (allowed.indexOf(tab) === -1) tab = "overview";
+  var allowed = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
+  if (allowed.indexOf(tab) === -1) tab = "localization";
   workspaceState.analysisTab = tab;
   document.querySelectorAll("[data-analysis-panel]").forEach(function (panel) {
     panel.classList.toggle("hidden", panel.dataset.analysisPanel !== tab);
@@ -3795,6 +3805,9 @@ function workspaceRenderAnalysisTabs(tab) {
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
+  });
+  document.querySelectorAll("[data-analysis-legacy-global]").forEach(function (node) {
+    node.classList.toggle("hidden", tab === "localization");
   });
 }
 
@@ -3823,11 +3836,15 @@ function workspaceRenderRoute() {
     }
   } else if (route.view === "analysis") {
     workspaceRenderAnalysisTabs(route.analysisTab);
-    workspaceRenderLiveAnalysis();
-    workspaceRenderAnalysisRunPanel();
-    workspaceLoadAnalysisEnvironment();
-    workspaceLoadAnalysis(false);
-    workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
+    if (route.analysisTab === "localization") {
+      if (typeof window.localizationLabRefresh === "function") window.localizationLabRefresh();
+    } else {
+      workspaceRenderLiveAnalysis();
+      workspaceRenderAnalysisRunPanel();
+      workspaceLoadAnalysisEnvironment();
+      workspaceLoadAnalysis(false);
+      workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
+    }
   } else if (route.view === "settings") {
     workspaceLoadSettings();
   }

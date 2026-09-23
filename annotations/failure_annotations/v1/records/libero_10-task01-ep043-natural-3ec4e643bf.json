@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "rollout_id": "libero_10-task01-ep043-natural-3ec4e643bf",
+  "updated_at": "2026-09-21T06:52:12.574488+00:00",
+  "created_at": "2026-09-21T06:52:12.574488+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "collision",
+  "confidence": 5,
+  "failure_events": [
+    {
+      "failure_type": "collision",
+      "causal_onset_frame": 161,
+      "observable_onset_frame": 174,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 209,
+      "observable_onset_frame": 232,
+      "terminal_failure_frame": null,
+      "recovery_frame": 241,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 264,
+      "observable_onset_frame": 285,
+      "terminal_failure_frame": null,
+      "recovery_frame": 286,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 306,
+      "observable_onset_frame": 323,
+      "terminal_failure_frame": null,
+      "recovery_frame": 327,
+      "notes": ""
+    },
+    {
+      "failure_type": "grasp_failure",
+      "causal_onset_frame": 365,
+      "observable_onset_frame": 427,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 161,
+  "observable_onset_frame": 174,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}

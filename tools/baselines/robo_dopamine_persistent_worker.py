@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -28,12 +29,240 @@ from procvlm_worker import (
 from robo_dopamine_multi_perspective import (
     FUSED_EVAL_MODE,
     PERSPECTIVE_MODES,
+    frame_index,
     fuse_prediction_files,
     plot_progress_curves,
     resolve_eval_modes,
     summarize_incremental_noise,
     write_progress_csv,
 )
+
+
+DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB = 2048
+
+_LOCALIZATION_CHECKPOINT_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
+    """Load one saved LF3R localization head for lightweight CPU inference."""
+    resolved = path.expanduser().resolve()
+    key = str(resolved)
+    cached = _LOCALIZATION_CHECKPOINT_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    # Keep this import lazy so ordinary Robo-Dopamine runs do not import the
+    # localization training package unless the optional head is requested.
+    tools_root = Path(__file__).resolve().parents[1]
+    if str(tools_root) not in sys.path:
+        sys.path.insert(0, str(tools_root))
+    import numpy as np
+    import torch
+    from robo_localization_head.core import TinyBiLSTM
+
+    payload = torch.load(resolved, map_location="cpu", weights_only=False)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Localization checkpoint is not a mapping: {resolved}")
+    state = payload.get("model_state_dict")
+    config = payload.get("config")
+    if not isinstance(state, dict) or not isinstance(config, dict):
+        raise ValueError(
+            "Localization checkpoint must contain model_state_dict and config"
+        )
+    model_config = config.get("model")
+    if not isinstance(model_config, dict):
+        raise ValueError("Localization checkpoint config is missing model settings")
+    hidden = int(model_config.get("hidden", 16))
+    model = TinyBiLSTM(hidden=hidden)
+    model.load_state_dict(state)
+    model.eval()
+
+    mean = np.asarray(
+        torch.as_tensor(payload.get("normalization_mean")).cpu().numpy(),
+        dtype=np.float32,
+    ).reshape(1, 2)
+    std = np.asarray(
+        torch.as_tensor(payload.get("normalization_std")).cpu().numpy(),
+        dtype=np.float32,
+    ).reshape(1, 2)
+    if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(std)):
+        raise ValueError("Localization checkpoint normalization is not finite")
+    if np.any(std <= 0):
+        raise ValueError("Localization checkpoint normalization std must be positive")
+
+    bundle = {
+        "path": resolved,
+        "model": model,
+        "mean": mean,
+        "std": std,
+        "config": config,
+        "stage": payload.get("stage"),
+        "config_id": payload.get("config_id"),
+        "repeat": payload.get("repeat"),
+        "seed": payload.get("seed"),
+    }
+    _LOCALIZATION_CHECKPOINT_CACHE[key] = bundle
+    return bundle
+
+
+def run_localization_checkpoint(
+    prediction_path: Path,
+    checkpoint_path: Path,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Infer one localization point from a fused Robo-Dopamine progress/hop curve."""
+    import numpy as np
+    import torch
+
+    rows = json.loads(prediction_path.read_text(encoding="utf-8"))
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"Localization input is empty: {prediction_path}")
+
+    frames: list[int] = []
+    features: list[list[float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Localization input contains a non-object row")
+        progress = float(row["progress"])
+        hop = float(row["hop"])
+        if not math.isfinite(progress) or not math.isfinite(hop):
+            raise ValueError("Localization input contains non-finite progress/hop")
+        frames.append(frame_index(row))
+        features.append([progress, hop])
+
+    bundle = _load_localization_checkpoint(checkpoint_path)
+    sequence = np.asarray(features, dtype=np.float32)
+    normalized = (sequence - bundle["mean"]) / bundle["std"]
+    tensor = torch.from_numpy(normalized).unsqueeze(0)
+    with torch.no_grad():
+        logits = bundle["model"](tensor)[0].cpu()
+    predicted_index = int(torch.argmax(logits).item())
+    predicted_frame = int(frames[predicted_index])
+    predicted_logit = float(logits[predicted_index].item())
+    probabilities = torch.sigmoid(logits)
+
+    result = {
+        "schema_version": 1,
+        "checkpoint": str(bundle["path"]),
+        "checkpoint_stage": bundle.get("stage"),
+        "checkpoint_config_id": bundle.get("config_id"),
+        "checkpoint_repeat": bundle.get("repeat"),
+        "checkpoint_seed": bundle.get("seed"),
+        "input": "fused_robo_dopamine_progress_hop",
+        "source_prediction": str(prediction_path),
+        "frame_count": len(frames),
+        "frames": frames,
+        "logits": [float(value) for value in logits.tolist()],
+        "sigmoid_scores": [float(value) for value in probabilities.tolist()],
+        "predicted_index": predicted_index,
+        "predicted_frame": predicted_frame,
+        "predicted_logit": predicted_logit,
+        "predicted_sigmoid": float(probabilities[predicted_index].item()),
+        "hidden": int(bundle["model"].hidden),
+    }
+    output_path = output_dir / "localization_prediction.json"
+    output_path.write_text(
+        json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return {**result, "output_path": str(output_path)}
+
+
+
+def _visible_physical_gpu_ids() -> list[int]:
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if not parts or any(not part.isdigit() for part in parts):
+        raise ValueError(
+            "Robo-Dopamine worker requires numeric CUDA_VISIBLE_DEVICES so "
+            f"GPU memory can be measured immediately before vLLM init; got {raw!r}"
+        )
+    return [int(part) for part in parts]
+
+
+def query_worker_gpu_memory() -> list[dict[str, int]]:
+    requested = _visible_physical_gpu_ids()
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(
+            f"Unable to query GPU memory immediately before vLLM init: {error}"
+        ) from error
+
+    rows: dict[int, dict[str, int]] = {}
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) != 3 or not all(field.isdigit() for field in fields):
+            continue
+        index, total, free = (int(field) for field in fields)
+        rows[index] = {"gpu": index, "total_mib": total, "free_mib": free}
+    missing = [str(index) for index in requested if index not in rows]
+    if missing:
+        raise ValueError(
+            f"nvidia-smi did not report worker GPU indices: {missing}"
+        )
+    return [rows[index] for index in requested]
+
+
+def resolve_worker_vllm_memory_budget(
+    requested_free_fraction: float,
+    safety_buffer_mib: int,
+) -> tuple[float, dict[str, Any]]:
+    if not 0.0 < requested_free_fraction <= 1.0:
+        raise ValueError("requested_free_fraction must be in (0, 1]")
+    if safety_buffer_mib < 0:
+        raise ValueError("safety_buffer_mib must be non-negative")
+
+    snapshots = query_worker_gpu_memory()
+    per_gpu: list[dict[str, Any]] = []
+    effective_limits: list[float] = []
+    for row in snapshots:
+        total = int(row["total_mib"])
+        free = int(row["free_mib"])
+        if total <= 0 or free < 0 or free > total:
+            raise ValueError(f"Invalid GPU memory snapshot: {row}")
+        requested_target_mib = requested_free_fraction * free
+        buffered_target_mib = max(0.0, free - safety_buffer_mib)
+        target_mib = min(requested_target_mib, buffered_target_mib)
+        total_fraction = target_mib / total
+        effective_limits.append(total_fraction)
+        per_gpu.append(
+            {
+                **row,
+                "requested_target_mib": requested_target_mib,
+                "buffered_target_mib": buffered_target_mib,
+                "effective_target_mib": target_mib,
+                "effective_total_fraction": total_fraction,
+            }
+        )
+
+    effective = math.floor(min(effective_limits) * 1_000_000) / 1_000_000
+    if effective <= 0.0:
+        raise ValueError(
+            "Resolved vLLM memory fraction is non-positive after applying "
+            f"{safety_buffer_mib} MiB safety buffer"
+        )
+    budget = {
+        "scope": "free_gpu_memory",
+        "requested_free_fraction": requested_free_fraction,
+        "resolved_total_fraction": effective,
+        "resolution": "worker_immediately_before_vllm_init",
+        "resolution_stage": "bounded_llm_pre_init",
+        "safety_buffer_mib_per_gpu": safety_buffer_mib,
+        "selected_gpus": snapshots,
+        "per_gpu_limits": per_gpu,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
+    return effective, budget
 
 
 def initialize_robo_model(args: argparse.Namespace) -> Any:
@@ -59,13 +288,30 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
             os.environ["LOCAL_RANK"] = requested_local_rank
 
     # The official constructor hard-codes 0.9. Patch only its module-local LLM
-    # symbol so the runner's free-memory-derived budget remains authoritative.
+    # symbol; the normal LF3R path resolves the free-memory budget here, inside
+    # the persistent worker, immediately before the official vLLM constructor.
     official_llm = getattr(official, "LLM", None)
     if official_llm is None:
         raise RuntimeError("Robo-Dopamine examples.inference has no LLM symbol")
 
     def bounded_llm(*model_args: Any, **model_kwargs: Any) -> Any:
-        model_kwargs["gpu_memory_utilization"] = args.vllm_total_memory_fraction
+        if args.vllm_total_memory_fraction is not None:
+            resolved_fraction = float(args.vllm_total_memory_fraction)
+            resolved_budget = {
+                **dict(getattr(args, "memory_budget", {}) or {}),
+                "resolved_total_fraction": resolved_fraction,
+                "resolution": "fixed_total_fraction_override",
+                "resolution_stage": "bounded_llm_pre_init",
+                "safety_buffer_mib_per_gpu": args.vllm_memory_safety_buffer_mib,
+            }
+        else:
+            resolved_fraction, resolved_budget = resolve_worker_vllm_memory_budget(
+                float(args.vllm_free_memory_fraction),
+                int(args.vllm_memory_safety_buffer_mib),
+            )
+        args.resolved_memory_budget = resolved_budget
+        model_kwargs["gpu_memory_utilization"] = resolved_fraction
+        model_kwargs["tensor_parallel_size"] = args.tp
         return official_llm(*model_args, **model_kwargs)
 
     official.LLM = bounded_llm
@@ -238,6 +484,20 @@ def infer_rollout(
     # fused result, while every official per-mode file remains available.
     raw_model_output = fused_path or mode_predictions[eval_modes[0]]
     official_output_dir = mode_predictions[eval_modes[0]].parent
+
+    localization_prediction: dict[str, Any] | None = None
+    if args.localization_checkpoint is not None:
+        if fused_path is None:
+            raise ValueError(
+                "Localization checkpoint inference requires fused Robo-Dopamine "
+                "(incremental + forward + backward)"
+            )
+        localization_prediction = run_localization_checkpoint(
+            fused_path,
+            args.localization_checkpoint,
+            output_dir,
+        )
+
     result_path = output_dir / "worker_result.json"
     result = {
         "schema_version": 2 if multi_perspective else 1,
@@ -254,6 +514,23 @@ def infer_rollout(
         "task": task,
         "eval_mode": eval_mode,
     }
+    if localization_prediction is not None:
+        result["localization_prediction"] = {
+            key: localization_prediction[key]
+            for key in (
+                "output_path",
+                "checkpoint",
+                "checkpoint_stage",
+                "checkpoint_config_id",
+                "checkpoint_repeat",
+                "checkpoint_seed",
+                "predicted_index",
+                "predicted_frame",
+                "predicted_logit",
+                "predicted_sigmoid",
+                "frame_count",
+            )
+        }
     if multi_perspective:
         result.update(
             {
@@ -279,6 +556,14 @@ def infer_rollout(
         print(f"Raw Robo-Dopamine {mode} output: {prediction}", flush=True)
     if fused_path is not None:
         print(f"Fused Robo-Dopamine output: {fused_path}", flush=True)
+    if localization_prediction is not None:
+        print(
+            "Localization checkpoint prediction: "
+            f"frame={localization_prediction['predicted_frame']} "
+            f"index={localization_prediction['predicted_index']} "
+            f"checkpoint={localization_prediction['checkpoint']}",
+            flush=True,
+        )
     return {
         "official_output_dir": str(official_output_dir),
         "raw_model_output": str(raw_model_output),
@@ -288,6 +573,7 @@ def infer_rollout(
         "fused_model_output": str(fused_path) if fused_path else None,
         "mode_seconds": mode_seconds,
         "fusion": fusion_metadata,
+        "localization_prediction": result.get("localization_prediction"),
     }
 
 
@@ -398,9 +684,16 @@ def run_persistent_jobs(
     )
     init_started = time.perf_counter()
     try:
+        if args.localization_checkpoint is not None:
+            # Validate and cache the tiny CPU head before paying the vLLM
+            # initialization cost.
+            _load_localization_checkpoint(args.localization_checkpoint)
         model = initialize_model(args)
     except BaseException as error:
         init_seconds = time.perf_counter() - init_started
+        engine_memory_budget = dict(
+            getattr(args, "resolved_memory_budget", engine_memory_budget)
+        )
         fatal = {
             "error_type": type(error).__name__,
             "error": str(error),
@@ -429,6 +722,9 @@ def run_persistent_jobs(
         return FATAL_EXIT_CODE
 
     init_seconds = time.perf_counter() - init_started
+    engine_memory_budget = dict(
+        getattr(args, "resolved_memory_budget", engine_memory_budget)
+    )
     append_jsonl(
         progress_path,
         {
@@ -470,7 +766,17 @@ def run_persistent_jobs(
                 result_metadata = {
                     key: value
                     for key, value in returned.items()
-                    if key in {"official_output_dir", "raw_model_output", "worker_result_path", "eval_modes", "perspective_outputs", "fused_model_output", "mode_seconds", "fusion"}
+                    if key in {
+                        "official_output_dir",
+                        "raw_model_output",
+                        "worker_result_path",
+                        "eval_modes",
+                        "perspective_outputs",
+                        "fused_model_output",
+                        "mode_seconds",
+                        "fusion",
+                        "localization_prediction",
+                    }
                 }
             prediction_value = result_metadata.get("raw_model_output")
             prediction = (
@@ -585,6 +891,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--goal-image", type=Path, required=True)
     parser.add_argument("--frame-interval", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--tp", type=int, default=1)
     parser.add_argument(
         "--eval-mode",
         choices=(FUSED_EVAL_MODE, "forward", "incremental", "backward"),
@@ -600,28 +907,60 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--vllm-total-memory-fraction", type=float, default=None)
     parser.add_argument("--vllm-free-memory-fraction", type=float, default=None)
+    parser.add_argument(
+        "--vllm-memory-safety-buffer-mib",
+        type=int,
+        default=DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB,
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--memory-budget-json", required=True)
     parser.add_argument("--render-video", action="store_true")
+    parser.add_argument(
+        "--localization-checkpoint",
+        type=Path,
+        default=None,
+        help="Optional LF3R BiLSTM localization checkpoint; requires fused output",
+    )
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if args.frame_interval < 1:
         parser.error("--frame-interval must be positive")
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
+    if args.tp < 1:
+        parser.error("--tp must be positive")
+    if args.localization_checkpoint is not None:
+        args.localization_checkpoint = args.localization_checkpoint.expanduser().resolve()
+        if not args.localization_checkpoint.is_file():
+            parser.error(
+                f"--localization-checkpoint does not exist: {args.localization_checkpoint}"
+            )
     if args.eval_modes:
         if len(set(args.eval_modes)) != len(args.eval_modes):
             parser.error("--eval-modes must not contain duplicates")
         if len(args.eval_modes) > 1 and set(args.eval_modes) != set(PERSPECTIVE_MODES):
             parser.error("multi-perspective mode requires incremental, forward, and backward")
-    if args.dry_run:
-        if args.vllm_free_memory_fraction is not None and not 0.0 < args.vllm_free_memory_fraction <= 1.0:
-            parser.error("--vllm-free-memory-fraction must be in (0, 1]")
-    else:
-        if args.vllm_total_memory_fraction is None:
-            parser.error("--vllm-total-memory-fraction is required unless --dry-run is used")
-        if not 0.0 < args.vllm_total_memory_fraction <= 1.0:
-            parser.error("--vllm-total-memory-fraction must be in (0, 1]")
+    if args.vllm_memory_safety_buffer_mib < 0:
+        parser.error("--vllm-memory-safety-buffer-mib must be non-negative")
+    if (
+        args.vllm_free_memory_fraction is not None
+        and not 0.0 < args.vllm_free_memory_fraction <= 1.0
+    ):
+        parser.error("--vllm-free-memory-fraction must be in (0, 1]")
+    if (
+        args.vllm_total_memory_fraction is not None
+        and not 0.0 < args.vllm_total_memory_fraction <= 1.0
+    ):
+        parser.error("--vllm-total-memory-fraction must be in (0, 1]")
+    if (
+        not args.dry_run
+        and args.vllm_total_memory_fraction is None
+        and args.vllm_free_memory_fraction is None
+    ):
+        parser.error(
+            "--vllm-free-memory-fraction is required unless a legacy "
+            "--vllm-total-memory-fraction override is supplied"
+        )
     try:
         args.memory_budget = json.loads(args.memory_budget_json)
     except json.JSONDecodeError as error:
@@ -649,6 +988,9 @@ def main() -> int:
                     "jobs_file": str(args.jobs_file),
                     "jobs": len(jobs),
                     "requested_free_memory_fraction": args.vllm_free_memory_fraction,
+                    "memory_safety_buffer_mib": args.vllm_memory_safety_buffer_mib,
+                    "memory_resolution": "worker_immediately_before_vllm_init",
+                    "tensor_parallel_size": args.tp,
                 },
                 ensure_ascii=False,
             )

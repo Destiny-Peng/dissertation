@@ -53,13 +53,13 @@
       "cli": "--gpu ID[,ID...]",
       "default": "0",
       "applies_to": "all baseline runs",
-      "description": "Sets CUDA_VISIBLE_DEVICES. With explicit worker rows, each worker receives its one numeric GPU ID and duplicate IDs are allowed. --gpu 0,1 supplies IDs for automatic worker assignment when parallel workers are requested. A legacy single ProcVLM/Robo-Dopamine worker may still expose a comma-separated tensor-parallel GPU list."
+      "description": "Sets CUDA_VISIBLE_DEVICES. With parallel rollout workers, --gpu 0,1 assigns independent workers across GPU 0 and 1. With one ProcVLM/Robo-Dopamine worker, the comma-separated list is the visible GPU set for tensor parallelism; Robo-Dopamine TP=2 therefore uses GPU IDs 0,1, parallel workers 1, and tensor parallel size 2."
     },
     "memory_utilization": {
       "cli": "--vllm-free-memory-fraction VALUE",
       "default": "0.80",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Targets the requested fraction of currently free GPU memory. The runner reads free and total memory immediately before the persistent vLLM worker and converts it to the total-memory value expected downstream. It is not a fraction of total memory, and utilization percentage is not a gate.",
+      "description": "Targets a fraction of currently free GPU memory, not total GPU memory. Robo-Dopamine now measures free/total memory inside its persistent worker immediately before vLLM LLM() construction and reserves an additional 2048 MiB per selected GPU; ProcVLM retains its existing runner-side conversion. GPU utilization percentage is not a gate.",
       "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
       "aliases": [
         "--vllm-gpu-memory-utilization VALUE"
@@ -69,7 +69,7 @@
       "cli": "--vllm-free-memory-fraction VALUE",
       "default": "0.80",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Targets the requested fraction of currently free GPU memory. The runner converts this free-memory target to a vLLM total-memory fraction after measuring nvidia-smi free/total memory; GPU utilization is recorded only.",
+      "description": "Targets the requested fraction of currently free GPU memory. For Robo-Dopamine, the persistent worker performs the nvidia-smi measurement immediately before vLLM initialization and records the actual snapshot/resolved total-memory fraction; a 2048 MiB per-GPU reserve protects startup headroom. ProcVLM keeps the existing runner-side conversion.",
       "forwarded_as": "--gpu_memory_utilization VALUE or --gpu-memory-utilization VALUE",
       "aliases": [
         "--vllm-gpu-memory-utilization VALUE"
@@ -92,7 +92,7 @@
       "cli": "--tensor-parallel-size N",
       "default": "1",
       "applies_to": "ProcVLM and Robo-Dopamine",
-      "description": "Sets the vLLM/model tensor-parallel degree. Pair --gpu 0,1 with --tensor-parallel-size 2.",
+      "description": "Sets the vLLM/model tensor-parallel degree. For Robo-Dopamine TP=2, use one persistent worker with GPU IDs 0,1 and tensor parallel size 2. Do not combine Robo-Dopamine TP>1 with parallel rollout workers; parallel workers are independent model replicas.",
       "forwarded_as": "--tp N"
     },
     "procvlm_window_size": {
@@ -195,10 +195,17 @@
     },
     "goal_image": {
       "cli": "--goal-image PATH",
-      "default": "examples/blank_goal.png",
+      "default": "LIBERO-10: outputs/robodopamine_goal/libero-10-task{task_id}.jpg; other suites: examples/blank_goal.png",
       "applies_to": "Robo-Dopamine",
-      "description": "Goal/reference image for the official pipeline; the configured blank goal is used when omitted.",
-      "forwarded_as": "--goal-image PATH"
+      "description": "Optional global override. When omitted for LIBERO-10, each rollout automatically uses outputs/robodopamine_goal/libero-10-task{task_id}.jpg based on its manifest task_id. Missing task-specific files are treated as an error rather than silently falling back to blank. Non-LIBERO-10 runs retain the upstream blank goal fallback.",
+      "forwarded_as": "per-rollout --goal-image PATH through the persistent job plan"
+    },
+    "robo_localization_ckpt": {
+      "cli": "--robo-localization-ckpt PATH",
+      "default": "unset",
+      "applies_to": "Robo-Dopamine fused mode",
+      "description": "Optional saved LF3R BiLSTM localization checkpoint. After fused Robo-Dopamine progress/hop is produced, the tiny head runs on CPU and predicts one localization frame. The checkpoint must be a project-local .pt/.pth file produced by Localization Lab.",
+      "forwarded_as": "persistent worker --localization-checkpoint PATH"
     },
     "densereward_frame_interval": {
       "cli": "--densereward-frame-interval N",
