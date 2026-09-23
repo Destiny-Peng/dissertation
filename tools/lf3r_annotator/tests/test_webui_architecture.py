@@ -91,6 +91,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "stores.py",
             "baseline_constants.py",
             "baseline_index.py",
+            "baseline_readers.py",
+            "baseline_catalog.py",
             "baseline_results.py",
             "baseline_jobs.py",
             "baseline_service.py",
@@ -106,6 +108,16 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "http_handler.py",
         ]:
             self.assertTrue((TOOL_ROOT / name).is_file(), name)
+
+    def test_baseline_results_is_thin_composition(self) -> None:
+        results = (TOOL_ROOT / "baseline_results.py").read_text(encoding="utf-8")
+        readers = (TOOL_ROOT / "baseline_readers.py").read_text(encoding="utf-8")
+        catalog = (TOOL_ROOT / "baseline_catalog.py").read_text(encoding="utf-8")
+        self.assertLess(len(results.splitlines()), 60)
+        self.assertIn("BaselineReadersMixin", results)
+        self.assertIn("BaselineCatalogMixin", results)
+        self.assertIn("class BaselineReadersMixin:", readers)
+        self.assertIn("class BaselineCatalogMixin:", catalog)
 
     def test_baseline_service_is_thin_composition(self) -> None:
         service = (TOOL_ROOT / "baseline_service.py").read_text(encoding="utf-8")
