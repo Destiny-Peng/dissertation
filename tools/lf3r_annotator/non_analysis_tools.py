@@ -309,6 +309,43 @@ def rebuild_manifest_command(payload: dict[str, Any]) -> list[str]:
     return command
 
 
+def transcode_manifest_videos_command(payload: dict[str, Any]) -> list[str]:
+    raw_manifests = payload.get("manifest_paths") or []
+    if not isinstance(raw_manifests, list) or not raw_manifests:
+        raise ValueError("manifest_paths must be a non-empty list")
+    if len(raw_manifests) > 64:
+        raise ValueError("too many manifest paths")
+
+    manifests: list[Path] = []
+    seen: set[Path] = set()
+    for value in raw_manifests:
+        text = str(value).strip()
+        if not text:
+            continue
+        path = project_path(text)
+        if path.suffix.lower() != ".jsonl":
+            raise ValueError(f"manifest must be a .jsonl file: {text}")
+        if not path.is_file():
+            raise ValueError(f"manifest does not exist: {text}")
+        if path in seen:
+            continue
+        seen.add(path)
+        manifests.append(path)
+
+    if not manifests:
+        raise ValueError("no valid manifest paths were provided")
+
+    command = [
+        "/usr/bin/python3",
+        str(PROJECT_ROOT / "tools/lf3r_annotator/transcode_manifest_videos_h264.py"),
+        "--project-root",
+        str(PROJECT_ROOT),
+    ]
+    for path in manifests:
+        command.extend(["--manifest", str(path)])
+    return command
+
+
 def baseline_pipeline_validation_command(payload: dict[str, Any]) -> list[str]:
     command = [
         "/usr/bin/python3",
@@ -327,6 +364,7 @@ TOOL_BUILDERS = {
     "robo_interval_sweep": robo_interval_sweep_command,
     "validate_variants": validate_instruction_variants_command,
     "rebuild_manifest": rebuild_manifest_command,
+    "transcode_manifest_videos": transcode_manifest_videos_command,
     "validate_baselines": baseline_pipeline_validation_command,
 }
 
@@ -338,6 +376,7 @@ TOOL_LABELS = {
     "robo_interval_sweep": "Robo-Dopamine interval sweep",
     "validate_variants": "Validate instruction variants",
     "rebuild_manifest": "Import / rescan rollout manifest",
+    "transcode_manifest_videos": "Transcode manifest videos to H.264",
     "validate_baselines": "Validate baseline pipelines",
 }
 
