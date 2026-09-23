@@ -95,6 +95,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "baseline_jobs.py",
             "baseline_service.py",
             "analysis_constants.py",
+            "analysis_snapshots.py",
+            "analysis_details.py",
             "analysis_service.py",
             "analysis_robo_jobs.py",
             "analysis_localization.py",
@@ -118,6 +120,18 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("class BaselineJobsMixin:", jobs)
         self.assertNotIn("baseline_service", results)
         self.assertNotIn("baseline_service", jobs)
+
+    def test_analysis_service_is_thin_composition(self) -> None:
+        service = (TOOL_ROOT / "analysis_service.py").read_text(encoding="utf-8")
+        snapshots = (TOOL_ROOT / "analysis_snapshots.py").read_text(encoding="utf-8")
+        details = (TOOL_ROOT / "analysis_details.py").read_text(encoding="utf-8")
+        self.assertLess(len(service.splitlines()), 140)
+        self.assertIn("AnalysisSnapshotsMixin", service)
+        self.assertIn("AnalysisDetailsMixin", service)
+        self.assertIn("class AnalysisSnapshotsMixin:", snapshots)
+        self.assertIn("class AnalysisDetailsMixin:", details)
+        self.assertNotIn("analysis_service", snapshots)
+        self.assertNotIn("analysis_service", details)
 
     def test_analysis_job_service_is_thin_composition(self) -> None:
         service = (TOOL_ROOT / "analysis_jobs.py").read_text(encoding="utf-8")
