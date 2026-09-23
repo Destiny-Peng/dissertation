@@ -37,6 +37,7 @@ from robo_dopamine_multi_perspective import (
 
 ROBO_LIBERO10_GOAL_ROOT = PROJECT_ROOT / "outputs" / "robodopamine_goal"
 ROBO_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
+DATASET_CAMERA_VIEWS = ("cam_high", "cam_wrist")
 
 
 def resolve_goal_image(
@@ -94,24 +95,51 @@ def resolve_robo_camera_inputs(
     args: argparse.Namespace,
     canonical_video: Path,
 ) -> tuple[dict[str, str], str]:
-    """Resolve Robo-Dopamine's fixed three camera slots from the manifest."""
+    """Adapt physical dataset camera views to Robo-Dopamine's three slots."""
     raw = record.get("camera_video_paths")
     if not isinstance(raw, dict):
         raw = {}
 
-    present = [
-        slot for slot in ROBO_CAMERA_SLOTS
-        if isinstance(raw.get(slot), str) and str(raw.get(slot)).strip()
+    high_value = raw.get("cam_high")
+    wrist_value = raw.get("cam_wrist")
+
+    # Read-only compatibility for manifests written before the dataset schema
+    # represented the single physical wrist camera explicitly as cam_wrist.
+    if wrist_value in (None, ""):
+        legacy_left = raw.get("cam_left_wrist")
+        legacy_right = raw.get("cam_right_wrist")
+        legacy_values = [
+            str(value).strip()
+            for value in (legacy_left, legacy_right)
+            if isinstance(value, str) and str(value).strip()
+        ]
+        unique_legacy = list(dict.fromkeys(legacy_values))
+        if len(unique_legacy) > 1:
+            raise ValueError(
+                "Legacy camera_video_paths declares distinct left/right wrist "
+                "videos; LF3R LIBERO data has one physical wrist view"
+            )
+        if unique_legacy:
+            wrist_value = unique_legacy[0]
+
+    present = {
+        "cam_high": high_value,
+        "cam_wrist": wrist_value,
+    }
+    present_names = [
+        view
+        for view, value in present.items()
+        if isinstance(value, str) and str(value).strip()
     ]
-    if present and len(present) != len(ROBO_CAMERA_SLOTS):
-        missing = [slot for slot in ROBO_CAMERA_SLOTS if slot not in present]
+    if present_names and len(present_names) != len(DATASET_CAMERA_VIEWS):
+        missing = [view for view in DATASET_CAMERA_VIEWS if view not in present_names]
         raise ValueError(
-            "Incomplete Robo-Dopamine camera_video_paths for "
+            "Incomplete physical camera_video_paths for "
             f"{record.get('id') or record.get('rollout_id')}: "
-            f"present={present}, missing={missing}"
+            f"present={present_names}, missing={missing}"
         )
 
-    if not present:
+    if not present_names:
         canonical = str(canonical_video)
         return {
             "cam_high": canonical,
@@ -119,16 +147,20 @@ def resolve_robo_camera_inputs(
             "cam_right_wrist": canonical,
         }, "single_view"
 
-    resolved: dict[str, str] = {}
-    for slot in ROBO_CAMERA_SLOTS:
-        path = resolve_record_path(str(raw[slot]), args.data_root)
+    high_path = resolve_record_path(str(high_value), args.data_root)
+    wrist_path = resolve_record_path(str(wrist_value), args.data_root)
+    for view, path in (("cam_high", high_path), ("cam_wrist", wrist_path)):
         if not path.is_file():
             raise FileNotFoundError(
-                f"Robo-Dopamine camera input {slot} does not exist: {path}"
+                f"Robo-Dopamine physical camera input {view} does not exist: {path}"
             )
-        resolved[slot] = str(path)
-    return resolved, "multi_view"
 
+    wrist = str(wrist_path)
+    return {
+        "cam_high": str(high_path),
+        "cam_left_wrist": wrist,
+        "cam_right_wrist": wrist,
+    }, "multi_view"
 
 def build_job_specs(
     records: list[dict[str, Any]],
