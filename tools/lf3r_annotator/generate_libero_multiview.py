@@ -23,7 +23,7 @@ from libero.libero.envs import OffScreenRenderEnv
 
 HIGH_CAMERA = "agentview"
 WRIST_CAMERA = "robot0_eye_in_hand"
-CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
+CAMERA_SLOTS = ("cam_high", "cam_wrist")
 ACTION_FIELDS = (
     "action/dx",
     "action/dy",
@@ -96,11 +96,10 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
 
 def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
     high_path = video.with_name(video.stem + ".cam_high.mp4")
-    wrist_path = video.with_name(video.stem + ".cam_left_wrist.mp4")
+    wrist_path = video.with_name(video.stem + ".cam_wrist.mp4")
     camera_paths = {
         "cam_high": high_path,
-        "cam_left_wrist": wrist_path,
-        "cam_right_wrist": wrist_path,
+        "cam_wrist": wrist_path,
     }
     return camera_paths, video.with_name(video.stem + ".camera_videos.json")
 
@@ -150,14 +149,14 @@ def record_rollout(
 
         writers = {
             "cam_high": imageio.get_writer(str(camera_paths["cam_high"]), fps=fps),
-            "cam_left_wrist": imageio.get_writer(
-                str(camera_paths["cam_left_wrist"]),
+            "cam_wrist": imageio.get_writer(
+                str(camera_paths["cam_wrist"]),
                 fps=fps,
             ),
         }
         for action in actions:
             writers["cam_high"].append_data(oriented_rgb(obs, HIGH_CAMERA))
-            writers["cam_left_wrist"].append_data(oriented_rgb(obs, WRIST_CAMERA))
+            writers["cam_wrist"].append_data(oriented_rgb(obs, WRIST_CAMERA))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
     except Exception:
@@ -188,7 +187,6 @@ def record_rollout(
         "episode_index": episode_idx,
         "replay_only": True,
         "policy_inference_reused": True,
-        "consumer_interface": "robo_dopamine_three_view",
     }
     metadata_path.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
