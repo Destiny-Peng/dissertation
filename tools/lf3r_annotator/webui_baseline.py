@@ -114,7 +114,7 @@ class WebUIBaselineService(server.BaselineService):
                 options["rynn_batch_size"], "rynn_batch_size"
             )
 
-        for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
+        for name in ("dtype", "robo_eval_mode", "robo_camera_mode", "procvlm_procedure_mode"):
             if name in options and options[name] is not None:
                 value = str(options[name]).strip()
                 if not value or len(value) > 80:
@@ -146,6 +146,13 @@ class WebUIBaselineService(server.BaselineService):
         ):
             raise server.ValidationError(
                 "robo_eval_mode must be fused, forward, incremental, or backward"
+            )
+        if (
+            "robo_camera_mode" in options
+            and options["robo_camera_mode"] not in {"auto", "single_view", "multi_view"}
+        ):
+            raise server.ValidationError(
+                "robo_camera_mode must be auto, single_view, or multi_view"
             )
 
         for name in ("robot_description", "camera_description"):
