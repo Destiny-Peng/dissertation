@@ -134,6 +134,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("renderRepeatDetails", javascript)
         self.assertIn("Show all ", javascript)
         self.assertIn('data-batch-option="robo_localization_ckpt"', html)
+        self.assertIn('data-batch-option="robo_camera_mode"', html)
+        self.assertIn('value="multi_view"', html)
         self.assertIn("renderLocalizationPredictionMarker", javascript)
         self.assertIn("renderPosthocLocalizationControls", javascript)
         self.assertIn("data-run-posthoc-localization", javascript)
@@ -510,7 +512,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         help_path = TOOL_ROOT / "static/parameter_help.json"
         help_data = json.loads(help_path.read_text(encoding="utf-8"))
         for section, keys in {
-            "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "result_filter", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
+            "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "result_filter", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "robo_camera_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
             "rollout": ["task_suite", "gpu", "task_start", "task_end", "trials", "seed", "run_note", "log_safe_features", "render_resolution", "record_resolution", "video_view_mode"],
             "settings": ["font_scale", "review_font_scale", "analysis_font_scale", "control_font_scale"],
         }.items():
@@ -526,6 +528,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertEqual(help_data["rollout"]["record_resolution"]["cli"], "--record-resolution N")
         self.assertEqual(help_data["rollout"]["video_view_mode"]["cli"], "--video-view-mode MODE")
         self.assertEqual(help_data["baseline"]["robo_eval_mode"]["default"], "fused")
+        self.assertEqual(help_data["baseline"]["robo_camera_mode"]["default"], "auto")
         self.assertEqual(help_data["baseline"]["densereward_frame_interval"]["default"], "1")
         self.assertIn('value="fused" selected', html)
 
