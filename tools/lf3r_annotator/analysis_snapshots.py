@@ -640,4 +640,3 @@ class AnalysisSnapshotsMixin:
             "comparison": comparison,
         }
 
-    @staticmethod
