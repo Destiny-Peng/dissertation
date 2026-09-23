@@ -28,6 +28,12 @@ class FakeTmux:
         result["status"] = "running"
         return result
 
+    def submit_async(self, job, command, log_path, **kwargs):
+        self.submitted = (job, command, log_path, kwargs)
+        result = dict(job)
+        result["status"] = "queued"
+        return result
+
     def get(self, job_id):
         if not self.submitted or self.submitted[0]["job_id"] != job_id:
             raise KeyError(job_id)
@@ -171,6 +177,7 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertEqual(tmux.submitted[0]["client_request_id"], "web:validate_variants:test123")
         self.assertEqual(tmux.handler[0], tools.TOOL_JOB_TYPE)
         self.assertIn("--check-only", tmux.submitted[1])
+        self.assertEqual(job["status"], "queued")
 
     def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
         source = (HERE / "static" / "runs-layout.js").read_text(encoding="utf-8")

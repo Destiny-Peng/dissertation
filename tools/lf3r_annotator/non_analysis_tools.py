@@ -454,7 +454,7 @@ class NonAnalysisToolService:
         }
         if client_request_id:
             job["client_request_id"] = str(client_request_id)
-        return self.tmux.submit(
+        return self.tmux.submit_async(
             job,
             command,
             log_path,
