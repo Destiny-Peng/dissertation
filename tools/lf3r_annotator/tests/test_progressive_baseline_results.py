@@ -11,7 +11,7 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
     def test_server_exposes_only_completed_rollouts_from_running_runs(self) -> None:
         source = (TOOL_ROOT / "webui_baseline.py").read_text(encoding="utf-8")
         self.assertIn("class WebUIBaselineService(server.BaselineService):", source)
-        self.assertIn("server.BASELINE_READABLE_RUN_STATUSES", source)
+        self.assertIn('READABLE_RUN_STATUSES = set(server.BASELINE_RUN_STATUSES) | {"running"}', source)
         self.assertIn("server.run_rollout_ids(run_path)", source)
         self.assertIn("def _run_candidates(", source)
         self.assertIn("def _read_method(", source)
