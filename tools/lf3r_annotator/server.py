@@ -3084,9 +3084,22 @@ class BaselineService:
             raise ValidationError("Post-hoc localization helper is not installed")
 
         if scope == "current":
-            worker_results = [
-                run_path / "raw" / str(rollout["id"]) / "worker_result.json"
-            ]
+            source_worker_result = str(
+                payload.get("source_worker_result") or ""
+            ).strip()
+            if source_worker_result:
+                candidate = self._project_path(source_worker_result)
+                try:
+                    candidate.relative_to(run_path)
+                except ValueError as error:
+                    raise ValidationError(
+                        "source_worker_result must belong to the selected run"
+                    ) from error
+                worker_results = [candidate]
+            else:
+                worker_results = [
+                    run_path / "raw" / str(rollout["id"]) / "worker_result.json"
+                ]
         else:
             worker_results = sorted(
                 path
