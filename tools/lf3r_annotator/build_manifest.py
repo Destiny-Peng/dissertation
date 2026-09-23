@@ -24,12 +24,12 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
-ROBO_DOPAMINE_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
-ROBO_DOPAMINE_DEFAULT_CAMERA_FILES = {
+CAMERA_VIEWS = ("cam_high", "cam_wrist")
+DEFAULT_CAMERA_FILES = {
     "cam_high": "cam_high",
-    "cam_left_wrist": "cam_left_wrist",
-    "cam_right_wrist": "cam_left_wrist",
+    "cam_wrist": "cam_wrist",
 }
+LEGACY_WRIST_KEYS = ("cam_left_wrist", "cam_right_wrist")
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
         "type": "action_freeze",
@@ -117,6 +117,56 @@ def stable_id(relative_video: str, suite: str, task: int, episode: int, source_k
     return f"{suite}-task{task:02d}-ep{episode:03d}-{origin}-{digest}"
 
 
+def declared_camera_view_path(
+    camera_paths: Any,
+    view: str,
+) -> str | None:
+    if not isinstance(camera_paths, dict):
+        return None
+    direct = camera_paths.get(view)
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    if view != "cam_wrist":
+        return None
+
+    legacy_values = [
+        str(camera_paths.get(key)).strip()
+        for key in LEGACY_WRIST_KEYS
+        if isinstance(camera_paths.get(key), str)
+        and str(camera_paths.get(key)).strip()
+    ]
+    unique_legacy = list(dict.fromkeys(legacy_values))
+    if len(unique_legacy) > 1:
+        raise RuntimeError(
+            "Legacy camera metadata declares distinct left/right wrist files; "
+            "cannot represent them as one physical cam_wrist view"
+        )
+    return unique_legacy[0] if unique_legacy else None
+
+
+def resolve_camera_video_files(
+    video: Path,
+    metadata_camera_paths: Any,
+) -> dict[str, Path]:
+    files: dict[str, Path] = {}
+    for view in CAMERA_VIEWS:
+        declared = declared_camera_view_path(metadata_camera_paths, view)
+        if declared:
+            candidate = video.parent / declared
+        else:
+            candidate = video.with_name(
+                video.stem + f".{DEFAULT_CAMERA_FILES[view]}.mp4"
+            )
+            if view == "cam_wrist" and not candidate.is_file():
+                legacy_candidate = video.with_name(
+                    video.stem + ".cam_left_wrist.mp4"
+                )
+                if legacy_candidate.is_file():
+                    candidate = legacy_candidate
+        files[view] = candidate.resolve()
+    return files
+
+
 def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[str, str]]) -> dict[str, Any] | None:
     match = ROLLOUT_RE.fullmatch(video.name)
     if not match:
@@ -151,56 +201,40 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
             camera_metadata = value
 
     metadata_camera_paths = camera_metadata.get("camera_video_paths")
-    camera_video_files: dict[str, Path] = {}
-    for slot in ROBO_DOPAMINE_CAMERA_SLOTS:
-        declared = (
-            metadata_camera_paths.get(slot)
-            if isinstance(metadata_camera_paths, dict)
-            else None
-        )
-        candidate = (
-            video.parent / str(declared)
-            if isinstance(declared, str) and declared.strip()
-            else video.with_name(
-                video.stem
-                + f".{ROBO_DOPAMINE_DEFAULT_CAMERA_FILES[slot]}.mp4"
-            )
-        )
-        camera_video_files[slot] = candidate.resolve()
+    camera_video_files = resolve_camera_video_files(
+        video,
+        metadata_camera_paths,
+    )
 
-    existing_slots = [
-        slot for slot, path in camera_video_files.items() if path.is_file()
+    existing_views = [
+        view for view, path in camera_video_files.items() if path.is_file()
     ]
-    if existing_slots and len(existing_slots) != len(ROBO_DOPAMINE_CAMERA_SLOTS):
+    if existing_views and len(existing_views) != len(CAMERA_VIEWS):
         missing = [
-            slot for slot in ROBO_DOPAMINE_CAMERA_SLOTS if slot not in existing_slots
+            view for view in CAMERA_VIEWS if view not in existing_views
         ]
         raise RuntimeError(
-            f"Incomplete Robo-Dopamine camera set for {video}: "
-            f"present={existing_slots}, missing={missing}"
+            f"Incomplete physical camera view set for {video}: "
+            f"present={existing_views}, missing={missing}"
         )
-    has_robo_camera_set = len(existing_slots) == len(ROBO_DOPAMINE_CAMERA_SLOTS)
-    if has_robo_camera_set:
-        checked_paths: set[Path] = set()
-        for camera, camera_video in camera_video_files.items():
+    has_camera_views = len(existing_views) == len(CAMERA_VIEWS)
+    if has_camera_views:
+        for view, camera_video in camera_video_files.items():
             try:
                 camera_video.relative_to(project_root.resolve())
             except ValueError as error:
                 raise RuntimeError(
                     f"Camera video escapes project root: {camera_video}"
                 ) from error
-            if camera_video in checked_paths:
-                continue
-            checked_paths.add(camera_video)
             camera_frames, camera_fps, _ = probe_video(camera_video)
             if camera_frames != frames:
                 raise RuntimeError(
-                    f"Camera frame count mismatch for {video} camera={camera}: "
+                    f"Camera frame count mismatch for {video} view={view}: "
                     f"single={frames}, camera={camera_frames}"
                 )
             if abs(camera_fps - fps) > 1e-3:
                 raise RuntimeError(
-                    f"Camera FPS mismatch for {video} camera={camera}: "
+                    f"Camera FPS mismatch for {video} view={view}: "
                     f"single={fps}, camera={camera_fps}"
                 )
 
@@ -221,7 +255,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
                 slot: str(path.relative_to(project_root.resolve()))
                 for slot, path in camera_video_files.items()
             }
-            if has_robo_camera_set
+            if has_camera_views
             else None
         ),
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
