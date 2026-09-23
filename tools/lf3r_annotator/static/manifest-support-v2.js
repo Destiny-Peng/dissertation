@@ -127,7 +127,7 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
-        + (record.multiview_video_path ? badge("3-view", "natural") : "")
+        + (record.camera_video_paths && Object.keys(record.camera_video_paths).length > 1 ? badge("3-view", "natural") : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
@@ -176,7 +176,7 @@
       )
         + badge(record.analysis_partition, originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
-        + (record.multiview_video_path ? badge("3-view", "natural") : "");
+        + (record.camera_video_paths && Object.keys(record.camera_video_paths).length > 1 ? badge("3-view", "natural") : "");
     };
     window.selectRollout = wrappedSelectRollout;
     try { selectRollout = wrappedSelectRollout; } catch (_) {}
