@@ -61,18 +61,25 @@ def _remove_cli_pairs(command: list[str], flags: set[str]) -> list[str]:
 class WebUIBaselineService(server.BaselineService):
     """Baseline behavior required by the current WebUI, without monkey-patching."""
 
+    READABLE_RUN_STATUSES = set(server.BASELINE_RUN_STATUSES) | {"running"}
+
     def _validate_options(self, baseline: str, raw: Any) -> dict[str, Any]:
         if raw is None:
             return {}
         if not isinstance(raw, dict):
             raise server.ValidationError("options must be a JSON object")
 
-        unknown = set(raw) - server.BASELINE_ADVANCED_FIELDS
+        advanced_fields = set(server.BASELINE_ADVANCED_FIELDS) | {"procvlm_use_lora"}
+        method_fields = set(server.BASELINE_METHOD_OPTION_FIELDS[baseline])
+        if baseline == "procvlm":
+            method_fields.add("procvlm_use_lora")
+
+        unknown = set(raw) - advanced_fields
         if unknown:
             raise server.ValidationError(
                 "Unknown baseline option(s): " + ", ".join(sorted(unknown))
             )
-        unsupported = set(raw) - server.BASELINE_METHOD_OPTION_FIELDS[baseline]
+        unsupported = set(raw) - method_fields
         if unsupported:
             raise server.ValidationError(
                 f"Options not supported by {baseline}: " + ", ".join(sorted(unsupported))
@@ -303,7 +310,7 @@ class WebUIBaselineService(server.BaselineService):
         return command
 
     def _run_candidates(self, method: str) -> list[tuple[Path, dict[str, Any]]]:
-        return self._indexed_run_candidates(method, server.BASELINE_READABLE_RUN_STATUSES)
+        return self._indexed_run_candidates(method, self.READABLE_RUN_STATUSES)
 
     def _explicit_run_candidate(
         self,
@@ -333,7 +340,7 @@ class WebUIBaselineService(server.BaselineService):
             ) from exc
         if metadata.get("baseline") != method:
             raise server.ValidationError(f"Selected run is not a {method} run")
-        if metadata.get("status") not in server.BASELINE_READABLE_RUN_STATUSES:
+        if metadata.get("status") not in self.READABLE_RUN_STATUSES:
             raise server.ValidationError(
                 f"Selected {method} run has no readable completed rollout results"
             )
