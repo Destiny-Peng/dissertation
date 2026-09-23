@@ -1651,7 +1651,10 @@ async function runPosthocLocalization(scope, button) {
         body: JSON.stringify({
           run_root: result.run.run_root,
           checkpoint: checkpoint,
-          scope: scope
+          scope: scope,
+          source_worker_result: (result.raw_files || []).find(function (path) {
+            return /\/worker_result[.]json$/.test(String(path));
+          }) || ""
         })
       }
     );
