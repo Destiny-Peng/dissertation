@@ -189,6 +189,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 "analysis_details.py",
                 "analysis_service.py",
                 "analysis_robo_jobs.py",
+                "analysis_localization_results.py",
+                "analysis_localization_challenge.py",
                 "analysis_localization.py",
                 "analysis_jobs.py",
                 "rollout_service.py",
