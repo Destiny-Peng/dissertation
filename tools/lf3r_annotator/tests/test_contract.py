@@ -93,7 +93,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertNotIn('id="baselineMemoryUtilization"', html)
         self.assertIn("first_environment_timestep", javascript)
         self.assertIn("sessionStorage", javascript)
-        for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baseline-jobs/", "/api/baselines/runs", "/api/baselines/result-coverage", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
+        for endpoint in ["/api/baselines/", "/api/baselines/run/", "/api/baselines/run-batch", "/api/baselines/posthoc-localization/", "/api/baseline-jobs/", "/api/baselines/runs", "/api/baselines/result-coverage", "/api/rollouts/generate", "/api/rollout-jobs/", "/api/jobs"]:
             self.assertIn(endpoint, frontend_javascript)
         for marker in ["model_output", "renderSignalChart", "loadEvaluation", "data-run-baseline", "parameter_help.json", "cliHelpPopover", "startRolloutGeneration", "pollRolloutGenerationJob", "loadPersistentJobs", "persistentJobPollTimers", "latestPersistentJob", "latestGeneration", "tmux_session", "baselineBatchRebalanceWorkers", "worker-spec", "persistentWorkerSummary", "rolloutGenerationSuite", "rolloutGenerationRenderResolution", "rolloutGenerationRecordResolution", "rolloutGenerationVideoViewMode", "render_resolution", "record_resolution", "video_view_mode", "libero_three_view", "task_suite", "libero_spatial", "renderResolution", "recordResolution", "instruction_variants", "instructionCondition", "baselineBatchCondition", "baselineBatchResultFilter", "instruction_condition", "result_filter", "missing_valid", "run_source_rollout_ids", "variant baseline outputs", "condition_label", "data-evaluation-run-select", "data-apply-baseline-run", "baselineRunAll", "baselineRunSelections", "loadBaselineRunCatalog", "Automatic · newest available", "Apply to all", "run_", "relative_value", "relative temporal displacement"]:
             self.assertIn(marker, javascript)
@@ -135,6 +135,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Show all ", javascript)
         self.assertIn('data-batch-option="robo_localization_ckpt"', html)
         self.assertIn("renderLocalizationPredictionMarker", javascript)
+        self.assertIn("renderPosthocLocalizationControls", javascript)
+        self.assertIn("data-run-posthoc-localization", javascript)
+        self.assertIn("data-toggle-baseline-card", javascript)
+        self.assertIn("baselineCollapsed", javascript)
         self.assertIn("renderLocalizationPredictionSummary", javascript)
         for method in ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"]:
             self.assertIn('value="' + method + '"', html)
