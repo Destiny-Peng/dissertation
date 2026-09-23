@@ -292,7 +292,3 @@ def _do_post_with_baseline_cancel(self: server.LF3RHandler) -> None:
 
 
 server.LF3RHandler.do_POST = _do_post_with_baseline_cancel
-
-
-if __name__ == "__main__":
-    server.main()
