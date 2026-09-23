@@ -40,7 +40,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("drawerObserver.observe(singleCore, { childList: true })", procvlm)
         self.assertNotIn("drawerObserver.observe(document.body", procvlm)
 
-        results_config = (STATIC_ROOT / "results-run-config-v3.js").read_text(encoding="utf-8")
+        results_config = (STATIC_ROOT / "results-run-config.js").read_text(encoding="utf-8")
         self.assertIn("observer.observe(methodsHost, { childList: true })", results_config)
         self.assertNotIn(
             "observer.observe(methodsHost, { childList: true, subtree: true })",
@@ -77,7 +77,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("window.loadRolloutGenerationLog = rolloutRefresh", runs_log)
 
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
-        self.assertIn("runs-log-ui.js?v=runs-log-v3-20260917", workspace)
+        self.assertIn("runs-log-ui.js", workspace)
 
     def test_procvlm_model_path_is_visible_in_single_run_config(self) -> None:
         procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
