@@ -313,6 +313,28 @@ class ServerTest(unittest.TestCase):
         )
         self.assertEqual(legacy[legacy.index("--robo-eval-mode") + 1], "forward")
 
+        multiview_options = self.app.baselines._validate_options(
+            "robo_dopamine",
+            {"robo_camera_mode": "multi_view"},
+        )
+        multiview = self.app.baselines._baseline_command(
+            "robo_dopamine",
+            "all",
+            "0",
+            0.80,
+            self.root / "outputs" / "baselines" / "web_runs",
+            multiview_options,
+        )
+        self.assertEqual(
+            multiview[multiview.index("--robo-camera-mode") + 1],
+            "multi_view",
+        )
+        with self.assertRaisesRegex(Exception, "robo_camera_mode"):
+            self.app.baselines._validate_options(
+                "robo_dopamine",
+                {"robo_camera_mode": "sideways"},
+            )
+
     def test_procvlm_frame_stride_is_validated_and_forwarded(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
