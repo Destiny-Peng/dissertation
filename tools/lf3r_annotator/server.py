@@ -607,23 +607,36 @@ def load_manifest_records(path: Path) -> list[dict[str, Any]]:
 
 
 def run_rollout_ids(run_path: Path) -> set[str]:
-    jobs_path = run_path / "jobs.jsonl"
-    if not jobs_path.is_file():
-        return set()
+    """Return rollout IDs whose worker records are already complete."""
     result: set[str] = set()
-    try:
-        with jobs_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                row = json.loads(line)
-                if row.get("status") != "complete":
-                    continue
-                rollout_id = row.get("rollout_id", row.get("id"))
-                if isinstance(rollout_id, str) and ROLLOUT_ID_RE.fullmatch(rollout_id):
-                    result.add(rollout_id)
-    except (OSError, json.JSONDecodeError):
-        return set()
+    paths = [run_path / "jobs.jsonl"]
+    workers_root = run_path / "workers"
+    if workers_root.is_dir():
+        paths.extend(sorted(workers_root.glob("worker-*/jobs.jsonl")))
+
+    for jobs_path in paths:
+        if not jobs_path.is_file():
+            continue
+        try:
+            with jobs_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Readers may race the final append of one JSONL row.
+                        continue
+                    if row.get("status") != "complete":
+                        continue
+                    rollout_id = row.get("rollout_id", row.get("id"))
+                    if (
+                        isinstance(rollout_id, str)
+                        and ROLLOUT_ID_RE.fullmatch(rollout_id)
+                    ):
+                        result.add(rollout_id)
+        except OSError:
+            continue
     return result
 
 
