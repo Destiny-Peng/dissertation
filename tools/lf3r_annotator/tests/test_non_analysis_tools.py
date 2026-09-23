@@ -179,7 +179,8 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("transcode_manifest_videos", source)
         self.assertIn("canonical <code>video_path</code>", source)
         self.assertIn("BATCH_H264_SUMMARY", source)
-        self.assertNotIn("multiview_video_path ||", source)
+        manifest_support = (HERE / "static" / "manifest-support-v2.js").read_text(encoding="utf-8")
+        self.assertIn("var playbackPath = record.video_path;", manifest_support)
 
 
 if __name__ == "__main__":
