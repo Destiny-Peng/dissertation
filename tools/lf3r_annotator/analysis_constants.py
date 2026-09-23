@@ -1,5 +1,7 @@
 """Constants describing LF3R analysis artifacts and detail schemas."""
 
+ANALYSIS_BASELINE_METHODS = ("safe", "procvlm", "rynnvalue", "robo_dopamine")
+
 ANALYSIS_TABLE_FILES = {
     "method_coverage": "method_coverage.csv",
     "summary_by_method_signal_outcome": "summary_by_method_signal_outcome.csv",
