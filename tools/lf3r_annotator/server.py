@@ -7434,6 +7434,36 @@ class LF3RHandler(BaseHTTPRequestHandler):
     app: LF3RApplication
     server_version = "LF3RAnnotator/1.0"
     protocol_version = "HTTP/1.0"
+    CLIENT_DISCONNECT_ERRORS = (
+        BrokenPipeError,
+        ConnectionResetError,
+        ConnectionAbortedError,
+    )
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except self.CLIENT_DISCONNECT_ERRORS:
+            # Browsers routinely cancel stale fetch/video requests during
+            # navigation and manifest refresh. The response can no longer be
+            # delivered, but this is not a server-side failure.
+            self.close_connection = True
+
+    def _safe_end_headers(self) -> bool:
+        self.close_connection = True
+        try:
+            self.end_headers()
+        except self.CLIENT_DISCONNECT_ERRORS:
+            return False
+        return True
+
+    def _safe_write(self, data: bytes) -> bool:
+        try:
+            self.wfile.write(data)
+        except self.CLIENT_DISCONNECT_ERRORS:
+            self.close_connection = True
+            return False
+        return True
 
     @staticmethod
     def _sanitize_raw_requestline(raw: bytes) -> tuple[bytes, int]:
@@ -7465,9 +7495,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
-        self.wfile.write(body)
+        if not self._safe_end_headers():
+            return
+        self._safe_write(body)
 
     def json_error(self, status: int, message: str) -> None:
         self.json_response(status, {"error": message})
@@ -7481,9 +7511,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Disposition", 'attachment; filename="' + path.name + '"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
-        self.wfile.write(body)
+        if not self._safe_end_headers():
+            return
+        self._safe_write(body)
 
     def do_GET(self) -> None:
         try:
@@ -8039,9 +8069,9 @@ class LF3RHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
-        self.wfile.write(body)
+        if not self._safe_end_headers():
+            return
+        self._safe_write(body)
 
     def serve_video(self, path: Path) -> None:
         if not path.is_file():
@@ -8076,8 +8106,8 @@ class LF3RHandler(BaseHTTPRequestHandler):
         if status == HTTPStatus.PARTIAL_CONTENT:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Connection", "close")
-        self.end_headers()
-        self.close_connection = True
+        if not self._safe_end_headers():
+            return
         with path.open("rb") as handle:
             handle.seek(start)
             remaining = length
@@ -8085,7 +8115,8 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 chunk = handle.read(min(1024 * 1024, remaining))
                 if not chunk:
                     break
-                self.wfile.write(chunk)
+                if not self._safe_write(chunk):
+                    break
                 remaining -= len(chunk)
 
 
