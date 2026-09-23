@@ -104,11 +104,11 @@
       && (review === "all" || record.annotation_status === review);
   }
 
-  function hasRoboDopamineThreeView(record) {
+  function hasPhysicalCameraPair(record) {
     var paths = record && record.camera_video_paths;
     if (!paths || typeof paths !== "object") return false;
-    return ["cam_high", "cam_left_wrist", "cam_right_wrist"].every(function (slot) {
-      return typeof paths[slot] === "string" && paths[slot].length > 0;
+    return ["cam_high", "cam_wrist"].every(function (view) {
+      return typeof paths[view] === "string" && paths[view].length > 0;
     });
   }
 
@@ -135,7 +135,7 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
-        + (hasRoboDopamineThreeView(record) ? badge("Robo-Dopamine 3-view", "natural") : "")
+        + (hasPhysicalCameraPair(record) ? badge("2 camera views", "natural") : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
