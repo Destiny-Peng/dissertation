@@ -7145,15 +7145,6 @@ class RolloutGenerationService:
                 if video_view_mode == "libero_three_view"
                 else None
             ),
-            "camera_source_names": (
-                {
-                    "cam_high": "agentview",
-                    "cam_left_wrist": "robot0_eye_in_hand",
-                    "cam_right_wrist": "sideview",
-                }
-                if video_view_mode == "libero_three_view"
-                else None
-            ),
             "generator_script": self._relative(script),
             "output_root": self._relative(output_root),
             "run_root": self._relative(output_dir),
