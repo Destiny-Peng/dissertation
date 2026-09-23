@@ -564,4 +564,3 @@ class AnalysisRoboJobsMixin:
             raise
         return dict(job)
 
-    @staticmethod
