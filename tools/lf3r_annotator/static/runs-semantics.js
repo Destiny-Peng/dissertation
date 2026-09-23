@@ -73,7 +73,7 @@
       + ", record is " + record + "x" + record
       + ", and policy preprocessing remains 224x224. "
       + (multiview
-        ? "After inference, LF3R replays the recorded actions without the model and writes the three Robo-Dopamine input slots: cam_high from agentview, cam_left_wrist from robot0_eye_in_hand, and cam_right_wrist from sideview. "
+        ? "After inference, LF3R replays the recorded actions without the model and writes one high-view MP4 plus one wrist MP4. Both cam_left_wrist and cam_right_wrist point to that same wrist video. "
         : "Only the canonical single-view replay video is written. ")
       + "GPU selection is manual; no GPU memory/utilization admission gate is applied.";
   }

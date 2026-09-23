@@ -57,7 +57,7 @@
             loadScript("/static/results-run-config-v3.js?v=robo-localization-ckpt-v1-20260922", function () {
               loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
                 loadScript("/static/runs-layout.js?v=manifest-h264-select-v2-20260923", function () {
-                  loadScript("/static/runs-semantics.js?v=robo-camera-slots-v1-20260923", function () {
+                  loadScript("/static/runs-semantics.js?v=shared-wrist-v1-20260923", function () {
                     loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v2-20260916", function () {
                       loadScript("/static/progressive-baseline-results.js?v=progressive-baseline-results-v1-20260917", function () {
                         loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {
