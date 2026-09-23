@@ -24,6 +24,7 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
+MULTIVIEW_CAMERAS = ("agentview", "sideview", "robot0_eye_in_hand")
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
         "type": "action_freeze",
@@ -134,7 +135,6 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     first_timestep, last_timestep = csv_timesteps(csv_path)
     dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
-    multiview_video = video.with_name(video.stem + ".multiview.mp4")
     multiview_metadata_path = video.with_name(video.stem + ".multiview.json")
     multiview_metadata: dict[str, Any] = {}
     if multiview_metadata_path.is_file():
@@ -144,17 +144,51 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
             raise RuntimeError(f"Invalid multiview metadata: {multiview_metadata_path}") from error
         if isinstance(value, dict):
             multiview_metadata = value
-    if multiview_video.is_file():
-        multiview_frames, multiview_fps, _ = probe_video(multiview_video)
-        if multiview_frames != frames:
-            raise RuntimeError(
-                f"Multiview frame count mismatch for {video}: "
-                f"single={frames}, multiview={multiview_frames}"
-            )
-        if abs(multiview_fps - fps) > 1e-3:
-            raise RuntimeError(
-                f"Multiview FPS mismatch for {video}: single={fps}, multiview={multiview_fps}"
-            )
+
+    metadata_camera_paths = multiview_metadata.get("camera_video_paths")
+    camera_video_files: dict[str, Path] = {}
+    for camera in MULTIVIEW_CAMERAS:
+        declared = (
+            metadata_camera_paths.get(camera)
+            if isinstance(metadata_camera_paths, dict)
+            else None
+        )
+        candidate = (
+            video.parent / str(declared)
+            if isinstance(declared, str) and declared.strip()
+            else video.with_name(video.stem + f".{camera}.mp4")
+        )
+        camera_video_files[camera] = candidate.resolve()
+
+    existing_cameras = [
+        camera for camera, path in camera_video_files.items() if path.is_file()
+    ]
+    if existing_cameras and len(existing_cameras) != len(MULTIVIEW_CAMERAS):
+        missing = [camera for camera in MULTIVIEW_CAMERAS if camera not in existing_cameras]
+        raise RuntimeError(
+            f"Incomplete multiview camera set for {video}: "
+            f"present={existing_cameras}, missing={missing}"
+        )
+    has_multiview = len(existing_cameras) == len(MULTIVIEW_CAMERAS)
+    if has_multiview:
+        for camera, camera_video in camera_video_files.items():
+            try:
+                camera_video.relative_to(project_root.resolve())
+            except ValueError as error:
+                raise RuntimeError(
+                    f"Multiview camera video escapes project root: {camera_video}"
+                ) from error
+            camera_frames, camera_fps, _ = probe_video(camera_video)
+            if camera_frames != frames:
+                raise RuntimeError(
+                    f"Multiview frame count mismatch for {video} camera={camera}: "
+                    f"single={frames}, camera={camera_frames}"
+                )
+            if abs(camera_fps - fps) > 1e-3:
+                raise RuntimeError(
+                    f"Multiview FPS mismatch for {video} camera={camera}: "
+                    f"single={fps}, camera={camera_fps}"
+                )
 
     record = {
         "schema_version": 1,
@@ -168,24 +202,24 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         "analysis_partition": partition,
         "dataset_role": dataset_role,
         "video_path": str(relative),
-        "multiview_video_path": (
-            str(multiview_video.resolve().relative_to(project_root.resolve()))
-            if multiview_video.is_file()
-            else None
-        ),
+        "multiview_video_path": None,
         "video_view_mode": (
             str(multiview_metadata.get("video_view_mode") or "libero_three_view")
-            if multiview_video.is_file()
+            if has_multiview
             else "single_view"
         ),
         "multiview_layout": (
-            multiview_metadata.get("multiview_layout")
-            if multiview_video.is_file()
+            str(multiview_metadata.get("multiview_layout") or "separate_videos")
+            if has_multiview
             else None
         ),
-        "multiview_cameras": (
-            multiview_metadata.get("multiview_cameras")
-            if multiview_video.is_file()
+        "multiview_cameras": list(MULTIVIEW_CAMERAS) if has_multiview else None,
+        "camera_video_paths": (
+            {
+                camera: str(path.relative_to(project_root.resolve()))
+                for camera, path in camera_video_files.items()
+            }
+            if has_multiview
             else None
         ),
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
