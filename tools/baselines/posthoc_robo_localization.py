@@ -228,7 +228,24 @@ def main() -> None:
             worker_result = project_path(project_root, raw_path)
             if not worker_result.is_file():
                 raise FileNotFoundError(worker_result)
-            results.append(infer_one(project_root, worker_result, bundle))
+            full = infer_one(project_root, worker_result, bundle)
+            results.append({
+                key: full.get(key)
+                for key in (
+                    "source_worker_result",
+                    "source_prediction",
+                    "output_path",
+                    "checkpoint",
+                    "checkpoint_sha256",
+                    "checkpoint_config_id",
+                    "checkpoint_repeat",
+                    "predicted_index",
+                    "predicted_frame",
+                    "predicted_logit",
+                    "predicted_sigmoid",
+                    "frame_count",
+                )
+            })
         except Exception as error:  # per-rollout failure should not drop the batch
             errors.append({
                 "worker_result": str(raw_path),
