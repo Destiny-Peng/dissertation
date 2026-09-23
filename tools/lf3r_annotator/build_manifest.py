@@ -24,11 +24,10 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
-ROBO_DOPAMINE_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
-ROBO_DOPAMINE_DEFAULT_CAMERA_FILES = {
+DATASET_CAMERA_SLOTS = ("cam_high", "cam_wrist")
+DATASET_DEFAULT_CAMERA_FILES = {
     "cam_high": "cam_high",
-    "cam_left_wrist": "cam_left_wrist",
-    "cam_right_wrist": "cam_left_wrist",
+    "cam_wrist": "cam_wrist",
 }
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
@@ -152,7 +151,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
 
     metadata_camera_paths = camera_metadata.get("camera_video_paths")
     camera_video_files: dict[str, Path] = {}
-    for slot in ROBO_DOPAMINE_CAMERA_SLOTS:
+    for slot in DATASET_CAMERA_SLOTS:
         declared = (
             metadata_camera_paths.get(slot)
             if isinstance(metadata_camera_paths, dict)
@@ -163,7 +162,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
             if isinstance(declared, str) and declared.strip()
             else video.with_name(
                 video.stem
-                + f".{ROBO_DOPAMINE_DEFAULT_CAMERA_FILES[slot]}.mp4"
+                + f".{DATASET_DEFAULT_CAMERA_FILES[slot]}.mp4"
             )
         )
         camera_video_files[slot] = candidate.resolve()
@@ -171,16 +170,16 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     existing_slots = [
         slot for slot, path in camera_video_files.items() if path.is_file()
     ]
-    if existing_slots and len(existing_slots) != len(ROBO_DOPAMINE_CAMERA_SLOTS):
+    if existing_slots and len(existing_slots) != len(DATASET_CAMERA_SLOTS):
         missing = [
-            slot for slot in ROBO_DOPAMINE_CAMERA_SLOTS if slot not in existing_slots
+            slot for slot in DATASET_CAMERA_SLOTS if slot not in existing_slots
         ]
         raise RuntimeError(
-            f"Incomplete Robo-Dopamine camera set for {video}: "
+            f"Incomplete camera video set for {video}: "
             f"present={existing_slots}, missing={missing}"
         )
-    has_robo_camera_set = len(existing_slots) == len(ROBO_DOPAMINE_CAMERA_SLOTS)
-    if has_robo_camera_set:
+    has_camera_set = len(existing_slots) == len(DATASET_CAMERA_SLOTS)
+    if has_camera_set:
         checked_paths: set[Path] = set()
         for camera, camera_video in camera_video_files.items():
             try:
@@ -221,7 +220,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
                 slot: str(path.relative_to(project_root.resolve()))
                 for slot, path in camera_video_files.items()
             }
-            if has_robo_camera_set
+            if has_camera_set
             else None
         ),
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
