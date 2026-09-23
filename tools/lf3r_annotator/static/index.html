@@ -434,6 +434,12 @@
                 <option value="incremental">Incremental</option>
                 <option value="backward">Backward</option>
               </select></label>
+            <label data-cli-help="baseline.robo_camera_mode" data-batch-methods="robo_dopamine"><span>Camera
+                input</span><select data-batch-option="robo_camera_mode">
+                <option value="auto" selected>Auto · use multiview when available</option>
+                <option value="multi_view">Multiview · cam_high + cam_wrist</option>
+                <option value="single_view">Single view · canonical video</option>
+              </select></label>
             <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image
                 override (optional)</span><input data-batch-option="goal_image" type="text"
                 placeholder="Leave empty: LIBERO-10 uses task-specific goal"></label>
