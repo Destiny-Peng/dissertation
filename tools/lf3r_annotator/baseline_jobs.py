@@ -98,7 +98,7 @@ class BaselineJobsMixin:
                 options[name] = self._integer(options[name], name, minimum, maximum)
         if "rynn_batch_size" in options and options["rynn_batch_size"] is not None:
             options["rynn_batch_size"] = self._positive_integer(options["rynn_batch_size"], "rynn_batch_size")
-        for name in ("dtype", "robo_eval_mode", "procvlm_procedure_mode"):
+        for name in ("dtype", "robo_eval_mode", "robo_camera_mode", "procvlm_procedure_mode"):
             if name in options and options[name] is not None:
                 value = str(options[name]).strip()
                 if not value or len(value) > 80:
@@ -116,6 +116,8 @@ class BaselineJobsMixin:
                 options.pop(name, None)
         if "robo_eval_mode" in options and options["robo_eval_mode"] not in {"fused", "forward", "incremental", "backward"}:
             raise ValidationError("robo_eval_mode must be fused, forward, incremental, or backward")
+        if "robo_camera_mode" in options and options["robo_camera_mode"] not in {"auto", "single_view", "multi_view"}:
+            raise ValidationError("robo_camera_mode must be auto, single_view, or multi_view")
         for name in ("robot_description", "camera_description"):
             if name in options and options[name] is not None:
                 value = str(options[name])
@@ -358,6 +360,7 @@ class BaselineJobsMixin:
             "robo_frame_interval": "--robo-frame-interval",
             "robo_batch_size": "--robo-batch-size",
             "robo_eval_mode": "--robo-eval-mode",
+            "robo_camera_mode": "--robo-camera-mode",
             "goal_image": "--goal-image",
             "robo_localization_ckpt": "--robo-localization-ckpt",
             "densereward_frame_interval": "--densereward-frame-interval",
