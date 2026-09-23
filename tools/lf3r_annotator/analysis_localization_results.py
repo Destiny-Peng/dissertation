@@ -13,6 +13,7 @@ from backend_core import ValidationError
 
 
 class AnalysisLocalizationResultsMixin:
+    @staticmethod
     def _localization_builtin_presets() -> dict[str, dict[str, Any]]:
         base = {
             "data": {
