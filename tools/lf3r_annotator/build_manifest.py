@@ -25,10 +25,10 @@ DEFAULT_SCAN_ROOTS = (
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
 ROBO_DOPAMINE_CAMERA_SLOTS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
-ROBO_DOPAMINE_CAMERA_SOURCES = {
-    "cam_high": "agentview",
-    "cam_left_wrist": "robot0_eye_in_hand",
-    "cam_right_wrist": "sideview",
+ROBO_DOPAMINE_DEFAULT_CAMERA_FILES = {
+    "cam_high": "cam_high",
+    "cam_left_wrist": "cam_left_wrist",
+    "cam_right_wrist": "cam_left_wrist",
 }
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
@@ -161,7 +161,10 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         candidate = (
             video.parent / str(declared)
             if isinstance(declared, str) and declared.strip()
-            else video.with_name(video.stem + f".{slot}.mp4")
+            else video.with_name(
+                video.stem
+                + f".{ROBO_DOPAMINE_DEFAULT_CAMERA_FILES[slot]}.mp4"
+            )
         )
         camera_video_files[slot] = candidate.resolve()
 
@@ -178,6 +181,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         )
     has_robo_camera_set = len(existing_slots) == len(ROBO_DOPAMINE_CAMERA_SLOTS)
     if has_robo_camera_set:
+        checked_paths: set[Path] = set()
         for camera, camera_video in camera_video_files.items():
             try:
                 camera_video.relative_to(project_root.resolve())
@@ -185,6 +189,9 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
                 raise RuntimeError(
                     f"Camera video escapes project root: {camera_video}"
                 ) from error
+            if camera_video in checked_paths:
+                continue
+            checked_paths.add(camera_video)
             camera_frames, camera_fps, _ = probe_video(camera_video)
             if camera_frames != frames:
                 raise RuntimeError(
@@ -214,11 +221,6 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
                 slot: str(path.relative_to(project_root.resolve()))
                 for slot, path in camera_video_files.items()
             }
-            if has_robo_camera_set
-            else None
-        ),
-        "camera_source_names": (
-            dict(ROBO_DOPAMINE_CAMERA_SOURCES)
             if has_robo_camera_set
             else None
         ),
