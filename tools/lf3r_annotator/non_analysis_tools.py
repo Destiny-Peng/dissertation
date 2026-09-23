@@ -411,6 +411,16 @@ class NonAnalysisToolService:
     def submit(self, action: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         if action not in TOOL_BUILDERS:
             raise ValueError(f"unknown project tool action: {action}")
+        if action in {"transcode_video", "transcode_manifest_videos"}:
+            for existing in self.tmux.list(job_type=TOOL_JOB_TYPE):
+                if (
+                    existing.get("action") in {"transcode_video", "transcode_manifest_videos"}
+                    and existing.get("status") in {"queued", "running"}
+                ):
+                    raise ValueError(
+                        "another H.264 transcode job is already active: "
+                        + str(existing.get("job_id") or "unknown")
+                    )
         payload = dict(payload or {})
         command = TOOL_BUILDERS[action](payload)
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
