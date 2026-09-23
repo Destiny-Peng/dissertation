@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+
+TOOL_ROOT = Path(__file__).resolve().parents[1]
+STATIC_ROOT = TOOL_ROOT / "static"
+
+
+class WebUiArchitectureContractTest(unittest.TestCase):
+    def test_single_stable_server_entrypoint(self) -> None:
+        self.assertTrue((TOOL_ROOT / "server_entry.py").is_file())
+        self.assertEqual(list(TOOL_ROOT.glob("server_entry_v*.py")), [])
+        entry = (TOOL_ROOT / "server_entry.py").read_text(encoding="utf-8")
+        self.assertIn("import webui_runtime", entry)
+        self.assertIn("webui_runtime.main()", entry)
+
+    def test_semantic_backend_modules_exist(self) -> None:
+        for name in [
+            "webui_integrations.py",
+            "webui_jobs.py",
+            "webui_manifests.py",
+            "webui_runtime.py",
+        ]:
+            self.assertTrue((TOOL_ROOT / name).is_file(), name)
+
+    def test_scripts_use_only_stable_entrypoint(self) -> None:
+        run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")
+        stop_server = (TOOL_ROOT / "stop_server.sh").read_text(encoding="utf-8")
+        self.assertIn("server_entry.py", run_server)
+        self.assertIn("server_entry.py", stop_server)
+        self.assertNotRegex(run_server, r"server_entry_v\d+\.py")
+        self.assertNotRegex(stop_server, r"server_entry_v\d+\.py")
+
+    def test_frontend_loader_has_no_manual_version_query(self) -> None:
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        self.assertNotIn("?v=", workspace)
+        self.assertNotRegex(workspace, r"/static/[^\"']+-v\d+\.js")
+
+    def test_patch_era_frontend_files_are_removed(self) -> None:
+        for name in [
+            "workspace-legacy.js",
+            "manifest-support-v2.js",
+            "results-run-config-v3.js",
+            "results-run-click-bridge.js",
+            "runs-submit-fix.js",
+        ]:
+            self.assertFalse((STATIC_ROOT / name).exists(), name)
+
+
+if __name__ == "__main__":
+    unittest.main()
