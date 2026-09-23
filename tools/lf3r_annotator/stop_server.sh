@@ -23,11 +23,10 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
 fi
 
 CMDLINE="$(tr '\0' ' ' < "/proc/$SERVER_PID/cmdline")"
-EXPECTED_V4="$PROJECT_ROOT/tools/lf3r_annotator/server_entry_v4.py"
-EXPECTED_V3="$PROJECT_ROOT/tools/lf3r_annotator/server_entry_v3.py"
-if [[ "$CMDLINE" != *"$EXPECTED_V4"* && "$CMDLINE" != *"$EXPECTED_V3"* ]]; then
+EXPECTED_ENTRY="$PROJECT_ROOT/tools/lf3r_annotator/server_entry.py"
+if [[ "$CMDLINE" != *"$EXPECTED_ENTRY"* ]]; then
     echo "Refusing to stop PID $SERVER_PID because it is not the LF3R annotator." >&2
-    echo "Expected command to contain: $EXPECTED_V4 or $EXPECTED_V3" >&2
+    echo "Expected command to contain: $EXPECTED_ENTRY" >&2
     exit 1
 fi
 

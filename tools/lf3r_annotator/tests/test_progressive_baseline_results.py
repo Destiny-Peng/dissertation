@@ -9,7 +9,7 @@ TOOL_ROOT = Path(__file__).resolve().parents[1]
 
 class ProgressiveBaselineResultsContractTest(unittest.TestCase):
     def test_server_exposes_only_completed_rollouts_from_running_runs(self) -> None:
-        source = (TOOL_ROOT / "server_entry_v4.py").read_text(encoding="utf-8")
+        source = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
         self.assertIn('_PROGRESSIVE_RUN_STATUSES = set(server.BASELINE_RUN_STATUSES) | {"running"}', source)
         self.assertIn('workers_root.glob("worker-*/jobs.jsonl")', source)
         self.assertIn('row.get("status") != "complete"', source)
@@ -31,7 +31,7 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn('matchingProgressiveRun(job, record, condition)', script)
         self.assertIn('currentDisplayedRunRoot(job.baseline)', script)
         self.assertIn('window.loadEvaluation(rolloutId)', script)
-        self.assertIn('progressive-baseline-results.js?v=progressive-baseline-results-v1-20260917', workspace)
+        self.assertIn('progressive-baseline-results.js', workspace)
 
 
 if __name__ == "__main__":

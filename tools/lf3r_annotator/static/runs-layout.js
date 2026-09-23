@@ -414,6 +414,7 @@
       var response = await fetch("/api/tool-jobs", { cache: "no-store" });
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not read project-tool jobs");
+      projectToolsProtocol = payload.project_tools_protocol || null;
       var jobs = payload.jobs || [];
       if (!activeToolJobId && jobs.length) activeToolJobId = jobs[0].job_id;
       var rebuildButton = document.getElementById("rebuildManifestRun");
@@ -541,6 +542,7 @@
         var response = await fetch("/api/tool-jobs", { cache: "no-store" });
         var payload = await response.json();
         if (response.ok) {
+          projectToolsProtocol = payload.project_tools_protocol || null;
           var jobs = payload.jobs || [];
           var match = jobs.find(function (job) {
             return job
@@ -590,9 +592,12 @@
     } catch (error) {
       job = await recoverToolSubmission(action, clientRequestId);
       if (!job) {
-        var message = error && error.name === "AbortError"
-          ? "Project-tool submission timed out before a job could be confirmed."
-          : "Project-tool submission failed: " + String(error.message || error);
+        var staleBackend = projectToolsProtocol !== "immediate-registry-v1";
+        var message = staleBackend
+          ? "Project-tool backend is stale or incompatible. Restart the LF3R WebUI server after git pull."
+          : (error && error.name === "AbortError"
+              ? "Project-tool submission timed out before a job could be confirmed."
+              : "Project-tool submission failed: " + String(error.message || error));
         activityNodes().forEach(function (nodes) {
           if (nodes.status) nodes.status.textContent = message;
         });
@@ -678,6 +683,7 @@
   });
 
   var batchManifestCatalog = [];
+  var projectToolsProtocol = null;
 
   function selectedBatchManifestPaths() {
     return Array.prototype.slice.call(

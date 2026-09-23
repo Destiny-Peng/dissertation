@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 import sys
 import unittest
 from pathlib import Path
@@ -18,6 +20,7 @@ class FakeTmux:
     def __init__(self) -> None:
         self.handler = None
         self.submitted = None
+        self.submitted_event = threading.Event()
 
     def register_handler(self, job_type, on_loaded, on_poll=None, on_finished=None):
         self.handler = (job_type, on_loaded, on_poll, on_finished)
@@ -30,6 +33,7 @@ class FakeTmux:
 
     def submit_async(self, job, command, log_path, **kwargs):
         self.submitted = (job, command, log_path, kwargs)
+        self.submitted_event.set()
         result = dict(job)
         result["status"] = "queued"
         return result
@@ -163,6 +167,39 @@ class NonAnalysisToolTests(unittest.TestCase):
                 {"manifest_paths": [str(manifest.relative_to(tools.PROJECT_ROOT))]},
             )
 
+    def test_service_returns_job_before_command_builder_finishes(self):
+        tmux = FakeTmux()
+        service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_builder(_payload):
+            started.set()
+            release.wait(timeout=2)
+            return ["/usr/bin/true"]
+
+        original = tools.TOOL_BUILDERS["validate_variants"]
+        tools.TOOL_BUILDERS["validate_variants"] = slow_builder
+        try:
+            before = time.monotonic()
+            job = service.submit(
+                "validate_variants",
+                {},
+                client_request_id="web:validate_variants:blocked-builder",
+            )
+            elapsed = time.monotonic() - before
+            self.assertLess(elapsed, 0.5)
+            self.assertEqual(job["status"], "queued")
+            self.assertEqual(job["supervisor_status"], "preparing")
+            self.assertEqual(
+                service.get(job["job_id"])["client_request_id"],
+                "web:validate_variants:blocked-builder",
+            )
+            self.assertTrue(started.wait(timeout=1))
+        finally:
+            release.set()
+            tools.TOOL_BUILDERS["validate_variants"] = original
+
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
@@ -174,10 +211,13 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertEqual(job["job_type"], tools.TOOL_JOB_TYPE)
         self.assertEqual(job["action"], "validate_variants")
         self.assertEqual(job["client_request_id"], "web:validate_variants:test123")
+        self.assertEqual(job["status"], "queued")
+        self.assertEqual(job["supervisor_status"], "preparing")
+        self.assertEqual(service.get(job["job_id"])["job_id"], job["job_id"])
+        self.assertTrue(tmux.submitted_event.wait(timeout=1))
         self.assertEqual(tmux.submitted[0]["client_request_id"], "web:validate_variants:test123")
         self.assertEqual(tmux.handler[0], tools.TOOL_JOB_TYPE)
         self.assertIn("--check-only", tmux.submitted[1])
-        self.assertEqual(job["status"], "queued")
 
     def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
         source = (HERE / "static" / "runs-layout.js").read_text(encoding="utf-8")
@@ -193,6 +233,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("recoverToolSubmission", source)
         self.assertIn("AbortController", source)
         self.assertIn("Project-tool submission timed out", source)
+        self.assertIn("immediate-registry-v1", source)
+        self.assertIn("Project-tool backend is stale or incompatible", source)
+        server_entry = (HERE / "server_entry.py").read_text(encoding="utf-8")
+        self.assertIn('"project_tools_protocol": "immediate-registry-v1"', server_entry)
         self.assertIn("Manifest rebuild running · ", source)
         self.assertIn("another manifest rebuild is already active", (HERE / "non_analysis_tools.py").read_text(encoding="utf-8"))
         self.assertIn("batchManifestTranscodeRun", source)
@@ -205,7 +249,7 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("transcode_manifest_videos", source)
         self.assertIn("canonical <code>video_path</code>", source)
         self.assertIn("BATCH_H264_SUMMARY", source)
-        manifest_support = (HERE / "static" / "manifest-support-v2.js").read_text(encoding="utf-8")
+        manifest_support = (HERE / "static" / "manifest-support.js").read_text(encoding="utf-8")
         self.assertIn("var playbackPath = record.video_path;", manifest_support)
 
 
