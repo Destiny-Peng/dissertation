@@ -28,6 +28,10 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
 from robo_localization_head.core import TinyBiLSTM  # noqa: E402
+from baselines.robo_dopamine_multi_perspective import (  # noqa: E402
+    PERSPECTIVE_MODES,
+    fuse_prediction_files,
+)
 
 _FRAME_RE = re.compile(r"(?:frame_([0-9]+)[.]png|af_([0-9]+)$)")
 
@@ -107,24 +111,73 @@ def fused_prediction_path(project_root: Path, worker_result: Path) -> Path:
     if not isinstance(payload, dict):
         raise ValueError(f"Invalid worker result: {worker_result}")
 
-    value = payload.get("fused_model_output")
-    if not value and payload.get("multi_perspective"):
-        value = payload.get("raw_model_output")
-    if not value:
-        eval_modes = payload.get("eval_modes")
-        if isinstance(eval_modes, list) and set(eval_modes) == {
-            "incremental", "forward", "backward"
-        }:
-            value = payload.get("raw_model_output")
-    if not value:
-        raise ValueError(
-            "Saved Robo-Dopamine result has no fused output; post-hoc localization "
-            "requires an existing fused progress/hop artifact"
-        )
-    path = project_path(project_root, str(value))
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    return path
+    # Prefer an already materialized fused artifact.
+    candidates = []
+    if payload.get("fused_model_output"):
+        candidates.append(payload.get("fused_model_output"))
+    if payload.get("multi_perspective") and payload.get("raw_model_output"):
+        candidates.append(payload.get("raw_model_output"))
+    eval_modes = payload.get("eval_modes")
+    if (
+        isinstance(eval_modes, list)
+        and set(eval_modes) == set(PERSPECTIVE_MODES)
+        and payload.get("raw_model_output")
+    ):
+        candidates.append(payload.get("raw_model_output"))
+    for value in candidates:
+        if not value:
+            continue
+        try:
+            path = project_path(project_root, str(value))
+        except (ValueError, OSError):
+            continue
+        if path.is_file():
+            return path
+
+    # Older multi-perspective runs may have kept the three official outputs
+    # but not the later wrapper-generated fused JSON. Reconstruct the exact
+    # documented arithmetic-mean fusion from those saved files. This is pure
+    # artifact processing: Robo-Dopamine/vLLM is never initialized.
+    perspectives = payload.get("perspective_outputs")
+    if isinstance(perspectives, dict):
+        prediction_paths: dict[str, Path] = {}
+        for mode in PERSPECTIVE_MODES:
+            entry = perspectives.get(mode)
+            if not isinstance(entry, dict):
+                break
+            value = entry.get("raw_model_output")
+            if not value:
+                break
+            try:
+                path = project_path(project_root, str(value))
+            except (ValueError, OSError):
+                break
+            if not path.is_file():
+                break
+            prediction_paths[mode] = path
+
+        if set(prediction_paths) == set(PERSPECTIVE_MODES):
+            cache_path = (
+                worker_result.parent
+                / "posthoc_localization"
+                / "_cache"
+                / "fused_from_saved_perspectives.json"
+            )
+            fuse_prediction_files(
+                prediction_paths,
+                cache_path,
+                metadata={
+                    "source": "posthoc_reconstructed_from_saved_perspectives",
+                    "worker_result": str(worker_result),
+                },
+            )
+            return cache_path
+
+    raise ValueError(
+        "Saved Robo-Dopamine result has no usable fused output. Post-hoc "
+        "localization needs either an existing fused progress/hop artifact or "
+        "all three saved incremental/forward/backward prediction files."
+    )
 
 
 def infer_one(
