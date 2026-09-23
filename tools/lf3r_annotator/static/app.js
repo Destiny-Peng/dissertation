@@ -2275,7 +2275,7 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " Robo-Dopamine camera videos are generated afterward: one high-view MP4 plus one wrist MP4; cam_left_wrist and cam_right_wrist both use the same wrist video. Canonical policy video remains unchanged."
+      ? " Camera videos are generated afterward as two physical views: cam_high and cam_wrist. Robo-Dopamine maps cam_wrist to both wrist input slots inside its adapter. Canonical policy video remains unchanged."
       : " Only the canonical single-view replay video is generated.";
     description.textContent = (isSpatial
       ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
