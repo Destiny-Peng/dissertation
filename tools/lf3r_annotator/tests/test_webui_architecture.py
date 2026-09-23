@@ -58,6 +58,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         handler = (TOOL_ROOT / "webui_handler.py").read_text(encoding="utf-8")
         runtime = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
         self.assertIn("baseline_service_class = WebUIBaselineService", application)
+        self.assertIn("project_tool_service_class = NonAnalysisToolService", application)
         self.assertIn("class WebUIHandler(server.LF3RHandler):", handler)
         self.assertIn("WebUIApplication(", runtime)
         self.assertIn("_make_handler(app)", runtime)
