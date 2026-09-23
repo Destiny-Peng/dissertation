@@ -306,7 +306,7 @@
     if (transcodeJobId) return;
     var record = selectedRecord();
     if (!record || !record.video_path) return;
-    var playbackPath = record.multiview_video_path || record.video_path;
+    var playbackPath = record.video_path;
     var backup = transcodeBackupName(playbackPath);
     var confirmed = window.confirm(
       "Convert this selected video to browser-compatible H.264?\n\n"
