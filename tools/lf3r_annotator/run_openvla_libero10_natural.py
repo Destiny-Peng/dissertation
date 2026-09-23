@@ -121,7 +121,7 @@ def parse_args() -> argparse.Namespace:
         default="single_view",
         help=(
             "Recording mode. libero_three_view keeps the canonical single-view rollout "
-            "and adds separate post-run agentview/sideview/wrist camera videos."
+            "and adds separate post-run Robo-Dopamine camera-slot videos."
         ),
     )
     parser.add_argument(
