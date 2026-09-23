@@ -18,14 +18,50 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_semantic_backend_modules_exist(self) -> None:
         for name in [
-            "webui_integrations.py",
-            "webui_jobs.py",
-            "webui_manifests.py",
+            "webui_baseline.py",
+            "webui_application.py",
+            "webui_handler.py",
             "webui_runtime.py",
         ]:
             path = TOOL_ROOT / name
             self.assertTrue(path.is_file(), name)
             self.assertNotIn('if __name__ == "__main__"', path.read_text(encoding="utf-8"))
+
+    def test_backend_modules_do_not_monkey_patch_server_classes(self) -> None:
+        forbidden = [
+            "server.BaselineService.",
+            "server.LF3RApplication.__init__ =",
+            "server.LF3RHandler.do_GET =",
+            "server.LF3RHandler.do_POST =",
+            "server.JobCoordinator.acquire =",
+        ]
+        for name in [
+            "webui_baseline.py",
+            "webui_application.py",
+            "webui_handler.py",
+            "webui_runtime.py",
+        ]:
+            source = (TOOL_ROOT / name).read_text(encoding="utf-8")
+            for needle in forbidden:
+                self.assertNotIn(needle, source, f"{name}: {needle}")
+
+    def test_obsolete_patch_modules_are_removed(self) -> None:
+        for name in [
+            "webui_integrations.py",
+            "webui_jobs.py",
+            "webui_manifests.py",
+        ]:
+            self.assertFalse((TOOL_ROOT / name).exists(), name)
+
+    def test_application_wires_explicit_service_subclass(self) -> None:
+        application = (TOOL_ROOT / "webui_application.py").read_text(encoding="utf-8")
+        handler = (TOOL_ROOT / "webui_handler.py").read_text(encoding="utf-8")
+        runtime = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
+        self.assertIn("baseline_service_class = WebUIBaselineService", application)
+        self.assertIn("project_tool_service_class = NonAnalysisToolService", application)
+        self.assertIn("class WebUIHandler(server.LF3RHandler):", handler)
+        self.assertIn("WebUIApplication(", runtime)
+        self.assertIn("_make_handler(app)", runtime)
 
     def test_scripts_use_only_stable_entrypoint(self) -> None:
         run_server = (TOOL_ROOT / "run_server.sh").read_text(encoding="utf-8")

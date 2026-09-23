@@ -3,8 +3,6 @@ from __future__ import annotations
 import unittest
 
 import server
-import webui_runtime  # noqa: F401  # installs the runtime coordinator semantics
-
 
 class GenerationConcurrencyTest(unittest.TestCase):
     def test_baseline_and_manifest_writer_can_overlap(self) -> None:

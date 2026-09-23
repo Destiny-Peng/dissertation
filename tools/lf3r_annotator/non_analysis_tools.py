@@ -310,6 +310,25 @@ def rebuild_manifest_command(payload: dict[str, Any]) -> list[str]:
     return command
 
 
+def transcode_video_command(payload: dict[str, Any]) -> list[str]:
+    value = str(payload.get("video_path") or "").strip()
+    if not value:
+        raise ValueError("video_path is required")
+    video = project_path(value)
+    if video.suffix.lower() != ".mp4":
+        raise ValueError("video_path must point to an .mp4 file")
+    if not video.is_file():
+        raise ValueError(f"video does not exist: {value}")
+    backup = video.with_name(video.name[:-4] + ".orig.mp4")
+    if backup.exists():
+        raise ValueError(
+            "original backup already exists; refusing to overwrite: "
+            + str(backup.relative_to(PROJECT_ROOT))
+        )
+    script = PROJECT_ROOT / "tools/lf3r_annotator/transcode_video_h264.sh"
+    return ["/usr/bin/bash", str(script), str(video)]
+
+
 def transcode_manifest_videos_command(payload: dict[str, Any]) -> list[str]:
     raw_manifests = payload.get("manifest_paths") or []
     if not isinstance(raw_manifests, list) or not raw_manifests:
@@ -365,6 +384,7 @@ TOOL_BUILDERS = {
     "robo_interval_sweep": robo_interval_sweep_command,
     "validate_variants": validate_instruction_variants_command,
     "rebuild_manifest": rebuild_manifest_command,
+    "transcode_video": transcode_video_command,
     "transcode_manifest_videos": transcode_manifest_videos_command,
     "validate_baselines": baseline_pipeline_validation_command,
 }
@@ -377,6 +397,7 @@ TOOL_LABELS = {
     "robo_interval_sweep": "Robo-Dopamine interval sweep",
     "validate_variants": "Validate instruction variants",
     "rebuild_manifest": "Import / rescan rollout manifest",
+    "transcode_video": "Transcode selected video to H.264",
     "transcode_manifest_videos": "Transcode manifest videos to H.264",
     "validate_baselines": "Validate baseline pipelines",
 }
