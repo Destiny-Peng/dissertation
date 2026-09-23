@@ -66,6 +66,43 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
             # canonical + two unique camera files; shared wrist is probed once.
             self.assertEqual(probe.call_count, 3)
 
+    def test_build_record_normalizes_legacy_shared_wrist_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            canonical, cameras = self.make_rollout(root)
+            new_wrist = cameras["cam_wrist"]
+            legacy_wrist = new_wrist.with_name(
+                new_wrist.name.replace(".cam_wrist.mp4", ".cam_left_wrist.mp4")
+            )
+            new_wrist.rename(legacy_wrist)
+            metadata_path = canonical.with_name(canonical.stem + ".camera_videos.json")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["camera_video_paths"] = {
+                "cam_high": cameras["cam_high"].name,
+                "cam_left_wrist": legacy_wrist.name,
+                "cam_right_wrist": legacy_wrist.name,
+            }
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with mock.patch.object(
+                build_manifest,
+                "probe_video",
+                return_value=(42, 30.0, 1.4),
+            ):
+                record = build_manifest.build_record(canonical, root, {})
+
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(
+                record["camera_video_paths"],
+                {
+                    "cam_high": str(cameras["cam_high"].relative_to(root)),
+                    "cam_wrist": str(legacy_wrist.relative_to(root)),
+                },
+            )
+            self.assertNotIn("cam_left_wrist", record["camera_video_paths"])
+            self.assertNotIn("cam_right_wrist", record["camera_video_paths"])
+
     def test_build_record_rejects_missing_shared_wrist_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
