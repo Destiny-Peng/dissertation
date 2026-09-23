@@ -111,9 +111,83 @@ def test_non_libero10_keeps_blank_goal_fallback() -> None:
         assert resolved == (config["repo"] / "examples" / "blank_goal.png").resolve()
 
 
+
+def test_robo_camera_inputs_use_official_three_view_slots() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        canonical = root / "canonical.mp4"
+        canonical.touch()
+        paths = {}
+        for slot in robo_dopamine_runner.ROBO_CAMERA_SLOTS:
+            path = root / f"{slot}.mp4"
+            path.touch()
+            paths[slot] = path
+
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {
+                "id": "multi-rollout",
+                "camera_video_paths": {
+                    slot: path.name for slot, path in paths.items()
+                },
+            },
+            make_args(root),
+            canonical,
+        )
+
+        assert mode == "multi_view"
+        assert resolved == {
+            slot: str(path.resolve()) for slot, path in paths.items()
+        }
+
+
+def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        canonical = root / "canonical.mp4"
+        canonical.touch()
+
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {"id": "single-rollout"},
+            make_args(root),
+            canonical,
+        )
+
+        assert mode == "single_view"
+        assert set(resolved) == set(robo_dopamine_runner.ROBO_CAMERA_SLOTS)
+        assert set(resolved.values()) == {str(canonical.resolve())}
+
+
+def test_robo_camera_inputs_reject_partial_official_mapping() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        canonical = root / "canonical.mp4"
+        canonical.touch()
+        high = root / "cam_high.mp4"
+        high.touch()
+
+        try:
+            robo_dopamine_runner.resolve_robo_camera_inputs(
+                {
+                    "id": "partial-rollout",
+                    "camera_video_paths": {"cam_high": high.name},
+                },
+                make_args(root),
+                canonical,
+            )
+        except ValueError as error:
+            assert "Incomplete Robo-Dopamine camera_video_paths" in str(error)
+            assert "cam_left_wrist" in str(error)
+            assert "cam_right_wrist" in str(error)
+        else:
+            raise AssertionError("Partial Robo-Dopamine camera mapping was not rejected")
+
+
 if __name__ == "__main__":
     test_libero10_goal_image_is_selected_by_task_id()
     test_explicit_goal_image_overrides_task_default()
     test_missing_libero10_task_goal_fails_loudly()
     test_non_libero10_keeps_blank_goal_fallback()
+    test_robo_camera_inputs_use_official_three_view_slots()
+    test_robo_camera_inputs_repeat_canonical_for_single_view()
+    test_robo_camera_inputs_reject_partial_official_mapping()
     print("ROBODOPAMINE_GOAL_IMAGE_TESTS_OK")

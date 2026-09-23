@@ -399,16 +399,17 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.read(), b"2345")
 
     def test_video_endpoint_uses_canonical_by_default_and_explicit_camera_path(self) -> None:
-        side = self.root / "outputs" / "sample.sideview.mp4"
-        wrist = self.root / "outputs" / "sample.robot0_eye_in_hand.mp4"
-        side.write_bytes(b"SIDEVIEW")
-        wrist.write_bytes(b"WRIST")
+        high = self.root / "outputs" / "sample.cam_high.mp4"
+        left = self.root / "outputs" / "sample.cam_left_wrist.mp4"
+        right = self.root / "outputs" / "sample.cam_right_wrist.mp4"
+        high.write_bytes(b"HIGH")
+        left.write_bytes(b"LEFT")
+        right.write_bytes(b"RIGHT")
         self.rollout["camera_video_paths"] = {
-            "sideview": "outputs/sample.sideview.mp4",
-            "robot0_eye_in_hand": "outputs/sample.robot0_eye_in_hand.mp4",
+            "cam_high": "outputs/sample.cam_high.mp4",
+            "cam_left_wrist": "outputs/sample.cam_left_wrist.mp4",
+            "cam_right_wrist": "outputs/sample.cam_right_wrist.mp4",
         }
-        self.rollout["multiview_video_path"] = "outputs/legacy-composite.mp4"
-        (self.root / "outputs" / "legacy-composite.mp4").write_bytes(b"LEGACY")
         self.app.manifest_path.write_text(
             json.dumps(self.rollout) + "\n",
             encoding="utf-8",
@@ -416,10 +417,12 @@ class ServerTest(unittest.TestCase):
 
         with self.request("/api/videos/sample-rollout") as response:
             self.assertEqual(response.read(), b"0123456789abcdef")
-        with self.request("/api/videos/sample-rollout?camera=sideview") as response:
-            self.assertEqual(response.read(), b"SIDEVIEW")
-        with self.request("/api/videos/sample-rollout?camera=robot0_eye_in_hand") as response:
-            self.assertEqual(response.read(), b"WRIST")
+        with self.request("/api/videos/sample-rollout?camera=cam_high") as response:
+            self.assertEqual(response.read(), b"HIGH")
+        with self.request("/api/videos/sample-rollout?camera=cam_left_wrist") as response:
+            self.assertEqual(response.read(), b"LEFT")
+        with self.request("/api/videos/sample-rollout?camera=cam_right_wrist") as response:
+            self.assertEqual(response.read(), b"RIGHT")
         with self.assertRaises(urllib.error.HTTPError) as context:
             self.request("/api/videos/sample-rollout?camera=missing")
         self.assertEqual(context.exception.code, 404)
@@ -2251,11 +2254,20 @@ print('fake label loss ablation complete')
         self.assertEqual(job["render_resolution"], 320)
         self.assertEqual(job["record_resolution"], 192)
         self.assertEqual(job["video_view_mode"], "libero_three_view")
-        self.assertEqual(job["multiview_layout"], "separate_videos")
         self.assertEqual(
-            job["multiview_cameras"],
-            ["agentview", "sideview", "robot0_eye_in_hand"],
+            job["camera_video_slots"],
+            ["cam_high", "cam_left_wrist", "cam_right_wrist"],
         )
+        self.assertEqual(
+            job["camera_source_names"],
+            {
+                "cam_high": "agentview",
+                "cam_left_wrist": "robot0_eye_in_hand",
+                "cam_right_wrist": "sideview",
+            },
+        )
+        self.assertNotIn("multiview_layout", job)
+        self.assertNotIn("multiview_cameras", job)
         self.assertIn("--video-view-mode", job["command"])
         mode_index = job["command"].index("--video-view-mode")
         self.assertEqual(job["command"][mode_index + 1], "libero_three_view")

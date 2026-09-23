@@ -40,11 +40,11 @@ class MultiPerspectiveTests(unittest.TestCase):
             goal = root / "blank_goal.png"
             goal.touch()
             output_dir = root / "raw" / "rollout"
-            calls: list[tuple[object, str]] = []
+            calls: list[tuple[object, str, dict[str, object]]] = []
 
             class FakeModel:
                 def run_pipeline(self, *, out_root, eval_mode, **kwargs):
-                    calls.append((self, eval_mode))
+                    calls.append((self, eval_mode, dict(kwargs)))
                     official = Path(out_root) / f"official_{eval_mode}"
                     official.mkdir(parents=True, exist_ok=True)
                     rows = _rows({
@@ -70,10 +70,21 @@ class MultiPerspectiveTests(unittest.TestCase):
                 "eval_modes": list(PERSPECTIVE_MODES),
                 "render_video": False,
             })()
+            canonical = root / "video.mp4"
+            cam_high = root / "cam_high.mp4"
+            cam_left = root / "cam_left_wrist.mp4"
+            cam_right = root / "cam_right_wrist.mp4"
+            for path in (canonical, cam_high, cam_left, cam_right):
+                path.touch()
+
             result = infer_rollout(
                 {
                     "rollout_id": "rollout",
-                    "video_path": str(root / "video.mp4"),
+                    "video_path": str(canonical),
+                    "cam_high_path": str(cam_high),
+                    "cam_left_path": str(cam_left),
+                    "cam_right_path": str(cam_right),
+                    "camera_input_mode": "multi_view",
                     "task": "test task",
                     "raw_output_dir": str(output_dir),
                     "goal_image": str(goal),
@@ -81,10 +92,23 @@ class MultiPerspectiveTests(unittest.TestCase):
                 args,
                 FakeModel(),
             )
-            self.assertEqual([mode for _, mode in calls], list(PERSPECTIVE_MODES))
-            self.assertEqual(len({id(model) for model, _ in calls}), 1)
+            self.assertEqual([mode for _, mode, _ in calls], list(PERSPECTIVE_MODES))
+            self.assertEqual(len({id(model) for model, _, _ in calls}), 1)
+            for _, _, kwargs in calls:
+                self.assertEqual(kwargs["cam_high_path"], str(cam_high.resolve()))
+                self.assertEqual(kwargs["cam_left_path"], str(cam_left.resolve()))
+                self.assertEqual(kwargs["cam_right_path"], str(cam_right.resolve()))
             worker_result = json.loads((output_dir / "worker_result.json").read_text())
             self.assertTrue(worker_result["multi_perspective"])
+            self.assertEqual(worker_result["camera_input_mode"], "multi_view")
+            self.assertEqual(
+                worker_result["camera_video_paths"],
+                {
+                    "cam_high": str(cam_high.resolve()),
+                    "cam_left_wrist": str(cam_left.resolve()),
+                    "cam_right_wrist": str(cam_right.resolve()),
+                },
+            )
             self.assertEqual(set(worker_result["perspective_outputs"]), set(PERSPECTIVE_MODES))
             fused = json.loads(Path(result["fused_model_output"]).read_text())
             for row, expected in zip(fused, [0.2, 0.3, 0.4]):

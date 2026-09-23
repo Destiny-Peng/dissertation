@@ -104,6 +104,14 @@
       && (review === "all" || record.annotation_status === review);
   }
 
+  function hasRoboDopamineThreeView(record) {
+    var paths = record && record.camera_video_paths;
+    if (!paths || typeof paths !== "object") return false;
+    return ["cam_high", "cam_left_wrist", "cam_right_wrist"].every(function (slot) {
+      return typeof paths[slot] === "string" && paths[slot].length > 0;
+    });
+  }
+
   function renderManifestRolloutList() {
     var container = byId("rolloutList");
     if (!container) return;
@@ -127,7 +135,7 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
-        + (record.camera_video_paths && Object.keys(record.camera_video_paths).length > 1 ? badge("3-view", "natural") : "")
+        + (hasRoboDopamineThreeView(record) ? badge("Robo-Dopamine 3-view", "natural") : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
@@ -176,7 +184,7 @@
       )
         + badge(record.analysis_partition, originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
-        + (record.camera_video_paths && Object.keys(record.camera_video_paths).length > 1 ? badge("3-view", "natural") : "");
+        + (hasRoboDopamineThreeView(record) ? badge("Robo-Dopamine 3-view", "natural") : "");
     };
     window.selectRollout = wrappedSelectRollout;
     try { selectRollout = wrappedSelectRollout; } catch (_) {}
@@ -306,7 +314,7 @@
     if (transcodeJobId) return;
     var record = selectedRecord();
     if (!record || !record.video_path) return;
-    var playbackPath = record.multiview_video_path || record.video_path;
+    var playbackPath = record.video_path;
     var backup = transcodeBackupName(playbackPath);
     var confirmed = window.confirm(
       "Convert this selected video to browser-compatible H.264?\n\n"

@@ -474,9 +474,9 @@
               <option value="libero_10">LIBERO-10 natural (existing output)</option>
               <option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option>
             </select></label>
-          <label data-cli-help="rollout.video_view_mode"><span>Additional camera videos</span><select id="rolloutGenerationVideoViewMode">
+          <label data-cli-help="rollout.video_view_mode"><span>Robo-Dopamine camera input</span><select id="rolloutGenerationVideoViewMode">
               <option value="single_view" selected>Single view (canonical)</option>
-              <option value="libero_three_view">LIBERO 3-view (3 separate MP4s)</option>
+              <option value="libero_three_view">3-view · cam_high + left wrist + right wrist slots</option>
             </select></label>
           <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input
               id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
@@ -1475,8 +1475,8 @@
 
   <link rel="stylesheet" href="/static/styles-localization-lab.css?v=localization-lab-v10-20260922">
   <script src="/static/localization-lab.js?v=localization-lab-v11-20260922" defer></script>
-  <script src="/static/app.js?v=posthoc-localization-collapse-v1-20260923" defer></script>
-  <script src="/static/workspace.js?v=robo-localization-ckpt-v1-20260922" defer></script>
+  <script src="/static/app.js?v=robo-camera-slots-v1-20260923" defer></script>
+  <script src="/static/workspace.js?v=robo-camera-slots-v1-20260923" defer></script>
 </body>
 
 </html>

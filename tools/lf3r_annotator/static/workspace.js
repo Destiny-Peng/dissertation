@@ -44,7 +44,7 @@
     loadScript("/static/raw-video-source.js?v=raw-video-v2-20260916", function () {
       /* Install the queue cap before the large legacy workspace script. */
       loadStyle("lf3rManifestStyles", "/static/styles-manifest.css?v=multi-manifest-v3-20260916");
-      loadScript("/static/manifest-support-v2.js?v=manual-transcode-v1-20260916", function () {
+      loadScript("/static/manifest-support-v2.js?v=robo-camera-slots-v1-20260923", function () {
         loadScript("/static/workspace-legacy.js?v=analysis-job-ownership-v2-20260921", function () {
           loadScript("/static/analysis-robo-hop.js?v=isolated-run-catalog-v6-20260921");
           loadScript("/static/results-layout.js?v=review-polish-20260916b", function () {
@@ -57,7 +57,7 @@
             loadScript("/static/results-run-config-v3.js?v=robo-localization-ckpt-v1-20260922", function () {
               loadScript("/static/results-run-click-bridge.js?v=results-config-click-v1-20260916", function () {
                 loadScript("/static/runs-layout.js?v=manifest-h264-select-v2-20260923", function () {
-                  loadScript("/static/runs-semantics.js?v=runs-semantics-v1-20260916", function () {
+                  loadScript("/static/runs-semantics.js?v=robo-camera-slots-v1-20260923", function () {
                     loadScript("/static/dataset-scope-ui.js?v=dynamic-suite-v2-20260916", function () {
                       loadScript("/static/progressive-baseline-results.js?v=progressive-baseline-results-v1-20260917", function () {
                         loadScript("/static/baseline-job-filter.js?v=baseline-job-filter-v1-20260916", function () {

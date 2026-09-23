@@ -20,17 +20,19 @@ class ManifestBatchH264Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             canonical = root / "outputs" / "canonical.mp4"
-            multiview = root / "outputs" / "canonical.multiview.mp4"
+            cam_high = root / "outputs" / "canonical.cam_high.mp4"
             canonical.parent.mkdir(parents=True)
             canonical.write_bytes(b"canonical")
-            multiview.write_bytes(b"multiview")
+            cam_high.write_bytes(b"cam-high")
 
             first = root / "first.jsonl"
             second = root / "second.jsonl"
             row = {
                 "id": "r1",
                 "video_path": "outputs/canonical.mp4",
-                "multiview_video_path": "outputs/canonical.multiview.mp4",
+                "camera_video_paths": {
+                    "cam_high": "outputs/canonical.cam_high.mp4",
+                },
             }
             first.write_text(json.dumps(row) + "\n", encoding="utf-8")
             second.write_text(
@@ -41,7 +43,7 @@ class ManifestBatchH264Tests(unittest.TestCase):
             videos = batch.read_manifest_video_paths(root.resolve(), [first, second])
 
             self.assertEqual(videos, [canonical.resolve()])
-            self.assertNotIn(multiview.resolve(), videos)
+            self.assertNotIn(cam_high.resolve(), videos)
 
     def test_manifest_reader_rejects_non_mp4_video_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
