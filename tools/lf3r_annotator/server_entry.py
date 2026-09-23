@@ -285,7 +285,10 @@ def _do_get_with_tools(self: server.LF3RHandler) -> None:
             status = query.get("status", [None])[0] or None
             self.json_response(
                 HTTPStatus.OK,
-                {"jobs": self.app.project_tools.list(status=status)},
+                {
+                    "jobs": self.app.project_tools.list(status=status),
+                    "project_tools_protocol": "immediate-registry-v1",
+                },
             )
             return
         if path.startswith("/api/tool-jobs/"):
