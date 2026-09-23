@@ -153,9 +153,15 @@ class NonAnalysisToolTests(unittest.TestCase):
     def test_service_submits_persistent_project_tool_job(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
-        job = service.submit("validate_variants", {})
+        job = service.submit(
+            "validate_variants",
+            {},
+            client_request_id="web:validate_variants:test123",
+        )
         self.assertEqual(job["job_type"], tools.TOOL_JOB_TYPE)
         self.assertEqual(job["action"], "validate_variants")
+        self.assertEqual(job["client_request_id"], "web:validate_variants:test123")
+        self.assertEqual(tmux.submitted[0]["client_request_id"], "web:validate_variants:test123")
         self.assertEqual(tmux.handler[0], tools.TOOL_JOB_TYPE)
         self.assertIn("--check-only", tmux.submitted[1])
 
@@ -169,6 +175,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("await loadRolloutOptions()", source)
         self.assertIn("lf3r.runs.extraManifestScanRoots", source)
         self.assertIn("Manifest rebuild failed:", source)
+        self.assertIn("client_request_id", source)
+        self.assertIn("recoverToolSubmission", source)
+        self.assertIn("AbortController", source)
+        self.assertIn("Project-tool submission timed out", source)
         self.assertIn("batchManifestTranscodeRun", source)
         self.assertIn("batchManifestTranscodeManifests", source)
         self.assertIn("batchManifestTranscodeSelectAll", source)
