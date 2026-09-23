@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "rollout_id": "realrobot-00004-transitions_10615",
+  "updated_at": "2026-09-23T12:16:24.463964+00:00",
+  "created_at": "2026-09-23T12:16:24.463964+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "success",
+  "failure_type": "other",
+  "confidence": 4,
+  "failure_events": [],
+  "causal_onset_frame": null,
+  "observable_onset_frame": null,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}

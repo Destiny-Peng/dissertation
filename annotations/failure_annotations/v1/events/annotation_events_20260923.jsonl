@@ -1,0 +1,7 @@
+{"timestamp": "2026-09-23T12:12:57.175108+00:00", "rollout_id": "realrobot-00000-transitions_10048", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-23T12:13:18.176812+00:00", "rollout_id": "realrobot-00001-transitions_10300", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
+{"timestamp": "2026-09-23T12:15:50.970055+00:00", "rollout_id": "realrobot-00002-transitions_1032", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-23T12:16:09.831890+00:00", "rollout_id": "realrobot-00003-transitions_10461", "review_status": "complete", "annotator": "Jacy", "outcome_label": "uncertain", "failure_event_count": 0}
+{"timestamp": "2026-09-23T12:16:24.463964+00:00", "rollout_id": "realrobot-00004-transitions_10615", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
+{"timestamp": "2026-09-23T12:16:57.239041+00:00", "rollout_id": "realrobot-00005-transitions_10738", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 1}
+{"timestamp": "2026-09-23T12:17:20.371700+00:00", "rollout_id": "realrobot-00006-transitions_10925", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
