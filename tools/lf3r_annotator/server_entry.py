@@ -331,7 +331,18 @@ def _do_post_with_tools(self: server.LF3RHandler) -> None:
         options = payload.get("options") or {}
         if not isinstance(options, dict):
             raise ValueError("options must be a JSON object")
-        job = self.app.project_tools.submit(action, options)
+        client_request_id = str(payload.get("client_request_id") or "").strip()
+        if client_request_id:
+            if len(client_request_id) > 120 or not all(
+                character.isalnum() or character in "._:-"
+                for character in client_request_id
+            ):
+                raise ValueError("invalid client_request_id")
+        job = self.app.project_tools.submit(
+            action,
+            options,
+            client_request_id=client_request_id or None,
+        )
         self.json_response(HTTPStatus.ACCEPTED, {"job": job})
     except server.TmuxSupervisorError as exc:
         self.json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
