@@ -89,8 +89,28 @@ class FrontendSafetyContractTest(unittest.TestCase):
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("if (retry < 1)", workspace)
         self.assertIn("lf3r_retry=", workspace)
-        self.assertIn("continuing with remaining enhancements", workspace)
+        self.assertIn("continuing with remaining modules", workspace)
         self.assertIn("if (onload) onload();", workspace)
+
+    def test_workspace_uses_stable_module_names_without_manual_versions(self) -> None:
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        self.assertNotIn("?v=", workspace)
+        for stale in [
+            "workspace-legacy.js",
+            "manifest-support-v2.js",
+            "results-run-config-v3.js",
+            "results-run-click-bridge.js",
+            "runs-submit-fix.js",
+        ]:
+            self.assertNotIn(stale, workspace)
+        for stable in [
+            "workspace-core.js",
+            "manifest-support.js",
+            "results-run-config.js",
+            "results-run-actions.js",
+            "runs-submit.js",
+        ]:
+            self.assertIn(stable, workspace)
 
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
