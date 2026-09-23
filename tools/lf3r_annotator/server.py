@@ -7920,6 +7920,27 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     manifest = self.app.analysis_jobs.save_localization_challenge_set(payload)
                     self.json_response(HTTPStatus.OK, {"challenge_set": manifest})
                 return
+            if path.startswith("/api/baselines/posthoc-localization/"):
+                rollout_id = path.rsplit("/", 1)[-1]
+                rollout = self.app.rollout_map().get(rollout_id)
+                if not rollout:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    self.json_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
+                    return
+                if length <= 0 or length > 100_000:
+                    self.json_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Invalid request size")
+                    return
+                payload = json.loads(self.rfile.read(length))
+                result = self.app.baselines.run_posthoc_localization(
+                    rollout,
+                    payload,
+                )
+                self.json_response(HTTPStatus.OK, {"posthoc_localization": result})
+                return
             if path in {"/api/baselines/run-batch", "/api/analysis/run", "/api/rollouts/generate"}:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
