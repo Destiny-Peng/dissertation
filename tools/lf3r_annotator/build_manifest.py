@@ -150,6 +150,26 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
             camera_metadata = value
 
     metadata_camera_paths = camera_metadata.get("camera_video_paths")
+    if isinstance(metadata_camera_paths, dict) and not (
+        isinstance(metadata_camera_paths.get("cam_wrist"), str)
+        and str(metadata_camera_paths.get("cam_wrist")).strip()
+    ):
+        legacy_left = metadata_camera_paths.get("cam_left_wrist")
+        legacy_right = metadata_camera_paths.get("cam_right_wrist")
+        legacy_paths = [
+            str(value).strip()
+            for value in (legacy_left, legacy_right)
+            if isinstance(value, str) and str(value).strip()
+        ]
+        if legacy_paths:
+            if len(set(legacy_paths)) != 1:
+                raise RuntimeError(
+                    f"Legacy camera metadata declares distinct wrist videos for {video}: "
+                    f"cam_left_wrist={legacy_left!r}, cam_right_wrist={legacy_right!r}"
+                )
+            metadata_camera_paths = dict(metadata_camera_paths)
+            metadata_camera_paths["cam_wrist"] = legacy_paths[0]
+
     camera_video_files: dict[str, Path] = {}
     for slot in DATASET_CAMERA_SLOTS:
         declared = (
