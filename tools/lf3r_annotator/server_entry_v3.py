@@ -4,10 +4,11 @@
 Builds on ``server_entry_v2`` so the ProcVLM LoRA, project tools, live baseline
 progress, and cancellation patches remain intact.
 
-Runtime video probing/transcoding is deliberately absent. ``/api/videos``
-serves a declared multiview review video when one exists and otherwise falls
-back to the canonical ``video_path`` used by baselines. Browser-incompatible
-videos can be converted explicitly through the manual WebUI project-tool action.
+Runtime video probing/transcoding is deliberately absent. ``/api/videos/<id>``
+serves canonical ``video_path`` by default; ``?camera=<slot>`` explicitly
+serves one declared ``camera_video_paths`` entry. Browser-incompatible
+canonical videos can be converted explicitly through the manual WebUI
+project-tool action.
 
 Dataset scopes are discovered from the currently loaded manifests. Any
 non-controlled ``task_suite`` value becomes a valid suite scope automatically;
