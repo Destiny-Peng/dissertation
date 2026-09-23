@@ -2275,7 +2275,7 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " Three separate camera videos (agentview, sideview, and wrist) are generated afterward by replaying the recorded actions; canonical policy video and baseline input remain unchanged."
+      ? " Three separate Robo-Dopamine camera-slot videos are generated afterward: cam_high←agentview, cam_left_wrist←robot0_eye_in_hand, cam_right_wrist←sideview; canonical policy video remains unchanged."
       : " Only the canonical single-view replay video is generated.";
     description.textContent = (isSpatial
       ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
@@ -2298,7 +2298,7 @@ function updateRolloutGenerationSelection() {
   note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
     + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
     + ", record " + recordResolution + "x" + recordResolution
-    + ", camera videos " + (videoViewMode === "libero_three_view" ? "3 separate views" : "canonical only")
+    + ", camera videos " + (videoViewMode === "libero_three_view" ? "Robo-Dopamine 3-view" : "canonical only")
     + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
@@ -2321,7 +2321,7 @@ function rolloutGenerationJobMessage(job) {
   var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
   var resolution = "render " + (job.render_resolution || "?") + "x" + (job.render_resolution || "?")
     + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?")
-    + ", camera videos " + (job.video_view_mode === "libero_three_view" ? "3 separate views" : "canonical only");
+    + ", camera videos " + (job.video_view_mode === "libero_three_view" ? "Robo-Dopamine 3-view" : "canonical only");
   if (job.status === "queued") return suite + " generation queued (" + resolution + ") - " + progress + " rollout(s) complete...";
   if (job.status === "running") return "Generating " + suite + " rollouts (" + resolution + ") - " + progress + " complete...";
   if (job.status === "complete") {
