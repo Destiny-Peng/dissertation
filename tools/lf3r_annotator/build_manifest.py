@@ -146,7 +146,7 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         try:
             value = json.loads(camera_metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
-            raise RuntimeError(f"Invalid multiview metadata: {camera_metadata_path}") from error
+            raise RuntimeError(f"Invalid camera-video metadata: {camera_metadata_path}") from error
         if isinstance(value, dict):
             camera_metadata = value
 
@@ -183,17 +183,17 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
                 camera_video.relative_to(project_root.resolve())
             except ValueError as error:
                 raise RuntimeError(
-                    f"Multiview camera video escapes project root: {camera_video}"
+                    f"Camera video escapes project root: {camera_video}"
                 ) from error
             camera_frames, camera_fps, _ = probe_video(camera_video)
             if camera_frames != frames:
                 raise RuntimeError(
-                    f"Multiview frame count mismatch for {video} camera={camera}: "
+                    f"Camera frame count mismatch for {video} camera={camera}: "
                     f"single={frames}, camera={camera_frames}"
                 )
             if abs(camera_fps - fps) > 1e-3:
                 raise RuntimeError(
-                    f"Multiview FPS mismatch for {video} camera={camera}: "
+                    f"Camera FPS mismatch for {video} camera={camera}: "
                     f"single={fps}, camera={camera_fps}"
                 )
 
