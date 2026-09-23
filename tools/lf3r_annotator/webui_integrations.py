@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LF3R annotator compatibility and WebUI extension entrypoint.
+"""WebUI integrations for baseline options and non-Analysis project tools.
 
 The core server remains the stable implementation. This entrypoint keeps the
 ProcVLM LoRA compatibility layer and adds bounded non-Analysis project-tool
