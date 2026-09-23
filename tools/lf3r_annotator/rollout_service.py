@@ -270,7 +270,7 @@ class RolloutGenerationService:
             "record_resolution": record_resolution,
             "video_view_mode": video_view_mode,
             "camera_video_slots": (
-                ["cam_high", "cam_left_wrist", "cam_right_wrist"]
+                ["cam_high", "cam_wrist"]
                 if video_view_mode == "libero_three_view"
                 else None
             ),
