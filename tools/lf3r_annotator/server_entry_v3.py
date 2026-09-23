@@ -493,7 +493,7 @@ def main() -> None:
     print(f"Dataset task suites: {suites}")
     print(f"Controlled rollouts: {groups['controlled_count']}")
     print(f"Annotations: {annotations}")
-    print("Video serving: multiview review when available; canonical fallback; runtime transcoding disabled")
+    print("Video serving: canonical by default; ?camera=<name> serves manifest camera_video_paths; runtime transcoding disabled")
 
     def stop_server(_signum: int, _frame: Any) -> None:
         print("Shutdown requested; stopping LF3R annotator...")
