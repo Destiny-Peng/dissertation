@@ -25,6 +25,7 @@ from backend_core import ValidationError
 
 
 class AnalysisDetailsMixin:
+    @staticmethod
     def _query_value(query: dict[str, Any], key: str, default: str = "") -> str:
         value = query.get(key, default)
         if isinstance(value, list):
