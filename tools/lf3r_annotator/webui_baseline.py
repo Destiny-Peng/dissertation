@@ -346,38 +346,6 @@ class WebUIBaselineService(server.BaselineService):
             )
         return path, metadata
 
-    @staticmethod
-    def _completed_run_rollout_ids(run_path: Path) -> set[str]:
-        result: set[str] = set()
-        paths = [run_path / "jobs.jsonl"]
-        workers_root = run_path / "workers"
-        if workers_root.is_dir():
-            paths.extend(sorted(workers_root.glob("worker-*/jobs.jsonl")))
-
-        for jobs_path in paths:
-            if not jobs_path.is_file():
-                continue
-            try:
-                with jobs_path.open(encoding="utf-8") as handle:
-                    for line in handle:
-                        if not line.strip():
-                            continue
-                        try:
-                            row = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if row.get("status") != "complete":
-                            continue
-                        rollout_id = row.get("rollout_id", row.get("id"))
-                        if (
-                            isinstance(rollout_id, str)
-                            and server.ROLLOUT_ID_RE.fullmatch(rollout_id)
-                        ):
-                            result.add(rollout_id)
-            except OSError:
-                continue
-        return result
-
     def _read_method(
         self,
         method: str,
@@ -387,7 +355,7 @@ class WebUIBaselineService(server.BaselineService):
     ) -> dict[str, Any]:
         if run_summary.get("status") == "running":
             rollout_id = str(rollout.get("id") or "")
-            if rollout_id not in self._completed_run_rollout_ids(run_path):
+            if rollout_id not in server.run_rollout_ids(run_path):
                 raise FileNotFoundError(run_path / "raw" / rollout_id)
         return super()._read_method(method, run_path, rollout, run_summary)
 
