@@ -134,6 +134,13 @@ class NonAnalysisToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest_paths must be a non-empty list"):
             tools.transcode_manifest_videos_command({"manifest_paths": []})
 
+    def test_manifest_rebuild_is_serialized(self):
+        tmux = FakeTmux()
+        service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
+        service.submit("rebuild_manifest", {})
+        with self.assertRaisesRegex(ValueError, "another manifest rebuild is already active"):
+            service.submit("rebuild_manifest", {})
+
     def test_batch_transcode_is_serialized(self):
         tmux = FakeTmux()
         service = tools.NonAnalysisToolService(tools.PROJECT_ROOT, tmux)
@@ -179,6 +186,8 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("recoverToolSubmission", source)
         self.assertIn("AbortController", source)
         self.assertIn("Project-tool submission timed out", source)
+        self.assertIn("Manifest rebuild running · ", source)
+        self.assertIn("another manifest rebuild is already active", (HERE / "non_analysis_tools.py").read_text(encoding="utf-8"))
         self.assertIn("batchManifestTranscodeRun", source)
         self.assertIn("batchManifestTranscodeManifests", source)
         self.assertIn("batchManifestTranscodeSelectAll", source)
