@@ -258,14 +258,24 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
     def test_runs_core_is_extracted_from_app_shell(self) -> None:
-        runs_core = STATIC_ROOT / "runs" / "core.js"
-        runs_layout = STATIC_ROOT / "runs" / "layout.js"
-        self.assertTrue(runs_core.is_file())
-        self.assertTrue(runs_layout.is_file())
+        runs_root = STATIC_ROOT / "runs"
+        runs_core = runs_root / "core.js"
+        runs_layout = runs_root / "layout.js"
+        tools_layout = runs_root / "tools-layout.js"
+        gpu = runs_root / "gpu.js"
+        project_tools = runs_root / "project-tools.js"
+        for path in [runs_core, runs_layout, tools_layout, gpu, project_tools]:
+            self.assertTrue(path.is_file(), path.name)
         self.assertFalse((STATIC_ROOT / "runs-layout.js").exists())
+
         source = runs_core.read_text(encoding="utf-8")
+        layout_source = runs_layout.read_text(encoding="utf-8")
+        tools_layout_source = tools_layout.read_text(encoding="utf-8")
+        gpu_source = gpu.read_text(encoding="utf-8")
+        project_tools_source = project_tools.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
         self.assertIn("function startBaselineBatch(", source)
         self.assertIn("function updateBaselineBatchSelection(", source)
@@ -277,6 +287,29 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             html.index("/static/runs/core.js"),
             html.index("/static/app.js"),
         )
+
+        self.assertLess(len(layout_source), 12000)
+        self.assertIn("LF3RRunsToolsLayout.createPanels", layout_source)
+        self.assertIn("LF3RRunsGpu.createStrip", layout_source)
+        self.assertIn("LF3RProjectTools.install", layout_source)
+        self.assertIn("window.LF3RRunsToolsLayout", tools_layout_source)
+        self.assertIn("window.LF3RRunsGpu", gpu_source)
+        self.assertIn("window.LF3RProjectTools", project_tools_source)
+        self.assertIn("safePrepareRun", tools_layout_source)
+        self.assertIn("refreshGpuStatus", gpu_source)
+        self.assertIn("recoverToolSubmission", project_tools_source)
+        self.assertIn("loadBatchManifestOptions", project_tools_source)
+        self.assertNotIn("styles-tools.css?v=", layout_source)
+
+        ordered = [
+            "/static/runs/tools-layout.js",
+            "/static/runs/gpu.js",
+            "/static/runs/project-tools.js",
+            "/static/runs/layout.js",
+        ]
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertLess(loader.index(left), loader.index(right))
+
 
     def test_analysis_frontend_is_split_from_workspace_shell(self) -> None:
         analysis_root = STATIC_ROOT / "analysis"
