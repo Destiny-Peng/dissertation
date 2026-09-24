@@ -48,37 +48,29 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertNotIn("MutationObserver", results_layout)
         self.assertIn("window.lf3rResultsLayoutRefresh = refresh", results_layout)
 
-        runs_log = (STATIC_ROOT / "runs-log-ui.js").read_text(encoding="utf-8")
-        self.assertNotIn(
-            "new MutationObserver(syncButtons).observe(view, { childList: true, subtree: true })",
-            runs_log,
-        )
-        self.assertIn(
-            "new MutationObserver(syncButtons).observe(channel.jobs, { childList: true })",
-            runs_log,
-        )
-
-        runs_control = (STATIC_ROOT / "runs-job-control.js").read_text(encoding="utf-8")
-        self.assertIn(
-            "new MutationObserver(decorateCards).observe(jobs, { childList: true })",
-            runs_control,
-        )
+        runs_jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
+        self.assertNotIn("MutationObserver", runs_jobs)
+        self.assertNotIn("window.renderPersistentJobLists =", runs_jobs)
+        self.assertNotIn("window.loadBaselineBatchLog =", runs_jobs)
 
     def test_runs_log_refresh_stays_bound_to_selected_job(self) -> None:
-        runs_log = (STATIC_ROOT / "runs-log-ui.js").read_text(encoding="utf-8")
+        runs_jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
+        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn(
             'if (!channel || !channel.log || visibleJobId(channel) !== jobId) return;',
-            runs_log,
+            runs_jobs,
         )
         self.assertIn(
             'if (requestSerial !== channel.requestSerial || visibleJobId(channel) !== jobId) return;',
-            runs_log,
+            runs_jobs,
         )
-        self.assertIn("window.loadBaselineBatchLog = baselineRefresh", runs_log)
-        self.assertIn("window.loadRolloutGenerationLog = rolloutRefresh", runs_log)
+        self.assertIn('refreshSelectedLog: refreshSelectedLog', runs_jobs)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId)', app)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId)', app)
 
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
-        self.assertIn("runs-log-ui.js", workspace)
+        self.assertIn("runs/jobs.js", workspace)
+        self.assertNotIn("runs-log-ui.js", workspace)
 
     def test_procvlm_model_path_is_visible_in_single_run_config(self) -> None:
         procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
@@ -109,6 +101,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "manifest-support.js",
             "results/layout.js",
             "results/run-config.js",
+            "runs/jobs.js",
             "runs-submit.js",
         ]:
             self.assertIn(stable, workspace)
@@ -122,6 +115,9 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "progressive-baseline-results.js",
             "results-layout.js",
             "results-run-config.js",
+            "baseline-job-filter.js",
+            "runs-log-ui.js",
+            "runs-job-control.js",
         ]:
             self.assertNotIn(obsolete, workspace)
 
