@@ -228,6 +228,34 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotIn("procvlm-mode-ui.js", workspace)
         self.assertFalse((STATIC_ROOT / "procvlm-mode-ui.js").exists())
 
+    def test_dataset_scope_frontend_is_explicit(self) -> None:
+        controller = STATIC_ROOT / "runs" / "scope.js"
+        self.assertTrue(controller.is_file())
+        source = controller.read_text(encoding="utf-8")
+        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        workspace_core = (STATIC_ROOT / "workspace-core.js").read_text(encoding="utf-8")
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+
+        self.assertIn("window.LF3RDatasetScopes", source)
+        self.assertIn("matchesBaseline: matchesBaseline", source)
+        self.assertIn("matchesPartition: matchesPartition", source)
+        self.assertIn("scopeLabel: scopeLabel", source)
+        self.assertIn("decorateHelp: decorateHelp", source)
+        self.assertNotIn("window.baselineBatchMatchesScope =", source)
+        self.assertNotIn("window.workspacePartitionMatches =", source)
+        self.assertNotIn("window.persistentJobScope =", source)
+        self.assertNotIn("window.cliHelpEntry =", source)
+
+        self.assertIn("LF3RDatasetScopes.matchesBaseline", app)
+        self.assertIn("LF3RDatasetScopes.scopeLabel", app)
+        self.assertIn("LF3RDatasetScopes.decorateHelp", app)
+        self.assertIn("LF3RDatasetScopes.matchesPartition", workspace_core)
+        self.assertIn("LF3RDatasetScopes.refresh", workspace_core)
+        self.assertIn("/static/runs/scope.js", workspace)
+
+        for obsolete in ["runs-semantics.js", "dataset-scope-ui.js"]:
+            self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
