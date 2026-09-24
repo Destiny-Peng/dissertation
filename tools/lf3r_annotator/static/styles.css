@@ -450,3 +450,78 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     flex-wrap: wrap;
   }
 }
+
+
+/* Shared Annotate / Results camera-view selector. */
+.video-view-controls {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  min-height: 2.25rem;
+  margin: 0 0 .55rem;
+  padding: .35rem .45rem;
+  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+}
+
+.video-view-controls[hidden] {
+  display: none !important;
+}
+
+.video-view-label,
+.video-view-note {
+  color: var(--muted);
+  font-size: .67rem;
+}
+
+.video-view-label {
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.video-view-note {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.video-view-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.video-view-button {
+  min-height: 1.85rem;
+  padding: .28rem .6rem;
+  color: var(--muted);
+  font-size: .68rem;
+  background: var(--control);
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+}
+
+.video-view-button:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.video-view-button.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 16%, var(--control));
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+}
+
+@media (max-width: 640px) {
+  .video-view-controls {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .video-view-note {
+    width: 100%;
+    margin-left: 0;
+  }
+}
