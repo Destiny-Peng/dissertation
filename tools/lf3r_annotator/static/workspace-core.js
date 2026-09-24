@@ -180,6 +180,3 @@ workspaceInstallAnalysisDashboardEvents();
 workspaceInstallEvents();
 workspaceLoadSettings();
 workspaceRenderRoute();
-if (typeof window.lf3rRefreshPersistentJobs === "function") {
-  window.lf3rRefreshPersistentJobs();
-}
