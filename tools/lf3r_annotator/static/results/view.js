@@ -210,5 +210,3 @@ function updateEvaluationCurrent() {
     output.hidden = !String(text || "").trim();
   });
 }
-
-async
