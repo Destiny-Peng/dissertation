@@ -158,7 +158,10 @@ def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
         canonical.touch()
 
         resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
-            {"id": "single-rollout"},
+            {
+                "id": "single-rollout",
+                "camera_video_paths": {"cam_high": canonical.name},
+            },
             make_args(root),
             canonical,
         )
@@ -167,6 +170,36 @@ def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
         assert set(resolved) == set(robo_dopamine_runner.ROBO_CAMERA_SLOTS)
         assert set(resolved.values()) == {str(canonical.resolve())}
 
+
+
+def test_robo_camera_inputs_accept_distinct_left_and_right_wrist_views() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        high = root / "high.mp4"
+        left = root / "left.mp4"
+        right = root / "right.mp4"
+        for path in (high, left, right):
+            path.touch()
+
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {
+                "id": "three-physical-views",
+                "camera_video_paths": {
+                    "cam_high": high.name,
+                    "cam_left_wrist": left.name,
+                    "cam_right_wrist": right.name,
+                },
+            },
+            make_args(root),
+            high,
+        )
+
+        assert mode == "multi_view"
+        assert resolved == {
+            "cam_high": str(high.resolve()),
+            "cam_left_wrist": str(left.resolve()),
+            "cam_right_wrist": str(right.resolve()),
+        }
 
 
 def test_robo_camera_inputs_force_single_view_even_when_multiview_exists() -> None:
@@ -203,7 +236,10 @@ def test_robo_camera_inputs_require_multiview_when_requested() -> None:
 
         try:
             robo_dopamine_runner.resolve_robo_camera_inputs(
-                {"id": "missing-multiview"},
+                {
+                    "id": "missing-multiview",
+                    "camera_video_paths": {"cam_high": canonical.name},
+                },
                 make_args(root, camera_mode="multi_view"),
                 canonical,
             )
@@ -220,22 +256,27 @@ def test_robo_camera_inputs_reject_partial_dataset_mapping() -> None:
         canonical = root / "canonical.mp4"
         canonical.touch()
         high = root / "cam_high.mp4"
+        left = root / "left.mp4"
         high.touch()
+        left.touch()
 
         try:
             robo_dopamine_runner.resolve_robo_camera_inputs(
                 {
                     "id": "partial-rollout",
-                    "camera_video_paths": {"cam_high": high.name},
+                    "camera_video_paths": {
+                        "cam_high": high.name,
+                        "cam_left_wrist": left.name,
+                    },
                 },
                 make_args(root),
                 canonical,
             )
         except ValueError as error:
-            assert "Incomplete camera_video_paths" in str(error)
-            assert "cam_wrist" in str(error)
+            assert "Incomplete Robo-Dopamine wrist camera pair" in str(error)
+            assert "cam_right_wrist" in str(error)
         else:
-            raise AssertionError("Partial Robo-Dopamine camera mapping was not rejected")
+            raise AssertionError("Partial Robo-Dopamine wrist pair was not rejected")
 
 
 if __name__ == "__main__":
