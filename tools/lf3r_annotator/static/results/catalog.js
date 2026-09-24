@@ -89,7 +89,6 @@ function renderBaselineRunControls(method, result, record) {
     + '</div>';
 }
 
-async 
 var resultsCatalogSerial = 0;
 var resultsRefreshTimer = null;
 
