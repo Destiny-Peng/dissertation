@@ -1,6 +1,6 @@
 "use strict";
 
-(function installRunsLayoutEnhancements() {
+function installRunsLayoutEnhancements() {
   var view = document.getElementById("runsView");
   if (!view || view.dataset.runsEnhanced === "true") return;
 
@@ -165,4 +165,12 @@
   if (window.LF3RProjectTools && typeof window.LF3RProjectTools.install === "function") window.LF3RProjectTools.install();
 
   setMode(currentMode);
-})();
+}}
+
+function maybeInstallRunsLayout(event) {
+  var view = event && event.detail ? event.detail.view : document.body.dataset.view;
+  if (view === "runs") installRunsLayoutEnhancements();
+}
+
+window.addEventListener("lf3r:viewchange", maybeInstallRunsLayout);
+maybeInstallRunsLayout();
