@@ -36,6 +36,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         app_javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
         app_jobs = (TOOL_ROOT / "static/app/jobs.js").read_text(encoding="utf-8")
         app_help = (TOOL_ROOT / "static/app/help.js").read_text(encoding="utf-8")
+        annotate_catalog = (TOOL_ROOT / "static/annotate/catalog.js").read_text(encoding="utf-8")
+        annotate_failure_events = (TOOL_ROOT / "static/annotate/failure-events.js").read_text(encoding="utf-8")
+        annotate_timeline = (TOOL_ROOT / "static/annotate/timeline.js").read_text(encoding="utf-8")
         annotate_core = (TOOL_ROOT / "static/annotate/core.js").read_text(encoding="utf-8")
         annotate_events = (TOOL_ROOT / "static/annotate/events.js").read_text(encoding="utf-8")
         results_core = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
@@ -52,6 +55,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             app_javascript,
             app_jobs,
             app_help,
+            annotate_catalog,
+            annotate_failure_events,
+            annotate_timeline,
             annotate_core,
             annotate_events,
             results_core,
