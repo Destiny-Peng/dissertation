@@ -86,6 +86,61 @@ function hydrateEvaluationHistory(details) {
   details.dataset.historyHydrated = "true";
 }
 
+function renderEvaluationChartSlot(method) {
+  return '<div class="evaluation-chart-deferred" data-evaluation-chart-slot data-chart-method="'
+    + escapeHtml(method) + '"><div class="evaluation-empty">Rendering charts…</div></div>';
+}
+
+function renderEvaluationCardCharts(method, result, record) {
+  return LF3RResultsCharts.renderLocalizationPredictionCurve(method, result, record)
+    + LF3RResultsCharts.renderSignalChart(method, result, record);
+}
+
+function scheduleEvaluationChartTask(callback) {
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(callback, { timeout: 120 });
+    return;
+  }
+  window.setTimeout(callback, 0);
+}
+
+function scheduleEvaluationChartHydration(root) {
+  if (!root || !state.evaluation || !state.evaluation.methods) return;
+  var generation = Number(state.evaluationChartGeneration || 0);
+  var slots = Array.prototype.slice.call(
+    root.querySelectorAll("[data-evaluation-chart-slot]:not([data-chart-rendered='true'])")
+  );
+  var index = 0;
+
+  function hydrateNext() {
+    if (generation !== Number(state.evaluationChartGeneration || 0)) return;
+
+    var slot = null;
+    while (index < slots.length && !slot) {
+      var candidate = slots[index++];
+      if (!candidate || !candidate.isConnected) continue;
+      var candidateCard = candidate.closest("[data-evaluation-method]");
+      if (!candidateCard || candidateCard.classList.contains("is-collapsed")) continue;
+      slot = candidate;
+    }
+    if (!slot) return;
+
+    var card = slot.closest("[data-evaluation-method]");
+    var method = card ? String(card.dataset.evaluationMethod || "") : "";
+    var result = state.evaluation.methods[method];
+    var record = selectedRollout();
+    if (result && record) {
+      slot.innerHTML = renderEvaluationCardCharts(method, result, record);
+      slot.dataset.chartRendered = "true";
+      if (typeof updateSignalPlayheads === "function") updateSignalPlayheads();
+    }
+
+    if (index < slots.length) scheduleEvaluationChartTask(hydrateNext);
+  }
+
+  if (slots.length) scheduleEvaluationChartTask(hydrateNext);
+}
+
 function renderEvaluationCardBody(method, result, record) {
   var available = Boolean(result.available);
   var validation = result.validation || {};
@@ -94,8 +149,7 @@ function renderEvaluationCardBody(method, result, record) {
   if (available) {
     body += renderPosthocLocalizationControls(method, result)
       + renderLocalizationPredictionSummary(method, result)
-      + LF3RResultsCharts.renderLocalizationPredictionCurve(method, result, record)
-      + LF3RResultsCharts.renderSignalChart(method, result, record)
+      + renderEvaluationChartSlot(method)
       + '<div class="evaluation-current">'
       + '<div class="evaluation-current-body">'
       + '<pre class="evaluation-output" data-current-output>No output at this frame.</pre></div></div>'
@@ -138,6 +192,7 @@ function renderEvaluationCard(method, result, record) {
 
 function renderEvaluationPanel(payload) {
   state.evaluation = payload;
+  state.evaluationChartGeneration = Number(state.evaluationChartGeneration || 0) + 1;
   byId("evaluationSharedLegend").innerHTML = TIMELINE_MARKER_DEFINITIONS.map(function (definition) {
     return '<span class="evaluation-marker-key"><i class="marker ' + definition.cssClass + '"></i>' + escapeHtml(definition.label) + '</span>';
   }).join('');
@@ -174,6 +229,7 @@ function renderEvaluationPanel(payload) {
   if (typeof window.lf3rResultsLayoutRefresh === "function") {
     window.lf3rResultsLayoutRefresh();
   }
+  scheduleEvaluationChartHydration(byId("evaluationMethods"));
 }
 
 
