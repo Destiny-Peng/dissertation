@@ -37,7 +37,7 @@ OUTPUT_NAMESPACE = "outputs/baselines/instruction_variants/libero_10"
 VARIANTS = ("full_instruction", "subtask_a", "subtask_b")
 DIAGNOSTIC_ROLE = "instruction_variant_diagnostic"
 DIAGNOSTIC_PARTITION = "instruction_variant_diagnostic"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def subtask(
@@ -708,7 +708,7 @@ def make_variant_row(
     row.update(
         {
             "schema_version": SCHEMA_VERSION,
-            "variant_schema": "lf3r.libero10.instruction_variants.v1",
+            "variant_schema": "lf3r.libero10.instruction_variants.v2",
             "id": variant_id,
             "source_rollout_id": source_id,
             "source_manifest": project_relative(source_manifest_path, project_root),
