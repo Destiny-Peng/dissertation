@@ -266,6 +266,10 @@ function workspaceLiveEvents(record) {
 }
 
 function workspacePartitionMatches(record, partition) {
+  if (window.LF3RDatasetScopes
+      && typeof window.LF3RDatasetScopes.matchesPartition === "function") {
+    return window.LF3RDatasetScopes.matchesPartition(record, partition);
+  }
   if (partition === "all") return true;
   if (partition === "libero_10" || partition === "libero_spatial") {
     return record.task_suite === partition;
@@ -2754,6 +2758,10 @@ function workspaceRenderRoute() {
 }
 
 function workspaceDataChanged() {
+  if (window.LF3RDatasetScopes
+      && typeof window.LF3RDatasetScopes.refresh === "function") {
+    window.LF3RDatasetScopes.refresh();
+  }
   if (["annotate", "results"].indexOf(workspaceState.view) !== -1) {
     var route = workspaceParseRoute();
     if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
