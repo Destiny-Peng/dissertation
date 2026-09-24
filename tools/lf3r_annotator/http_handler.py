@@ -462,19 +462,23 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if not rollout:
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
+                camera_paths = self.app.record_camera_video_paths(rollout) if hasattr(self.app, "record_camera_video_paths") else None
+                if camera_paths is None:
+                    from backend_core import record_camera_video_paths, primary_camera_video_path
+                    camera_paths = record_camera_video_paths(rollout)
                 camera = str(query.get("camera", [""])[0] or "").strip()
                 if camera:
-                    camera_paths = rollout.get("camera_video_paths")
-                    value = camera_paths.get(camera) if isinstance(camera_paths, dict) else None
+                    value = camera_paths.get(camera)
                     if not isinstance(value, str) or not value:
                         self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
                         return
-                    video = self.app.resolve_project_file(value, ".mp4")
-                    if not video.is_file():
-                        self.json_error(HTTPStatus.NOT_FOUND, "Camera video file is unavailable")
-                        return
                 else:
-                    video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
+                    from backend_core import primary_camera_video_path
+                    _camera, value = primary_camera_video_path(rollout)
+                video = self.app.resolve_project_file(value, ".mp4")
+                if not video.is_file():
+                    self.json_error(HTTPStatus.NOT_FOUND, "Camera video file is unavailable")
+                    return
                 self.serve_video(video)
                 return
             if path == "/":
