@@ -164,12 +164,17 @@ function renderPersistentJobCards(containerId, jobs, emptyMessage) {
 function renderPersistentJobLists() {
   var jobs = state.persistentJobs || [];
   var baselineJobs = jobs.filter(function (job) { return job.job_type === "baseline"; });
-  var latestBaseline = latestPersistentJob(baselineJobs);
-  renderPersistentJobCards(
-    "baselineBatchJobs",
-    latestBaseline ? [latestBaseline] : [],
-    "No baseline jobs recorded. Older logs remain available on disk and through the job API."
-  );
+  var runsJobs = window.LF3RRunsJobs;
+  if (!runsJobs || typeof runsJobs.renderBaselineJobs !== "function"
+      || runsJobs.renderBaselineJobs(baselineJobs) !== true) {
+    var latestBaseline = latestPersistentJob(baselineJobs);
+    renderPersistentJobCards(
+      "baselineBatchJobs",
+      latestBaseline ? [latestBaseline] : [],
+      "No baseline jobs recorded. Older logs remain available on disk and through the job API."
+    );
+  }
+
   var generationJobs = jobs.filter(function (job) { return job.job_type === "rollout_generation"; });
   var latestGeneration = latestPersistentJob(generationJobs);
   renderPersistentJobCards(
@@ -177,6 +182,10 @@ function renderPersistentJobLists() {
     latestGeneration ? [latestGeneration] : [],
     "No rollout-generation jobs recorded."
   );
+
+  if (runsJobs && typeof runsJobs.afterRender === "function") {
+    runsJobs.afterRender();
+  }
   if (typeof window.lf3rWorkspaceJobsChanged === "function") {
     window.lf3rWorkspaceJobsChanged(jobs);
   }
@@ -1541,6 +1550,9 @@ function setBaselineBatchStatus(message, kind) {
 }
 
 async function loadBaselineBatchLog(jobId) {
+  if (window.LF3RRunsJobs && typeof window.LF3RRunsJobs.refreshSelectedLog === "function") {
+    return window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId);
+  }
   try {
     var response = await fetch("/api/baseline-jobs/" + encodeURIComponent(jobId) + "/log?tail=200", { cache: "no-store" });
     var payload = await response.json();
@@ -1707,6 +1719,9 @@ function updateRolloutGenerationSelection() {
 }
 
 async function loadRolloutGenerationLog(jobId) {
+  if (window.LF3RRunsJobs && typeof window.LF3RRunsJobs.refreshSelectedLog === "function") {
+    return window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId);
+  }
   try {
     var response = await fetch("/api/rollout-jobs/" + encodeURIComponent(jobId) + "/log?tail=200", { cache: "no-store" });
     var payload = await response.json();
@@ -2036,6 +2051,10 @@ function installEvents() {
   });
   byId("rolloutGenerationForm").addEventListener("submit", startRolloutGeneration);
   document.addEventListener("click", function (event) {
+    if (window.LF3RRunsJobs && typeof window.LF3RRunsJobs.handleClick === "function"
+        && window.LF3RRunsJobs.handleClick(event)) {
+      return;
+    }
     var button = event.target.closest("[data-persistent-job-log]");
     if (!button) return;
     var output = null;
