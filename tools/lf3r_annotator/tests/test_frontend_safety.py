@@ -105,6 +105,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "analysis/event-triggered.js",
             "analysis/runs.js",
             "analysis/dashboard.js",
+            "analysis/signals.js",
+            "analysis/details.js",
             "workspace-core.js",
             "manifest-support.js",
             "results/layout.js",
