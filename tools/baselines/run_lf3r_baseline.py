@@ -160,6 +160,15 @@ def resolve_record_path(value: str, data_root: Path) -> Path:
 
 
 def record_camera_video_paths(record: dict[str, Any]) -> dict[str, str]:
+    if "video_path" in record:
+        raise ValueError(
+            "Legacy manifest video_path is not supported; rebuild with schema_version=2"
+        )
+    if record.get("schema_version") != 2:
+        raise ValueError(
+            "Manifest record schema_version must be 2: "
+            + str(record.get("id") or record.get("rollout_id") or "<unknown>")
+        )
     raw = record.get("camera_video_paths")
     if not isinstance(raw, dict) or not raw:
         raise ValueError(
