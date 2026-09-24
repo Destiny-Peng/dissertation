@@ -48,6 +48,12 @@ def read_manifest(path: Path) -> list[dict[str, Any]]:
             row = json.loads(line)
             if not isinstance(row, dict) or not row.get("id"):
                 raise ValueError(f"Manifest line {line_number} has no rollout id")
+            if "video_path" in row or row.get("schema_version") != 2:
+                raise ValueError(
+                    f"Manifest line {line_number} must use schema_version=2 "
+                    "and camera_video_paths only"
+                )
+            primary_camera_path(row)
             rows.append(row)
     return rows
 
