@@ -20,6 +20,18 @@
     "cam_right_wrist"
   ];
 
+  function escapeAttribute(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function escapeText(value) {
+    return escapeAttribute(value).replace(/'/g, "&#039;");
+  }
+
   function cameraLabel(key) {
     if (LABELS[key]) return LABELS[key];
     return String(key || "")
@@ -79,8 +91,8 @@
       + views.map(function (view) {
         var active = view.key === activeKey;
         return '<button type="button" class="video-view-button' + (active ? " is-active" : "")
-          + '" data-video-view="' + String(view.key).replace(/"/g, "&quot;") + '" aria-pressed="'
-          + String(active) + '">' + view.label + "</button>";
+          + '" data-video-view="' + escapeAttribute(view.key) + '" aria-pressed="'
+          + String(active) + '">' + escapeText(view.label) + "</button>";
       }).join("")
       + '</div><span class="video-view-note">' + views.length + " views</span>";
   }
