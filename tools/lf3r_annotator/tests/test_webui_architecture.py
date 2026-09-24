@@ -210,6 +210,24 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         ]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
+    def test_procvlm_mode_does_not_patch_fetch(self) -> None:
+        controller = STATIC_ROOT / "baselines" / "procvlm.js"
+        self.assertTrue(controller.is_file())
+        source = controller.read_text(encoding="utf-8")
+        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        run_config = (STATIC_ROOT / "results" / "run-config.js").read_text(encoding="utf-8")
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+
+        self.assertIn("applyOptions: applyOptions", source)
+        self.assertNotIn("MutationObserver", source)
+        self.assertNotIn("window.fetch =", source)
+        self.assertIn('LF3RProcvlmMode.applyOptions(batchOptions, "batch")', app)
+        self.assertIn('LF3RProcvlmMode.applyOptions(collected.options, "single")', run_config)
+        self.assertIn('LF3RProcvlmMode.refreshSingle(method)', run_config)
+        self.assertIn("/static/baselines/procvlm.js", workspace)
+        self.assertNotIn("procvlm-mode-ui.js", workspace)
+        self.assertFalse((STATIC_ROOT / "procvlm-mode-ui.js").exists())
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
