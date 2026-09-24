@@ -44,6 +44,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         results_catalog = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
         results_view = (TOOL_ROOT / "static/results/view.js").read_text(encoding="utf-8")
         results_actions = (TOOL_ROOT / "static/results/actions.js").read_text(encoding="utf-8")
+        runs_baseline = (TOOL_ROOT / "static/runs/baseline.js").read_text(encoding="utf-8")
+        runs_rollout = (TOOL_ROOT / "static/runs/rollout.js").read_text(encoding="utf-8")
         runs_javascript = (TOOL_ROOT / "static/runs/core.js").read_text(encoding="utf-8")
         javascript = "\n".join([
             app_javascript,
@@ -57,6 +59,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             results_catalog,
             results_view,
             results_actions,
+            runs_baseline,
+            runs_rollout,
             runs_javascript,
         ])
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
