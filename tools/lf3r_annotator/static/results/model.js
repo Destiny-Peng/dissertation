@@ -11,13 +11,59 @@ function formatEvaluationNumber(value) {
   return number.toFixed(4).replace(/0+$/, "").replace(/[.]$/, "");
 }
 
+var evaluationSampleIndexCache = typeof WeakMap === "function" ? new WeakMap() : null;
+
+function evaluationSampleIndex(samples) {
+  if (!samples || !samples.length) return [];
+  if (evaluationSampleIndexCache && evaluationSampleIndexCache.has(samples)) {
+    var cached = evaluationSampleIndexCache.get(samples);
+    if (cached && cached.length === samples.length) return cached.rows;
+  }
+
+  var rows = samples.map(function (sample, index) {
+    return {
+      sample: sample,
+      frame: Number(sample && sample.frame),
+      index: index
+    };
+  }).filter(function (row) {
+    return Number.isFinite(row.frame);
+  }).sort(function (left, right) {
+    return (left.frame - right.frame) || (left.index - right.index);
+  });
+
+  if (evaluationSampleIndexCache) {
+    evaluationSampleIndexCache.set(samples, {
+      length: samples.length,
+      rows: rows
+    });
+  }
+  return rows;
+}
+
 function nearestEvaluationSample(samples, frame) {
   if (!samples || !samples.length) return null;
-  return samples.reduce(function (nearest, sample) {
-    return Math.abs(Number(sample.frame) - frame) < Math.abs(Number(nearest.frame) - frame)
-      ? sample
-      : nearest;
-  });
+  var rows = evaluationSampleIndex(samples);
+  if (!rows.length) return samples[0] || null;
+
+  var target = Number(frame);
+  if (!Number.isFinite(target)) target = 0;
+  if (target <= rows[0].frame) return rows[0].sample;
+  if (target >= rows[rows.length - 1].frame) return rows[rows.length - 1].sample;
+
+  var low = 0;
+  var high = rows.length - 1;
+  while (high - low > 1) {
+    var middle = Math.floor((low + high) / 2);
+    if (rows[middle].frame <= target) low = middle;
+    else high = middle;
+  }
+
+  var left = rows[low];
+  var right = rows[high];
+  return (target - left.frame) <= (right.frame - target)
+    ? left.sample
+    : right.sample;
 }
 
 function rynnAnalysisIsDuplicate(sample) {
@@ -180,10 +226,18 @@ function renderLocalizationPredictionSummary(method, result) {
 }
 
 function updateSignalPlayheads() {
+  var requestedFrame = currentFrame();
   document.querySelectorAll('[data-signal-seek]').forEach(function (plot) {
-    var frame = Math.max(0, Math.min(Number(plot.dataset.frameMax), currentFrame()));
-    plot.setAttribute('aria-valuenow', String(frame));
-    plot.querySelector('[data-signal-playhead]').style.left = (frame / Math.max(1, Number(plot.dataset.frameMax)) * 100) + '%';
+    var frameMax = Math.max(1, Number(plot.dataset.frameMax) || 1);
+    var frame = Math.max(0, Math.min(frameMax, requestedFrame));
+    var frameKey = String(frame);
+    if (plot.dataset.playheadFrame === frameKey) return;
+    plot.dataset.playheadFrame = frameKey;
+    plot.setAttribute('aria-valuenow', frameKey);
+    var playhead = plot.querySelector('[data-signal-playhead]');
+    if (playhead) {
+      playhead.style.left = (frame / frameMax * 100) + '%';
+    }
   });
 }
 
