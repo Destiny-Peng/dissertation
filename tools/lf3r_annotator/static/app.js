@@ -1970,9 +1970,6 @@ function installEvents() {
   });
   byId("previousButton").addEventListener("click", function () { navigate(-1); });
   byId("nextButton").addEventListener("click", function () { navigate(1); });
-  byId("reloadEvaluation").addEventListener("click", function () {
-    if (state.selectedId) loadEvaluation(state.selectedId);
-  });
   byId("instructionCondition").addEventListener("change", function () {
     state.instructionCondition = this.value || "full_instruction";
     state.baselineRuns = null;
@@ -1988,67 +1985,7 @@ function installEvents() {
     renderInstructionVariantControl(record);
     loadEvaluation(record.id);
   });
-  byId("evaluationMethods").addEventListener("change", function (event) {
-    var posthocSelect = event.target.closest("[data-posthoc-localization-select]");
-    if (posthocSelect) {
-      selectPosthocLocalization(posthocSelect);
-      return;
-    }
-    var select = event.target.closest("[data-evaluation-run-select]");
-    if (!select) return;
-    var record = selectedRollout();
-    if (!record) return;
-    var method = select.dataset.evaluationMethod;
-    var key = baselineRunPreferenceKey(method, record, state.instructionCondition);
-    state.baselineRunSelections[key] = select.value || BASELINE_AUTO_RUN;
-    loadEvaluation(record.id);
-  });
-  byId("evaluationMethods").addEventListener("click", function (event) {
-    var collapseButton = event.target.closest("[data-toggle-baseline-card]");
-    if (collapseButton) {
-      var methodName = collapseButton.dataset.toggleBaselineCard;
-      state.baselineCollapsed[methodName] = !baselineCardCollapsed(methodName);
-      persistBaselineCollapsed();
-      var card = collapseButton.closest("[data-evaluation-method]");
-      var body = card && card.querySelector(".evaluation-card-body");
-      var collapsed = baselineCardCollapsed(methodName);
-      if (card) card.classList.toggle("is-collapsed", collapsed);
-      if (body) body.hidden = collapsed;
-      collapseButton.textContent = collapsed ? "Expand" : "Collapse";
-      collapseButton.setAttribute("aria-expanded", String(!collapsed));
-      collapseButton.title = (collapsed ? "Expand" : "Collapse") + " baseline result";
-      return;
-    }
-    var posthocButton = event.target.closest("[data-run-posthoc-localization]");
-    if (posthocButton) {
-      runPosthocLocalization(posthocButton.dataset.runPosthocLocalization, posthocButton);
-      return;
-    }
-    var applyButton = event.target.closest("[data-apply-baseline-run]");
-    if (applyButton) {
-      var record = selectedRollout();
-      if (!record) return;
-      var method = applyButton.dataset.evaluationMethod;
-      var card = applyButton.closest("[data-evaluation-method]");
-      var select = card && card.querySelector("[data-evaluation-run-select]");
-      var value = select ? (select.value || BASELINE_AUTO_RUN) : BASELINE_AUTO_RUN;
-      var key = baselineRunAllKey(method, state.instructionCondition);
-      if (value === BASELINE_AUTO_RUN) delete state.baselineRunAll[key];
-      else state.baselineRunAll[key] = value;
-      state.baselineRunNotice = value === BASELINE_AUTO_RUN
-        ? (method + " reverted to automatic run selection for all rollouts")
-        : (method + " run applied to all rollouts when that run contains the rollout");
-      loadEvaluation(record.id);
-      return;
-    }
-    var signalButton = event.target.closest("[data-evaluation-signal-toggle]");
-    if (signalButton) {
-      toggleEvaluationSignal(signalButton);
-      return;
-    }
-    var button = event.target.closest("[data-run-baseline]");
-    if (button) startBaselineRun(button.dataset.runBaseline);
-  });
+  bindResultsEvents();
   byId("baselineBatchMethod").addEventListener("change", function () {
     updateBaselineBatchAdvancedFields();
     if (baselineBatchResultFilterValue() === "missing_valid") {
