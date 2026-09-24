@@ -60,7 +60,7 @@ function formPayload() {
   };
 }
 
-function saveAnnotation(event) {
+async function saveAnnotation(event) {
   if (event) event.preventDefault();
   var record = selectedRollout();
   if (!record) return;
