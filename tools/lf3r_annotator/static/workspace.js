@@ -11,8 +11,12 @@
     ["lf3rToolsStyles", "/static/styles-tools.css"]
   ];
 
-  var scripts = [
-    "/static/frontend-loop-guard.js",
+  var guardScript = "/static/frontend-loop-guard.js";
+
+  // These modules either declare functions/controllers or install independent
+  // DOM enhancements. They do not depend on workspace-core.js and can be
+  // downloaded/executed in parallel after the loop guard is active.
+  var baseScripts = [
     "/static/raw-video-source.js",
     "/static/manifest-support.js",
     "/static/analysis/live.js",
@@ -27,8 +31,6 @@
     "/static/workspace/settings.js",
     "/static/workspace/router.js",
     "/static/workspace/events.js",
-    "/static/workspace-core.js",
-    "/static/analysis-robo-hop.js",
     "/static/results/layout.js",
     "/static/results/run-config.js",
     "/static/runs/tools-layout.js",
@@ -37,10 +39,20 @@
     "/static/runs/project-tool-actions.js",
     "/static/runs/manifest-tools.js",
     "/static/runs/project-tools.js",
-    "/static/runs/layout.js",
     "/static/runs/scope.js",
     "/static/runs/jobs.js",
     "/static/baselines/procvlm.js"
+  ];
+
+  // workspace-core.js performs bootstrap calls immediately, so it waits until
+  // all declarations it may call are available.
+  var workspaceCoreScript = "/static/workspace-core.js";
+
+  // These modules have top-level initialization that expects either
+  // workspaceState or the complete Runs controller graph.
+  var postCoreScripts = [
+    "/static/analysis-robo-hop.js",
+    "/static/runs/layout.js"
   ];
 
   function loadStyle(id, href) {
@@ -56,31 +68,44 @@
     var retry = Number(attempt || 0);
     var script = document.createElement("script");
     script.src = src;
-    script.async = false;
-    script.onload = onload;
+    script.async = true;
+    script.onload = function () {
+      if (onload) onload();
+    };
     script.onerror = function () {
       script.remove();
       if (retry < 1) {
         console.warn("LF3R WebUI retrying failed script " + src);
         var separator = src.indexOf("?") === -1 ? "?" : "&";
         window.setTimeout(function () {
-          loadScript(src + separator + "lf3r_retry=" + Date.now(), onload, retry + 1);
+          loadScript(
+            src + separator + "lf3r_retry=" + Date.now(),
+            onload,
+            retry + 1
+          );
         }, 80);
         return;
       }
       console.error(
-        "LF3R WebUI could not load " + src +
-        " after retry; continuing with remaining modules."
+        "LF3R WebUI could not load " + src
+        + " after retry; continuing with remaining modules."
       );
-      onload();
+      if (onload) onload();
     };
     document.head.appendChild(script);
   }
 
-  function loadNext(index) {
-    if (index >= scripts.length) return;
-    loadScript(scripts[index], function () {
-      loadNext(index + 1);
+  function loadGroup(group, onload) {
+    if (!group.length) {
+      if (onload) onload();
+      return;
+    }
+    var remaining = group.length;
+    group.forEach(function (src) {
+      loadScript(src, function () {
+        remaining -= 1;
+        if (remaining === 0 && onload) onload();
+      });
     });
   }
 
@@ -88,7 +113,14 @@
     loadStyle(item[0], item[1]);
   });
 
-  // The safety guard is first in the ordered list and is installed before any
-  // module that creates MutationObserver or ResizeObserver instances.
-  loadNext(0);
+  // The safety guard is always installed before any enhancement module.
+  // Everything inside a phase may load in parallel; phase boundaries encode
+  // the actual dependency graph instead of serializing every module.
+  loadScript(guardScript, function () {
+    loadGroup(baseScripts, function () {
+      loadScript(workspaceCoreScript, function () {
+        loadGroup(postCoreScripts);
+      });
+    });
+  });
 })();
