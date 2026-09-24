@@ -839,3 +839,83 @@ async function loadEvaluation(rolloutId) {
     byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Select Refresh to try again.</div>';
   }
 }
+
+
+function bindResultsEvents() {
+  var reload = byId("reloadEvaluation");
+  if (reload) {
+    reload.addEventListener("click", function () {
+      if (state.selectedId) loadEvaluation(state.selectedId);
+    });
+  }
+
+  var methods = byId("evaluationMethods");
+  if (!methods) return;
+
+  methods.addEventListener("change", function (event) {
+    var posthocSelect = event.target.closest("[data-posthoc-localization-select]");
+    if (posthocSelect) {
+      selectPosthocLocalization(posthocSelect);
+      return;
+    }
+    var select = event.target.closest("[data-evaluation-run-select]");
+    if (!select) return;
+    var record = selectedRollout();
+    if (!record) return;
+    var method = select.dataset.evaluationMethod;
+    var key = baselineRunPreferenceKey(method, record, state.instructionCondition);
+    state.baselineRunSelections[key] = select.value || BASELINE_AUTO_RUN;
+    loadEvaluation(record.id);
+  });
+
+  methods.addEventListener("click", function (event) {
+    var collapseButton = event.target.closest("[data-toggle-baseline-card]");
+    if (collapseButton) {
+      var methodName = collapseButton.dataset.toggleBaselineCard;
+      state.baselineCollapsed[methodName] = !baselineCardCollapsed(methodName);
+      persistBaselineCollapsed();
+      var card = collapseButton.closest("[data-evaluation-method]");
+      var body = card && card.querySelector(".evaluation-card-body");
+      var collapsed = baselineCardCollapsed(methodName);
+      if (card) card.classList.toggle("is-collapsed", collapsed);
+      if (body) body.hidden = collapsed;
+      collapseButton.textContent = collapsed ? "Expand" : "Collapse";
+      collapseButton.setAttribute("aria-expanded", String(!collapsed));
+      collapseButton.title = (collapsed ? "Expand" : "Collapse") + " baseline result";
+      return;
+    }
+
+    var posthocButton = event.target.closest("[data-run-posthoc-localization]");
+    if (posthocButton) {
+      runPosthocLocalization(posthocButton.dataset.runPosthocLocalization, posthocButton);
+      return;
+    }
+
+    var applyButton = event.target.closest("[data-apply-baseline-run]");
+    if (applyButton) {
+      var record = selectedRollout();
+      if (!record) return;
+      var method = applyButton.dataset.evaluationMethod;
+      var card = applyButton.closest("[data-evaluation-method]");
+      var select = card && card.querySelector("[data-evaluation-run-select]");
+      var value = select ? (select.value || BASELINE_AUTO_RUN) : BASELINE_AUTO_RUN;
+      var key = baselineRunAllKey(method, state.instructionCondition);
+      if (value === BASELINE_AUTO_RUN) delete state.baselineRunAll[key];
+      else state.baselineRunAll[key] = value;
+      state.baselineRunNotice = value === BASELINE_AUTO_RUN
+        ? (method + " reverted to automatic run selection for all rollouts")
+        : (method + " run applied to all rollouts when that run contains the rollout");
+      loadEvaluation(record.id);
+      return;
+    }
+
+    var signalButton = event.target.closest("[data-evaluation-signal-toggle]");
+    if (signalButton) {
+      toggleEvaluationSignal(signalButton);
+      return;
+    }
+
+    var runButton = event.target.closest("[data-run-baseline]");
+    if (runButton) startBaselineRun(runButton.dataset.runBaseline);
+  });
+}
