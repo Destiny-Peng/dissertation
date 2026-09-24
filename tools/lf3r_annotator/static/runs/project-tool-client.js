@@ -4,6 +4,7 @@ window.LF3RProjectToolClient = (function createProjectToolClient() {
   var pollTimer = null;
   var activeJobId = null;
   var protocol = null;
+  var lastRegistryRefreshAt = 0;
   var callbacks = {
     onJobUpdate: null,
     onJobsUpdated: null
@@ -78,6 +79,7 @@ window.LF3RProjectToolClient = (function createProjectToolClient() {
       var jobs = payload.jobs || [];
       if (!activeJobId && jobs.length) activeJobId = jobs[0].job_id;
       renderJobs(jobs);
+      lastRegistryRefreshAt = Date.now();
       await notifyJobsUpdated(jobs);
       return jobs;
     } catch (error) {
@@ -108,9 +110,18 @@ window.LF3RProjectToolClient = (function createProjectToolClient() {
         if (nodes.log) nodes.log.textContent = logText;
       });
 
-      await refresh();
+      var active = job.status === "queued" || job.status === "running";
+      Array.prototype.slice.call(document.querySelectorAll("[data-tool-job]")).forEach(function (button) {
+        if (String(button.dataset.toolJob || "") !== String(job.job_id || "")) return;
+        var status = button.querySelector("span");
+        if (status) status.textContent = job.status || "unknown";
+      });
+
+      if (!active || Date.now() - lastRegistryRefreshAt >= 5000) {
+        await refresh();
+      }
       await notifyJobUpdate(job, logText);
-      if (job.status === "queued" || job.status === "running") {
+      if (active) {
         pollTimer = setTimeout(poll, 1000);
       }
     } catch (error) {
