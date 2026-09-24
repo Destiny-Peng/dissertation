@@ -222,6 +222,7 @@ class NonAnalysisToolTests(unittest.TestCase):
     def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
         source = "\n".join([
             (HERE / "static" / "runs" / "tools-layout.js").read_text(encoding="utf-8"),
+            (HERE / "static" / "runs" / "project-tool-client.js").read_text(encoding="utf-8"),
             (HERE / "static" / "runs" / "project-tools.js").read_text(encoding="utf-8"),
         ])
         self.assertIn("rebuildManifestExtraRoots", source)
@@ -233,7 +234,7 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("lf3r.runs.extraManifestScanRoots", source)
         self.assertIn("Manifest rebuild failed:", source)
         self.assertIn("client_request_id", source)
-        self.assertIn("recoverToolSubmission", source)
+        self.assertIn("recoverSubmission", source)
         self.assertIn("AbortController", source)
         self.assertIn("Project-tool submission timed out", source)
         self.assertIn("immediate-registry-v1", source)
