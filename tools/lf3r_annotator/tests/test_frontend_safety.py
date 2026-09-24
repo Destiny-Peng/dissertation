@@ -80,6 +80,28 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("modelLabel.parentNode !== core", procvlm)
         self.assertIn("core.insertBefore(modelLabel, modeLabel.nextSibling)", procvlm)
 
+    def test_workspace_parallelizes_independent_module_loading(self) -> None:
+        workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        self.assertIn("function loadGroup(group, onload)", workspace)
+        self.assertIn("script.async = true", workspace)
+        self.assertNotIn("function loadNext(", workspace)
+        self.assertLess(
+            workspace.index('var guardScript = "/static/frontend-loop-guard.js"'),
+            workspace.index('"/static/raw-video-source.js"'),
+        )
+        self.assertLess(
+            workspace.index('"/static/workspace/events.js"'),
+            workspace.index('var workspaceCoreScript = "/static/workspace-core.js"'),
+        )
+        self.assertLess(
+            workspace.index('var workspaceCoreScript = "/static/workspace-core.js"'),
+            workspace.index('"/static/analysis-robo-hop.js"'),
+        )
+        self.assertLess(
+            workspace.index('"/static/runs/project-tools.js"'),
+            workspace.index('"/static/runs/layout.js"'),
+        )
+
     def test_workspace_retries_transient_script_load_failures(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("if (retry < 1)", workspace)
