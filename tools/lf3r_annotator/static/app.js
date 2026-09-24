@@ -1264,13 +1264,62 @@ function renderLocalizationPredictionSummary(method, result) {
   }
   var checkpoint = String(prediction.checkpoint || "");
   var shortCheckpoint = checkpoint ? checkpoint.split("/").slice(-3).join("/") : "";
+  var peakScore = Number(prediction.predicted_sigmoid);
   return '<div class="evaluation-localization-summary">'
-    + '<span class="evaluation-localization-summary-label">Localization point</span>'
-    + '<strong>Frame ' + escapeHtml(Math.round(frame)) + '</strong>'
+    + '<span class="evaluation-localization-summary-label">Localization peak</span>'
+    + '<strong>Frame ' + escapeHtml(Math.round(frame))
+    + (Number.isFinite(peakScore) ? ' · score ' + escapeHtml(formatEvaluationNumber(peakScore)) : '')
+    + '</strong>'
     + (details.length ? '<span>' + escapeHtml(details.join(" · ")) + '</span>' : "")
     + (shortCheckpoint ? '<small title="' + escapeHtml(checkpoint) + '">'
       + escapeHtml(shortCheckpoint) + '</small>' : "")
     + '</div>';
+}
+
+function renderLocalizationPredictionCurve(method, result, record) {
+  if (method !== "robo_dopamine" || !result || !result.localization_prediction) return "";
+  var prediction = result.localization_prediction;
+  var frames = Array.isArray(prediction.frames) ? prediction.frames : [];
+  var scores = Array.isArray(prediction.sigmoid_scores) ? prediction.sigmoid_scores : [];
+  var count = Math.min(frames.length, scores.length);
+  if (!count) return "";
+
+  var rows = [];
+  for (var index = 0; index < count; index += 1) {
+    var frame = Number(frames[index]);
+    var score = Number(scores[index]);
+    if (!Number.isFinite(frame) || !Number.isFinite(score)) continue;
+    rows.push({ frame: frame, score: Math.max(0, Math.min(1, score)) });
+  }
+  if (!rows.length) return "";
+
+  var maxFrame = Math.max.apply(null, rows.map(function (row) { return row.frame; }));
+  var domain = timelineDomainMax(record, maxFrame);
+  var points = rows.map(function (row) {
+    return (Math.max(0, Math.min(domain, row.frame)) / Math.max(1, domain) * 100).toFixed(4)
+      + ',' + (87 - row.score * 79).toFixed(4);
+  }).join(' ');
+
+  return '<section class="signal-row evaluation-localization-curve" data-localization-curve>'
+    + '<div class="signal-row-title">Localization score</div><div class="signal-axis-layout">'
+    + '<div class="signal-y-axis" aria-label="Localization score axis"><span>1</span><span>0.5</span><span>0</span></div>'
+    + '<div class="evaluation-chart"><div class="timeline-track evaluation-chart-plot" data-signal-seek data-frame-max="'
+    + domain + '" tabindex="0" role="slider" aria-label="Localization score: click to seek video; arrow keys step frames"'
+    + ' aria-valuemin="0" aria-valuemax="' + domain + '" aria-valuenow="' + currentFrame() + '">'
+    + '<svg viewBox="0 0 100 105" preserveAspectRatio="none" role="img" aria-label="Localization checkpoint score versus video frame">'
+    + '<title>Localization checkpoint sigmoid score; raw logits are preserved in the saved localization artifact</title>'
+    + '<path d="M0 8H100 M0 47.5H100 M0 87H100" stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+    + '<polyline fill="none" stroke="#d6a5f5" stroke-width="1.8" vector-effect="non-scaling-stroke" points="'
+    + points + '"/></svg>'
+    + '<div class="evaluation-chart-markers" data-evaluation-onset-markers data-frame-max="' + domain + '">'
+    + renderEvaluationOnsetMarkers(record, domain)
+    + renderLocalizationPredictionMarker(method, result, domain)
+    + '</div><div class="signal-playhead" data-signal-playhead style="left:'
+    + (Math.max(0, Math.min(domain, currentFrame())) / Math.max(1, domain) * 100)
+    + '%"></div></div></div></div>'
+    + '<div class="signal-frame-axis"><span>0</span><span>video frame</span><span>' + domain + '</span></div>'
+    + '<div class="evaluation-meta">Full checkpoint output curve · sigmoid score shown; raw logits are saved alongside it.</div>'
+    + '</section>';
 }
 
 function renderSignalChart(method, result, record) {
@@ -1539,6 +1588,7 @@ function renderEvaluationCard(method, result, record) {
   if (available) {
     body += renderPosthocLocalizationControls(method, result)
       + renderLocalizationPredictionSummary(method, result)
+      + renderLocalizationPredictionCurve(method, result, record)
       + renderSignalChart(method, result, record)
       + '<div class="evaluation-current">'
       + '<div class="evaluation-current-body">'
