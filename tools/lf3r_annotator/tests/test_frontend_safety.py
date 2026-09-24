@@ -202,9 +202,10 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("Expand to load history.", view)
         self.assertIn("function hydrateEvaluationHistory(", view)
 
-        self.assertIn("var OUTPUT_MEASURE_LIMIT = 12;", layout)
-        self.assertIn("representativeOutputTexts(result)", layout)
-        self.assertIn("slice(0, OUTPUT_MEASURE_LIMIT)", layout)
+        self.assertIn("var OUTPUT_MEASURE_BATCH_SIZE = 24;", layout)
+        self.assertIn("function scheduleOutputMeasure(", layout)
+        self.assertIn("scheduleOutputMeasure(measureNextBatch)", layout)
+        self.assertIn('output.classList.contains("has-current-numeric-values")', layout)
         self.assertIn('if (card.classList.contains("is-collapsed")) return;', layout)
 
     def test_stale_results_configurator_is_removed(self) -> None:
