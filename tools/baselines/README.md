@@ -47,7 +47,7 @@ bash tools/baselines/run_baseline.sh [OPTIONS]
 
 Selection is applied in this order: `instruction condition → partition → dataset role → rollout IDs → start index → limit`. For A/B variant manifests, the web layer passes the exact source-scope variant IDs so diagnostic partition metadata cannot widen a LIBERO-suite request. An empty result is an error rather than a successful no-op.
 
-For model baselines, omitting `--model-path` selects the configured local checkpoint: `checkpoints/ProcVLM-2B`, `checkpoints/RynnValue-4B`, `checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview`, or `checkpoints/densereward-3frame-thinking`. SAFE uses the manifest `csv_path` and its official handcrafted feature code instead of a trained checkpoint. Each selected model record must provide `id`, `video_path`, and `task_description`; SAFE records must provide `id` and `csv_path`.
+For model baselines, omitting `--model-path` selects the configured local checkpoint: `checkpoints/ProcVLM-2B`, `checkpoints/RynnValue-4B`, `checkpoints/Robo-Dopamine-GRM-2.0-4B-Preview`, or `checkpoints/densereward-3frame-thinking`. SAFE uses the manifest `csv_path` and its official handcrafted feature code instead of a trained checkpoint. Each selected model record must provide `id`, a non-empty `camera_video_paths` mapping, and `task_description`; SAFE records must provide `id` and `csv_path`.
 
 ### Execution, GPU, and failure-handling parameters
 
