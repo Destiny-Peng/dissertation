@@ -27,14 +27,18 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn("self._read_method(", baseline_readers)
 
     def test_frontend_refreshes_catalog_when_completed_count_advances(self) -> None:
-        script = (TOOL_ROOT / "static/progressive-baseline-results.js").read_text(encoding="utf-8")
+        script = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        app = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
-        self.assertIn('nextCompleted > previousCompleted', script)
-        self.assertIn('loadCatalog(condition, true)', script)
-        self.assertIn('matchingProgressiveRun(job, record, condition)', script)
-        self.assertIn('currentDisplayedRunRoot(job.baseline)', script)
-        self.assertIn('window.loadEvaluation(rolloutId)', script)
-        self.assertIn('progressive-baseline-results.js', workspace)
+        html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
+        self.assertIn('resultsCompletedCount(job) <= resultsCompletedCount(previous)', script)
+        self.assertIn('loadBaselineRunCatalog(condition, true)', script)
+        self.assertIn('resultsMatchingProgressiveRun(job, record, condition)', script)
+        self.assertIn('resultsCurrentDisplayedRunRoot(job.baseline)', script)
+        self.assertIn('loadEvaluation(rolloutId)', script)
+        self.assertIn('resultsOnPersistentJobChanged(previous, job)', app)
+        self.assertIn('/static/results/core.js', html)
+        self.assertNotIn('progressive-baseline-results.js', workspace)
 
 
 if __name__ == "__main__":
