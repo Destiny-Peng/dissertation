@@ -21,9 +21,7 @@
     "/static/runs-layout.js",
     "/static/runs-semantics.js",
     "/static/dataset-scope-ui.js",
-    "/static/baseline-job-filter.js",
-    "/static/runs-log-ui.js",
-    "/static/runs-job-control.js",
+    "/static/runs/jobs.js",
     "/static/runs-submit.js",
     "/static/procvlm-mode-ui.js"
   ];
