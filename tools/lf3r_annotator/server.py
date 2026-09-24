@@ -50,6 +50,8 @@ from backend_core import (
     _is_controlled_record,
     atomic_json_write,
     load_manifest_records,
+    primary_camera_video_path,
+    record_camera_video_paths,
     record_matches_scope,
     run_rollout_ids,
     select_scope_records,
