@@ -373,6 +373,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("recoverSubmission", project_tool_client_source)
         self.assertIn("AbortController", project_tool_client_source)
         self.assertIn("immediate-registry-v1", project_tool_client_source)
+        self.assertIn("lastRegistryRefreshAt", project_tool_client_source)
+        self.assertIn("Date.now() - lastRegistryRefreshAt >= 5000", project_tool_client_source)
         self.assertIn("window.LF3RProjectToolActions", project_tool_actions_source)
         self.assertIn('client.submit("safe_prepare"', project_tool_actions_source)
         self.assertIn('client.submit("robo_interval_sweep"', project_tool_actions_source)
