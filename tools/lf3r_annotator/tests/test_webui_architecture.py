@@ -251,14 +251,14 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         controller = STATIC_ROOT / "baselines" / "procvlm.js"
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
-        runs_core = (STATIC_ROOT / "runs" / "core.js").read_text(encoding="utf-8")
+        runs_baseline = (STATIC_ROOT / "runs" / "baseline.js").read_text(encoding="utf-8")
         run_config = (STATIC_ROOT / "results" / "run-config.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
         self.assertIn("applyOptions: applyOptions", source)
         self.assertNotIn("MutationObserver", source)
         self.assertNotIn("window.fetch =", source)
-        self.assertIn('LF3RProcvlmMode.applyOptions(batchOptions, "batch")', runs_core)
+        self.assertIn('LF3RProcvlmMode.applyOptions(batchOptions, "batch")', runs_baseline)
         self.assertIn('LF3RProcvlmMode.applyOptions(collected.options, "single")', run_config)
         self.assertIn('LF3RProcvlmMode.refreshSingle(method)', run_config)
         self.assertIn("/static/baselines/procvlm.js", workspace)
@@ -269,7 +269,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         controller = STATIC_ROOT / "runs" / "scope.js"
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
-        runs_core = (STATIC_ROOT / "runs" / "core.js").read_text(encoding="utf-8")
+        runs_baseline = (STATIC_ROOT / "runs" / "baseline.js").read_text(encoding="utf-8")
         app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
         app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
         analysis_live = (STATIC_ROOT / "analysis" / "live.js").read_text(encoding="utf-8")
@@ -286,7 +286,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotIn("window.persistentJobScope =", source)
         self.assertNotIn("window.cliHelpEntry =", source)
 
-        self.assertIn("LF3RDatasetScopes.matchesBaseline", runs_core)
+        self.assertIn("LF3RDatasetScopes.matchesBaseline", runs_baseline)
         self.assertIn("LF3RDatasetScopes.scopeLabel", app_jobs)
         self.assertIn("LF3RDatasetScopes.decorateHelp", app_help)
         self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
@@ -299,15 +299,27 @@ class WebUiArchitectureContractTest(unittest.TestCase):
     def test_runs_core_is_extracted_from_app_shell(self) -> None:
         runs_root = STATIC_ROOT / "runs"
         runs_core = runs_root / "core.js"
+        runs_baseline = runs_root / "baseline.js"
+        runs_rollout = runs_root / "rollout.js"
         runs_layout = runs_root / "layout.js"
         tools_layout = runs_root / "tools-layout.js"
         gpu = runs_root / "gpu.js"
         project_tools = runs_root / "project-tools.js"
-        for path in [runs_core, runs_layout, tools_layout, gpu, project_tools]:
+        for path in [
+            runs_core,
+            runs_baseline,
+            runs_rollout,
+            runs_layout,
+            tools_layout,
+            gpu,
+            project_tools,
+        ]:
             self.assertTrue(path.is_file(), path.name)
         self.assertFalse((STATIC_ROOT / "runs-layout.js").exists())
 
-        source = runs_core.read_text(encoding="utf-8")
+        core_source = runs_core.read_text(encoding="utf-8")
+        baseline_source = runs_baseline.read_text(encoding="utf-8")
+        rollout_source = runs_rollout.read_text(encoding="utf-8")
         layout_source = runs_layout.read_text(encoding="utf-8")
         tools_layout_source = tools_layout.read_text(encoding="utf-8")
         gpu_source = gpu.read_text(encoding="utf-8")
@@ -316,16 +328,24 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
         loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
-        self.assertIn("function startBaselineBatch(", source)
-        self.assertIn("function updateBaselineBatchSelection(", source)
-        self.assertIn("function startRolloutGeneration(", source)
-        self.assertIn("function rolloutGenerationJobMessage(", source)
+        self.assertIn("function startBaselineBatch(", baseline_source)
+        self.assertIn("function updateBaselineBatchSelection(", baseline_source)
+        self.assertIn("function startRolloutGeneration(", rollout_source)
+        self.assertIn("function rolloutGenerationJobMessage(", rollout_source)
+        self.assertNotIn("function startBaselineBatch(", core_source)
+        self.assertNotIn("function startRolloutGeneration(", core_source)
+        self.assertLess(len(core_source), 2000)
         self.assertNotIn("function startBaselineBatch(", app)
         self.assertNotIn("function startRolloutGeneration(", app)
-        self.assertLess(
-            html.index("/static/runs/core.js"),
-            html.index("/static/app.js"),
-        )
+
+        ordered_core = [
+            "/static/runs/baseline.js",
+            "/static/runs/rollout.js",
+            "/static/runs/core.js",
+            "/static/app.js",
+        ]
+        for left, right in zip(ordered_core, ordered_core[1:]):
+            self.assertLess(html.index(left), html.index(right))
 
         self.assertLess(len(layout_source), 12000)
         self.assertIn("LF3RRunsToolsLayout.createPanels", layout_source)
@@ -340,13 +360,13 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("loadBatchManifestOptions", project_tools_source)
         self.assertNotIn("styles-tools.css?v=", layout_source)
 
-        ordered = [
+        ordered_layout = [
             "/static/runs/tools-layout.js",
             "/static/runs/gpu.js",
             "/static/runs/project-tools.js",
             "/static/runs/layout.js",
         ]
-        for left, right in zip(ordered, ordered[1:]):
+        for left, right in zip(ordered_layout, ordered_layout[1:]):
             self.assertLess(loader.index(left), loader.index(right))
 
 
