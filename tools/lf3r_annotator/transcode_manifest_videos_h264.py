@@ -62,6 +62,11 @@ def read_manifest_video_paths(
                     raise ValueError(
                         f"manifest row must be an object: {path} line {line_number}"
                     )
+                if "video_path" in row or row.get("schema_version") != 2:
+                    raise ValueError(
+                        f"manifest row must use schema_version=2 and camera_video_paths only: "
+                        f"{path} line {line_number}"
+                    )
                 mapping = row.get("camera_video_paths")
                 if not isinstance(mapping, dict) or not mapping:
                     raise ValueError(
