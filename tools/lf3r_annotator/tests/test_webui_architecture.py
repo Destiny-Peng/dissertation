@@ -179,14 +179,17 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_results_frontend_has_semantic_modules(self) -> None:
         results_root = STATIC_ROOT / "results"
-        for name in ["core.js", "layout.js", "run-config.js"]:
+        for name in ["charts.js", "core.js", "layout.js", "run-config.js"]:
             self.assertTrue((results_root / name).is_file(), name)
         for obsolete in ["results-layout.js", "results-run-config.js"]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
+        charts = (results_root / "charts.js").read_text(encoding="utf-8")
         core = (results_root / "core.js").read_text(encoding="utf-8")
         layout = (results_root / "layout.js").read_text(encoding="utf-8")
         config = (results_root / "run-config.js").read_text(encoding="utf-8")
+        self.assertIn("LF3RResultsCharts.renderSignalChart", core)
+        self.assertIn("renderSignalChart", charts)
         self.assertIn("lf3rOpenSingleBaselineConfig", core)
         self.assertIn("lf3rResultsLayoutRefresh", core)
         self.assertNotIn("MutationObserver", layout)
