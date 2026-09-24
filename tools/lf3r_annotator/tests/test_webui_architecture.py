@@ -269,7 +269,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         controller = STATIC_ROOT / "runs" / "scope.js"
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
-        runs_baseline = (STATIC_ROOT / "runs" / "baseline.js").read_text(encoding="utf-8")
+        runs_baseline_selection = (STATIC_ROOT / "runs" / "baseline-selection.js").read_text(encoding="utf-8")
         app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
         app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
         analysis_live = (STATIC_ROOT / "analysis" / "live.js").read_text(encoding="utf-8")
@@ -286,7 +286,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotIn("window.persistentJobScope =", source)
         self.assertNotIn("window.cliHelpEntry =", source)
 
-        self.assertIn("LF3RDatasetScopes.matchesBaseline", runs_baseline)
+        self.assertIn("LF3RDatasetScopes.matchesBaseline", runs_baseline_selection)
         self.assertIn("LF3RDatasetScopes.scopeLabel", app_jobs)
         self.assertIn("LF3RDatasetScopes.decorateHelp", app_help)
         self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
@@ -299,6 +299,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
     def test_runs_core_is_extracted_from_app_shell(self) -> None:
         runs_root = STATIC_ROOT / "runs"
         runs_core = runs_root / "core.js"
+        runs_baseline_selection = runs_root / "baseline-selection.js"
         runs_baseline = runs_root / "baseline.js"
         runs_rollout = runs_root / "rollout.js"
         runs_layout = runs_root / "layout.js"
@@ -307,6 +308,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         project_tools = runs_root / "project-tools.js"
         for path in [
             runs_core,
+            runs_baseline_selection,
             runs_baseline,
             runs_rollout,
             runs_layout,
@@ -318,6 +320,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertFalse((STATIC_ROOT / "runs-layout.js").exists())
 
         core_source = runs_core.read_text(encoding="utf-8")
+        baseline_selection_source = runs_baseline_selection.read_text(encoding="utf-8")
         baseline_source = runs_baseline.read_text(encoding="utf-8")
         rollout_source = runs_rollout.read_text(encoding="utf-8")
         layout_source = runs_layout.read_text(encoding="utf-8")
@@ -328,17 +331,21 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
         loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
+        self.assertIn("function updateBaselineBatchSelection(", baseline_selection_source)
+        self.assertIn("function baselineBatchWorkerSummary(", baseline_selection_source)
         self.assertIn("function startBaselineBatch(", baseline_source)
-        self.assertIn("function updateBaselineBatchSelection(", baseline_source)
         self.assertIn("function startRolloutGeneration(", rollout_source)
         self.assertIn("function rolloutGenerationJobMessage(", rollout_source)
+        self.assertNotIn("function updateBaselineBatchSelection(", baseline_source)
         self.assertNotIn("function startBaselineBatch(", core_source)
         self.assertNotIn("function startRolloutGeneration(", core_source)
         self.assertLess(len(core_source), 2000)
+        self.assertLess(len(baseline_source), 10000)
         self.assertNotIn("function startBaselineBatch(", app)
         self.assertNotIn("function startRolloutGeneration(", app)
 
         ordered_core = [
+            "/static/runs/baseline-selection.js",
             "/static/runs/baseline.js",
             "/static/runs/rollout.js",
             "/static/runs/core.js",
