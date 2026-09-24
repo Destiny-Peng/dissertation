@@ -233,6 +233,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        analysis_core = (STATIC_ROOT / "analysis" / "core.js").read_text(encoding="utf-8")
         workspace_core = (STATIC_ROOT / "workspace-core.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
@@ -249,7 +250,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("LF3RDatasetScopes.matchesBaseline", app)
         self.assertIn("LF3RDatasetScopes.scopeLabel", app)
         self.assertIn("LF3RDatasetScopes.decorateHelp", app)
-        self.assertIn("LF3RDatasetScopes.matchesPartition", workspace_core)
+        self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_core)
         self.assertIn("LF3RDatasetScopes.refresh", workspace_core)
         self.assertIn("/static/runs/scope.js", workspace)
 
@@ -276,6 +277,44 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             html.index("/static/runs/core.js"),
             html.index("/static/app.js"),
         )
+
+    def test_analysis_frontend_is_split_from_workspace_shell(self) -> None:
+        analysis_root = STATIC_ROOT / "analysis"
+        core = analysis_root / "core.js"
+        dashboard = analysis_root / "dashboard.js"
+        shell = STATIC_ROOT / "workspace-core.js"
+        loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+
+        self.assertTrue(core.is_file())
+        self.assertTrue(dashboard.is_file())
+        core_source = core.read_text(encoding="utf-8")
+        dashboard_source = dashboard.read_text(encoding="utf-8")
+        shell_source = shell.read_text(encoding="utf-8")
+
+        self.assertIn("function workspaceRenderLocalization(", core_source)
+        self.assertIn("function workspaceRenderChangePoint(", core_source)
+        self.assertIn("function workspaceRenderEventTriggered(", core_source)
+        self.assertIn("function workspaceLoadBaselineRuns(", core_source)
+        self.assertIn("function workspaceDashboardRenderSnapshot(", dashboard_source)
+        self.assertIn("function workspaceDashboardRenderComparison(", dashboard_source)
+        self.assertIn("function workspaceRenderSnapshot(", dashboard_source)
+
+        self.assertNotIn("function workspaceRenderLocalization(", shell_source)
+        self.assertNotIn("function workspaceDashboardRenderSnapshot(", shell_source)
+        self.assertLess(len(shell_source), 40000)
+
+        combined = core_source + "\n" + dashboard_source + "\n" + shell_source
+        for name in [
+            "workspaceRenderTaskChart",
+            "workspaceRenderSnapshot",
+            "workspaceParseRoute",
+            "workspaceRenderRoute",
+            "workspaceDataChanged",
+        ]:
+            self.assertEqual(combined.count("function " + name + "("), 1, name)
+
+        self.assertLess(loader.index("/static/analysis/core.js"), loader.index("/static/workspace-core.js"))
+        self.assertLess(loader.index("/static/analysis/dashboard.js"), loader.index("/static/workspace-core.js"))
 
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
