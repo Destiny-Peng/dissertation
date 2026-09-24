@@ -184,7 +184,10 @@ function renderPersistentJobLists() {
 
 function rememberPersistentJob(job) {
   if (!job || !job.job_id) return;
-  var previous = (state.persistentJobs || []).find(function (item) { return item.job_id === job.job_id; }) || null;\n  var replaced = false;
+  var previous = (state.persistentJobs || []).find(function (item) {
+    return item.job_id === job.job_id;
+  }) || null;
+  var replaced = false;
   state.persistentJobs = (state.persistentJobs || []).map(function (item) {
     if (item.job_id !== job.job_id) return item;
     replaced = true;
@@ -205,6 +208,9 @@ function rememberPersistentJob(job) {
   renderPersistentJobLists();
   if (typeof window.lf3rWorkspaceJobChanged === "function") {
     window.lf3rWorkspaceJobChanged(job);
+  }
+  if (typeof resultsOnPersistentJobChanged === "function") {
+    resultsOnPersistentJobChanged(previous, job);
   }
 }
 
