@@ -439,7 +439,7 @@
                 input</span><select data-batch-option="robo_camera_mode">
                 <option value="auto" selected>Auto · use multiview when available</option>
                 <option value="multi_view">Multiview · cam_high + cam_wrist</option>
-                <option value="single_view">Single view · canonical video</option>
+                <option value="single_view">Single view · primary manifest camera</option>
               </select></label>
             <label data-cli-help="baseline.goal_image" data-batch-methods="robo_dopamine"><span>Goal image
                 override (optional)</span><input data-batch-option="goal_image" type="text"
@@ -481,9 +481,9 @@
               <option value="libero_10">LIBERO-10 natural (existing output)</option>
               <option value="libero_spatial">LIBERO-Spatial natural (native 256x256 video)</option>
             </select></label>
-          <label data-cli-help="rollout.video_view_mode"><span>Robo-Dopamine camera input</span><select id="rolloutGenerationVideoViewMode">
-              <option value="single_view" selected>Single view (canonical)</option>
-              <option value="libero_three_view">3-view slots · high + shared wrist</option>
+          <label data-cli-help="rollout.video_view_mode"><span>Saved camera views</span><select id="rolloutGenerationVideoViewMode">
+              <option value="single_view" selected>High only</option>
+              <option value="libero_three_view">High + wrist</option>
             </select></label>
           <label data-cli-help="rollout.render_resolution"><span>Render resolution (square)</span><input
               id="rolloutGenerationRenderResolution" type="number" min="64" max="2048" step="2" value="256"></label>
