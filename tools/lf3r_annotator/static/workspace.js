@@ -21,6 +21,8 @@
     "/static/analysis/event-triggered.js",
     "/static/analysis/runs.js",
     "/static/analysis/dashboard.js",
+    "/static/analysis/signals.js",
+    "/static/analysis/details.js",
     "/static/workspace-core.js",
     "/static/analysis-robo-hop.js",
     "/static/results/layout.js",
