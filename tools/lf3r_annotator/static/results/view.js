@@ -179,6 +179,7 @@ function resultsCurrentNumericText(method, sample, videoFrame) {
 }
 
 function resultsReleaseStableHeight(output) {
+  if (output.classList.contains("has-current-numeric-values")) return;
   output.classList.remove("is-stable-height");
   output.classList.add("has-current-numeric-values");
   output.style.removeProperty("--lf3r-output-height");
@@ -206,7 +207,9 @@ function updateEvaluationCurrent() {
         resultsReleaseStableHeight(output);
       }
     }
-    output.textContent = text;
-    output.hidden = !String(text || "").trim();
+    var nextText = String(text || "");
+    if (output.textContent !== nextText) output.textContent = nextText;
+    var nextHidden = !nextText.trim();
+    if (output.hidden !== nextHidden) output.hidden = nextHidden;
   });
 }
