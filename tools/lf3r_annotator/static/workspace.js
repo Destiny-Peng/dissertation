@@ -6,7 +6,8 @@
     ["lf3rRunsStyles", "/static/styles-runs.css"],
     ["lf3rRunConfigStyles", "/static/styles-run-config.css"],
     ["lf3rRunsLogStyles", "/static/styles-runs-log.css"],
-    ["lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css"]
+    ["lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css"],
+    ["lf3rPolishStyles", "/static/styles-polish.css"]
   ];
 
   var scripts = [
