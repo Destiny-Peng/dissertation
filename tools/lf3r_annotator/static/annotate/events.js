@@ -13,9 +13,43 @@ function installEvents() {
     state.roboPosthocCheckpoint =
       sessionStorage.getItem("lf3r.results.roboPosthocCheckpoint") || "";
   } catch (_error) {}
+  var filterRenderPending = false;
+  function runActiveFilters() {
+    var handler = window.applyFilters;
+    if (typeof handler === "function") handler();
+  }
+  function scheduleActiveFilters() {
+    if (filterRenderPending) return;
+    filterRenderPending = true;
+    var schedule = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : function (callback) { return window.setTimeout(callback, 0); };
+    schedule(function () {
+      filterRenderPending = false;
+      runActiveFilters();
+    });
+  }
   ["searchInput", "originFilter", "manifestFilter", "outcomeFilter", "reviewFilter"].forEach(function (id) {
-    byId(id).addEventListener(id === "searchInput" ? "input" : "change", applyFilters);
+    var node = byId(id);
+    if (!node) return;
+    node.dataset.primaryFilterHook = "true";
+    node.addEventListener(
+      id === "searchInput" ? "input" : "change",
+      id === "searchInput" ? scheduleActiveFilters : runActiveFilters
+    );
   });
+
+  var rolloutList = byId("rolloutList");
+  if (rolloutList) {
+    rolloutList.addEventListener("click", function (event) {
+      var button = event.target && event.target.closest
+        ? event.target.closest("[data-rollout-id]")
+        : null;
+      if (!button || !rolloutList.contains(button)) return;
+      maybeSelectRollout(button.dataset.rolloutId);
+    });
+  }
+
   byId("frameSlider").addEventListener("input", function (event) {
     seekFrame(Number(event.target.value));
   });
