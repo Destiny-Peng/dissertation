@@ -33,6 +33,7 @@
     "/static/results/run-config.js",
     "/static/runs/tools-layout.js",
     "/static/runs/gpu.js",
+    "/static/runs/project-tool-client.js",
     "/static/runs/project-tools.js",
     "/static/runs/layout.js",
     "/static/runs/scope.js",
