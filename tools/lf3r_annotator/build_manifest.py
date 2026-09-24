@@ -24,11 +24,6 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
-DATASET_CAMERA_SLOTS = ("cam_high", "cam_wrist")
-DATASET_DEFAULT_CAMERA_FILES = {
-    "cam_high": "cam_high",
-    "cam_wrist": "cam_wrist",
-}
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
         "type": "action_freeze",
@@ -149,82 +144,64 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         if isinstance(value, dict):
             camera_metadata = value
 
+    camera_video_files: dict[str, Path] = {"cam_high": video.resolve()}
     metadata_camera_paths = camera_metadata.get("camera_video_paths")
-    if isinstance(metadata_camera_paths, dict) and not (
-        isinstance(metadata_camera_paths.get("cam_wrist"), str)
-        and str(metadata_camera_paths.get("cam_wrist")).strip()
-    ):
-        legacy_left = metadata_camera_paths.get("cam_left_wrist")
-        legacy_right = metadata_camera_paths.get("cam_right_wrist")
-        legacy_paths = [
-            str(value).strip()
-            for value in (legacy_left, legacy_right)
-            if isinstance(value, str) and str(value).strip()
-        ]
-        if legacy_paths:
-            if len(set(legacy_paths)) != 1:
-                raise RuntimeError(
-                    f"Legacy camera metadata declares distinct wrist videos for {video}: "
-                    f"cam_left_wrist={legacy_left!r}, cam_right_wrist={legacy_right!r}"
-                )
-            metadata_camera_paths = dict(metadata_camera_paths)
-            metadata_camera_paths["cam_wrist"] = legacy_paths[0]
-
-    camera_video_files: dict[str, Path] = {}
-    for slot in DATASET_CAMERA_SLOTS:
-        declared = (
-            metadata_camera_paths.get(slot)
-            if isinstance(metadata_camera_paths, dict)
-            else None
-        )
-        candidate = (
-            video.parent / str(declared)
-            if isinstance(declared, str) and declared.strip()
-            else video.with_name(
-                video.stem
-                + f".{DATASET_DEFAULT_CAMERA_FILES[slot]}.mp4"
+    if metadata_camera_paths is not None:
+        if not isinstance(metadata_camera_paths, dict) or not metadata_camera_paths:
+            raise RuntimeError(
+                f"camera_video_paths must be a non-empty object: {camera_metadata_path}"
             )
-        )
-        camera_video_files[slot] = candidate.resolve()
+        for camera, declared in metadata_camera_paths.items():
+            camera_key = str(camera or "").strip()
+            if not camera_key.startswith("cam_"):
+                raise RuntimeError(
+                    f"Invalid camera key {camera!r} in {camera_metadata_path}; expected cam_*"
+                )
+            if not isinstance(declared, str) or not declared.strip():
+                raise RuntimeError(
+                    f"Camera path for {camera_key} must be a non-empty string: "
+                    f"{camera_metadata_path}"
+                )
+            raw_path = Path(declared).expanduser()
+            candidate = (
+                raw_path.resolve()
+                if raw_path.is_absolute()
+                else (video.parent / raw_path).resolve()
+            )
+            if camera_key == "cam_high" and candidate != video.resolve():
+                raise RuntimeError(
+                    f"cam_high must reference the canonical OpenVLA rollout {video.name}; "
+                    f"got {declared!r}"
+                )
+            camera_video_files[camera_key] = candidate
 
-    existing_slots = [
-        slot for slot, path in camera_video_files.items() if path.is_file()
-    ]
-    if existing_slots and len(existing_slots) != len(DATASET_CAMERA_SLOTS):
-        missing = [
-            slot for slot in DATASET_CAMERA_SLOTS if slot not in existing_slots
-        ]
-        raise RuntimeError(
-            f"Incomplete camera video set for {video}: "
-            f"present={existing_slots}, missing={missing}"
-        )
-    has_camera_set = len(existing_slots) == len(DATASET_CAMERA_SLOTS)
-    if has_camera_set:
-        checked_paths: set[Path] = set()
-        for camera, camera_video in camera_video_files.items():
-            try:
-                camera_video.relative_to(project_root.resolve())
-            except ValueError as error:
-                raise RuntimeError(
-                    f"Camera video escapes project root: {camera_video}"
-                ) from error
-            if camera_video in checked_paths:
-                continue
-            checked_paths.add(camera_video)
-            camera_frames, camera_fps, _ = probe_video(camera_video)
-            if camera_frames != frames:
-                raise RuntimeError(
-                    f"Camera frame count mismatch for {video} camera={camera}: "
-                    f"single={frames}, camera={camera_frames}"
-                )
-            if abs(camera_fps - fps) > 1e-3:
-                raise RuntimeError(
-                    f"Camera FPS mismatch for {video} camera={camera}: "
-                    f"single={fps}, camera={camera_fps}"
-                )
+    for camera, camera_video in camera_video_files.items():
+        try:
+            camera_video.relative_to(project_root.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                f"Camera video escapes project root: {camera_video}"
+            ) from error
+        if not camera_video.is_file():
+            raise RuntimeError(
+                f"Camera video is missing for {video} camera={camera}: {camera_video}"
+            )
+        if camera_video == video.resolve():
+            continue
+        camera_frames, camera_fps, _ = probe_video(camera_video)
+        if camera_frames != frames:
+            raise RuntimeError(
+                f"Camera frame count mismatch for {video} camera={camera}: "
+                f"canonical={frames}, camera={camera_frames}"
+            )
+        if abs(camera_fps - fps) > 1e-3:
+            raise RuntimeError(
+                f"Camera FPS mismatch for {video} camera={camera}: "
+                f"canonical={fps}, camera={camera_fps}"
+            )
 
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "id": stable_id(str(relative), suite, task, episode, source_kind),
         "task_suite": suite,
         "task_id": task,
@@ -234,15 +211,10 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         "source_kind": source_kind,
         "analysis_partition": partition,
         "dataset_role": dataset_role,
-        "video_path": str(relative),
-        "camera_video_paths": (
-            {
-                slot: str(path.relative_to(project_root.resolve()))
-                for slot, path in camera_video_files.items()
-            }
-            if has_camera_set
-            else None
-        ),
+        "camera_video_paths": {
+            camera: str(path.relative_to(project_root.resolve()))
+            for camera, path in camera_video_files.items()
+        },
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
         "total_frames": frames,
         "fps": round(fps, 6),
@@ -339,7 +311,7 @@ def main() -> None:
         (record["dataset_role"], record["ground_truth_outcome"]) for record in records
     )
     summary = {
-        "schema_version": 1,
+        "schema_version": 2,
         "manifest": str(args.output.resolve().relative_to(project_root)),
         "total_rollouts": len(records),
         "counts": {
