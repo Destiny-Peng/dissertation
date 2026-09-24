@@ -104,12 +104,35 @@
       && (review === "all" || record.annotation_status === review);
   }
 
-  function hasDatasetCameraViews(record) {
+  function cameraViewCount(record) {
     var paths = record && record.camera_video_paths;
-    if (!paths || typeof paths !== "object") return false;
-    return ["cam_high", "cam_wrist"].every(function (slot) {
-      return typeof paths[slot] === "string" && paths[slot].length > 0;
+    if (!paths || typeof paths !== "object") return 0;
+    return Object.keys(paths).filter(function (camera) {
+      return typeof paths[camera] === "string" && paths[camera].trim().length > 0;
+    }).length;
+  }
+
+  function hasDatasetCameraViews(record) {
+    return cameraViewCount(record) > 1;
+  }
+
+  function selectedCameraPath(record) {
+    var paths = record && record.camera_video_paths;
+    if (!paths || typeof paths !== "object") return "";
+    var active = window.LF3RReviewVideoViews
+      && typeof window.LF3RReviewVideoViews.currentView === "function"
+      ? window.LF3RReviewVideoViews.currentView()
+      : "";
+    if (active && typeof paths[active] === "string" && paths[active]) return paths[active];
+    var preferred = ["cam_high", "cam_wrist", "cam_left_wrist", "cam_right_wrist"];
+    for (var index = 0; index < preferred.length; index += 1) {
+      var value = paths[preferred[index]];
+      if (typeof value === "string" && value) return value;
+    }
+    var first = Object.keys(paths).find(function (camera) {
+      return typeof paths[camera] === "string" && paths[camera];
     });
+    return first ? paths[first] : "";
   }
 
   function renderManifestRolloutList() {
@@ -135,7 +158,7 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
-        + (hasDatasetCameraViews(record) ? badge("2 camera views", "natural") : "")
+        + (hasDatasetCameraViews(record) ? badge(cameraViewCount(record) + " camera views", "natural") : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
@@ -179,7 +202,7 @@
       )
         + badge(record.analysis_partition, originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
-        + (hasDatasetCameraViews(record) ? badge("2 camera views", "natural") : "");
+        + (hasDatasetCameraViews(record) ? badge(cameraViewCount(record) + " camera views", "natural") : "");
     };
     window.selectRollout = wrappedSelectRollout;
     try { selectRollout = wrappedSelectRollout; } catch (_) {}
@@ -270,15 +293,11 @@
     if (record && window.LF3RReviewVideoViews
         && typeof window.LF3RReviewVideoViews.currentView === "function"
         && typeof window.LF3RReviewVideoViews.setView === "function") {
-      // Manual transcode only changes the canonical video. Do not silently
-      // replace an active physical camera view with Main.
-      if (window.LF3RReviewVideoViews.currentView() === "main") {
-        window.LF3RReviewVideoViews.setView(
-          record,
-          "main",
-          { force: true, resumePlayback: false }
-        );
-      }
+      window.LF3RReviewVideoViews.setView(
+        record,
+        window.LF3RReviewVideoViews.currentView(),
+        { force: true, resumePlayback: false }
+      );
       return;
     }
     var video = byId("rolloutVideo");
@@ -329,8 +348,9 @@
   async function startManualTranscode() {
     if (transcodeJobId) return;
     var record = selectedRecord();
-    if (!record || !record.video_path) return;
-    var playbackPath = record.video_path;
+    if (!record) return;
+    var playbackPath = selectedCameraPath(record);
+    if (!playbackPath) return;
     var backup = transcodeBackupName(playbackPath);
     var confirmed = window.confirm(
       "Convert this selected video to browser-compatible H.264?\n\n"
