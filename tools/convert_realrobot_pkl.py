@@ -2,9 +2,9 @@
 """Convert real-robot transition pickles into multi-view LF3R rollouts.
 
 By default, each input pickle is exported as separate ``side_policy_256`` and
-``wrist_1`` videos, with a baseline manifest for each view. Binary transition
-rewards are reduced to an episode success/failure label. Source pickles are
-never changed.
+``wrist_1`` videos, with one LF3R manifest row containing the complete camera
+mapping. Binary transition rewards are reduced to an episode success/failure
+label. Source pickles are never changed.
 """
 
 from __future__ import annotations
@@ -233,12 +233,26 @@ def _safe_camera_name(camera: str) -> str:
     return clean
 
 
+def _schema_camera_key(camera: str, primary_camera: str) -> str:
+    if camera == primary_camera:
+        return "cam_high"
+    lowered = camera.lower()
+    if "wrist" in lowered and "left" in lowered:
+        return "cam_left_wrist"
+    if "wrist" in lowered and "right" in lowered:
+        return "cam_right_wrist"
+    if "wrist" in lowered:
+        return "cam_wrist"
+    return "cam_" + re.sub(r"[^A-Za-z0-9_]+", "_", camera).strip("_").lower()
+
+
 def convert_one(
     source: Path,
     project_root: Path,
     output_root: Path,
     index: int,
     camera_keys: list[str],
+    primary_camera: str,
     history_index: int,
     fps: float,
     task: str,
@@ -284,36 +298,59 @@ def convert_one(
             "height": height,
         }
 
-    paths = {camera: info["path"] for camera, info in camera_data.items()}
-    rows: dict[str, dict[str, Any]] = {}
-    for camera, info in camera_data.items():
-        rows[camera] = {
-            "id": rollout_id,
-            "video_path": info["path"],
-            "camera_video_paths": paths,
-            "camera_views": list(camera_keys),
-            "task_suite": "realrobot",
-            "task_description": str(task_text),
-            "analysis_partition": "natural_observation",
-            "dataset_role": "realrobot",
-            "total_frames": info["count"],
-            "fps": float(fps),
-            "ground_truth_outcome": outcome,
-            "ground_truth_reward": episode_reward,
-            "ground_truth_source": outcome_source,
-            "source_kind": "realrobot_pkl",
-            "source_pkl": str(source.relative_to(project_root)),
-            "observation_key": camera,
-            "history_index": history_index,
-            "append_final_next": append_final_next,
-            "video_width": info["width"],
-            "video_height": info["height"],
-            "video_codec": codec if camera in write_cameras else None,
-            "video_encoder": ("libx264" if codec == "h264" else "mp4v") if camera in write_cameras else None,
-            "video_preset": video_preset if codec == "h264" and camera in write_cameras else None,
-            "video_reused": camera not in write_cameras,
-        }
-    return rows
+    schema_keys = {
+        camera: _schema_camera_key(camera, primary_camera)
+        for camera in camera_keys
+    }
+    if len(set(schema_keys.values())) != len(schema_keys):
+        raise ValueError(
+            "camera observation keys collide in LF3R camera schema: "
+            + repr(schema_keys)
+        )
+    paths = {
+        schema_keys[camera]: info["path"]
+        for camera, info in camera_data.items()
+    }
+    primary_info = camera_data[primary_camera]
+    return {
+        "schema_version": 2,
+        "id": rollout_id,
+        "camera_video_paths": paths,
+        "camera_source_names": {
+            schema_keys[camera]: camera for camera in camera_keys
+        },
+        "task_suite": "realrobot",
+        "task_description": str(task_text),
+        "analysis_partition": "natural_observation",
+        "dataset_role": "realrobot",
+        "total_frames": primary_info["count"],
+        "fps": float(fps),
+        "ground_truth_outcome": outcome,
+        "ground_truth_reward": episode_reward,
+        "ground_truth_source": outcome_source,
+        "source_kind": "realrobot_pkl",
+        "source_pkl": str(source.relative_to(project_root)),
+        "history_index": history_index,
+        "append_final_next": append_final_next,
+        "camera_metadata": {
+            schema_keys[camera]: {
+                "source_observation_key": camera,
+                "video_width": info["width"],
+                "video_height": info["height"],
+                "video_codec": codec if camera in write_cameras else None,
+                "video_encoder": (
+                    "libx264" if codec == "h264" else "mp4v"
+                ) if camera in write_cameras else None,
+                "video_preset": (
+                    video_preset
+                    if codec == "h264" and camera in write_cameras
+                    else None
+                ),
+                "video_reused": camera not in write_cameras,
+            }
+            for camera, info in camera_data.items()
+        },
+    }
 
 
 def main() -> int:
@@ -372,13 +409,7 @@ def main() -> int:
         if args.manifest is None
         else ((project_root / args.manifest).resolve() if not args.manifest.is_absolute() else args.manifest.resolve())
     )
-    camera_manifests = {
-        camera: output_root / f"manifest_{_safe_camera_name(camera)}.jsonl"
-        for camera in camera_keys
-    }
-    if manifest in camera_manifests.values() and manifest != camera_manifests[primary_camera]:
-        parser.error("--manifest conflicts with a non-primary camera manifest path")
-    manifest_paths = set(camera_manifests.values()) | {manifest}
+    manifest_paths = {manifest}
 
     sources = sorted(input_root.glob("*.pkl"))
     if not sources:
@@ -393,7 +424,7 @@ def main() -> int:
         if existing:
             parser.error("output exists; pass --resume or --overwrite: " + ", ".join(str(path) for path in existing[:8]))
 
-    rows_by_camera = {camera: [] for camera in camera_keys}
+    manifest_rows: list[dict[str, Any]] = []
     for index, source in enumerate(sources):
         rollout_id = _safe_id(source.stem, index)
         expected = {
@@ -405,12 +436,13 @@ def main() -> int:
             for camera, path in expected.items()
             if args.overwrite or not path.exists()
         }
-        rows = convert_one(
+        row = convert_one(
             source,
             project_root,
             output_root,
             index,
             camera_keys,
+            primary_camera,
             args.history_index,
             args.fps,
             args.task,
@@ -419,27 +451,22 @@ def main() -> int:
             args.video_preset,
             write_cameras,
         )
-        for camera, row in rows.items():
-            rows_by_camera[camera].append(row)
+        manifest_rows.append(row)
 
-    for camera, camera_manifest in camera_manifests.items():
-        camera_manifest.parent.mkdir(parents=True, exist_ok=True)
-        camera_manifest.write_text(
-            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows_by_camera[camera]),
-            encoding="utf-8",
-        )
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    if manifest not in camera_manifests.values():
-        manifest.write_text(
-            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows_by_camera[primary_camera]),
-            encoding="utf-8",
-        )
+    manifest.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
     print(json.dumps({
         "converted_rollouts": len(sources),
         "camera_views": camera_keys,
         "primary_camera": primary_camera,
-        "primary_manifest": str(manifest),
-        "camera_manifests": {camera: str(path) for camera, path in camera_manifests.items()},
+        "manifest": str(manifest),
+        "camera_schema": {
+            camera: _schema_camera_key(camera, primary_camera)
+            for camera in camera_keys
+        },
         "output": str(output_root),
     }, indent=2))
     return 0
