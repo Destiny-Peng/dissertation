@@ -112,7 +112,7 @@ window.LF3RRunsToolsLayout = (function createRunsToolsLayout() {
             '</div>',
             '<div id="batchManifestTranscodeManifests" class="runs-manifest-choice-list"><div class="runs-manifest-choice-empty">Loading loaded manifests…</div></div>',
             '<div id="batchManifestTranscodeSummary" class="runs-manifest-summary">Already-H.264 videos are skipped. Existing <code>.orig.mp4</code> backups are never overwritten.</div>',
-            '<div class="runs-tool-action"><span>Runs sequentially as one persistent background job; duplicate <code>video_path</code> values across selected manifests are converted only once.</span><button id="batchManifestTranscodeRun" class="save-button" type="button" disabled>Transcode selected manifests</button></div>',
+            '<div class="runs-tool-action"><span>Runs sequentially as one persistent background job; duplicate camera-video paths across selected manifests are converted only once.</span><button id="batchManifestTranscodeRun" class="save-button" type="button" disabled>Transcode selected manifests</button></div>',
           '</section>',
           '<section class="runs-tool-card runs-maintenance-card">',
             '<div class="runs-tool-card-heading"><div><h3>Validation & maintenance</h3><p>Bounded checks around existing project artifacts. No Analysis jobs are launched here.</p></div></div>',
