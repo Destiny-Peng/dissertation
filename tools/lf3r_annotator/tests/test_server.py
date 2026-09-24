@@ -28,7 +28,7 @@ class ServerTest(unittest.TestCase):
         video.parent.mkdir(parents=True)
         video.write_bytes(b"0123456789abcdef")
         self.rollout = {
-            "schema_version": 1,
+            "schema_version": 2,
             "id": "sample-rollout",
             "task_suite": "libero_10",
             "task_id": 0,
@@ -38,7 +38,7 @@ class ServerTest(unittest.TestCase):
             "source_kind": "natural_policy",
             "analysis_partition": "natural_observation",
             "dataset_role": "libero_10",
-            "video_path": "outputs/sample.mp4",
+            "camera_video_paths": {"cam_high": "outputs/sample.mp4"},
             "total_frames": 10,
             "fps": 5.0,
             "first_environment_timestep": 10,
@@ -486,13 +486,11 @@ class ServerTest(unittest.TestCase):
         )
 
         with self.request("/api/videos/sample-rollout") as response:
-            self.assertEqual(response.read(), b"0123456789abcdef")
+            self.assertEqual(response.read(), b"HIGH")
         with self.request("/api/videos/sample-rollout?camera=cam_high") as response:
             self.assertEqual(response.read(), b"HIGH")
         with self.request("/api/videos/sample-rollout?camera=cam_wrist") as response:
             self.assertEqual(response.read(), b"WRIST")
-        with self.request("/api/videos/sample-rollout?camera=cam_right_wrist") as response:
-            self.assertEqual(response.read(), b"RIGHT")
         with self.assertRaises(urllib.error.HTTPError) as context:
             self.request("/api/videos/sample-rollout?camera=missing")
         self.assertEqual(context.exception.code, 404)
@@ -515,7 +513,8 @@ class ServerTest(unittest.TestCase):
                 "instruction_type": "counterfactual_single_subtask",
                 "task_description": instruction,
                 "instruction": instruction,
-                "video_path": self.rollout["video_path"],
+                "schema_version": 2,
+                "camera_video_paths": self.rollout["camera_video_paths"],
             })
         (variant_root / "manifest.jsonl").write_text(
             "".join(json.dumps(row) + "\n" for row in rows),
@@ -1158,7 +1157,7 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             **self.rollout,
             "id": "sample-rollout-2",
             "episode_index": 1,
-            "video_path": "outputs/sample2.mp4",
+            "camera_video_paths": {"cam_high": "outputs/sample2.mp4"},
         }
         manifest = self.root / "manifest.jsonl"
         manifest.write_text(
