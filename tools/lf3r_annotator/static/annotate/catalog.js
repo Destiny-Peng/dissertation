@@ -70,7 +70,7 @@ function badge(value, cssClass) {
   return '<span class="badge ' + escapeHtml(cssClass || "") + '">' + escapeHtml(labelFor(value).toUpperCase()) + "</span>";
 }
 
-function loadRollouts(preferredId) {
+async function loadRollouts(preferredId) {
   var response = await fetch("/api/rollouts", { cache: "no-store" });
   if (!response.ok) {
     throw new Error("Could not load rollout manifest");
