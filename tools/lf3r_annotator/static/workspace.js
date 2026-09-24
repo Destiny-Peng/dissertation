@@ -34,6 +34,8 @@
     "/static/runs/tools-layout.js",
     "/static/runs/gpu.js",
     "/static/runs/project-tool-client.js",
+    "/static/runs/project-tool-actions.js",
+    "/static/runs/manifest-tools.js",
     "/static/runs/project-tools.js",
     "/static/runs/layout.js",
     "/static/runs/scope.js",
