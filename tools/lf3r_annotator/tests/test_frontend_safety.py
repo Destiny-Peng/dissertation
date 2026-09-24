@@ -208,6 +208,18 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn('output.classList.contains("has-current-numeric-values")', layout)
         self.assertIn('if (card.classList.contains("is-collapsed")) return;', layout)
 
+    def test_results_progressively_hydrates_charts(self) -> None:
+        view = (STATIC_ROOT / "results" / "view.js").read_text(encoding="utf-8")
+        core = (STATIC_ROOT / "results" / "core.js").read_text(encoding="utf-8")
+
+        self.assertIn("data-evaluation-chart-slot", view)
+        self.assertIn("function renderEvaluationCardCharts(", view)
+        self.assertIn("function scheduleEvaluationChartHydration(", view)
+        self.assertIn("requestIdleCallback", view)
+        self.assertIn("evaluationChartGeneration", view)
+        self.assertIn('scheduleEvaluationChartHydration(byId("evaluationMethods"))', view)
+        self.assertIn("scheduleEvaluationChartHydration(card);", core)
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         self.assertFalse((STATIC_ROOT / "results-run-config.js").exists())
