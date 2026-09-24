@@ -25,6 +25,7 @@
 
   var sizingScheduled = false;
   var lastMethodsWidth = 0;
+  var OUTPUT_MEASURE_LIMIT = 12;
 
   function isSharedReviewView() {
     return document.body.dataset.view === "results" || document.body.dataset.view === "annotate";
@@ -34,9 +35,9 @@
     return document.body.dataset.view === "results";
   }
 
-  function uniqueOutputTexts(result) {
+  function representativeOutputTexts(result) {
     var seen = Object.create(null);
-    var texts = [];
+    var candidates = [];
     (result && result.samples || []).forEach(function (sample) {
       var text = typeof window.sampleOutputText === "function"
         ? window.sampleOutputText(sample)
@@ -44,9 +45,19 @@
       text = String(text || "");
       if (!text.trim() || seen[text]) return;
       seen[text] = true;
-      texts.push(text);
+      var lines = text.split("\n").length;
+      candidates.push({
+        text: text,
+        score: text.length + lines * 120
+      });
     });
-    return texts.length ? texts : ["No output at this frame."];
+    if (!candidates.length) return ["No output at this frame."];
+    candidates.sort(function (left, right) {
+      return right.score - left.score;
+    });
+    return candidates.slice(0, OUTPUT_MEASURE_LIMIT).map(function (item) {
+      return item.text;
+    });
   }
 
   function sizeEvaluationOutput(card, result) {
@@ -60,7 +71,7 @@
     if (!Number.isFinite(width) || width < 24) return;
 
     var fragment = document.createDocumentFragment();
-    var measurers = uniqueOutputTexts(result).map(function (text) {
+    var measurers = representativeOutputTexts(result).map(function (text) {
       var measurer = output.cloneNode(false);
       measurer.removeAttribute("id");
       measurer.removeAttribute("data-current-output");
@@ -93,6 +104,7 @@
     sizingScheduled = false;
     if (!isResultsView() || !window.state || !state.evaluation || !state.evaluation.methods) return;
     methods.querySelectorAll("[data-evaluation-method]").forEach(function (card) {
+      if (card.classList.contains("is-collapsed")) return;
       var result = state.evaluation.methods[card.dataset.evaluationMethod];
       if (!result || !result.available) return;
       sizeEvaluationOutput(card, result);
