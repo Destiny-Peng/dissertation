@@ -2,7 +2,7 @@
 """Prepare a separate LIBERO-10 single-subtask diagnostic manifest.
 
 The source manifest and rollout/media files are read only. The generated
-records keep the original video path and provenance, but receive distinct
+records keep the original camera-video mapping and provenance, but receive distinct
 variant IDs and result namespaces so they cannot be confused with existing
 full-instruction baseline outputs.
 """
@@ -610,7 +610,7 @@ def source_record_fields(record: dict[str, Any]) -> tuple[str, ...]:
         "episode_index",
         "task_description",
         "ground_truth_outcome",
-        "video_path",
+        "camera_video_paths",
         "csv_path",
         "dataset_role",
         "analysis_partition",
@@ -642,15 +642,20 @@ def select_source_rows(
         seen_ids.add(rollout_id)
         if not isinstance(row.get("task_id"), int):
             raise VariantError(f"Source row has no integer task_id: {rollout_id}")
-        video_value = row.get("video_path")
-        if not isinstance(video_value, str) or not video_value:
-            raise VariantError(f"Source row has no video_path: {rollout_id}")
-        video_path = project_path(video_value, project_root)
-        if not video_path.is_file():
-            raise VariantError(
-                f"Source video is missing for {rollout_id}: "
-                f"{project_relative(video_path, project_root)}"
-            )
+        camera_paths = row.get("camera_video_paths")
+        if not isinstance(camera_paths, dict) or not camera_paths:
+            raise VariantError(f"Source row has no camera_video_paths: {rollout_id}")
+        for camera, video_value in camera_paths.items():
+            if not isinstance(video_value, str) or not video_value:
+                raise VariantError(
+                    f"Source row has an invalid path for {camera!r}: {rollout_id}"
+                )
+            video_path = project_path(video_value, project_root)
+            if not video_path.is_file():
+                raise VariantError(
+                    f"Source camera video is missing for {rollout_id} camera={camera}: "
+                    f"{project_relative(video_path, project_root)}"
+                )
         if row.get("task_id") not in TASK_SPECS:
             raise VariantError(f"Unexpected LIBERO-10 task ID in source: {row.get('task_id')}")
     return (
@@ -709,7 +714,7 @@ def make_variant_row(
             "source_manifest": project_relative(source_manifest_path, project_root),
             "source_manifest_sha256": source_manifest_hash,
             "source_record_sha256": sha256_json(source),
-            "source_video_path": source.get("video_path"),
+            "source_camera_video_paths": source.get("camera_video_paths"),
             "source_csv_path": source.get("csv_path"),
             "source_annotation_path": (
                 f"annotations/failure_annotations/v1/records/{source_id}.json"
@@ -803,10 +808,10 @@ def validate_generated_rows(
         by_source[str(source_id)].append(row)
         if row.get("id") == source_id or not str(row["id"]).endswith(f"--{condition}"):
             raise VariantError(f"Variant ID is not safely namespaced: {row.get('id')}")
-        if row.get("video_path") != source.get("video_path"):
-            raise VariantError(f"Video path changed for source rollout: {source_id}")
-        if row.get("source_video_path") != source.get("video_path"):
-            raise VariantError(f"Source video link is not preserved: {source_id}")
+        if row.get("camera_video_paths") != source.get("camera_video_paths"):
+            raise VariantError(f"Camera video paths changed for source rollout: {source_id}")
+        if row.get("source_camera_video_paths") != source.get("camera_video_paths"):
+            raise VariantError(f"Source camera links are not preserved: {source_id}")
         if row.get("original_full_instruction") != source.get("task_description"):
             raise VariantError(f"Original instruction was not preserved: {source_id}")
         if row.get("source_task_id") != source.get("task_id"):
