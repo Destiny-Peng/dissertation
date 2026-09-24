@@ -34,10 +34,23 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
     def test_frontend_exposes_required_annotation_controls(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         app_javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
+        app_jobs = (TOOL_ROOT / "static/app/jobs.js").read_text(encoding="utf-8")
+        app_help = (TOOL_ROOT / "static/app/help.js").read_text(encoding="utf-8")
+        annotate_core = (TOOL_ROOT / "static/annotate/core.js").read_text(encoding="utf-8")
+        annotate_events = (TOOL_ROOT / "static/annotate/events.js").read_text(encoding="utf-8")
         results_javascript = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
         results_charts = (TOOL_ROOT / "static/results/charts.js").read_text(encoding="utf-8")
         runs_javascript = (TOOL_ROOT / "static/runs/core.js").read_text(encoding="utf-8")
-        javascript = app_javascript + "\n" + results_javascript + "\n" + results_charts + "\n" + runs_javascript
+        javascript = "\n".join([
+            app_javascript,
+            app_jobs,
+            app_help,
+            annotate_core,
+            annotate_events,
+            results_javascript,
+            results_charts,
+            runs_javascript,
+        ])
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         frontend_javascript = javascript + "\n" + workspace
         for element_id in [
@@ -645,7 +658,10 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             self.assertIn("MUJOCO_GL=egl", script)
             self.assertIn("PYOPENGL_PLATFORM=egl", script)
             self.assertNotIn("MUJOCO_GL=osmesa", script)
-        javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
+        javascript = "\n".join([
+            (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8"),
+            (TOOL_ROOT / "static/app/jobs.js").read_text(encoding="utf-8"),
+        ])
         self.assertIn("persistentJobLogOpen", javascript)
         self.assertIn("persistentJobLogText", javascript)
         self.assertIn('aria-expanded=\"false\"', javascript)
