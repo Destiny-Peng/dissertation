@@ -101,16 +101,25 @@ window.LF3RManifestTools = (function createManifestTools() {
       updateBatchManifestSelectionCount();
     }
 
-    async function loadBatchManifestOptions(preserveSelection) {
+    async function loadBatchManifestOptions(preserveSelection, forceNetwork) {
       var host = document.getElementById("batchManifestTranscodeManifests");
+      var cached = (typeof state !== "undefined" && state && Array.isArray(state.manifests))
+        ? state.manifests
+        : [];
+      if (!forceNetwork && cached.length) {
+        renderBatchManifestOptions(cached, Boolean(preserveSelection));
+        return;
+      }
       try {
         var response = await fetch("/api/manifests", { cache: "no-store" });
         var payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error || "Could not read loaded manifests");
         }
+        var manifests = payload.manifests || [];
+        if (typeof state !== "undefined" && state) state.manifests = manifests;
         renderBatchManifestOptions(
-          payload.manifests || [],
+          manifests,
           Boolean(preserveSelection)
         );
       } catch (error) {
@@ -303,7 +312,7 @@ window.LF3RManifestTools = (function createManifestTools() {
             await loadRollouts(preferredId);
           }
           await refreshRolloutOptions();
-          await loadBatchManifestOptions(true);
+          await loadBatchManifestOptions(true, true);
           var afterCount = (
             typeof state !== "undefined"
             && state
