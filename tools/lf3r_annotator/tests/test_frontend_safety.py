@@ -36,9 +36,10 @@ class FrontendSafetyContractTest(unittest.TestCase):
         )
 
     def test_known_observers_are_narrowed(self) -> None:
-        procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
-        self.assertIn("drawerObserver.observe(singleCore, { childList: true })", procvlm)
-        self.assertNotIn("drawerObserver.observe(document.body", procvlm)
+        procvlm = (STATIC_ROOT / "baselines" / "procvlm.js").read_text(encoding="utf-8")
+        self.assertNotIn("MutationObserver", procvlm)
+        self.assertNotIn("window.fetch =", procvlm)
+        self.assertIn("applyOptions: applyOptions", procvlm)
 
         results_config = (STATIC_ROOT / "results" / "run-config.js").read_text(encoding="utf-8")
         self.assertNotIn("MutationObserver", results_config)
@@ -73,7 +74,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertNotIn("runs-log-ui.js", workspace)
 
     def test_procvlm_model_path_is_visible_in_single_run_config(self) -> None:
-        procvlm = (STATIC_ROOT / "procvlm-mode-ui.js").read_text(encoding="utf-8")
+        procvlm = (STATIC_ROOT / "baselines" / "procvlm.js").read_text(encoding="utf-8")
         self.assertIn("var modelInput = drawer.querySelector('[data-option=\"model_path\"]')", procvlm)
         self.assertIn("modelLabel.parentNode !== core", procvlm)
         self.assertIn("core.insertBefore(modelLabel, modeLabel.nextSibling)", procvlm)
@@ -102,6 +103,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "results/layout.js",
             "results/run-config.js",
             "runs/jobs.js",
+            "baselines/procvlm.js",
         ]:
             self.assertIn(stable, workspace)
 
@@ -118,6 +120,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "runs-log-ui.js",
             "runs-job-control.js",
             "runs-submit.js",
+            "procvlm-mode-ui.js",
         ]:
             self.assertNotIn(obsolete, workspace)
 
