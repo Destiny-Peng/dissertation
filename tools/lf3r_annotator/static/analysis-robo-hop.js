@@ -1,6 +1,8 @@
 "use strict";
 
 (function installRoboHopAnalysisUi() {
+  var initialized = false;
+
   var hopState = {
     scope: "libero_10",
     runs: [],
@@ -729,10 +731,12 @@
   }
 
   function init() {
+    if (initialized) return;
     var form = node("analysisHopForm");
     var scope = node("analysisHopScope");
     var run = node("analysisHopRun");
     if (!form || !scope || !run) return;
+    initialized = true;
     form.addEventListener("submit", start);
     scope.addEventListener("change", loadRuns);
     run.addEventListener("change", updateButton);
@@ -743,5 +747,11 @@
     updateButton();
   }
 
-  init();
+  function maybeInit(event) {
+    var view = event && event.detail ? event.detail.view : document.body.dataset.view;
+    if (view === "analysis") init();
+  }
+
+  window.addEventListener("lf3r:viewchange", maybeInit);
+  maybeInit();
 })();
