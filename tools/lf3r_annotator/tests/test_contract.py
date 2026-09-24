@@ -182,6 +182,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             (TOOL_ROOT / path).read_text(encoding="utf-8")
             for path in [
                 "static/workspace.js",
+                "static/workspace/settings.js",
+                "static/workspace/router.js",
+                "static/workspace/events.js",
                 "static/workspace-core.js",
                 "static/analysis/live.js",
                 "static/analysis/snapshot.js",
@@ -566,6 +569,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             (TOOL_ROOT / path).read_text(encoding="utf-8")
             for path in [
                 "static/workspace.js",
+                "static/workspace/settings.js",
+                "static/workspace/router.js",
+                "static/workspace/events.js",
                 "static/workspace-core.js",
                 "static/analysis/live.js",
                 "static/analysis/snapshot.js",
