@@ -43,7 +43,7 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " Camera videos are generated afterward as physical dataset facts: one cam_high MP4 plus one cam_wrist MP4. Robo-Dopamine later maps cam_wrist to both left/right input slots in its adapter. Canonical policy video remains unchanged."
+      ? " The canonical policy video is cam_high. A no-model replay generates only the additional cam_wrist video; camera identity is stored in camera_video_paths, and Robo-Dopamine later maps a shared wrist view to both wrist input slots."
       : " Only the canonical single-view replay video is generated.";
     description.textContent = (isSpatial
       ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
@@ -66,7 +66,7 @@ function updateRolloutGenerationSelection() {
   note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
     + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
     + ", record " + recordResolution + "x" + recordResolution
-    + ", camera videos " + (videoViewMode === "libero_three_view" ? "Robo-Dopamine 3-view" : "canonical only")
+    + ", camera videos " + (videoViewMode === "libero_three_view" ? "high + wrist" : "high only")
     + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
@@ -168,7 +168,7 @@ async function startRolloutGeneration(event) {
   }
   var expected = (taskEnd - taskStart + 1) * trials;
   var multiviewNote = videoViewMode === "libero_three_view"
-    ? " A no-model LIBERO replay will then record agent + side + wrist views."
+    ? " A no-model LIBERO replay will then record the additional wrist view; the canonical rollout remains cam_high."
     : "";
   if (!window.confirm("Generate " + expected + " OpenVLA " + suiteLabel + " rollout(s)? This launches GPU inference." + multiviewNote)) return;
   var button = byId("rolloutGenerationRun");
