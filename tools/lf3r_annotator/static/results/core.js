@@ -57,6 +57,7 @@ function hydrateEvaluationCardBody(card, methodName) {
   body.innerHTML = renderEvaluationCardBody(methodName, result, record);
   body.dataset.bodyRendered = "true";
   updateEvaluationCurrent();
+  scheduleEvaluationChartHydration(card);
   if (typeof window.lf3rResultsLayoutRefresh === "function") {
     window.lf3rResultsLayoutRefresh();
   }
