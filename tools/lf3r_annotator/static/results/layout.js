@@ -25,6 +25,7 @@
 
   var sizingScheduled = false;
   var lastMethodsWidth = 0;
+  var OUTPUT_MEASURE_BATCH_SIZE = 24;
 
   function isSharedReviewView() {
     return document.body.dataset.view === "results" || document.body.dataset.view === "annotate";
@@ -49,9 +50,17 @@
     return texts.length ? texts : ["No output at this frame."];
   }
 
+  function scheduleOutputMeasure(callback) {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(callback, { timeout: 80 });
+      return;
+    }
+    window.setTimeout(callback, 0);
+  }
+
   function sizeEvaluationOutput(card, result) {
     var output = card.querySelector("[data-current-output]");
-    if (!output) return;
+    if (!output || output.classList.contains("has-current-numeric-values")) return;
 
     output.classList.remove("is-stable-height");
     output.style.removeProperty("--lf3r-output-height");
@@ -59,40 +68,60 @@
     var width = output.getBoundingClientRect().width;
     if (!Number.isFinite(width) || width < 24) return;
 
-    var fragment = document.createDocumentFragment();
-    var measurers = uniqueOutputTexts(result).map(function (text) {
-      var measurer = output.cloneNode(false);
-      measurer.removeAttribute("id");
-      measurer.removeAttribute("data-current-output");
-      measurer.removeAttribute("hidden");
-      measurer.classList.add("evaluation-output-measurer");
-      measurer.style.width = width + "px";
-      measurer.textContent = text;
-      fragment.appendChild(measurer);
-      return measurer;
-    });
-    output.parentNode.appendChild(fragment);
-
-    // All DOM writes happen before the first height read, avoiding a
-    // write/read layout cycle for every sampled text output.
+    var texts = uniqueOutputTexts(result);
+    var token = String((Number(output.dataset.outputMeasureToken) || 0) + 1);
+    output.dataset.outputMeasureToken = token;
+    var index = 0;
     var maxHeight = 0;
-    measurers.forEach(function (measurer) {
-      maxHeight = Math.max(maxHeight, measurer.scrollHeight);
-    });
-    measurers.forEach(function (measurer) {
-      measurer.remove();
-    });
 
-    if (maxHeight > 0) {
-      output.style.setProperty("--lf3r-output-height", Math.ceil(maxHeight + 2) + "px");
-      output.classList.add("is-stable-height");
+    function measureNextBatch() {
+      if (!output.isConnected || output.dataset.outputMeasureToken !== token) return;
+      if (output.classList.contains("has-current-numeric-values")) return;
+
+      var end = Math.min(texts.length, index + OUTPUT_MEASURE_BATCH_SIZE);
+      var fragment = document.createDocumentFragment();
+      var measurers = texts.slice(index, end).map(function (text) {
+        var measurer = output.cloneNode(false);
+        measurer.removeAttribute("id");
+        measurer.removeAttribute("data-current-output");
+        measurer.removeAttribute("data-output-measure-token");
+        measurer.removeAttribute("hidden");
+        measurer.classList.add("evaluation-output-measurer");
+        measurer.style.width = width + "px";
+        measurer.textContent = text;
+        fragment.appendChild(measurer);
+        return measurer;
+      });
+      output.parentNode.appendChild(fragment);
+
+      // One layout calculation covers the whole bounded batch instead of
+      // materializing every sampled output in the DOM at the same time.
+      measurers.forEach(function (measurer) {
+        maxHeight = Math.max(maxHeight, measurer.scrollHeight);
+      });
+      measurers.forEach(function (measurer) {
+        measurer.remove();
+      });
+      index = end;
+
+      if (index < texts.length) {
+        scheduleOutputMeasure(measureNextBatch);
+        return;
+      }
+      if (maxHeight > 0 && output.dataset.outputMeasureToken === token) {
+        output.style.setProperty("--lf3r-output-height", Math.ceil(maxHeight + 2) + "px");
+        output.classList.add("is-stable-height");
+      }
     }
+
+    scheduleOutputMeasure(measureNextBatch);
   }
 
   function sizeEvaluationOutputs() {
     sizingScheduled = false;
     if (!isResultsView() || !window.state || !state.evaluation || !state.evaluation.methods) return;
     methods.querySelectorAll("[data-evaluation-method]").forEach(function (card) {
+      if (card.classList.contains("is-collapsed")) return;
       var result = state.evaluation.methods[card.dataset.evaluationMethod];
       if (!result || !result.available) return;
       sizeEvaluationOutput(card, result);

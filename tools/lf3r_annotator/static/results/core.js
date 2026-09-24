@@ -46,6 +46,22 @@ async function loadEvaluation(rolloutId) {
 }
 
 
+function hydrateEvaluationCardBody(card, methodName) {
+  if (!card || !methodName) return;
+  var body = card.querySelector("[data-evaluation-card-body]");
+  if (!body || body.dataset.bodyRendered === "true") return;
+  var result = state.evaluation && state.evaluation.methods
+    ? state.evaluation.methods[methodName] : null;
+  var record = selectedRollout();
+  if (!result || !record) return;
+  body.innerHTML = renderEvaluationCardBody(methodName, result, record);
+  body.dataset.bodyRendered = "true";
+  updateEvaluationCurrent();
+  if (typeof window.lf3rResultsLayoutRefresh === "function") {
+    window.lf3rResultsLayoutRefresh();
+  }
+}
+
 function bindResultsEvents() {
   var reload = byId("reloadEvaluation");
   if (reload) {
@@ -73,6 +89,12 @@ function bindResultsEvents() {
     loadEvaluation(record.id);
   });
 
+  methods.addEventListener("toggle", function (event) {
+    var history = event.target;
+    if (!history || !history.matches || !history.matches("[data-evaluation-history]")) return;
+    if (history.open) hydrateEvaluationHistory(history);
+  }, true);
+
   methods.addEventListener("click", function (event) {
     var collapseButton = event.target.closest("[data-toggle-baseline-card]");
     if (collapseButton) {
@@ -80,9 +102,10 @@ function bindResultsEvents() {
       state.baselineCollapsed[methodName] = !baselineCardCollapsed(methodName);
       persistBaselineCollapsed();
       var card = collapseButton.closest("[data-evaluation-method]");
-      var body = card && card.querySelector(".evaluation-card-body");
+      var body = card && card.querySelector("[data-evaluation-card-body]");
       var collapsed = baselineCardCollapsed(methodName);
       if (card) card.classList.toggle("is-collapsed", collapsed);
+      if (!collapsed) hydrateEvaluationCardBody(card, methodName);
       if (body) body.hidden = collapsed;
       collapseButton.textContent = collapsed ? "Expand" : "Collapse";
       collapseButton.setAttribute("aria-expanded", String(!collapsed));

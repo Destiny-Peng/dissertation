@@ -51,30 +51,45 @@ function persistBaselineCollapsed() {
   } catch (_error) {}
 }
 
-function renderEvaluationHistory(result) {
+function renderEvaluationHistoryRows(result) {
   var samples = result.samples || [];
-  if (!samples.length) return '<div class="evaluation-empty">No per-frame output history.</div>';
   var visible = samples.slice(0, 60);
   var rows = visible.map(function (sample) {
     return '<div class="evaluation-history-row"><strong>f' + escapeHtml(sample.frame) + '</strong> '
       + escapeHtml(compactSampleOutput(sample)) + "</div>";
   }).join("");
-  var suffix = samples.length > visible.length ? '<div class="evaluation-empty">Showing first ' + visible.length + " of " + samples.length + " samples.</div>" : "";
-  return '<details class="evaluation-history"><summary>Output history (' + samples.length + " samples)</summary>"
-    + '<div class="evaluation-history-list">' + rows + suffix + "</div></details>";
+  var suffix = samples.length > visible.length
+    ? '<div class="evaluation-empty">Showing first ' + visible.length + " of " + samples.length + " samples.</div>"
+    : "";
+  return rows + suffix;
 }
 
-function renderEvaluationCard(method, result, record) {
+function renderEvaluationHistory(result) {
+  var samples = result.samples || [];
+  if (!samples.length) return '<div class="evaluation-empty">No per-frame output history.</div>';
+  return '<details class="evaluation-history" data-evaluation-history>'
+    + '<summary>Output history (' + samples.length + " samples)</summary>"
+    + '<div class="evaluation-history-list" data-evaluation-history-list>'
+    + '<div class="evaluation-empty">Expand to load history.</div>'
+    + "</div></details>";
+}
+
+function hydrateEvaluationHistory(details) {
+  if (!details || !details.open || details.dataset.historyHydrated === "true") return;
+  var card = details.closest("[data-evaluation-method]");
+  var method = card ? String(card.dataset.evaluationMethod || "") : "";
+  var result = state.evaluation && state.evaluation.methods
+    ? state.evaluation.methods[method] : null;
+  var list = details.querySelector("[data-evaluation-history-list]");
+  if (!result || !list) return;
+  list.innerHTML = renderEvaluationHistoryRows(result);
+  details.dataset.historyHydrated = "true";
+}
+
+function renderEvaluationCardBody(method, result, record) {
   var available = Boolean(result.available);
-  var viewingCondition = state.instructionCondition || "full_instruction";
   var validation = result.validation || {};
   var status = validation.status || (available ? "ok" : "missing");
-  var variant = currentInstructionVariant(record);
-  var canRunCondition = viewingCondition === "full_instruction" || Boolean(variant.available);
-  var action = canRunCondition
-    ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method)
-      + '" title="Configure parameters and run this baseline on the current rollout">Configure &amp; run</button>'
-    : '<span class="evaluation-meta">Condition view only</span>';
   var body = renderBaselineRunControls(method, result, record);
   if (available) {
     body += renderPosthocLocalizationControls(method, result)
@@ -91,7 +106,22 @@ function renderEvaluationCard(method, result, record) {
   if (validation.message && available && status !== "ok") {
     body += '<div class="evaluation-meta">' + escapeHtml(validation.message) + "</div>";
   }
+  return body;
+}
+
+function renderEvaluationCard(method, result, record) {
+  var available = Boolean(result.available);
+  var viewingCondition = state.instructionCondition || "full_instruction";
+  var validation = result.validation || {};
+  var status = validation.status || (available ? "ok" : "missing");
+  var variant = currentInstructionVariant(record);
+  var canRunCondition = viewingCondition === "full_instruction" || Boolean(variant.available);
+  var action = canRunCondition
+    ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method)
+      + '" title="Configure parameters and run this baseline on the current rollout">Configure &amp; run</button>'
+    : '<span class="evaluation-meta">Condition view only</span>';
   var collapsed = baselineCardCollapsed(method);
+  var body = collapsed ? "" : renderEvaluationCardBody(method, result, record);
   return '<article class="evaluation-card ' + (available ? "available" : "unavailable")
     + (collapsed ? ' is-collapsed' : '') + '" data-evaluation-method="' + escapeHtml(method) + '">'
     + '<div class="evaluation-card-header"><div class="evaluation-card-title">' + escapeHtml(result.label || method)
@@ -101,7 +131,8 @@ function renderEvaluationCard(method, result, record) {
     + escapeHtml(method) + '" aria-expanded="' + String(!collapsed)
     + '" title="' + (collapsed ? "Expand" : "Collapse") + ' baseline result">'
     + (collapsed ? "Expand" : "Collapse") + '</button></div></div>'
-    + '<div class="evaluation-card-body"' + (collapsed ? ' hidden' : '') + '>'
+    + '<div class="evaluation-card-body" data-evaluation-card-body data-body-rendered="'
+    + String(!collapsed) + '"' + (collapsed ? ' hidden' : '') + '>'
     + body + "</div></article>";
 }
 
