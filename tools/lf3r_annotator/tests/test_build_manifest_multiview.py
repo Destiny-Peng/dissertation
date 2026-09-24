@@ -16,35 +16,31 @@ import build_manifest  # noqa: E402
 
 
 class BuildManifestCameraVideoTests(unittest.TestCase):
-    def make_rollout(self, root: Path) -> tuple[Path, dict[str, Path]]:
+    def make_rollout(self, root: Path) -> tuple[Path, Path]:
         suite_dir = root / "outputs" / "lf3r-data-natural-test" / "libero_10"
         suite_dir.mkdir(parents=True)
         canonical = suite_dir / "task0--ep0--succ1.mp4"
         canonical.write_bytes(b"canonical")
-        high = suite_dir / "task0--ep0--succ1.cam_high.mp4"
-        wrist = suite_dir / "task0--ep0--succ1.cam_wrist.mp4"
-        high.write_bytes(b"high")
+        # Deliberately does not encode the camera name in the filename.
+        wrist = suite_dir / "extra-view-17.mp4"
         wrist.write_bytes(b"wrist")
-        cameras = {
-            "cam_high": high,
-            "cam_wrist": wrist,
-        }
         metadata = {
-            "schema_version": 1,
+            "schema_version": 2,
             "camera_video_paths": {
-                slot: path.name for slot, path in cameras.items()
+                "cam_high": canonical.name,
+                "cam_wrist": wrist.name,
             },
         }
         canonical.with_name(canonical.stem + ".camera_videos.json").write_text(
             json.dumps(metadata),
             encoding="utf-8",
         )
-        return canonical, cameras
+        return canonical, wrist
 
-    def test_build_record_emits_physical_camera_paths(self) -> None:
+    def test_build_record_emits_only_camera_video_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
+            canonical, wrist = self.make_rollout(root)
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
@@ -54,69 +50,69 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
 
             self.assertIsNotNone(record)
             assert record is not None
-            self.assertEqual(record["video_path"], str(canonical.relative_to(root)))
+            self.assertEqual(record["schema_version"], 2)
+            self.assertNotIn("video_path", record)
             self.assertEqual(
                 record["camera_video_paths"],
                 {
-                    slot: str(path.relative_to(root))
-                    for slot, path in cameras.items()
+                    "cam_high": str(canonical.relative_to(root)),
+                    "cam_wrist": str(wrist.relative_to(root)),
                 },
             )
-            self.assertNotIn("camera_source_names", record)
-            # canonical + two unique camera files; shared wrist is probed once.
-            self.assertEqual(probe.call_count, 3)
+            self.assertEqual(probe.call_count, 2)
 
-    def test_build_record_normalizes_legacy_shared_wrist_sidecar(self) -> None:
+    def test_build_record_does_not_infer_camera_from_filename(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
-            new_wrist = cameras["cam_wrist"]
-            legacy_wrist = new_wrist.with_name(
-                new_wrist.name.replace(".cam_wrist.mp4", ".cam_left_wrist.mp4")
-            )
-            new_wrist.rename(legacy_wrist)
-            metadata_path = canonical.with_name(canonical.stem + ".camera_videos.json")
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            metadata["camera_video_paths"] = {
-                "cam_high": cameras["cam_high"].name,
-                "cam_left_wrist": legacy_wrist.name,
-                "cam_right_wrist": legacy_wrist.name,
-            }
-            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            suite_dir = root / "outputs" / "lf3r-data-natural-test" / "libero_10"
+            suite_dir.mkdir(parents=True)
+            canonical = suite_dir / "task0--ep0--succ1.mp4"
+            canonical.write_bytes(b"canonical")
+            # This filename looks like a wrist view, but without explicit
+            # metadata it must not be added to the manifest.
+            (suite_dir / "task0--ep0--succ1.cam_wrist.mp4").write_bytes(b"ignored")
 
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
-            ):
+            ) as probe:
                 record = build_manifest.build_record(canonical, root, {})
 
-            self.assertIsNotNone(record)
             assert record is not None
             self.assertEqual(
                 record["camera_video_paths"],
-                {
-                    "cam_high": str(cameras["cam_high"].relative_to(root)),
-                    "cam_wrist": str(legacy_wrist.relative_to(root)),
-                },
+                {"cam_high": str(canonical.relative_to(root))},
             )
-            self.assertNotIn("cam_left_wrist", record["camera_video_paths"])
-            self.assertNotIn("cam_right_wrist", record["camera_video_paths"])
+            self.assertEqual(probe.call_count, 1)
 
-    def test_build_record_rejects_missing_shared_wrist_file(self) -> None:
+    def test_build_record_rejects_declared_missing_camera_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
-            cameras["cam_wrist"].unlink()
+            canonical, wrist = self.make_rollout(root)
+            wrist.unlink()
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    "Incomplete camera video set",
-                ):
+                with self.assertRaisesRegex(RuntimeError, "Camera video is missing"):
+                    build_manifest.build_record(canonical, root, {})
+
+    def test_build_record_rejects_cam_high_alias_to_different_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            canonical, wrist = self.make_rollout(root)
+            metadata_path = canonical.with_name(canonical.stem + ".camera_videos.json")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["camera_video_paths"]["cam_high"] = wrist.name
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            with mock.patch.object(
+                build_manifest,
+                "probe_video",
+                return_value=(42, 30.0, 1.4),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "cam_high must reference"):
                     build_manifest.build_record(canonical, root, {})
 
 
