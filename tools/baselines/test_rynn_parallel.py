@@ -49,7 +49,7 @@ class RynnParallelRunnerTest(unittest.TestCase):
             video.write_bytes(b"video")
             records.append({
                 "id": f"r{index}",
-                "video_path": str(video),
+                "camera_video_paths": {"cam_high": str(video)},
                 "task_description": "test task",
                 "total_frames": 20,
             })
