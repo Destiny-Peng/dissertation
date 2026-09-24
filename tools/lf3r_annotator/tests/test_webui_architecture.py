@@ -179,21 +179,58 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_results_frontend_has_semantic_modules(self) -> None:
         results_root = STATIC_ROOT / "results"
-        for name in ["charts.js", "core.js", "layout.js", "run-config.js"]:
+        module_names = [
+            "charts.js",
+            "model.js",
+            "catalog.js",
+            "view.js",
+            "actions.js",
+            "core.js",
+            "layout.js",
+            "run-config.js",
+        ]
+        for name in module_names:
             self.assertTrue((results_root / name).is_file(), name)
         for obsolete in ["results-layout.js", "results-run-config.js"]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
         charts = (results_root / "charts.js").read_text(encoding="utf-8")
+        model = (results_root / "model.js").read_text(encoding="utf-8")
+        catalog = (results_root / "catalog.js").read_text(encoding="utf-8")
+        view = (results_root / "view.js").read_text(encoding="utf-8")
+        actions = (results_root / "actions.js").read_text(encoding="utf-8")
         core = (results_root / "core.js").read_text(encoding="utf-8")
         layout = (results_root / "layout.js").read_text(encoding="utf-8")
         config = (results_root / "run-config.js").read_text(encoding="utf-8")
-        self.assertIn("LF3RResultsCharts.renderSignalChart", core)
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
         self.assertIn("renderSignalChart", charts)
-        self.assertIn("lf3rOpenSingleBaselineConfig", core)
-        self.assertIn("lf3rResultsLayoutRefresh", core)
+        self.assertIn("function sampleOutputText(", model)
+        self.assertIn("function loadBaselineRunCatalog(", catalog)
+        self.assertIn("function resultsOnPersistentJobChanged(", catalog)
+        self.assertIn("LF3RResultsCharts.renderSignalChart", view)
+        self.assertIn("function renderEvaluationPanel(", view)
+        self.assertIn("function runPosthocLocalization(", actions)
+        self.assertIn("function loadEvaluation(", core)
+        self.assertIn("function bindResultsEvents(", core)
+        self.assertIn("lf3rResultsLayoutRefresh", view)
+        self.assertNotIn("function renderEvaluationPanel(", core)
+        self.assertNotIn("function loadBaselineRunCatalog(", core)
+        self.assertLess(len(core), 8000)
         self.assertNotIn("MutationObserver", layout)
         self.assertNotIn("MutationObserver", config)
+
+        ordered = [
+            "/static/results/charts.js",
+            "/static/results/model.js",
+            "/static/results/catalog.js",
+            "/static/results/view.js",
+            "/static/results/actions.js",
+            "/static/results/core.js",
+        ]
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertLess(html.index(left), html.index(right))
+
 
     def test_runs_jobs_frontend_is_canonical(self) -> None:
         jobs = STATIC_ROOT / "runs" / "jobs.js"
