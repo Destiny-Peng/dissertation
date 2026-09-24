@@ -80,6 +80,23 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("modelLabel.parentNode !== core", procvlm)
         self.assertIn("core.insertBefore(modelLabel, modeLabel.nextSibling)", procvlm)
 
+    def test_heavy_page_initialization_is_view_gated(self) -> None:
+        router = (STATIC_ROOT / "workspace" / "router.js").read_text(encoding="utf-8")
+        runs_layout = (STATIC_ROOT / "runs" / "layout.js").read_text(encoding="utf-8")
+        robo_hop = (STATIC_ROOT / "analysis-robo-hop.js").read_text(encoding="utf-8")
+        shell = (STATIC_ROOT / "workspace-core.js").read_text(encoding="utf-8")
+        annotate_events = (STATIC_ROOT / "annotate" / "events.js").read_text(encoding="utf-8")
+
+        self.assertIn('new CustomEvent("lf3r:viewchange"', router)
+        self.assertIn('window.addEventListener("lf3r:viewchange", maybeInstallRunsLayout)', runs_layout)
+        self.assertIn('if (view === "runs") installRunsLayoutEnhancements();', runs_layout)
+        self.assertIn('window.addEventListener("lf3r:viewchange", maybeInit)', robo_hop)
+        self.assertIn('if (view === "analysis") init();', robo_hop)
+        self.assertIn("if (initialized) return;", robo_hop)
+
+        self.assertIn("window.setTimeout(loadPersistentJobs, 0);", annotate_events)
+        self.assertNotIn("lf3rRefreshPersistentJobs();", shell)
+
     def test_workspace_parallelizes_independent_module_loading(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("function loadGroup(group, onload)", workspace)
