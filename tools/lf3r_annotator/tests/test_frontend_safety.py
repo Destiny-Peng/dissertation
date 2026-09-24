@@ -56,7 +56,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
 
     def test_runs_log_refresh_stays_bound_to_selected_job(self) -> None:
         runs_jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
-        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        runs_core = (STATIC_ROOT / "runs" / "core.js").read_text(encoding="utf-8")
         self.assertIn(
             'if (!channel || !channel.log || visibleJobId(channel) !== jobId) return;',
             runs_jobs,
@@ -66,8 +66,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
             runs_jobs,
         )
         self.assertIn('refreshSelectedLog: refreshSelectedLog', runs_jobs)
-        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId)', app)
-        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId)', app)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId)', runs_core)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId)', runs_core)
 
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("runs/jobs.js", workspace)
