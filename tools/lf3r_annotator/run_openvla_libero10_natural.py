@@ -120,8 +120,8 @@ def parse_args() -> argparse.Namespace:
         choices=("single_view", "libero_three_view"),
         default="single_view",
         help=(
-            "Recording mode. libero_three_view keeps the canonical single-view rollout "
-            "and adds separate post-run Robo-Dopamine camera-slot videos."
+            "Recording mode. libero_three_view registers the canonical rollout as cam_high "
+            "and replays actions only to add a physical cam_wrist video."
         ),
     )
     parser.add_argument(
