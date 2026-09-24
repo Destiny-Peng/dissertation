@@ -26,6 +26,20 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn("completed_ids = run_rollout_ids(run_path)", baseline_catalog)
         self.assertIn("self._read_method(", baseline_readers)
 
+    def test_results_render_does_not_wait_for_run_catalog(self) -> None:
+        core = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        catalog = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("await loadBaselineRunCatalog(condition)", core)
+        self.assertIn("renderEvaluationPanel(payload.evaluation);", core)
+        self.assertIn("loadBaselineRunCatalog(condition).then(function ()", core)
+        self.assertLess(
+            core.index("renderEvaluationPanel(payload.evaluation);"),
+            core.index("loadBaselineRunCatalog(condition).then(function ()"),
+        )
+        self.assertIn("function refreshBaselineRunControls(", catalog)
+        self.assertIn("Loading run catalog…", catalog)
+
     def test_frontend_refreshes_catalog_when_completed_count_advances(self) -> None:
         script = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
         app = (TOOL_ROOT / "static/app/jobs.js").read_text(encoding="utf-8")
