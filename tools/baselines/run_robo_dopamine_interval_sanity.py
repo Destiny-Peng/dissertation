@@ -22,7 +22,7 @@ from run_lf3r_baseline import (
     git_revision,
     iso_now,
     load_jsonl,
-    resolve_record_path,
+    resolve_primary_video,
     resolve_vllm_memory_budget,
     timestamp,
 )
@@ -114,7 +114,7 @@ def main() -> int:
         interval_root = run_root / f"interval_{interval}"
         for rollout_id in args.rollout_id:
             record = records_by_id[rollout_id]
-            video = resolve_record_path(str(record["video_path"]), data_root)
+            video = resolve_primary_video(record, data_root)
             task = record.get("task", record.get("task_description"))
             if task is None:
                 raise SystemExit(f"Manifest record has no task description: {rollout_id}")
