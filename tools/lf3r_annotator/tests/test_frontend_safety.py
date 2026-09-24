@@ -50,7 +50,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
 
         runs_jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
         self.assertNotIn("MutationObserver", runs_jobs)
-        self.assertNotIn("window.renderPersistentJobLists =", runs_jobs)
+        self.assertNotRegex(runs_jobs, r"window\\.renderPersistentJobLists\\s*=(?!=)")
         self.assertNotIn("window.loadBaselineBatchLog =", runs_jobs)
 
     def test_runs_log_refresh_stays_bound_to_selected_job(self) -> None:
