@@ -13,7 +13,7 @@ async function loadEvaluation(rolloutId) {
   var record = state.rollouts.find(function (item) { return item.id === rolloutId; }) || null;
   state.evaluation = null;
   byId("evaluationStatus").textContent = "Loading baseline outputs...";
-  byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Reading completed baseline runs...</div>';
+  byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Reading baseline outputs for this rollout...</div>';
   try {
     var query = ["condition=" + encodeURIComponent(condition)];
     ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].forEach(function (method) {
