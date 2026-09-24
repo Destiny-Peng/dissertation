@@ -2,6 +2,19 @@
 
 /* Failure-event editing and frame assignment. */
 
+var failureTypeChoices = [
+  ["none_success", "No failure / success"],
+  ["grasp_failure", "Grasp failure"],
+  ["placement_failure", "Placement failure"],
+  ["dropped_object", "Dropped object"],
+  ["wrong_object", "Wrong object"],
+  ["collision", "Collision"],
+  ["timeout_no_progress", "Timeout / no progress"],
+  ["control_error", "Control error"],
+  ["observation_error", "Observation error"],
+  ["other", "Other"]
+];
+
 function emptyFailureEvent(defaultType, knownCausal) {
   return {
     failure_type: defaultType || "other",
