@@ -4,6 +4,8 @@
 
 Each observation stores a two-frame temporal stack for each camera. The converter takes the latest history frame from every transition and appends the last transition's latest `next_observations` frame by default. The history dimension is not another camera. `state` is proprioceptive data and is not written as a video.
 
+The current PKL format stores a binary `rewards` value on each transition. Any reward of `1` labels the rollout `success`; if all available rewards are `0`, it is labeled `failure`. If `rewards` is missing or contains non-binary values, the outcome is `unknown`. The manifest records `ground_truth_outcome`, `ground_truth_reward`, and `ground_truth_source`.
+
 Run from the project root:
 
 ```bash
@@ -26,7 +28,7 @@ outputs/realrobot/baseline_rollouts/manifest_wrist_1.jsonl
 
 Each view manifest has a normal `video_path` for that camera, so it can be passed directly to the baseline runner. The canonical `manifest.jsonl` uses `side_policy_256` by default. To use the wrist camera with the canonical manifest, pass `--primary-camera wrist_1`; alternatively, use `manifest_wrist_1.jsonl` directly.
 
-Videos are encoded as H.264 with FFmpeg's `libx264` by default (`yuv420p`, CRF 18). FFmpeg with `libx264` must be available on `PATH`. To explicitly use the old OpenCV MPEG-4 Part 2 output, pass `--video-codec mp4v`.
+Videos are encoded as H.264 with FFmpeg's `libx264` by default (`yuv420p`, CRF 18, `veryfast` preset). Frames are streamed directly to FFmpeg instead of building a second full-video buffer, and camera frames are no longer stacked into another video-sized array. This reduces conversion time and peak memory. To trade smaller files for slower encoding, pass `--video-preset medium`; `--video-preset ultrafast` favors speed at the cost of larger files. FFmpeg with `libx264` must be available on `PATH`. To explicitly use the OpenCV MPEG-4 Part 2 output, pass `--video-codec mp4v`.
 
 `--observation-keys` changes the camera fields to extract and requires at least two keys. For example:
 
@@ -50,6 +52,6 @@ Use a view-specific manifest with a baseline, for example:
   ...
 ```
 
-`--history-index` selects the frame within each camera's temporal stack and defaults to `-1` (latest). `--no-append-final-next` omits the final next-observation frame. `--fps` defaults to 30. Existing converted files are protected. Use `--resume` to keep files that already exist and rebuild the manifests; use `--overwrite` to regenerate videos and replace manifests.
+`--history-index` selects the frame within each camera's temporal stack and defaults to `-1` (latest). `--no-append-final-next` omits the final next-observation frame. `--fps` defaults to 30. Existing converted files are protected. Use `--resume` to keep files that already exist and rebuild the manifests; reused files are marked with `video_reused: true` and their encoder settings are left unset. Use `--overwrite` to regenerate videos and apply the selected preset (including the faster new `veryfast` default) to all files.
 
 This output is directly suitable for video baselines that consume `video_path` (ProcVLM, RynnValue, Robo-Dopamine, DenseReward). SAFE's trained detector consumes OpenVLA hidden-state pickles/CSV features, so this image-only conversion does not create SAFE latent inputs.

@@ -2,7 +2,8 @@
 """Convert real-robot transition pickles into multi-view LF3R rollouts.
 
 By default, each input pickle is exported as separate ``side_policy_256`` and
-``wrist_1`` videos, with a baseline manifest for each view. Source pickles are
+``wrist_1`` videos, with a baseline manifest for each view. Binary transition
+rewards are reduced to an episode success/failure label. Source pickles are
 never changed.
 """
 
@@ -94,28 +95,31 @@ def _load_source(path: Path) -> list[dict[str, Any]]:
     raise ValueError("top-level pickle object must be a transition dictionary or list of dictionaries")
 
 
-def _frames_to_bgr(frames: np.ndarray) -> list[np.ndarray]:
-    frames = np.asarray(frames)
-    if frames.ndim == 4 and frames.shape[1] in (1, 3, 4) and frames.shape[-1] not in (1, 3, 4):
-        frames = np.transpose(frames, (0, 2, 3, 1))
-    if frames.ndim != 4 or frames.shape[-1] not in (1, 3, 4):
-        raise ValueError(f"expected frames shaped (T,H,W,C) or (T,C,H,W), got {frames.shape}")
-    if frames.dtype != np.uint8:
-        frames = np.clip(frames, 0, 255).astype(np.uint8)
-    if frames.shape[-1] == 1:
-        frames = np.repeat(frames, 3, axis=-1)
-    if frames.shape[-1] == 4:
-        frames = frames[..., :3]
-    return [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in frames]
+def _prepare_rgb_frame(frame: np.ndarray) -> np.ndarray:
+    frame = np.asarray(frame)
+    if frame.ndim == 3 and frame.shape[0] in (1, 3, 4) and frame.shape[-1] not in (1, 3, 4):
+        frame = np.transpose(frame, (1, 2, 0))
+    if frame.ndim == 2:
+        frame = frame[..., None]
+    if frame.ndim != 3 or frame.shape[-1] not in (1, 3, 4):
+        raise ValueError(f"expected frame shaped (H,W,C) or (C,H,W), got {frame.shape}")
+    if frame.dtype != np.uint8:
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
+    if frame.shape[-1] == 1:
+        frame = np.repeat(frame, 3, axis=-1)
+    elif frame.shape[-1] == 4:
+        frame = frame[..., :3]
+    return frame
 
 
-def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tuple[int, int, int]:
-    bgr = _frames_to_bgr(frames)
-    height, width = bgr[0].shape[:2]
+def _write_video(
+    frames: list[np.ndarray], output: Path, fps: float, codec: str, preset: str
+) -> tuple[int, int, int]:
+    if not frames:
+        raise ValueError("cannot write a video with no frames")
+    first = _prepare_rgb_frame(frames[0])
+    height, width = first.shape[:2]
     output.parent.mkdir(parents=True, exist_ok=True)
-    for frame in bgr:
-        if frame.shape[:2] != (height, width):
-            raise ValueError("frame sequence contains inconsistent dimensions")
 
     if codec == "h264":
         ffmpeg = shutil.which("ffmpeg")
@@ -133,7 +137,7 @@ def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tu
             "-vcodec",
             "rawvideo",
             "-pix_fmt",
-            "bgr24",
+            "rgb24",
             "-s:v",
             f"{width}x{height}",
             "-r",
@@ -144,7 +148,7 @@ def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tu
             "-c:v",
             "libx264",
             "-preset",
-            "medium",
+            preset,
             "-crf",
             "18",
             "-pix_fmt",
@@ -153,16 +157,30 @@ def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tu
             "+faststart",
             str(temporary),
         ]
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
         try:
-            result = subprocess.run(
-                command,
-                input=b"".join(frame.tobytes() for frame in bgr),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            if result.returncode != 0:
-                detail = result.stderr.decode("utf-8", errors="replace").strip()
+            assert process.stdin is not None
+            for index, source_frame in enumerate(frames):
+                frame = first if index == 0 else _prepare_rgb_frame(source_frame)
+                if frame.shape[:2] != (height, width):
+                    raise ValueError("frame sequence contains inconsistent dimensions")
+                # Stream one frame at a time: avoid retaining a converted-frame list
+                # and a second full-video bytes copy while FFmpeg encodes.
+                process.stdin.write(np.ascontiguousarray(frame).tobytes())
+            _, stderr = process.communicate()
+        except BaseException:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+            raise
+        try:
+            if process.returncode != 0:
+                detail = stderr.decode("utf-8", errors="replace").strip()
                 raise RuntimeError(f"ffmpeg H.264 encoding failed: {detail}")
             os.replace(temporary, output)
         finally:
@@ -175,13 +193,32 @@ def _write_video(frames: np.ndarray, output: Path, fps: float, codec: str) -> tu
         if not writer.isOpened():
             raise RuntimeError(f"could not open video writer for {output}")
         try:
-            for frame in bgr:
-                writer.write(frame)
+            for source_frame in frames:
+                frame = _prepare_rgb_frame(source_frame)
+                if frame.shape[:2] != (height, width):
+                    raise ValueError("frame sequence contains inconsistent dimensions")
+                writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         finally:
             writer.release()
     else:
         raise ValueError(f"unsupported video codec: {codec}")
-    return len(bgr), width, height
+    return len(frames), width, height
+
+
+def _episode_outcome(transitions: list[dict[str, Any]]) -> tuple[str, int | None, str]:
+    rewards: list[float] = []
+    for transition in transitions:
+        value = transition.get("rewards")
+        if value is None:
+            continue
+        scalar = np.asarray(value)
+        if scalar.size == 1:
+            rewards.append(float(scalar.reshape(-1)[0]))
+
+    if rewards and all(value in (0.0, 1.0) for value in rewards):
+        episode_reward = int(any(value == 1.0 for value in rewards))
+        return ("success" if episode_reward else "failure", episode_reward, "rewards")
+    return "unknown", None, "unavailable"
 
 
 def _safe_id(stem: str, index: int) -> str:
@@ -207,14 +244,14 @@ def convert_one(
     task: str,
     append_final_next: bool,
     codec: str,
+    video_preset: str,
     write_cameras: set[str],
 ) -> dict[str, dict[str, Any]]:
     transitions = _load_source(source)
     rollout_id = _safe_id(source.stem, index)
     metadata = transitions[0]
     task_text = metadata.get("task_description") or metadata.get("language_instruction") or metadata.get("instruction") or task
-    success = metadata.get("episode_success")
-    outcome = "success" if success is True or success == 1 else "unknown"
+    outcome, episode_reward, outcome_source = _episode_outcome(transitions)
 
     camera_data: dict[str, dict[str, Any]] = {}
     for camera in camera_keys:
@@ -231,15 +268,15 @@ def convert_one(
                     allow_fallback=False,
                 )
             )
-        frames = np.stack(frames, axis=0)
-        if frames.shape[0] < 2:
+        if len(frames) < 2:
             raise ValueError(f"{source} has fewer than two video frames for camera {camera!r}")
 
         video_path = output_root / "videos" / _safe_camera_name(camera) / f"{rollout_id}.mp4"
         if camera in write_cameras:
-            count, width, height = _write_video(frames, video_path, fps, codec)
+            count, width, height = _write_video(frames, video_path, fps, codec, video_preset)
         else:
-            count, height, width = len(frames), int(frames.shape[1]), int(frames.shape[2])
+            first_frame = _prepare_rgb_frame(frames[0])
+            count, height, width = len(frames), int(first_frame.shape[0]), int(first_frame.shape[1])
         camera_data[camera] = {
             "path": str(video_path.relative_to(project_root)),
             "count": count,
@@ -262,6 +299,8 @@ def convert_one(
             "total_frames": info["count"],
             "fps": float(fps),
             "ground_truth_outcome": outcome,
+            "ground_truth_reward": episode_reward,
+            "ground_truth_source": outcome_source,
             "source_kind": "realrobot_pkl",
             "source_pkl": str(source.relative_to(project_root)),
             "observation_key": camera,
@@ -269,8 +308,10 @@ def convert_one(
             "append_final_next": append_final_next,
             "video_width": info["width"],
             "video_height": info["height"],
-            "video_codec": codec,
-            "video_encoder": "libx264" if codec == "h264" else "mp4v",
+            "video_codec": codec if camera in write_cameras else None,
+            "video_encoder": ("libx264" if codec == "h264" else "mp4v") if camera in write_cameras else None,
+            "video_preset": video_preset if codec == "h264" and camera in write_cameras else None,
+            "video_reused": camera not in write_cameras,
         }
     return rows
 
@@ -295,6 +336,12 @@ def main() -> int:
     parser.add_argument("--task", default="real-robot demonstration", help="Task text passed to the baseline model when the PKL has no instruction field")
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--video-codec", choices=("h264", "mp4v"), default="h264", help="Output codec; H.264/libx264 is the default")
+    parser.add_argument(
+        "--video-preset",
+        choices=("ultrafast", "superfast", "veryfast", "faster", "fast", "medium"),
+        default="veryfast",
+        help="libx264 speed/size tradeoff; faster presets encode sooner but may produce larger files",
+    )
     parser.add_argument("--append-final-next", action=argparse.BooleanOptionalAction, default=True, help="Append the final transition's next_observations frame (default: enabled)")
     parser.add_argument("--overwrite", action="store_true", help="Regenerate existing converted videos and replace manifests")
     parser.add_argument("--resume", action="store_true", help="Keep existing converted videos and rebuild all manifests")
@@ -369,6 +416,7 @@ def main() -> int:
             args.task,
             args.append_final_next,
             args.video_codec,
+            args.video_preset,
             write_cameras,
         )
         for camera, row in rows.items():
