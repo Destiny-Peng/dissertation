@@ -59,19 +59,29 @@
     var width = output.getBoundingClientRect().width;
     if (!Number.isFinite(width) || width < 24) return;
 
-    var measurer = output.cloneNode(false);
-    measurer.removeAttribute("data-current-output");
-    measurer.removeAttribute("hidden");
-    measurer.classList.add("evaluation-output-measurer");
-    measurer.style.width = width + "px";
-    output.parentNode.appendChild(measurer);
-
-    var maxHeight = 0;
-    uniqueOutputTexts(result).forEach(function (text) {
+    var fragment = document.createDocumentFragment();
+    var measurers = uniqueOutputTexts(result).map(function (text) {
+      var measurer = output.cloneNode(false);
+      measurer.removeAttribute("id");
+      measurer.removeAttribute("data-current-output");
+      measurer.removeAttribute("hidden");
+      measurer.classList.add("evaluation-output-measurer");
+      measurer.style.width = width + "px";
       measurer.textContent = text;
+      fragment.appendChild(measurer);
+      return measurer;
+    });
+    output.parentNode.appendChild(fragment);
+
+    // All DOM writes happen before the first height read, avoiding a
+    // write/read layout cycle for every sampled text output.
+    var maxHeight = 0;
+    measurers.forEach(function (measurer) {
       maxHeight = Math.max(maxHeight, measurer.scrollHeight);
     });
-    measurer.remove();
+    measurers.forEach(function (measurer) {
+      measurer.remove();
+    });
 
     if (maxHeight > 0) {
       output.style.setProperty("--lf3r-output-height", Math.ceil(maxHeight + 2) + "px");
