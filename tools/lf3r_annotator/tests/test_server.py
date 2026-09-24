@@ -17,7 +17,7 @@ from http.server import ThreadingHTTPServer
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import LF3RApplication, LF3RHandler, make_handler
+from server import LF3RApplication, LF3RHandler, ValidationError, load_manifest_records, make_handler
 
 
 class ServerTest(unittest.TestCase):
@@ -454,6 +454,19 @@ class ServerTest(unittest.TestCase):
         response = b"".join(chunks)
         self.assertIn(b" 200 ", response.split(b"\r\n", 1)[0])
         self.assertIn(b'"status": "ok"', response)
+
+    def test_legacy_video_path_manifest_is_rejected(self) -> None:
+        legacy = self.root / "legacy-manifest.jsonl"
+        legacy.write_text(
+            json.dumps({
+                "schema_version": 1,
+                "id": "legacy-rollout",
+                "video_path": "outputs/sample.mp4",
+            }) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValidationError, "Legacy video_path is not supported"):
+            load_manifest_records(legacy)
 
     def test_health_manifest_and_range_video(self) -> None:
         with self.request("/api/health") as response:
