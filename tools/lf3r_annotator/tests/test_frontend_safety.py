@@ -102,7 +102,6 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "results/layout.js",
             "results/run-config.js",
             "runs/jobs.js",
-            "runs-submit.js",
         ]:
             self.assertIn(stable, workspace)
 
@@ -118,6 +117,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "baseline-job-filter.js",
             "runs-log-ui.js",
             "runs-job-control.js",
+            "runs-submit.js",
         ]:
             self.assertNotIn(obsolete, workspace)
 
