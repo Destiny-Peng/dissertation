@@ -195,6 +195,20 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotIn("MutationObserver", layout)
         self.assertNotIn("MutationObserver", config)
 
+    def test_runs_jobs_frontend_is_canonical(self) -> None:
+        jobs = STATIC_ROOT / "runs" / "jobs.js"
+        self.assertTrue(jobs.is_file())
+        source = jobs.read_text(encoding="utf-8")
+        self.assertIn("window.LF3RRunsJobs", source)
+        self.assertNotIn("MutationObserver", source)
+        self.assertNotIn("window.renderPersistentJobLists =", source)
+        for obsolete in [
+            "baseline-job-filter.js",
+            "runs-log-ui.js",
+            "runs-job-control.js",
+        ]:
+            self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
