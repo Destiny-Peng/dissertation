@@ -165,7 +165,4 @@
   if (window.LF3RProjectTools && typeof window.LF3RProjectTools.install === "function") window.LF3RProjectTools.install();
 
   setMode(currentMode);
-  refreshToolJobs().then(function () { if (activeToolJobId) pollToolJob(); });
-  loadRolloutOptions();
-  loadBatchManifestOptions(false);
 })();
