@@ -172,22 +172,10 @@ class LF3RApplication:
     def load_rollouts(self) -> list[dict[str, Any]]:
         if not self.manifest_path.exists():
             return []
-        records: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        with self.manifest_path.open("r", encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, 1):
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                rollout_id = record.get("id")
-                if not isinstance(rollout_id, str) or not ROLLOUT_ID_RE.fullmatch(rollout_id):
-                    raise ValidationError(f"Invalid rollout id at manifest line {line_number}")
-                if rollout_id in seen:
-                    raise ValidationError(f"Duplicate rollout id: {rollout_id}")
-                seen.add(rollout_id)
-                for video_path in record_camera_video_paths(record).values():
-                    self.resolve_project_file(video_path, ".mp4")
-                records.append(record)
+        records = load_manifest_records(self.manifest_path)
+        for record in records:
+            for video_path in record_camera_video_paths(record).values():
+                self.resolve_project_file(video_path, ".mp4")
         return records
 
     def rollout_map(self) -> dict[str, dict[str, Any]]:
