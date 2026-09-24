@@ -25,6 +25,7 @@ VLLM_BASELINES = {"procvlm", "robo_dopamine"}
 PERSISTENT_BASELINES = VLLM_BASELINES | {"densereward"}
 PROCVLM_FATAL_EXIT_CODE = 70
 ROBODOPAMINE_FATAL_EXIT_CODE = 70
+PRIMARY_CAMERA_ORDER = ("cam_high", "cam_wrist", "cam_left_wrist", "cam_right_wrist")
 
 BASELINES = {
     "safe": {
@@ -158,6 +159,38 @@ def resolve_record_path(value: str, data_root: Path) -> Path:
     return path.resolve() if path.is_absolute() else (data_root / path).resolve()
 
 
+def record_camera_video_paths(record: dict[str, Any]) -> dict[str, str]:
+    raw = record.get("camera_video_paths")
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(
+            "Manifest record must define a non-empty camera_video_paths mapping: "
+            + str(record.get("id") or record.get("rollout_id") or "<unknown>")
+        )
+    paths: dict[str, str] = {}
+    for camera, value in raw.items():
+        key = str(camera or "").strip()
+        if not key.startswith("cam_"):
+            raise ValueError(f"Camera key must use cam_* schema: {camera!r}")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Camera path for {key} must be a non-empty string")
+        paths[key] = value.strip()
+    return paths
+
+
+def primary_camera_video_path(record: dict[str, Any]) -> tuple[str, str]:
+    paths = record_camera_video_paths(record)
+    for camera in PRIMARY_CAMERA_ORDER:
+        if camera in paths:
+            return camera, paths[camera]
+    camera = sorted(paths)[0]
+    return camera, paths[camera]
+
+
+def resolve_primary_video(record: dict[str, Any], data_root: Path) -> Path:
+    _camera, value = primary_camera_video_path(record)
+    return resolve_record_path(value, data_root)
+
+
 def approximate_num_steps_for_interval(total_frames: int, interval: int) -> int:
     """Return the official sampler count that approximates a fixed frame interval.
 
@@ -263,11 +296,7 @@ def build_procvlm_job_specs(
         rollout_id = str(record.get("rollout_id", record.get("id", "")))
         if not rollout_id:
             raise ValueError("ProcVLM job is missing rollout ID")
-        video_value = record.get("video_path")
-        if video_value is None:
-            raise ValueError(f"ProcVLM job {rollout_id} is missing video path")
-        video_path = Path(video_value).expanduser()
-        video = video_path.resolve() if video_path.is_absolute() else resolve_record_path(str(video_value), args.data_root)
+        video = resolve_primary_video(record, args.data_root)
         if not video.is_file():
             raise FileNotFoundError(f"Input for {rollout_id} does not exist: {video}")
         task = record.get("task", record.get("task_description"))
@@ -345,15 +374,7 @@ def build_densereward_job_specs(
         rollout_id = str(record.get("rollout_id", record.get("id", "")))
         if not rollout_id:
             raise ValueError("DenseReward job is missing rollout ID")
-        video_value = record.get("video_path")
-        if video_value is None:
-            raise ValueError(f"DenseReward job {rollout_id} is missing video path")
-        video_path = Path(video_value).expanduser()
-        video = (
-            video_path.resolve()
-            if video_path.is_absolute()
-            else resolve_record_path(str(video_value), args.data_root)
-        )
+        video = resolve_primary_video(record, args.data_root)
         if not video.is_file():
             raise FileNotFoundError(f"Input for {rollout_id} does not exist: {video}")
         task = record.get("task", record.get("task_description"))
@@ -1008,7 +1029,7 @@ def command_for(
         ]
         return command, config["repo"]
 
-    video = resolve_record_path(record["video_path"], args.data_root)
+    video = resolve_primary_video(record, args.data_root)
     if args.baseline == "procvlm":
         command = [
             python, "-m", "evqa.inference",
@@ -1261,9 +1282,7 @@ def run_rynn_parallel(
                     command, cwd = command_for(
                         args, config, record, job_dir, model_path, None
                     )
-                    required_input = resolve_record_path(
-                        record["video_path"], args.data_root
-                    )
+                    required_input = resolve_primary_video(record, args.data_root)
                     if not required_input.is_file():
                         raise FileNotFoundError(
                             f"Input for {rollout_id} does not exist: {required_input}"
@@ -1578,8 +1597,11 @@ def run_simple_parallel(
                     command, cwd = command_for(
                         args, config, record, job_dir, model_path, None
                     )
-                    input_key = "csv_path" if args.baseline == "safe" else "video_path"
-                    required_input = resolve_record_path(record[input_key], args.data_root)
+                    required_input = (
+                        resolve_record_path(record["csv_path"], args.data_root)
+                        if args.baseline == "safe"
+                        else resolve_primary_video(record, args.data_root)
+                    )
                     if not required_input.is_file():
                         raise FileNotFoundError(
                             f"Input for {rollout_id} does not exist: {required_input}"
@@ -2319,7 +2341,7 @@ def parse_args() -> argparse.Namespace:
         "--robo-camera-mode",
         choices=("auto", "single_view", "multi_view"),
         default="auto",
-        help="Robo-Dopamine camera input: auto uses physical multiview when available, single_view repeats video_path, multi_view requires cam_high + cam_wrist",
+        help="Robo-Dopamine camera input: auto uses physical multiview when available, single_view repeats the primary manifest camera, multi_view requires cam_high plus wrist camera inputs",
     )
     parser.add_argument(
         "--robo-eval-modes",
@@ -2692,9 +2714,10 @@ def main() -> int:
         command, cwd = command_for(
             args, config, record, job_dir, model_path, vllm_total_memory_fraction
         )
-        required_input = resolve_record_path(
-            record["csv_path"] if args.baseline == "safe" else record["video_path"],
-            args.data_root,
+        required_input = (
+            resolve_record_path(record["csv_path"], args.data_root)
+            if args.baseline == "safe"
+            else resolve_primary_video(record, args.data_root)
         )
         if not required_input.is_file():
             raise FileNotFoundError(f"Input for {record['id']} does not exist: {required_input}")
