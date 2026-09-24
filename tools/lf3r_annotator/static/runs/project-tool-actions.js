@@ -101,24 +101,38 @@ window.LF3RProjectToolActions = (function createProjectToolActions() {
       client.submit("validate_variants", {}).catch(function () {});
     });
 
+    function renderRolloutOptions(rows) {
+      var select = document.getElementById("roboSweepRollout");
+      if (!select) return;
+      select.innerHTML = (rows || []).map(function (row) {
+        var label = (row.task_suite || "")
+          + " · task " + row.task_id
+          + " · ep " + row.episode_index
+          + " · " + row.id;
+        return '<option value="' + row.id + '">' + label + '</option>';
+      }).join("");
+    }
+
     async function loadRolloutOptions() {
       var select = document.getElementById("roboSweepRollout");
+      var cached = (typeof state !== "undefined" && state && Array.isArray(state.rollouts))
+        ? state.rollouts
+        : [];
+      if (cached.length) {
+        renderRolloutOptions(cached);
+        return;
+      }
       try {
         var response = await fetch("/api/rollouts", { cache: "no-store" });
         var payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Could not load rollouts");
-        var rows = payload.rollouts || [];
-        select.innerHTML = rows.map(function (row) {
-          var label = (row.task_suite || "")
-            + " · task " + row.task_id
-            + " · ep " + row.episode_index
-            + " · " + row.id;
-          return '<option value="' + row.id + '">' + label + '</option>';
-        }).join("");
+        renderRolloutOptions(payload.rollouts || []);
       } catch (error) {
-        select.innerHTML = '<option value="">'
-          + String(error.message || error)
-          + '</option>';
+        if (select) {
+          select.innerHTML = '<option value="">'
+            + String(error.message || error)
+            + '</option>';
+        }
       }
     }
 
