@@ -20,11 +20,27 @@ def check(name: str, passed: bool, details: str) -> dict[str, Any]:
 
 
 def read_manifest(path: Path) -> list[dict[str, Any]]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if not isinstance(record, dict):
+            raise ValueError(f"Manifest line {line_number} is not an object")
+        if "video_path" in record or record.get("schema_version") != 2:
+            raise ValueError(
+                f"Manifest line {line_number} must use schema_version=2 "
+                "and camera_video_paths only"
+            )
+        camera_paths = record.get("camera_video_paths")
+        if not isinstance(camera_paths, dict) or not camera_paths:
+            raise ValueError(
+                f"Manifest line {line_number} has no camera_video_paths"
+            )
+        records.append(record)
+    return records
 
 
 def media_is_valid(project_root: Path, record: dict[str, Any]) -> bool:
