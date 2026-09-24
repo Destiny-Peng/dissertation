@@ -258,7 +258,10 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_runs_core_is_extracted_from_app_shell(self) -> None:
         runs_core = STATIC_ROOT / "runs" / "core.js"
+        runs_layout = STATIC_ROOT / "runs" / "layout.js"
         self.assertTrue(runs_core.is_file())
+        self.assertTrue(runs_layout.is_file())
+        self.assertFalse((STATIC_ROOT / "runs-layout.js").exists())
         source = runs_core.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
