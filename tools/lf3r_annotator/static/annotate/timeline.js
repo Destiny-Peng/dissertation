@@ -2,6 +2,13 @@
 
 /* Video playback, frame navigation, and timeline markers. */
 
+var TIMELINE_MARKER_DEFINITIONS = [
+  { field: "causal_onset_frame", cssClass: "causal", label: "Causal / injected onset" },
+  { field: "observable_onset_frame", cssClass: "observable", label: "Observable onset" },
+  { field: "terminal_failure_frame", cssClass: "terminal", label: "Terminal failure" },
+  { field: "recovery_frame", cssClass: "recovery", label: "Recovery" }
+];
+
 function currentFrame() {
   return state.currentFrame;
 }
