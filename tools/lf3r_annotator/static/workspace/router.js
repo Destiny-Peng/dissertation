@@ -24,6 +24,9 @@ function workspaceShowView(view) {
   }
   byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "settings" ? "Settings" : view === "results" ? "Results" : view === "runs" ? "Runs" : "Annotate";
   document.title = "LF3R " + (view === "review" ? "Failure Review" : labelFor(view));
+  window.dispatchEvent(new CustomEvent("lf3r:viewchange", {
+    detail: { view: view }
+  }));
 }
 
 function workspaceParseRoute() {
