@@ -150,11 +150,6 @@
         + " matching rollouts. Narrow the manifest/search filters to show another subset.</div>";
     }
     container.innerHTML = html;
-    container.querySelectorAll("[data-rollout-id]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        maybeSelectRollout(button.dataset.rolloutId);
-      });
-    });
   }
 
   function applyManifestFilters() {
@@ -194,10 +189,12 @@
     ensureManifestControls();
     ["searchInput", "originFilter", "outcomeFilter", "reviewFilter", "manifestFilter"].forEach(function (id) {
       var node = byId(id);
-      if (!node || node.dataset.manifestFilterHook === "true") return;
+      if (!node
+          || node.dataset.primaryFilterHook === "true"
+          || node.dataset.manifestFilterHook === "true") return;
       node.dataset.manifestFilterHook = "true";
       node.addEventListener(id === "searchInput" ? "input" : "change", function () {
-        window.setTimeout(applyManifestFilters, 0);
+        if (typeof window.applyFilters === "function") window.applyFilters();
       });
     });
   }
