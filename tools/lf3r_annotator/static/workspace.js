@@ -18,7 +18,7 @@
     "/static/analysis-robo-hop.js",
     "/static/results/layout.js",
     "/static/results/run-config.js",
-    "/static/runs-layout.js",
+    "/static/runs/layout.js",
     "/static/runs/scope.js",
     "/static/runs/jobs.js",
     "/static/baselines/procvlm.js"
