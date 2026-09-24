@@ -15,6 +15,7 @@ from backend_core import (
     ROLLOUT_ID_RE,
     ValidationError,
     load_manifest_records,
+    record_camera_video_paths,
 )
 from baseline_constants import INSTRUCTION_VARIANT_LABELS
 from baseline_service import BaselineService
@@ -125,8 +126,8 @@ class LF3RApplication:
             row = variants.get(condition)
             if row is None:
                 continue
-            if row.get("video_path") != record.get("video_path"):
-                raise ValidationError("Instruction variant video does not match source rollout: " + source_id)
+            if row.get("camera_video_paths") != record.get("camera_video_paths"):
+                raise ValidationError("Instruction variant cameras do not match source rollout: " + source_id)
             options[condition] = {
                 "id": row["id"],
                 "condition": condition,
@@ -164,8 +165,8 @@ class LF3RApplication:
         row = self.load_instruction_variant_records().get(record["id"], {}).get(condition)
         if row is None:
             return None
-        if row.get("video_path") != record.get("video_path"):
-            raise ValidationError("Instruction variant video does not match source rollout: " + record["id"])
+        if row.get("camera_video_paths") != record.get("camera_video_paths"):
+            raise ValidationError("Instruction variant cameras do not match source rollout: " + record["id"])
         return dict(row)
 
     def load_rollouts(self) -> list[dict[str, Any]]:
@@ -184,7 +185,8 @@ class LF3RApplication:
                 if rollout_id in seen:
                     raise ValidationError(f"Duplicate rollout id: {rollout_id}")
                 seen.add(rollout_id)
-                self.resolve_project_file(record["video_path"], ".mp4")
+                for video_path in record_camera_video_paths(record).values():
+                    self.resolve_project_file(video_path, ".mp4")
                 records.append(record)
         return records
 
