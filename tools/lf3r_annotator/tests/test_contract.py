@@ -35,7 +35,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         app_javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
         results_javascript = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
-        javascript = app_javascript + "\n" + results_javascript
+        results_charts = (TOOL_ROOT / "static/results/charts.js").read_text(encoding="utf-8")
+        javascript = app_javascript + "\n" + results_javascript + "\n" + results_charts
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         frontend_javascript = javascript + "\n" + workspace
         for element_id in [
