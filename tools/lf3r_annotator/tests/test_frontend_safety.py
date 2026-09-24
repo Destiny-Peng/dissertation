@@ -107,10 +107,19 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "workspace-core.js",
             "manifest-support.js",
             "results-run-config.js",
-            "results-run-actions.js",
             "runs-submit.js",
         ]:
             self.assertIn(stable, workspace)
+
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/static/results/core.js", html)
+        for obsolete in [
+            "results-axis-scale.js",
+            "results-current-values.js",
+            "results-run-actions.js",
+            "progressive-baseline-results.js",
+        ]:
+            self.assertNotIn(obsolete, workspace)
 
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
