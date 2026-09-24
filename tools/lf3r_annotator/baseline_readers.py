@@ -142,6 +142,9 @@ class BaselineReadersMixin:
                 "checkpoint_config_id",
                 "checkpoint_repeat",
                 "checkpoint_seed",
+                "frames",
+                "logits",
+                "sigmoid_scores",
                 "predicted_index",
                 "predicted_frame",
                 "predicted_logit",
@@ -549,6 +552,9 @@ class BaselineReadersMixin:
                         localization.update({
                             key: detailed.get(key)
                             for key in (
+                                "frames",
+                                "logits",
+                                "sigmoid_scores",
                                 "predicted_index",
                                 "predicted_frame",
                                 "predicted_logit",
