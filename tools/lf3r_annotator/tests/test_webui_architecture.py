@@ -234,7 +234,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         source = controller.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         analysis_live = (STATIC_ROOT / "analysis" / "live.js").read_text(encoding="utf-8")
-        workspace_core = (STATIC_ROOT / "workspace-core.js").read_text(encoding="utf-8")
+        workspace_router = (STATIC_ROOT / "workspace" / "router.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
         self.assertIn("window.LF3RDatasetScopes", source)
@@ -251,7 +251,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("LF3RDatasetScopes.scopeLabel", app)
         self.assertIn("LF3RDatasetScopes.decorateHelp", app)
         self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
-        self.assertIn("LF3RDatasetScopes.refresh", workspace_core)
+        self.assertIn("LF3RDatasetScopes.refresh", workspace_router)
         self.assertIn("/static/runs/scope.js", workspace)
 
         for obsolete in ["runs-semantics.js", "dataset-scope-ui.js"]:
@@ -280,7 +280,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_analysis_frontend_is_split_from_workspace_shell(self) -> None:
         analysis_root = STATIC_ROOT / "analysis"
-        module_names = [
+        analysis_module_names = [
             "live.js",
             "snapshot.js",
             "localization.js",
@@ -291,47 +291,69 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "signals.js",
             "details.js",
         ]
+        workspace_root = STATIC_ROOT / "workspace"
+        workspace_module_names = ["settings.js", "router.js", "events.js"]
         shell = STATIC_ROOT / "workspace-core.js"
         loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
         sources = {}
-        for name in module_names:
+        for name in analysis_module_names:
             path = analysis_root / name
             self.assertTrue(path.is_file(), name)
-            sources[name] = path.read_text(encoding="utf-8")
+            sources["analysis/" + name] = path.read_text(encoding="utf-8")
         self.assertFalse((analysis_root / "core.js").exists())
 
+        workspace_sources = {}
+        for name in workspace_module_names:
+            path = workspace_root / name
+            self.assertTrue(path.is_file(), name)
+            workspace_sources["workspace/" + name] = path.read_text(encoding="utf-8")
+
         shell_source = shell.read_text(encoding="utf-8")
-        self.assertIn("function workspaceRenderLiveAnalysis(", sources["live.js"])
-        self.assertIn("function workspaceRenderCoverageChart(", sources["snapshot.js"])
-        self.assertIn("function workspaceRenderLocalization(", sources["localization.js"])
-        self.assertIn("function workspaceRenderChangePoint(", sources["change-point.js"])
-        self.assertIn("function workspaceRenderEventTriggered(", sources["event-triggered.js"])
-        self.assertIn("function workspaceLoadBaselineRuns(", sources["runs.js"])
-        self.assertIn("function workspaceDashboardRenderSnapshot(", sources["dashboard.js"])
-        self.assertIn("function workspaceDashboardRenderComparison(", sources["dashboard.js"])
-        self.assertIn("function workspaceRenderSnapshot(", sources["dashboard.js"])
-        self.assertIn("function workspaceDashboardRenderSignalShape(", sources["signals.js"])
-        self.assertIn("function workspaceDashboardRenderDetails(", sources["details.js"])
-        self.assertIn("function workspaceLoadAnalysisDetails(", sources["details.js"])
+        self.assertIn("function workspaceRenderLiveAnalysis(", sources["analysis/live.js"])
+        self.assertIn("function workspaceRenderCoverageChart(", sources["analysis/snapshot.js"])
+        self.assertIn("function workspaceRenderLocalization(", sources["analysis/localization.js"])
+        self.assertIn("function workspaceRenderChangePoint(", sources["analysis/change-point.js"])
+        self.assertIn("function workspaceRenderEventTriggered(", sources["analysis/event-triggered.js"])
+        self.assertIn("function workspaceLoadBaselineRuns(", sources["analysis/runs.js"])
+        self.assertIn("function workspaceDashboardRenderSnapshot(", sources["analysis/dashboard.js"])
+        self.assertIn("function workspaceDashboardRenderComparison(", sources["analysis/dashboard.js"])
+        self.assertIn("function workspaceRenderSnapshot(", sources["analysis/dashboard.js"])
+        self.assertIn("function workspaceDashboardRenderSignalShape(", sources["analysis/signals.js"])
+        self.assertIn("function workspaceDashboardRenderDetails(", sources["analysis/details.js"])
+        self.assertIn("function workspaceLoadAnalysisDetails(", sources["analysis/details.js"])
+
+        self.assertIn("function workspaceLoadSettings(", workspace_sources["workspace/settings.js"])
+        self.assertIn("function workspaceRenderRoute(", workspace_sources["workspace/router.js"])
+        self.assertIn("function workspaceInstallEvents(", workspace_sources["workspace/events.js"])
 
         self.assertNotIn("function workspaceRenderLocalization(", shell_source)
         self.assertNotIn("function workspaceDashboardRenderSnapshot(", shell_source)
-        self.assertLess(len(shell_source), 40000)
+        self.assertNotIn("function workspaceLoadSettings(", shell_source)
+        self.assertNotIn("function workspaceRenderRoute(", shell_source)
+        self.assertNotIn("function workspaceInstallEvents(", shell_source)
+        self.assertLess(len(shell_source), 8000)
 
-        combined = "\n".join(sources.values()) + "\n" + shell_source
+        combined = "\n".join(sources.values()) + "\n" + "\n".join(workspace_sources.values()) + "\n" + shell_source
         for name in [
             "workspaceRenderTaskChart",
             "workspaceRenderSnapshot",
             "workspaceParseRoute",
             "workspaceRenderRoute",
             "workspaceDataChanged",
+            "workspaceLoadSettings",
+            "workspaceInstallEvents",
         ]:
             self.assertEqual(combined.count("function " + name + "("), 1, name)
 
-        for name in module_names:
+        for name in analysis_module_names:
             self.assertLess(
                 loader.index("/static/analysis/" + name),
+                loader.index("/static/workspace-core.js"),
+            )
+        for name in workspace_module_names:
+            self.assertLess(
+                loader.index("/static/workspace/" + name),
                 loader.index("/static/workspace-core.js"),
             )
 
