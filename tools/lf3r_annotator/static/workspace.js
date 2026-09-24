@@ -14,6 +14,8 @@
     "/static/frontend-loop-guard.js",
     "/static/raw-video-source.js",
     "/static/manifest-support.js",
+    "/static/analysis/core.js",
+    "/static/analysis/dashboard.js",
     "/static/workspace-core.js",
     "/static/analysis-robo-hop.js",
     "/static/results/layout.js",
