@@ -1652,6 +1652,12 @@ async function startBaselineBatch(event) {
   setBaselineBatchStatus("Starting " + method + " batch for " + selected.length + " rollout(s)…", "");
   byId("baselineBatchLog").textContent = "";
 
+  var batchOptions = baselineBatchOptions();
+  if (method === "procvlm" && window.LF3RProcvlmMode
+      && typeof window.LF3RProcvlmMode.applyOptions === "function") {
+    batchOptions = window.LF3RProcvlmMode.applyOptions(batchOptions, "batch");
+  }
+
   var body = {
     baseline: method,
     scope: scope,
@@ -1661,7 +1667,7 @@ async function startBaselineBatch(event) {
     memory_utilization: memory,
     start_index: range.start,
     limit: null,
-    options: baselineBatchOptions()
+    options: batchOptions
   };
 
   if (workers.length === 1) {
