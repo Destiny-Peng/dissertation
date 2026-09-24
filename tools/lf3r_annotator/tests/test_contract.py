@@ -38,8 +38,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         app_help = (TOOL_ROOT / "static/app/help.js").read_text(encoding="utf-8")
         annotate_core = (TOOL_ROOT / "static/annotate/core.js").read_text(encoding="utf-8")
         annotate_events = (TOOL_ROOT / "static/annotate/events.js").read_text(encoding="utf-8")
-        results_javascript = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        results_core = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
         results_charts = (TOOL_ROOT / "static/results/charts.js").read_text(encoding="utf-8")
+        results_model = (TOOL_ROOT / "static/results/model.js").read_text(encoding="utf-8")
+        results_catalog = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
+        results_view = (TOOL_ROOT / "static/results/view.js").read_text(encoding="utf-8")
+        results_actions = (TOOL_ROOT / "static/results/actions.js").read_text(encoding="utf-8")
         runs_javascript = (TOOL_ROOT / "static/runs/core.js").read_text(encoding="utf-8")
         javascript = "\n".join([
             app_javascript,
@@ -47,8 +51,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             app_help,
             annotate_core,
             annotate_events,
-            results_javascript,
+            results_core,
             results_charts,
+            results_model,
+            results_catalog,
+            results_view,
+            results_actions,
             runs_javascript,
         ])
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
