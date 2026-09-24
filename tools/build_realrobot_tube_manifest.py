@@ -32,6 +32,10 @@ DEFAULT_INPUT_ROOT = PROJECT_ROOT / "outputs/realrobot/tubes"
 DEFAULT_OUTPUT = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/tube_manifest.jsonl"
 PRIMARY_CAMERA = "realsense_color"
 AUXILIARY_CAMERAS = ("wrist_right",)
+CAMERA_SCHEMA = {
+    "realsense_color": "cam_high",
+    "wrist_right": "cam_right_wrist",
+}
 
 
 def resolve_project_path(value: str | Path) -> Path:
@@ -171,7 +175,7 @@ def build_record(episode_dir: Path, index: int) -> dict[str, Any]:
         if camera == PRIMARY_CAMERA and not video.is_file():
             raise FileNotFoundError(f"Missing canonical {camera} video: {video}")
         if video.is_file():
-            camera_paths[camera] = relative_project_path(video)
+            camera_paths[CAMERA_SCHEMA[camera]] = relative_project_path(video)
     primary_video = episode_dir / "videos" / f"{PRIMARY_CAMERA}.mp4"
     video_metadata = probe_video(primary_video)
 
@@ -186,7 +190,7 @@ def build_record(episode_dir: Path, index: int) -> dict[str, Any]:
     recording_success = "success" in episode_label.lower()
     rollout_id = stable_rollout_id(episode_label, episode_dir)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "id": rollout_id,
         "task_suite": "realrobot_tube",
         "task_id": 0,
@@ -198,8 +202,6 @@ def build_record(episode_dir: Path, index: int) -> dict[str, Any]:
         "source_kind": "realrobot_tube",
         "analysis_partition": "natural_observation",
         "dataset_role": "realrobot_tube",
-        "video_path": relative_project_path(primary_video),
-        "video_view_mode": "single_view",
         "camera_video_paths": camera_paths,
         **video_metadata,
         "synchronized_frame_count": synchronized_frames,
@@ -260,8 +262,10 @@ def main() -> int:
             "generated_at_utc": utc_now(),
             "input_root": relative_project_path(input_root),
             "manifest": relative_project_path(output_path),
-            "canonical_camera": PRIMARY_CAMERA,
-            "auxiliary_cameras": list(AUXILIARY_CAMERAS),
+            "camera_schema": {
+                CAMERA_SCHEMA[PRIMARY_CAMERA]: PRIMARY_CAMERA,
+                **{CAMERA_SCHEMA[name]: name for name in AUXILIARY_CAMERAS},
+            },
             "total_rollouts": len(records),
             "task_count": len(tasks),
             "tasks": tasks,
@@ -273,7 +277,7 @@ def main() -> int:
             "baseline_usage": {
                 "data_root": "PROJECT_ROOT",
                 "manifest_argument": relative_project_path(output_path),
-                "video_field": "video_path",
+                "video_field": "camera_video_paths",
                 "task_field": "task_description",
             },
         }
