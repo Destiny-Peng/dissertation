@@ -15,7 +15,6 @@ async function loadEvaluation(rolloutId) {
   byId("evaluationStatus").textContent = "Loading baseline outputs...";
   byId("evaluationMethods").innerHTML = '<div class="evaluation-empty">Reading completed baseline runs...</div>';
   try {
-    await loadBaselineRunCatalog(condition);
     var query = ["condition=" + encodeURIComponent(condition)];
     ["safe", "procvlm", "rynnvalue", "robo_dopamine", "densereward"].forEach(function (method) {
       var override = baselineRunOverride(method, record, condition);
@@ -31,6 +30,12 @@ async function loadEvaluation(rolloutId) {
       || state.instructionCondition !== condition) return;
     if (!response.ok) throw new Error(payload.error || "Could not load baseline outputs");
     renderEvaluationPanel(payload.evaluation);
+    loadBaselineRunCatalog(condition).then(function () {
+      if (requestId !== state.evaluationRequest
+          || state.selectedId !== rolloutId
+          || state.instructionCondition !== condition) return;
+      refreshBaselineRunControls(rolloutId, condition);
+    });
   } catch (error) {
     if (requestId !== state.evaluationRequest
       || state.selectedId !== rolloutId
