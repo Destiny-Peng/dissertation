@@ -206,6 +206,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "baseline-job-filter.js",
             "runs-log-ui.js",
             "runs-job-control.js",
+            "runs-submit.js",
         ]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
