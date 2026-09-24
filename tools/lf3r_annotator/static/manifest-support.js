@@ -266,6 +266,21 @@
 
   function reloadSelectedRawVideo(rolloutId) {
     if (!rolloutId || state.selectedId !== rolloutId) return;
+    var record = selectedRecord();
+    if (record && window.LF3RReviewVideoViews
+        && typeof window.LF3RReviewVideoViews.currentView === "function"
+        && typeof window.LF3RReviewVideoViews.setView === "function") {
+      // Manual transcode only changes the canonical video. Do not silently
+      // replace an active physical camera view with Main.
+      if (window.LF3RReviewVideoViews.currentView() === "main") {
+        window.LF3RReviewVideoViews.setView(
+          record,
+          "main",
+          { force: true, resumePlayback: false }
+        );
+      }
+      return;
+    }
     var video = byId("rolloutVideo");
     if (!video) return;
     video.src = "/api/videos/" + encodeURIComponent(rolloutId)

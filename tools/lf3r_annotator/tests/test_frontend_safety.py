@@ -235,6 +235,23 @@ class FrontendSafetyContractTest(unittest.TestCase):
             layout,
         )
 
+    def test_review_multiview_selector_uses_manifest_camera_paths(self) -> None:
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        views = (STATIC_ROOT / "review-video-views.js").read_text(encoding="utf-8")
+        catalog = (STATIC_ROOT / "annotate" / "catalog.js").read_text(encoding="utf-8")
+        raw_source = (STATIC_ROOT / "raw-video-source.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="videoViewControls"', html)
+        self.assertIn('/static/review-video-views.js', html)
+        self.assertIn("camera_video_paths", views)
+        self.assertIn('"cam_high"', views)
+        self.assertIn('"cam_wrist"', views)
+        self.assertIn('camera=" + encodeURIComponent(viewKey)', views)
+        self.assertIn("state.currentFrame", views)
+        self.assertIn('video.addEventListener("loadedmetadata"', views)
+        self.assertIn("LF3RReviewVideoViews.applyRecord(record)", catalog)
+        self.assertIn("LF3RReviewVideoViews.applyRecord(record)", raw_source)
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         self.assertFalse((STATIC_ROOT / "results-run-config.js").exists())

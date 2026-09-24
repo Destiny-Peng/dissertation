@@ -248,11 +248,15 @@ function selectRollout(id) {
 
   var video = byId("rolloutVideo");
   video.pause();
-  // Bust browser caches that may contain the pre-transcode MPEG-4 Part 2
-  // response from before the server started serving its H.264 copy.
-  video.src = "/api/videos/" + encodeURIComponent(record.id) + "?v=video-h264-20260916";
-  video.load();
-  video.playbackRate = Number(byId("speedSelect").value);
+  if (window.LF3RReviewVideoViews
+      && typeof window.LF3RReviewVideoViews.applyRecord === "function") {
+    window.LF3RReviewVideoViews.applyRecord(record);
+  } else {
+    // Fallback for partial/static loads where the shared view controller is unavailable.
+    video.src = "/api/videos/" + encodeURIComponent(record.id) + "?v=video-h264-20260916";
+    video.load();
+    video.playbackRate = Number(byId("speedSelect").value);
+  }
   byId("playButton").textContent = "Play";
   byId("playOverlay").classList.remove("hidden");
 
