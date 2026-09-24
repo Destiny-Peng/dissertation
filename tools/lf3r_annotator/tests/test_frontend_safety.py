@@ -118,6 +118,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "results/run-config.js",
             "runs/tools-layout.js",
             "runs/gpu.js",
+            "runs/project-tool-client.js",
             "runs/project-tools.js",
             "runs/layout.js",
             "runs/jobs.js",
