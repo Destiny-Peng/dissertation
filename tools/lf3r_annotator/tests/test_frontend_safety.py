@@ -56,7 +56,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
 
     def test_runs_log_refresh_stays_bound_to_selected_job(self) -> None:
         runs_jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
-        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        runs_baseline = (STATIC_ROOT / "runs" / "baseline.js").read_text(encoding="utf-8")
+        runs_rollout = (STATIC_ROOT / "runs" / "rollout.js").read_text(encoding="utf-8")
         self.assertIn(
             'if (!channel || !channel.log || visibleJobId(channel) !== jobId) return;',
             runs_jobs,
@@ -66,8 +67,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
             runs_jobs,
         )
         self.assertIn('refreshSelectedLog: refreshSelectedLog', runs_jobs)
-        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId)', app)
-        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId)', app)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("baseline", jobId)', runs_baseline)
+        self.assertIn('window.LF3RRunsJobs.refreshSelectedLog("rollout_generation", jobId)', runs_rollout)
 
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("runs/jobs.js", workspace)
@@ -89,6 +90,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
     def test_workspace_uses_stable_module_names_without_manual_versions(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
+        self.assertIn('["lf3rToolsStyles", "/static/styles-tools.css"]', workspace)
         for stale in [
             "workspace-legacy.js",
             "manifest-support-v2.js",
@@ -114,6 +116,9 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "manifest-support.js",
             "results/layout.js",
             "results/run-config.js",
+            "runs/tools-layout.js",
+            "runs/gpu.js",
+            "runs/project-tools.js",
             "runs/layout.js",
             "runs/jobs.js",
             "runs/scope.js",

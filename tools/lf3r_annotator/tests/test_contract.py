@@ -36,19 +36,39 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         app_javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
         app_jobs = (TOOL_ROOT / "static/app/jobs.js").read_text(encoding="utf-8")
         app_help = (TOOL_ROOT / "static/app/help.js").read_text(encoding="utf-8")
+        annotate_catalog = (TOOL_ROOT / "static/annotate/catalog.js").read_text(encoding="utf-8")
+        annotate_failure_events = (TOOL_ROOT / "static/annotate/failure-events.js").read_text(encoding="utf-8")
+        annotate_timeline = (TOOL_ROOT / "static/annotate/timeline.js").read_text(encoding="utf-8")
         annotate_core = (TOOL_ROOT / "static/annotate/core.js").read_text(encoding="utf-8")
         annotate_events = (TOOL_ROOT / "static/annotate/events.js").read_text(encoding="utf-8")
-        results_javascript = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        results_core = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
         results_charts = (TOOL_ROOT / "static/results/charts.js").read_text(encoding="utf-8")
+        results_model = (TOOL_ROOT / "static/results/model.js").read_text(encoding="utf-8")
+        results_catalog = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
+        results_view = (TOOL_ROOT / "static/results/view.js").read_text(encoding="utf-8")
+        results_actions = (TOOL_ROOT / "static/results/actions.js").read_text(encoding="utf-8")
+        runs_baseline_selection = (TOOL_ROOT / "static/runs/baseline-selection.js").read_text(encoding="utf-8")
+        runs_baseline = (TOOL_ROOT / "static/runs/baseline.js").read_text(encoding="utf-8")
+        runs_rollout = (TOOL_ROOT / "static/runs/rollout.js").read_text(encoding="utf-8")
         runs_javascript = (TOOL_ROOT / "static/runs/core.js").read_text(encoding="utf-8")
         javascript = "\n".join([
             app_javascript,
             app_jobs,
             app_help,
+            annotate_catalog,
+            annotate_failure_events,
+            annotate_timeline,
             annotate_core,
             annotate_events,
-            results_javascript,
+            results_core,
             results_charts,
+            results_model,
+            results_catalog,
+            results_view,
+            results_actions,
+            runs_baseline_selection,
+            runs_baseline,
+            runs_rollout,
             runs_javascript,
         ])
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")

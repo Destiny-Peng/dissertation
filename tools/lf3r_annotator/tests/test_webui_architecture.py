@@ -179,21 +179,58 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_results_frontend_has_semantic_modules(self) -> None:
         results_root = STATIC_ROOT / "results"
-        for name in ["charts.js", "core.js", "layout.js", "run-config.js"]:
+        module_names = [
+            "charts.js",
+            "model.js",
+            "catalog.js",
+            "view.js",
+            "actions.js",
+            "core.js",
+            "layout.js",
+            "run-config.js",
+        ]
+        for name in module_names:
             self.assertTrue((results_root / name).is_file(), name)
         for obsolete in ["results-layout.js", "results-run-config.js"]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
         charts = (results_root / "charts.js").read_text(encoding="utf-8")
+        model = (results_root / "model.js").read_text(encoding="utf-8")
+        catalog = (results_root / "catalog.js").read_text(encoding="utf-8")
+        view = (results_root / "view.js").read_text(encoding="utf-8")
+        actions = (results_root / "actions.js").read_text(encoding="utf-8")
         core = (results_root / "core.js").read_text(encoding="utf-8")
         layout = (results_root / "layout.js").read_text(encoding="utf-8")
         config = (results_root / "run-config.js").read_text(encoding="utf-8")
-        self.assertIn("LF3RResultsCharts.renderSignalChart", core)
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
         self.assertIn("renderSignalChart", charts)
-        self.assertIn("lf3rOpenSingleBaselineConfig", core)
-        self.assertIn("lf3rResultsLayoutRefresh", core)
+        self.assertIn("function sampleOutputText(", model)
+        self.assertIn("function loadBaselineRunCatalog(", catalog)
+        self.assertIn("function resultsOnPersistentJobChanged(", catalog)
+        self.assertIn("LF3RResultsCharts.renderSignalChart", view)
+        self.assertIn("function renderEvaluationPanel(", view)
+        self.assertIn("function runPosthocLocalization(", actions)
+        self.assertIn("function loadEvaluation(", core)
+        self.assertIn("function bindResultsEvents(", core)
+        self.assertIn("lf3rResultsLayoutRefresh", view)
+        self.assertNotIn("function renderEvaluationPanel(", core)
+        self.assertNotIn("function loadBaselineRunCatalog(", core)
+        self.assertLess(len(core), 8000)
         self.assertNotIn("MutationObserver", layout)
         self.assertNotIn("MutationObserver", config)
+
+        ordered = [
+            "/static/results/charts.js",
+            "/static/results/model.js",
+            "/static/results/catalog.js",
+            "/static/results/view.js",
+            "/static/results/actions.js",
+            "/static/results/core.js",
+        ]
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertLess(html.index(left), html.index(right))
+
 
     def test_runs_jobs_frontend_is_canonical(self) -> None:
         jobs = STATIC_ROOT / "runs" / "jobs.js"
@@ -214,14 +251,14 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         controller = STATIC_ROOT / "baselines" / "procvlm.js"
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
-        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        runs_baseline = (STATIC_ROOT / "runs" / "baseline.js").read_text(encoding="utf-8")
         run_config = (STATIC_ROOT / "results" / "run-config.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
         self.assertIn("applyOptions: applyOptions", source)
         self.assertNotIn("MutationObserver", source)
         self.assertNotIn("window.fetch =", source)
-        self.assertIn('LF3RProcvlmMode.applyOptions(batchOptions, "batch")', app)
+        self.assertIn('LF3RProcvlmMode.applyOptions(batchOptions, "batch")', runs_baseline)
         self.assertIn('LF3RProcvlmMode.applyOptions(collected.options, "single")', run_config)
         self.assertIn('LF3RProcvlmMode.refreshSingle(method)', run_config)
         self.assertIn("/static/baselines/procvlm.js", workspace)
@@ -232,7 +269,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         controller = STATIC_ROOT / "runs" / "scope.js"
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
-        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        runs_baseline_selection = (STATIC_ROOT / "runs" / "baseline-selection.js").read_text(encoding="utf-8")
+        app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
+        app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
         analysis_live = (STATIC_ROOT / "analysis" / "live.js").read_text(encoding="utf-8")
         workspace_router = (STATIC_ROOT / "workspace" / "router.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
@@ -247,9 +286,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotIn("window.persistentJobScope =", source)
         self.assertNotIn("window.cliHelpEntry =", source)
 
-        self.assertIn("LF3RDatasetScopes.matchesBaseline", app)
-        self.assertIn("LF3RDatasetScopes.scopeLabel", app)
-        self.assertIn("LF3RDatasetScopes.decorateHelp", app)
+        self.assertIn("LF3RDatasetScopes.matchesBaseline", runs_baseline_selection)
+        self.assertIn("LF3RDatasetScopes.scopeLabel", app_jobs)
+        self.assertIn("LF3RDatasetScopes.decorateHelp", app_help)
         self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
         self.assertIn("LF3RDatasetScopes.refresh", workspace_router)
         self.assertIn("/static/runs/scope.js", workspace)
@@ -258,25 +297,85 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
     def test_runs_core_is_extracted_from_app_shell(self) -> None:
-        runs_core = STATIC_ROOT / "runs" / "core.js"
-        runs_layout = STATIC_ROOT / "runs" / "layout.js"
-        self.assertTrue(runs_core.is_file())
-        self.assertTrue(runs_layout.is_file())
+        runs_root = STATIC_ROOT / "runs"
+        runs_core = runs_root / "core.js"
+        runs_baseline_selection = runs_root / "baseline-selection.js"
+        runs_baseline = runs_root / "baseline.js"
+        runs_rollout = runs_root / "rollout.js"
+        runs_layout = runs_root / "layout.js"
+        tools_layout = runs_root / "tools-layout.js"
+        gpu = runs_root / "gpu.js"
+        project_tools = runs_root / "project-tools.js"
+        for path in [
+            runs_core,
+            runs_baseline_selection,
+            runs_baseline,
+            runs_rollout,
+            runs_layout,
+            tools_layout,
+            gpu,
+            project_tools,
+        ]:
+            self.assertTrue(path.is_file(), path.name)
         self.assertFalse((STATIC_ROOT / "runs-layout.js").exists())
-        source = runs_core.read_text(encoding="utf-8")
+
+        core_source = runs_core.read_text(encoding="utf-8")
+        baseline_selection_source = runs_baseline_selection.read_text(encoding="utf-8")
+        baseline_source = runs_baseline.read_text(encoding="utf-8")
+        rollout_source = runs_rollout.read_text(encoding="utf-8")
+        layout_source = runs_layout.read_text(encoding="utf-8")
+        tools_layout_source = tools_layout.read_text(encoding="utf-8")
+        gpu_source = gpu.read_text(encoding="utf-8")
+        project_tools_source = project_tools.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
-        self.assertIn("function startBaselineBatch(", source)
-        self.assertIn("function updateBaselineBatchSelection(", source)
-        self.assertIn("function startRolloutGeneration(", source)
-        self.assertIn("function rolloutGenerationJobMessage(", source)
+        self.assertIn("function updateBaselineBatchSelection(", baseline_selection_source)
+        self.assertIn("function baselineBatchWorkerSummary(", baseline_selection_source)
+        self.assertIn("function startBaselineBatch(", baseline_source)
+        self.assertIn("function startRolloutGeneration(", rollout_source)
+        self.assertIn("function rolloutGenerationJobMessage(", rollout_source)
+        self.assertNotIn("function updateBaselineBatchSelection(", baseline_source)
+        self.assertNotIn("function startBaselineBatch(", core_source)
+        self.assertNotIn("function startRolloutGeneration(", core_source)
+        self.assertLess(len(core_source), 2000)
+        self.assertLess(len(baseline_source), 10000)
         self.assertNotIn("function startBaselineBatch(", app)
         self.assertNotIn("function startRolloutGeneration(", app)
-        self.assertLess(
-            html.index("/static/runs/core.js"),
-            html.index("/static/app.js"),
-        )
+
+        ordered_core = [
+            "/static/runs/baseline-selection.js",
+            "/static/runs/baseline.js",
+            "/static/runs/rollout.js",
+            "/static/runs/core.js",
+            "/static/app.js",
+        ]
+        for left, right in zip(ordered_core, ordered_core[1:]):
+            self.assertLess(html.index(left), html.index(right))
+
+        self.assertLess(len(layout_source), 12000)
+        self.assertIn("LF3RRunsToolsLayout.createPanels", layout_source)
+        self.assertIn("LF3RRunsGpu.createStrip", layout_source)
+        self.assertIn("LF3RProjectTools.install", layout_source)
+        self.assertIn("window.LF3RRunsToolsLayout", tools_layout_source)
+        self.assertIn("window.LF3RRunsGpu", gpu_source)
+        self.assertIn("window.LF3RProjectTools", project_tools_source)
+        self.assertIn("safePrepareRun", tools_layout_source)
+        self.assertIn("refreshGpuStatus", gpu_source)
+        self.assertIn("recoverToolSubmission", project_tools_source)
+        self.assertIn("loadBatchManifestOptions", project_tools_source)
+        self.assertNotIn("styles-tools.css?v=", layout_source)
+
+        ordered_layout = [
+            "/static/runs/tools-layout.js",
+            "/static/runs/gpu.js",
+            "/static/runs/project-tools.js",
+            "/static/runs/layout.js",
+        ]
+        for left, right in zip(ordered_layout, ordered_layout[1:]):
+            self.assertLess(loader.index(left), loader.index(right))
+
 
     def test_analysis_frontend_is_split_from_workspace_shell(self) -> None:
         analysis_root = STATIC_ROOT / "analysis"
@@ -362,6 +461,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         app_shell = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
         app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
+        annotate_catalog = (STATIC_ROOT / "annotate" / "catalog.js").read_text(encoding="utf-8")
+        annotate_failure_events = (STATIC_ROOT / "annotate" / "failure-events.js").read_text(encoding="utf-8")
+        annotate_timeline = (STATIC_ROOT / "annotate" / "timeline.js").read_text(encoding="utf-8")
         annotate_core = (STATIC_ROOT / "annotate" / "core.js").read_text(encoding="utf-8")
         annotate_events = (STATIC_ROOT / "annotate" / "events.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
@@ -377,11 +479,19 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("var cliHelpState = {", app_help)
         self.assertIn("function showCliHelp(", app_help)
 
-        self.assertIn("function loadRollouts(", annotate_core)
-        self.assertIn("function renderFailureEvents(", annotate_core)
+        self.assertIn("function loadRollouts(", annotate_catalog)
+        self.assertIn("function renderRolloutList(", annotate_catalog)
+        self.assertIn("function renderFailureEvents(", annotate_failure_events)
+        self.assertIn("function setActiveEventFrame(", annotate_failure_events)
+        self.assertIn("function seekFrame(", annotate_timeline)
+        self.assertIn("function renderTimelineMarkers(", annotate_timeline)
         self.assertIn("function saveAnnotation(", annotate_core)
         self.assertIn("function installEvents(", annotate_events)
+        self.assertLess(len(annotate_core), 8000)
 
+        self.assertNotIn("function loadRollouts(", annotate_core)
+        self.assertNotIn("function renderFailureEvents(", annotate_core)
+        self.assertNotIn("function seekFrame(", annotate_core)
         self.assertNotIn("function loadRollouts(", app_shell)
         self.assertNotIn("function installEvents(", app_shell)
         self.assertNotIn("function persistentJobEndpoint(", app_shell)
@@ -392,12 +502,16 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         ordered = [
             "/static/app/jobs.js",
             "/static/app/help.js",
+            "/static/annotate/catalog.js",
+            "/static/annotate/failure-events.js",
+            "/static/annotate/timeline.js",
             "/static/annotate/core.js",
             "/static/annotate/events.js",
             "/static/app.js",
         ]
         for left, right in zip(ordered, ordered[1:]):
             self.assertLess(html.index(left), html.index(right))
+
 
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")

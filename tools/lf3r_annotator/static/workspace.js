@@ -7,7 +7,8 @@
     ["lf3rRunConfigStyles", "/static/styles-run-config.css"],
     ["lf3rRunsLogStyles", "/static/styles-runs-log.css"],
     ["lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css"],
-    ["lf3rPolishStyles", "/static/styles-polish.css"]
+    ["lf3rPolishStyles", "/static/styles-polish.css"],
+    ["lf3rToolsStyles", "/static/styles-tools.css"]
   ];
 
   var scripts = [
@@ -30,6 +31,9 @@
     "/static/analysis-robo-hop.js",
     "/static/results/layout.js",
     "/static/results/run-config.js",
+    "/static/runs/tools-layout.js",
+    "/static/runs/gpu.js",
+    "/static/runs/project-tools.js",
     "/static/runs/layout.js",
     "/static/runs/scope.js",
     "/static/runs/jobs.js",
