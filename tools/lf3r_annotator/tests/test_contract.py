@@ -178,7 +178,15 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
 
     def test_workspace_navigation_settings_and_analysis_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
-        workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        workspace = "\n".join(
+            (TOOL_ROOT / path).read_text(encoding="utf-8")
+            for path in [
+                "static/workspace.js",
+                "static/workspace-core.js",
+                "static/analysis/core.js",
+                "static/analysis/dashboard.js",
+            ]
+        )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         label_loss_analysis = (TOOL_ROOT / "static/analysis-robo-label-loss.js").read_text(encoding="utf-8")
         server = "\n".join(
@@ -547,7 +555,15 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
 
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
-        workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
+        workspace = "\n".join(
+            (TOOL_ROOT / path).read_text(encoding="utf-8")
+            for path in [
+                "static/workspace.js",
+                "static/workspace-core.js",
+                "static/analysis/core.js",
+                "static/analysis/dashboard.js",
+            ]
+        )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
         styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
         for route in [
