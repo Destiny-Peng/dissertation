@@ -103,6 +103,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "results/layout.js",
             "results/run-config.js",
             "runs/jobs.js",
+            "runs/scope.js",
             "baselines/procvlm.js",
         ]:
             self.assertIn(stable, workspace)
@@ -121,6 +122,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "runs-job-control.js",
             "runs-submit.js",
             "procvlm-mode-ui.js",
+            "runs-semantics.js",
+            "dataset-scope-ui.js",
         ]:
             self.assertNotIn(obsolete, workspace)
 
