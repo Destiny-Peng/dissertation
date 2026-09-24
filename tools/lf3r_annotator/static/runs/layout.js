@@ -7,8 +7,10 @@
   var batchPanel = view.querySelector(".batch-panel");
   var rolloutPanel = view.querySelector(".rollout-generation-panel");
   if (!batchPanel || !rolloutPanel) return;
+  if (!window.LF3RRunsGpu || typeof window.LF3RRunsGpu.createStrip !== "function") return;
+  if (!window.LF3RRunsToolsLayout || typeof window.LF3RRunsToolsLayout.createPanels !== "function") return;
+  if (!window.LF3RProjectTools || typeof window.LF3RProjectTools.install !== "function") return;
   view.dataset.runsEnhanced = "true";
-
 
   var legacyTitle = view.querySelector(":scope > h2");
   if (legacyTitle) legacyTitle.classList.add("runs-legacy-title");
@@ -29,7 +31,6 @@
     '</div>'
   ].join("");
 
-  if (!window.LF3RRunsGpu || typeof window.LF3RRunsGpu.createStrip !== "function") return;
   var gpuStrip = window.LF3RRunsGpu.createStrip();
 
   var workspace = document.createElement("div");
@@ -49,7 +50,6 @@
   batchPanel.setAttribute("aria-labelledby", "runsBaselineTab");
   rolloutPanel.setAttribute("aria-labelledby", "runsRolloutTab");
 
-  if (!window.LF3RRunsToolsLayout || typeof window.LF3RRunsToolsLayout.createPanels !== "function") return;
   window.LF3RRunsToolsLayout.createPanels(workspace);
 
   function wrapSetupBlock(node, title, subtitle) {
