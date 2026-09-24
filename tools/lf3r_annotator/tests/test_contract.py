@@ -190,6 +190,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 "static/analysis/event-triggered.js",
                 "static/analysis/runs.js",
                 "static/analysis/dashboard.js",
+                "static/analysis/signals.js",
+                "static/analysis/details.js",
             ]
         )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
@@ -572,6 +574,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 "static/analysis/event-triggered.js",
                 "static/analysis/runs.js",
                 "static/analysis/dashboard.js",
+                "static/analysis/signals.js",
+                "static/analysis/details.js",
             ]
         )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
