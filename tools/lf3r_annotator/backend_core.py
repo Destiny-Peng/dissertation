@@ -15,6 +15,7 @@ ROLLOUT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 INSTRUCTION_VARIANT_CONDITIONS = ("full_instruction", "subtask_a", "subtask_b")
 DYNAMIC_SCOPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 RESERVED_RUN_SCOPES = {"all", "controlled_analysis"}
+PRIMARY_CAMERA_ORDER = ("cam_high", "cam_wrist", "cam_left_wrist", "cam_right_wrist")
 
 
 class ValidationError(ValueError):
@@ -69,6 +70,37 @@ def is_controlled_record(record: dict[str, Any]) -> bool:
 
 # Compatibility alias retained for existing call sites.
 _is_controlled_record = is_controlled_record
+
+
+def record_camera_video_paths(record: dict[str, Any]) -> dict[str, str]:
+    raw = record.get("camera_video_paths")
+    if not isinstance(raw, dict) or not raw:
+        raise ValidationError(
+            "Manifest record must define a non-empty camera_video_paths mapping: "
+            + str(record.get("id") or "<unknown>")
+        )
+    paths: dict[str, str] = {}
+    for camera, value in raw.items():
+        key = str(camera or "").strip()
+        if not key.startswith("cam_"):
+            raise ValidationError(
+                "Camera keys must use the cam_* schema: " + repr(camera)
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise ValidationError(
+                "Camera path must be a non-empty string for " + key
+            )
+        paths[key] = value.strip()
+    return paths
+
+
+def primary_camera_video_path(record: dict[str, Any]) -> tuple[str, str]:
+    paths = record_camera_video_paths(record)
+    for camera in PRIMARY_CAMERA_ORDER:
+        if camera in paths:
+            return camera, paths[camera]
+    camera = sorted(paths)[0]
+    return camera, paths[camera]
 
 
 def validate_run_scope(scope: Any) -> str:
