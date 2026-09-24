@@ -27,7 +27,7 @@ class ProgressiveBaselineResultsContractTest(unittest.TestCase):
         self.assertIn("self._read_method(", baseline_readers)
 
     def test_frontend_refreshes_catalog_when_completed_count_advances(self) -> None:
-        script = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        script = (TOOL_ROOT / "static/results/catalog.js").read_text(encoding="utf-8")
         app = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
