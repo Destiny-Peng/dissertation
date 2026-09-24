@@ -183,7 +183,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             for path in [
                 "static/workspace.js",
                 "static/workspace-core.js",
-                "static/analysis/core.js",
+                "static/analysis/live.js",
+                "static/analysis/snapshot.js",
+                "static/analysis/localization.js",
+                "static/analysis/change-point.js",
+                "static/analysis/event-triggered.js",
+                "static/analysis/runs.js",
                 "static/analysis/dashboard.js",
             ]
         )
@@ -560,7 +565,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             for path in [
                 "static/workspace.js",
                 "static/workspace-core.js",
-                "static/analysis/core.js",
+                "static/analysis/live.js",
+                "static/analysis/snapshot.js",
+                "static/analysis/localization.js",
+                "static/analysis/change-point.js",
+                "static/analysis/event-triggered.js",
+                "static/analysis/runs.js",
                 "static/analysis/dashboard.js",
             ]
         )
