@@ -143,10 +143,13 @@ function renderRolloutList() {
       + '<div class="card-footer"><span>' + escapeHtml(record.task_suite) + " · task " + escapeHtml(record.task_id) + " · " + escapeHtml(sourceLabel) + '</span><span>' + escapeHtml(record.total_frames) + "f</span></div>"
       + "</button>";
   }).join("");
+}
+
+function updateRolloutListSelection(id) {
+  var container = byId("rolloutList");
+  if (!container) return;
   container.querySelectorAll("[data-rollout-id]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      maybeSelectRollout(button.dataset.rolloutId);
-    });
+    button.classList.toggle("active", button.dataset.rolloutId === id);
   });
 }
 
@@ -231,7 +234,7 @@ function selectRollout(id) {
   state.dirty = false;
   byId("emptyState").classList.add("hidden");
   byId("reviewContent").classList.remove("hidden");
-  renderRolloutList();
+  updateRolloutListSelection(id);
 
   var originClass = provenanceClass(record);
   byId("recordBadges").innerHTML = badge(
