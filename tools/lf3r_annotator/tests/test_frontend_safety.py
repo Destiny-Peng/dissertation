@@ -188,6 +188,25 @@ class FrontendSafetyContractTest(unittest.TestCase):
         ]:
             self.assertNotIn(obsolete, workspace)
 
+    def test_results_defers_heavy_hidden_dom_work(self) -> None:
+        view = (STATIC_ROOT / "results" / "view.js").read_text(encoding="utf-8")
+        core = (STATIC_ROOT / "results" / "core.js").read_text(encoding="utf-8")
+        layout = (STATIC_ROOT / "results" / "layout.js").read_text(encoding="utf-8")
+
+        self.assertIn("function renderEvaluationCardBody(", view)
+        self.assertIn("data-evaluation-card-body data-body-rendered=", view)
+        self.assertIn("function hydrateEvaluationCardBody(", core)
+        self.assertIn('methods.addEventListener("toggle"', core)
+
+        self.assertIn("data-evaluation-history-list", view)
+        self.assertIn("Expand to load history.", view)
+        self.assertIn("function hydrateEvaluationHistory(", view)
+
+        self.assertIn("var OUTPUT_MEASURE_LIMIT = 12;", layout)
+        self.assertIn("representativeOutputTexts(result)", layout)
+        self.assertIn("slice(0, OUTPUT_MEASURE_LIMIT)", layout)
+        self.assertIn('if (card.classList.contains("is-collapsed")) return;', layout)
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         self.assertFalse((STATIC_ROOT / "results-run-config.js").exists())
