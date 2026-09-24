@@ -461,6 +461,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         app_shell = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
         app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
+        annotate_catalog = (STATIC_ROOT / "annotate" / "catalog.js").read_text(encoding="utf-8")
+        annotate_failure_events = (STATIC_ROOT / "annotate" / "failure-events.js").read_text(encoding="utf-8")
+        annotate_timeline = (STATIC_ROOT / "annotate" / "timeline.js").read_text(encoding="utf-8")
         annotate_core = (STATIC_ROOT / "annotate" / "core.js").read_text(encoding="utf-8")
         annotate_events = (STATIC_ROOT / "annotate" / "events.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
@@ -476,11 +479,19 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("var cliHelpState = {", app_help)
         self.assertIn("function showCliHelp(", app_help)
 
-        self.assertIn("function loadRollouts(", annotate_core)
-        self.assertIn("function renderFailureEvents(", annotate_core)
+        self.assertIn("function loadRollouts(", annotate_catalog)
+        self.assertIn("function renderRolloutList(", annotate_catalog)
+        self.assertIn("function renderFailureEvents(", annotate_failure_events)
+        self.assertIn("function setActiveEventFrame(", annotate_failure_events)
+        self.assertIn("function seekFrame(", annotate_timeline)
+        self.assertIn("function renderTimelineMarkers(", annotate_timeline)
         self.assertIn("function saveAnnotation(", annotate_core)
         self.assertIn("function installEvents(", annotate_events)
+        self.assertLess(len(annotate_core), 8000)
 
+        self.assertNotIn("function loadRollouts(", annotate_core)
+        self.assertNotIn("function renderFailureEvents(", annotate_core)
+        self.assertNotIn("function seekFrame(", annotate_core)
         self.assertNotIn("function loadRollouts(", app_shell)
         self.assertNotIn("function installEvents(", app_shell)
         self.assertNotIn("function persistentJobEndpoint(", app_shell)
@@ -491,12 +502,16 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         ordered = [
             "/static/app/jobs.js",
             "/static/app/help.js",
+            "/static/annotate/catalog.js",
+            "/static/annotate/failure-events.js",
+            "/static/annotate/timeline.js",
             "/static/annotate/core.js",
             "/static/annotate/events.js",
             "/static/app.js",
         ]
         for left, right in zip(ordered, ordered[1:]):
             self.assertLess(html.index(left), html.index(right))
+
 
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
