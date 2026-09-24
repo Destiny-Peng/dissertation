@@ -223,6 +223,8 @@ class NonAnalysisToolTests(unittest.TestCase):
         source = "\n".join([
             (HERE / "static" / "runs" / "tools-layout.js").read_text(encoding="utf-8"),
             (HERE / "static" / "runs" / "project-tool-client.js").read_text(encoding="utf-8"),
+            (HERE / "static" / "runs" / "project-tool-actions.js").read_text(encoding="utf-8"),
+            (HERE / "static" / "runs" / "manifest-tools.js").read_text(encoding="utf-8"),
             (HERE / "static" / "runs" / "project-tools.js").read_text(encoding="utf-8"),
         ])
         self.assertIn("rebuildManifestExtraRoots", source)
