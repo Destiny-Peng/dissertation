@@ -470,7 +470,7 @@ Controlled injected rollouts use a separate run-name registry in `build_manifest
 
 Externally created rollout videos can be added without using the WebUI generator. In **Runs → Utilities → Import / rescan external rollouts**, the two standard roots (`outputs/openvla_libero` and `outputs/openvla_libero_spatial_native`) are always scanned, and optional additional project-local roots can be entered one per line. The WebUI forwards the complete root set to `build_manifest.py`, keeps the standard roots even when extras are present, and automatically reloads the rollout catalog after a successful rebuild. Additional roots are remembered in browser local storage. Imported files must still follow the manifest builder's normal layout and naming contract: `<root>/<natural-run>/<suite>/taskN--epM--succ0|1.mp4`.
 
-**Runs → Utilities → Batch H.264 transcode** shows every manifest currently loaded by the WebUI as a selectable checkbox (all selected by default, with Select all/Clear controls). Only the canonical `video_path` entries from the selected manifests are processed; `camera_video_paths` are ignored by this H.264 batch utility. Paths are deduplicated, already-H.264 files are skipped, and each conversion reuses `transcode_video_h264.sh`: the original becomes `.orig.mp4` and the H.264/yuv420p replacement keeps the original manifest path. Existing `.orig.mp4` backups are treated as conflicts and are never overwritten. Single-video and batch transcode jobs are mutually exclusive to prevent two ffmpeg jobs from racing the same file.
+**Runs → Utilities → Batch H.264 transcode** shows every manifest currently loaded by the WebUI as a selectable checkbox (all selected by default, with Select all/Clear controls). Every MP4 referenced by `camera_video_paths` in the selected manifests is processed. Paths are deduplicated, already-H.264 files are skipped, and each conversion reuses `transcode_video_h264.sh`: the original becomes `.orig.mp4` and the H.264/yuv420p replacement keeps the original manifest path. Existing `.orig.mp4` backups are treated as conflicts and are never overwritten. Single-video and batch transcode jobs are mutually exclusive to prevent two ffmpeg jobs from racing the same file.
 
 ## Validation
 
@@ -504,16 +504,20 @@ Results offers `Lock video while scrolling`. It pins the shared player, playback
 
 ### LIBERO camera videos for Robo-Dopamine
 
-Rollout generation supports the default `single_view` recording and `libero_three_view`. LIBERO provides one high camera and one wrist camera in this setup, so LF3R records the two physical videos as `<stem>.cam_high.mp4` and `<stem>.cam_wrist.mp4`.
+Manifest schema v2 uses `camera_video_paths` as the only place that describes rollout videos. There is no top-level `video_path`. Camera identity comes from the mapping key, not from the filename.
 
-The dataset sidecar and manifest describe only those physical facts:
+For OpenVLA/LIBERO, the canonical rollout MP4 is already the high/agent view, so it is registered directly as `cam_high`. In `libero_three_view` generation, LF3R replays the recorded actions only to produce the additional wrist video. The sidecar explicitly records both physical views:
 
 ```json
 "camera_video_paths": {
-  "cam_high": "...cam_high.mp4",
-  "cam_wrist": "...cam_wrist.mp4"
+  "cam_high": "task0--ep0--succ1.mp4",
+  "cam_wrist": "extra-view-17.mp4"
 }
 ```
 
-Robo-Dopamine's adapter owns the consumer-specific three-slot mapping: `cam_high_path <- cam_high`, while both `cam_left_path` and `cam_right_path` receive `cam_wrist`. When no camera pair is present, the existing single-view fallback repeats canonical `video_path` for all three Robo-Dopamine inputs. The Review player remains canonical by default; a physical camera video can be served explicitly with `/api/videos/<rollout-id>?camera=cam_high` or `?camera=cam_wrist`.
+The filenames above are examples only. A camera file does not need `cam_high` or `cam_wrist` in its filename; the mapping key defines its semantic role.
+
+Robo-Dopamine owns the consumer-specific three-slot adaptation. A shared `cam_wrist` is sent to both left/right wrist input slots. If a dataset actually contains distinct physical wrist cameras, the manifest may instead provide `cam_left_wrist` and `cam_right_wrist`. Single-view mode repeats the manifest's primary camera.
+
+Annotate and Results expose the actual camera keys present in the manifest. For a two-view LIBERO rollout this appears as `High | Wrist`; a one-view rollout shows no camera selector. The video endpoint accepts `/api/videos/<rollout-id>?camera=<camera-key>`, while an omitted camera selects the manifest's primary camera.
 
