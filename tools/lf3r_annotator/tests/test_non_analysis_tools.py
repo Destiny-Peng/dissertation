@@ -220,7 +220,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("--check-only", tmux.submitted[1])
 
     def test_runs_ui_exposes_external_rollout_rescan_and_auto_refresh(self):
-        source = (HERE / "static" / "runs" / "layout.js").read_text(encoding="utf-8")
+        source = "\n".join([
+            (HERE / "static" / "runs" / "tools-layout.js").read_text(encoding="utf-8"),
+            (HERE / "static" / "runs" / "project-tools.js").read_text(encoding="utf-8"),
+        ])
         self.assertIn("rebuildManifestExtraRoots", source)
         self.assertIn("extra_scan_roots", source)
         self.assertIn("Default scan roots · always included", source)
