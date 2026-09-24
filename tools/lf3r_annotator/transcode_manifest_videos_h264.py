@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch-transcode manifest video_path entries to browser-compatible H.264."""
+"""Batch-transcode manifest camera_video_paths entries to browser-compatible H.264."""
 
 from __future__ import annotations
 
@@ -62,17 +62,24 @@ def read_manifest_video_paths(
                     raise ValueError(
                         f"manifest row must be an object: {path} line {line_number}"
                     )
-                value = row.get("video_path")
-                if not isinstance(value, str) or not value.strip():
+                mapping = row.get("camera_video_paths")
+                if not isinstance(mapping, dict) or not mapping:
                     raise ValueError(
-                        f"manifest row has no valid video_path: {path} line {line_number}"
+                        f"manifest row has no valid camera_video_paths: {path} line {line_number}"
                     )
-                video = resolve_project_path(project_root, value.strip())
-                if video.suffix.lower() != ".mp4":
-                    raise ValueError(f"video_path is not an .mp4 file: {value}")
-                if video not in seen:
-                    seen.add(video)
-                    videos.append(video)
+                for camera, value in mapping.items():
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValueError(
+                            f"camera path for {camera!r} is invalid: {path} line {line_number}"
+                        )
+                    video = resolve_project_path(project_root, value.strip())
+                    if video.suffix.lower() != ".mp4":
+                        raise ValueError(
+                            f"camera_video_paths[{camera!r}] is not an .mp4 file: {value}"
+                        )
+                    if video not in seen:
+                        seen.add(video)
+                        videos.append(video)
     return videos
 
 
