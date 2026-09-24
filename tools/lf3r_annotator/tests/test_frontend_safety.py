@@ -25,7 +25,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
             re.DOTALL,
         )
         offenders: list[str] = []
-        for path in sorted(STATIC_ROOT.glob("*.js")):
+        for path in sorted(STATIC_ROOT.rglob("*.js")):
             javascript = path.read_text(encoding="utf-8")
             if dangerous.search(javascript):
                 offenders.append(path.name)
@@ -40,12 +40,13 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn("drawerObserver.observe(singleCore, { childList: true })", procvlm)
         self.assertNotIn("drawerObserver.observe(document.body", procvlm)
 
-        results_config = (STATIC_ROOT / "results-run-config.js").read_text(encoding="utf-8")
-        self.assertIn("observer.observe(methodsHost, { childList: true })", results_config)
-        self.assertNotIn(
-            "observer.observe(methodsHost, { childList: true, subtree: true })",
-            results_config,
-        )
+        results_config = (STATIC_ROOT / "results" / "run-config.js").read_text(encoding="utf-8")
+        self.assertNotIn("MutationObserver", results_config)
+        self.assertNotIn("stopImmediatePropagation", results_config)
+
+        results_layout = (STATIC_ROOT / "results" / "layout.js").read_text(encoding="utf-8")
+        self.assertNotIn("MutationObserver", results_layout)
+        self.assertIn("window.lf3rResultsLayoutRefresh = refresh", results_layout)
 
         runs_log = (STATIC_ROOT / "runs-log-ui.js").read_text(encoding="utf-8")
         self.assertNotIn(
@@ -106,7 +107,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
         for stable in [
             "workspace-core.js",
             "manifest-support.js",
-            "results-run-config.js",
+            "results/layout.js",
+            "results/run-config.js",
             "runs-submit.js",
         ]:
             self.assertIn(stable, workspace)
@@ -118,11 +120,15 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "results-current-values.js",
             "results-run-actions.js",
             "progressive-baseline-results.js",
+            "results-layout.js",
+            "results-run-config.js",
         ]:
             self.assertNotIn(obsolete, workspace)
 
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
+        self.assertFalse((STATIC_ROOT / "results-run-config.js").exists())
+        self.assertTrue((STATIC_ROOT / "results" / "run-config.js").is_file())
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("results-run-config-v2.js", workspace)
 
