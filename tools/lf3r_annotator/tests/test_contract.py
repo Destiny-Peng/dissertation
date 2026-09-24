@@ -33,7 +33,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
 
     def test_frontend_exposes_required_annotation_controls(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
-        javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
+        app_javascript = (TOOL_ROOT / "static/app.js").read_text(encoding="utf-8")
+        results_javascript = (TOOL_ROOT / "static/results/core.js").read_text(encoding="utf-8")
+        javascript = app_javascript + "\n" + results_javascript
         workspace = (TOOL_ROOT / "static/workspace.js").read_text(encoding="utf-8")
         frontend_javascript = javascript + "\n" + workspace
         for element_id in [
