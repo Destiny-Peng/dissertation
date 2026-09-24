@@ -55,7 +55,8 @@ function escapeHtml(value) {
 
 
 installEvents();
-loadRollouts().catch(function (error) {
+window.lf3rInitialRolloutsPromise = loadRollouts();
+window.lf3rInitialRolloutsPromise.catch(function (error) {
   byId("datasetStatus").textContent = "Dataset error";
   byId("rolloutList").innerHTML = '<div class="form-error">' + escapeHtml(error.message) + "</div>";
 });
