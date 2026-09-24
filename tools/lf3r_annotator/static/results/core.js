@@ -49,7 +49,11 @@ async function loadEvaluation(rolloutId) {
 function hydrateEvaluationCardBody(card, methodName) {
   if (!card || !methodName) return;
   var body = card.querySelector("[data-evaluation-card-body]");
-  if (!body || body.dataset.bodyRendered === "true") return;
+  if (!body) return;
+  if (body.dataset.bodyRendered === "true") {
+    scheduleEvaluationChartHydration(card);
+    return;
+  }
   var result = state.evaluation && state.evaluation.methods
     ? state.evaluation.methods[methodName] : null;
   var record = selectedRollout();
