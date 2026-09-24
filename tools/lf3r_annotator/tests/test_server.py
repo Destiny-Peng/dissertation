@@ -335,6 +335,33 @@ class ServerTest(unittest.TestCase):
                 {"robo_camera_mode": "sideways"},
             )
 
+    def test_posthoc_localization_summary_keeps_full_curve(self) -> None:
+        path = self.root / "outputs" / "localization-curve.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-09-24T00:00:00+00:00",
+                    "checkpoint": "outputs/robo_localization/repeat_00.pt",
+                    "predicted_frame": 8,
+                    "predicted_index": 2,
+                    "predicted_logit": 1.5,
+                    "predicted_sigmoid": 0.8176,
+                    "frame_count": 3,
+                    "frames": [0, 4, 8],
+                    "logits": [-0.5, 0.25, 1.5],
+                    "sigmoid_scores": [0.3775, 0.5622, 0.8176],
+                }
+            ),
+            encoding="utf-8",
+        )
+        summary = self.app.baselines._posthoc_localization_summary(path)
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["frames"], [0, 4, 8])
+        self.assertEqual(summary["logits"], [-0.5, 0.25, 1.5])
+        self.assertEqual(summary["sigmoid_scores"], [0.3775, 0.5622, 0.8176])
+
     def test_procvlm_frame_stride_is_validated_and_forwarded(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
