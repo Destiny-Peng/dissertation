@@ -22,7 +22,6 @@
     "/static/runs-semantics.js",
     "/static/dataset-scope-ui.js",
     "/static/runs/jobs.js",
-    "/static/runs-submit.js",
     "/static/procvlm-mode-ui.js"
   ];
 
