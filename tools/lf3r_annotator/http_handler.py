@@ -19,6 +19,8 @@ from backend_core import (
     AnalysisEnvironmentError,
     JobConflictError,
     ValidationError,
+    primary_camera_video_path,
+    record_camera_video_paths,
 )
 from baseline_constants import (
     BASELINE_METHODS,
@@ -462,10 +464,7 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if not rollout:
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
-                camera_paths = self.app.record_camera_video_paths(rollout) if hasattr(self.app, "record_camera_video_paths") else None
-                if camera_paths is None:
-                    from backend_core import record_camera_video_paths, primary_camera_video_path
-                    camera_paths = record_camera_video_paths(rollout)
+                camera_paths = record_camera_video_paths(rollout)
                 camera = str(query.get("camera", [""])[0] or "").strip()
                 if camera:
                     value = camera_paths.get(camera)
@@ -473,7 +472,6 @@ class LF3RHandler(BaseHTTPRequestHandler):
                         self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
                         return
                 else:
-                    from backend_core import primary_camera_video_path
                     _camera, value = primary_camera_video_path(rollout)
                 video = self.app.resolve_project_file(value, ".mp4")
                 if not video.is_file():
