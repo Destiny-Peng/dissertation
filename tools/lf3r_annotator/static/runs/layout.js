@@ -165,7 +165,7 @@ function installRunsLayoutEnhancements() {
   if (window.LF3RProjectTools && typeof window.LF3RProjectTools.install === "function") window.LF3RProjectTools.install();
 
   setMode(currentMode);
-}}
+}
 
 function maybeInstallRunsLayout(event) {
   var view = event && event.detail ? event.detail.view : document.body.dataset.view;
