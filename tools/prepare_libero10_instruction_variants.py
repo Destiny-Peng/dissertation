@@ -456,6 +456,16 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
             raise VariantError(f"Invalid JSON at {path}:{line_number}") from error
         if not isinstance(value, dict):
             raise VariantError(f"Manifest row is not an object at {path}:{line_number}")
+        if "video_path" in value or value.get("schema_version") != SCHEMA_VERSION:
+            raise VariantError(
+                f"Manifest row must use schema_version={SCHEMA_VERSION} and "
+                f"camera_video_paths only at {path}:{line_number}"
+            )
+        camera_paths = value.get("camera_video_paths")
+        if not isinstance(camera_paths, dict) or not camera_paths:
+            raise VariantError(
+                f"Manifest row has no camera_video_paths at {path}:{line_number}"
+            )
         rows.append(value)
     return rows
 
