@@ -288,6 +288,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "event-triggered.js",
             "runs.js",
             "dashboard.js",
+            "signals.js",
+            "details.js",
         ]
         shell = STATIC_ROOT / "workspace-core.js"
         loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
@@ -309,6 +311,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("function workspaceDashboardRenderSnapshot(", sources["dashboard.js"])
         self.assertIn("function workspaceDashboardRenderComparison(", sources["dashboard.js"])
         self.assertIn("function workspaceRenderSnapshot(", sources["dashboard.js"])
+        self.assertIn("function workspaceDashboardRenderSignalShape(", sources["signals.js"])
+        self.assertIn("function workspaceDashboardRenderDetails(", sources["details.js"])
+        self.assertIn("function workspaceLoadAnalysisDetails(", sources["details.js"])
 
         self.assertNotIn("function workspaceRenderLocalization(", shell_source)
         self.assertNotIn("function workspaceDashboardRenderSnapshot(", shell_source)
