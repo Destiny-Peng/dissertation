@@ -515,7 +515,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertLess(len(app_shell), 8000)
         self.assertIn("var state = {", app_shell)
         self.assertIn("installEvents();", app_shell)
-        self.assertIn("loadRollouts().catch", app_shell)
+        self.assertIn("window.lf3rInitialRolloutsPromise = loadRollouts();", app_shell)
+        self.assertIn("window.lf3rInitialRolloutsPromise.catch", app_shell)
 
         self.assertIn("function renderPersistentJobCards(", app_jobs)
         self.assertIn("function pollPersistentJob(", app_jobs)
@@ -566,6 +567,15 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         for left, right in zip(ordered, ordered[1:]):
             self.assertLess(html.index(left), html.index(right))
 
+
+    def test_manifest_support_reuses_initial_rollout_metadata(self) -> None:
+        manifest = (STATIC_ROOT / "manifest-support.js").read_text(encoding="utf-8")
+        self.assertIn("window.lf3rInitialRolloutsPromise", manifest)
+        self.assertIn("Array.isArray(state.manifests)", manifest)
+        self.assertIn("if (!manifests.length)", manifest)
+        self.assertIn('fetch("/api/manifests"', manifest)
+        self.assertIn("function initializeManifestMetadata()", manifest)
+        self.assertIn("bootstrap.then(", manifest)
 
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
