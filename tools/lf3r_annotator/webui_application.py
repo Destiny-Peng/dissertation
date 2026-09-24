@@ -226,13 +226,8 @@ class WebUIApplication(server.LF3RApplication):
     def load_rollouts(self) -> list[dict[str, Any]]:
         records = self._refresh_manifest_catalog()
         for record in records:
-            video_path = record.get("video_path")
-            if not isinstance(video_path, str) or not video_path:
-                raise server.ValidationError(
-                    "Manifest record has an invalid video_path: "
-                    + str(record.get("id"))
-                )
-            self.resolve_project_file(video_path, ".mp4")
+            for video_path in server.record_camera_video_paths(record).values():
+                self.resolve_project_file(video_path, ".mp4")
         return records
 
 
