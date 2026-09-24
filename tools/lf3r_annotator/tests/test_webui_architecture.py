@@ -256,6 +256,24 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         for obsolete in ["runs-semantics.js", "dataset-scope-ui.js"]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
 
+    def test_runs_core_is_extracted_from_app_shell(self) -> None:
+        runs_core = STATIC_ROOT / "runs" / "core.js"
+        self.assertTrue(runs_core.is_file())
+        source = runs_core.read_text(encoding="utf-8")
+        app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("function startBaselineBatch(", source)
+        self.assertIn("function updateBaselineBatchSelection(", source)
+        self.assertIn("function startRolloutGeneration(", source)
+        self.assertIn("function rolloutGenerationJobMessage(", source)
+        self.assertNotIn("function startBaselineBatch(", app)
+        self.assertNotIn("function startRolloutGeneration(", app)
+        self.assertLess(
+            html.index("/static/runs/core.js"),
+            html.index("/static/app.js"),
+        )
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
