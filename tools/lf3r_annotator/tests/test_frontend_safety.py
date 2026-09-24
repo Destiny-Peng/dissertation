@@ -89,6 +89,7 @@ class FrontendSafetyContractTest(unittest.TestCase):
     def test_workspace_uses_stable_module_names_without_manual_versions(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
+        self.assertIn('["lf3rToolsStyles", "/static/styles-tools.css"]', workspace)
         for stale in [
             "workspace-legacy.js",
             "manifest-support-v2.js",
@@ -114,6 +115,9 @@ class FrontendSafetyContractTest(unittest.TestCase):
             "manifest-support.js",
             "results/layout.js",
             "results/run-config.js",
+            "runs/tools-layout.js",
+            "runs/gpu.js",
+            "runs/project-tools.js",
             "runs/layout.js",
             "runs/jobs.js",
             "runs/scope.js",
