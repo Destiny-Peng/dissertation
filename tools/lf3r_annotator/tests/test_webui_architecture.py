@@ -358,6 +358,47 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             )
 
 
+    def test_app_shell_and_annotate_frontend_are_split(self) -> None:
+        app_shell = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+        app_jobs = (STATIC_ROOT / "app" / "jobs.js").read_text(encoding="utf-8")
+        app_help = (STATIC_ROOT / "app" / "help.js").read_text(encoding="utf-8")
+        annotate_core = (STATIC_ROOT / "annotate" / "core.js").read_text(encoding="utf-8")
+        annotate_events = (STATIC_ROOT / "annotate" / "events.js").read_text(encoding="utf-8")
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
+        self.assertLess(len(app_shell), 8000)
+        self.assertIn("var state = {", app_shell)
+        self.assertIn("installEvents();", app_shell)
+        self.assertIn("loadRollouts().catch", app_shell)
+
+        self.assertIn("function renderPersistentJobCards(", app_jobs)
+        self.assertIn("function pollPersistentJob(", app_jobs)
+        self.assertIn("function pollBaselineJob(", app_jobs)
+        self.assertIn("var cliHelpState = {", app_help)
+        self.assertIn("function showCliHelp(", app_help)
+
+        self.assertIn("function loadRollouts(", annotate_core)
+        self.assertIn("function renderFailureEvents(", annotate_core)
+        self.assertIn("function saveAnnotation(", annotate_core)
+        self.assertIn("function installEvents(", annotate_events)
+
+        self.assertNotIn("function loadRollouts(", app_shell)
+        self.assertNotIn("function installEvents(", app_shell)
+        self.assertNotIn("function persistentJobEndpoint(", app_shell)
+        self.assertNotIn("function startBaselineRun(", app_shell)
+        self.assertNotIn("function startBaselineRun(", app_jobs)
+        self.assertNotIn("function startBaselineRun(", annotate_core)
+
+        ordered = [
+            "/static/app/jobs.js",
+            "/static/app/help.js",
+            "/static/annotate/core.js",
+            "/static/annotate/events.js",
+            "/static/app.js",
+        ]
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertLess(html.index(left), html.index(right))
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
