@@ -305,6 +305,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         runs_layout = runs_root / "layout.js"
         tools_layout = runs_root / "tools-layout.js"
         gpu = runs_root / "gpu.js"
+        project_tool_client = runs_root / "project-tool-client.js"
         project_tools = runs_root / "project-tools.js"
         for path in [
             runs_core,
@@ -314,6 +315,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             runs_layout,
             tools_layout,
             gpu,
+            project_tool_client,
             project_tools,
         ]:
             self.assertTrue(path.is_file(), path.name)
@@ -326,6 +328,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         layout_source = runs_layout.read_text(encoding="utf-8")
         tools_layout_source = tools_layout.read_text(encoding="utf-8")
         gpu_source = gpu.read_text(encoding="utf-8")
+        project_tool_client_source = project_tool_client.read_text(encoding="utf-8")
         project_tools_source = project_tools.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
@@ -360,16 +363,22 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("LF3RProjectTools.install", layout_source)
         self.assertIn("window.LF3RRunsToolsLayout", tools_layout_source)
         self.assertIn("window.LF3RRunsGpu", gpu_source)
+        self.assertIn("window.LF3RProjectToolClient", project_tool_client_source)
+        self.assertIn("recoverSubmission", project_tool_client_source)
+        self.assertIn("AbortController", project_tool_client_source)
+        self.assertIn("immediate-registry-v1", project_tool_client_source)
         self.assertIn("window.LF3RProjectTools", project_tools_source)
+        self.assertIn("client.submit(", project_tools_source)
+        self.assertNotIn('fetch("/api/tools/run"', project_tools_source)
         self.assertIn("safePrepareRun", tools_layout_source)
         self.assertIn("refreshGpuStatus", gpu_source)
-        self.assertIn("recoverToolSubmission", project_tools_source)
         self.assertIn("loadBatchManifestOptions", project_tools_source)
         self.assertNotIn("styles-tools.css?v=", layout_source)
 
         ordered_layout = [
             "/static/runs/tools-layout.js",
             "/static/runs/gpu.js",
+            "/static/runs/project-tool-client.js",
             "/static/runs/project-tools.js",
             "/static/runs/layout.js",
         ]
