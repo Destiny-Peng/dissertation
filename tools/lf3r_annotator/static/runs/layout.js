@@ -86,6 +86,9 @@ function installRunsLayoutEnhancements() {
 
   makeActivity(batchPanel, "baselineBatchJobs", "baselineBatchLog", "Baseline job");
   makeActivity(rolloutPanel, "rolloutGenerationJobs", "rolloutGenerationLog", "Generation job", "rolloutGenerationStatus");
+  if (window.LF3RRunsJobs && typeof window.LF3RRunsJobs.installFilterToolbar === "function") {
+    window.LF3RRunsJobs.installFilterToolbar();
+  }
 
   var advanced = document.getElementById("baselineBatchAdvanced");
   if (advanced && !advanced.dataset.runsDisclosure) {

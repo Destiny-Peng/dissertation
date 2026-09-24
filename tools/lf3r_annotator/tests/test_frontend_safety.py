@@ -220,6 +220,21 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn('scheduleEvaluationChartHydration(byId("evaluationMethods"))', view)
         self.assertIn("scheduleEvaluationChartHydration(card);", core)
 
+    def test_baseline_job_filter_installs_after_activity_layout(self) -> None:
+        jobs = (STATIC_ROOT / "runs" / "jobs.js").read_text(encoding="utf-8")
+        layout = (STATIC_ROOT / "runs" / "layout.js").read_text(encoding="utf-8")
+
+        self.assertIn("installFilterToolbar: installFilterToolbar", jobs)
+        self.assertIn("function afterRender()", jobs)
+        self.assertRegex(
+            jobs,
+            r"function afterRender\(\) \{\s*installFilterToolbar\(\);"
+        )
+        self.assertIn(
+            'window.LF3RRunsJobs.installFilterToolbar();',
+            layout,
+        )
+
     def test_stale_results_configurator_is_removed(self) -> None:
         self.assertFalse((STATIC_ROOT / "results-run-config-v2.js").exists())
         self.assertFalse((STATIC_ROOT / "results-run-config.js").exists())

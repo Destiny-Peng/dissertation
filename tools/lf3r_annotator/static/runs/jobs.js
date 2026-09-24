@@ -344,6 +344,7 @@ window.LF3RRunsJobs = (function createRunsJobsController() {
   }
 
   function afterRender() {
+    installFilterToolbar();
     decorateCancelButtons();
     syncLogButtons();
   }
@@ -361,6 +362,7 @@ window.LF3RRunsJobs = (function createRunsJobsController() {
 
   return {
     renderBaselineJobs: renderBaselineJobs,
+    installFilterToolbar: installFilterToolbar,
     afterRender: afterRender,
     handleClick: handleClick,
     refreshSelectedLog: refreshSelectedLog
