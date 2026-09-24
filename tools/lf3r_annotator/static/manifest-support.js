@@ -209,11 +209,15 @@
 
   async function loadManifestMetadata() {
     try {
-      var response = await fetch("/api/manifests", { cache: "no-store" });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not load manifest metadata");
-      state.manifests = payload.manifests || [];
-      populateManifestFilter(state.manifests);
+      var manifests = Array.isArray(state.manifests) ? state.manifests : [];
+      if (!manifests.length) {
+        var response = await fetch("/api/manifests", { cache: "no-store" });
+        var payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not load manifest metadata");
+        manifests = payload.manifests || [];
+        state.manifests = manifests;
+      }
+      populateManifestFilter(manifests);
       installFilterHooks();
       updateDatasetStatus();
       applyManifestFilters();
@@ -372,8 +376,20 @@
     transport.appendChild(status);
   }
 
+  function initializeManifestMetadata() {
+    var bootstrap = window.lf3rInitialRolloutsPromise;
+    if (bootstrap && typeof bootstrap.then === "function") {
+      bootstrap.then(
+        function () { loadManifestMetadata(); },
+        function () { loadManifestMetadata(); }
+      );
+      return;
+    }
+    loadManifestMetadata();
+  }
+
   ensureManifestControls();
   installFilterHooks();
   installManualTranscodeControl();
-  loadManifestMetadata();
+  initializeManifestMetadata();
 })();
