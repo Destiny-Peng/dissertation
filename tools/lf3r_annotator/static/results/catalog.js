@@ -51,7 +51,9 @@ function baselineRunDisplay(run) {
 }
 
 function baselineRunOptions(method, record, condition) {
-  if (!Array.isArray(state.baselineRuns) || !record) return [];
+  if (!Array.isArray(state.baselineRuns)
+      || state.baselineRunsCondition !== condition
+      || !record) return [];
   return state.baselineRuns.filter(function (run) {
     if ((run.method || run.baseline) !== method) return false;
     var ids = Array.isArray(run.run_source_rollout_ids)
@@ -67,6 +69,9 @@ function baselineRunOptions(method, record, condition) {
 function renderBaselineRunControls(method, result, record) {
   var condition = state.instructionCondition || "full_instruction";
   var selected = baselineRunSelectionValue(method, record, condition);
+  var catalogReady = Array.isArray(state.baselineRuns)
+    && state.baselineRunsCondition === condition
+    && !state.baselineRunsLoading;
   var options = baselineRunOptions(method, record, condition);
   var optionHtml = '<option value="' + BASELINE_AUTO_RUN + '"' + (selected === BASELINE_AUTO_RUN ? " selected" : "") + '>Automatic · newest available</option>';
   options.forEach(function (run) {
@@ -78,15 +83,34 @@ function renderBaselineRunControls(method, result, record) {
   var allKey = baselineRunAllKey(method, condition);
   var applied = hasOwn(state.baselineRunAll, allKey) && state.baselineRunAll[allKey] !== BASELINE_AUTO_RUN;
   var note = applied ? "Applied to all rollouts" : "This rollout";
-  var disabled = options.length === 0 ? " disabled" : "";
+  var disabled = (!catalogReady || options.length === 0) ? " disabled" : "";
+  var helper = !catalogReady
+    ? '<small>Loading run catalog…</small>'
+    : (options.length ? "" : '<small>No completed run available</small>');
   return '<div class="evaluation-run-controls">'
     + '<label><span>Result run</span><select data-evaluation-run-select data-evaluation-method="' + escapeHtml(method)
     + '" aria-label="' + escapeHtml((result.label || method) + " result run") + '"' + disabled + '>'
     + optionHtml + '</select></label>'
     + '<button type="button" class="ghost-button" data-apply-baseline-run data-evaluation-method="' + escapeHtml(method)
     + '"' + disabled + '>Apply to all</button>'
-    + (options.length ? "" : '<small>No completed run available</small>')
+    + helper
     + '</div>';
+}
+
+function refreshBaselineRunControls(rolloutId, condition) {
+  if (!state.evaluation || state.selectedId !== rolloutId
+      || state.instructionCondition !== condition) return;
+  var record = (state.rollouts || []).find(function (item) {
+    return item.id === rolloutId;
+  }) || null;
+  if (!record) return;
+  document.querySelectorAll("[data-evaluation-method]").forEach(function (card) {
+    var method = String(card.dataset.evaluationMethod || "");
+    var result = state.evaluation.methods && state.evaluation.methods[method];
+    var current = card.querySelector(".evaluation-run-controls");
+    if (!result || !current) return;
+    current.outerHTML = renderBaselineRunControls(method, result, record);
+  });
 }
 
 var resultsCatalogSerial = 0;
