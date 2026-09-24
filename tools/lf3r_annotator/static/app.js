@@ -105,6 +105,11 @@ function persistentJobScope(job) {
     var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
     return suite + " - " + (job.run_note || "");
   }
+  if (job.job_type === "baseline" && job.scope
+      && window.LF3RDatasetScopes
+      && typeof window.LF3RDatasetScopes.scopeLabel === "function") {
+    return window.LF3RDatasetScopes.scopeLabel(job.scope);
+  }
   return job.scope || (job.rollout_id ? "single rollout: " + job.rollout_id : "unspecified scope");
 }
 
@@ -354,7 +359,12 @@ function cliHelpEntry(key) {
   parts.forEach(function (part) {
     if (value) value = value[part];
   });
-  return value && typeof value === "object" ? value : null;
+  var entry = value && typeof value === "object" ? value : null;
+  if (window.LF3RDatasetScopes
+      && typeof window.LF3RDatasetScopes.decorateHelp === "function") {
+    return window.LF3RDatasetScopes.decorateHelp(key, entry);
+  }
+  return entry;
 }
 
 function loadCliHelpMetadata() {
@@ -1137,6 +1147,10 @@ var BASELINE_BATCH_SCOPE_LABELS = {
 };
 
 function baselineBatchMatchesScope(record, scope) {
+  if (window.LF3RDatasetScopes
+      && typeof window.LF3RDatasetScopes.matchesBaseline === "function") {
+    return window.LF3RDatasetScopes.matchesBaseline(record, scope);
+  }
   if (scope === "all") return true;
   if (scope === "libero_10" || scope === "libero_spatial") return record.task_suite === scope;
   return record.analysis_partition === scope;
@@ -1416,7 +1430,10 @@ function updateBaselineBatchSelection() {
   var conditionNode = byId("baselineBatchCondition");
   var condition = conditionNode ? conditionNode.value : (state.instructionCondition || "full_instruction");
   var conditionLabel = instructionConditionLabel(condition);
-  var label = BASELINE_BATCH_SCOPE_LABELS[scope.value] || scope.value;
+  var label = window.LF3RDatasetScopes
+    && typeof window.LF3RDatasetScopes.scopeLabel === "function"
+    ? window.LF3RDatasetScopes.scopeLabel(scope.value)
+    : (BASELINE_BATCH_SCOPE_LABELS[scope.value] || scope.value);
   var resultFilter = baselineBatchResultFilterValue();
   var coverage = (
     resultFilter === "missing_valid"
@@ -1826,7 +1843,7 @@ function rolloutGenerationJobMessage(job) {
       + (job.manifest_rebuilt ? "rebuilt." : "was not rebuilt.");
   }
   if (job.status === "memory_blocked") {
-    return suite + " generation blocked by the memory-only GPU gate; utilization is informational. Inspect the log below.";
+    return "This older rollout-generation job was stopped by a legacy resource check; inspect its log.";
   }
   return suite + " generation failed after " + progress + " rollout(s); inspect the log below.";
 }
