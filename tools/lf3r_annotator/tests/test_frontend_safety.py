@@ -98,7 +98,12 @@ class FrontendSafetyContractTest(unittest.TestCase):
         ]:
             self.assertNotIn(stale, workspace)
         for stable in [
-            "analysis/core.js",
+            "analysis/live.js",
+            "analysis/snapshot.js",
+            "analysis/localization.js",
+            "analysis/change-point.js",
+            "analysis/event-triggered.js",
+            "analysis/runs.js",
             "analysis/dashboard.js",
             "workspace-core.js",
             "manifest-support.js",
