@@ -233,6 +233,10 @@
     var memoryInput = form.elements.namedItem("memory_utilization");
     if (gpuInput) gpuInput.value = values.gpu || "0";
     if (memoryInput) memoryInput.value = values.memory_utilization || "0.80";
+
+    if (window.LF3RProcvlmMode && typeof window.LF3RProcvlmMode.refreshSingle === "function") {
+      window.LF3RProcvlmMode.refreshSingle(method);
+    }
   }
 
   function selectedRecord() {
@@ -355,6 +359,10 @@
     }
 
     var collected = collect();
+    if (activeMethod === "procvlm" && window.LF3RProcvlmMode
+        && typeof window.LF3RProcvlmMode.applyOptions === "function") {
+      collected.options = window.LF3RProcvlmMode.applyOptions(collected.options, "single");
+    }
     var memory = Number(collected.config.memory_utilization);
     if (!Number.isFinite(memory) || memory < 0.05 || memory > 1) {
       statusNode.textContent = "vLLM free-memory target must be between 0.05 and 1.";
