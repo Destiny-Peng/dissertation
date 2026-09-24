@@ -26,6 +26,20 @@ function nearestEvaluationSample(samples, frame) {
   });
 }
 
+function rynnAnalysisIsDuplicate(sample) {
+  if (!sample || !sample.analysis_text || sample.parsed_analysis == null) return false;
+  var analysis = String(sample.analysis_text);
+  var parsed = typeof sample.parsed_analysis === "string"
+    ? sample.parsed_analysis
+    : JSON.stringify(sample.parsed_analysis);
+  return analysis.indexOf("Video Description:") !== -1
+    && analysis.indexOf("Match:") !== -1
+    && analysis.indexOf("Success:") !== -1
+    && parsed.indexOf("description") !== -1
+    && parsed.indexOf("match") !== -1
+    && parsed.indexOf("success") !== -1;
+}
+
 function sampleOutputText(sample) {
   if (!sample) return "No output at this frame.";
   var parts = [];
@@ -39,7 +53,7 @@ function sampleOutputText(sample) {
   }
   [
     ["Analysis", sample.analysis_text],
-    ["Parsed analysis", sample.parsed_analysis],
+    ["Parsed analysis", rynnAnalysisIsDuplicate(sample) ? null : sample.parsed_analysis],
     ["Prediction", sample.pred]
   ].forEach(function (entry) {
     textEntries.push(entry);
@@ -603,8 +617,8 @@ function renderEvaluationCard(method, result, record) {
   var variant = currentInstructionVariant(record);
   var canRunCondition = viewingCondition === "full_instruction" || Boolean(variant.available);
   var action = canRunCondition
-    ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method) + '">'
-      + (available ? "Re-run rollout" : "Run baseline") + "</button>"
+    ? '<button class="ghost-button baseline-run-button" type="button" data-run-baseline="' + escapeHtml(method)
+      + '" title="Configure parameters and run this baseline on the current rollout">Configure &amp; run</button>'
     : '<span class="evaluation-meta">Condition view only</span>';
   var body = renderBaselineRunControls(method, result, record);
   if (available) {
@@ -671,6 +685,9 @@ function renderEvaluationPanel(payload) {
     }, record);
   }).join("");
   updateEvaluationCurrent();
+  if (typeof window.lf3rResultsLayoutRefresh === "function") {
+    window.lf3rResultsLayoutRefresh();
+  }
 }
 
 
@@ -916,6 +933,14 @@ function bindResultsEvents() {
     }
 
     var runButton = event.target.closest("[data-run-baseline]");
-    if (runButton) startBaselineRun(runButton.dataset.runBaseline);
+    if (runButton) {
+      var opener = window.lf3rOpenSingleBaselineConfig;
+      if (typeof opener === "function") {
+        opener(String(runButton.dataset.runBaseline || ""));
+      } else {
+        var status = byId("evaluationStatus");
+        if (status) status.textContent = "Baseline configurator is still loading. Try again.";
+      }
+    }
   });
 }
