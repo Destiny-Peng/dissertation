@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Create separate per-camera LIBERO videos by replaying recorded rollout actions.
+"""Add LIBERO wrist-camera video by replaying recorded rollout actions.
 
-This is intentionally a post-processing step. It does not query OpenVLA and it
-never changes the canonical single-view MP4 used by LF3R baselines.
+The canonical OpenVLA rollout is already the physical high/agentview camera, so
+post-processing records only the additional wrist view. Camera identity is
+written explicitly in the sidecar and never inferred from filenames.
 """
 
 from __future__ import annotations
@@ -21,9 +22,7 @@ from libero.libero import benchmark, get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
 
 
-HIGH_CAMERA = "agentview"
 WRIST_CAMERA = "robot0_eye_in_hand"
-CAMERA_SLOTS = ("cam_high", "cam_wrist")
 ACTION_FIELDS = (
     "action/dx",
     "action/dy",
@@ -73,7 +72,7 @@ def make_env(task, resolution: int) -> OffScreenRenderEnv:
     )
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
-        camera_names=[HIGH_CAMERA, WRIST_CAMERA],
+        camera_names=[WRIST_CAMERA],
         camera_heights=resolution,
         camera_widths=resolution,
     )
@@ -94,14 +93,9 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
     return np.ascontiguousarray(image[::-1, ::-1])
 
 
-def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
-    high_path = video.with_name(video.stem + ".cam_high.mp4")
+def sidecar_paths(video: Path) -> tuple[Path, Path]:
     wrist_path = video.with_name(video.stem + ".cam_wrist.mp4")
-    camera_paths = {
-        "cam_high": high_path,
-        "cam_wrist": wrist_path,
-    }
-    return camera_paths, video.with_name(video.stem + ".camera_videos.json")
+    return wrist_path, video.with_name(video.stem + ".camera_videos.json")
 
 
 def rollout_videos(run_dir: Path) -> Iterable[Path]:
@@ -129,9 +123,9 @@ def record_rollout(
             f"Episode index {episode_idx} exceeds available initial states for task {task_id}"
         )
     actions = read_actions(video.with_suffix(".csv"))
-    camera_paths, metadata_path = sidecar_paths(video)
-    physical_paths = list(dict.fromkeys(camera_paths.values()))
-    existing = [path for path in [*physical_paths, metadata_path] if path.exists()]
+    wrist_path, metadata_path = sidecar_paths(video)
+    generated_paths = [wrist_path]
+    existing = [path for path in [wrist_path, metadata_path] if path.exists()]
     if existing:
         names = ", ".join(path.name for path in existing)
         raise FileExistsError(
@@ -148,19 +142,14 @@ def record_rollout(
             obs, _, _, _ = env.step([0, 0, 0, 0, 0, 0, -1])
 
         writers = {
-            "cam_high": imageio.get_writer(str(camera_paths["cam_high"]), fps=fps),
-            "cam_wrist": imageio.get_writer(
-                str(camera_paths["cam_wrist"]),
-                fps=fps,
-            ),
+            "cam_wrist": imageio.get_writer(str(wrist_path), fps=fps),
         }
         for action in actions:
-            writers["cam_high"].append_data(oriented_rgb(obs, HIGH_CAMERA))
             writers["cam_wrist"].append_data(oriented_rgb(obs, WRIST_CAMERA))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
     except Exception:
-        for path in physical_paths:
+        for path in generated_paths:
             if path.exists():
                 path.unlink()
         raise
@@ -170,10 +159,10 @@ def record_rollout(
         env.close()
 
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "camera_video_paths": {
-            slot: path.name
-            for slot, path in camera_paths.items()
+            "cam_high": video.name,
+            "cam_wrist": wrist_path.name,
         },
         "record_resolution": int(record_resolution),
         "camera_width": int(record_resolution),
@@ -192,12 +181,14 @@ def record_rollout(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    outputs = ",".join(f"{slot}={path.name}" for slot, path in camera_paths.items())
     print(
         "LF3R_MULTIVIEW_RECORDED "
-        f"source={video.name} outputs={outputs} frames={frame_count}"
+        f"cam_high={video.name} cam_wrist={wrist_path.name} frames={frame_count}"
     )
-    return camera_paths
+    return {
+        "cam_high": video,
+        "cam_wrist": wrist_path,
+    }
 
 
 def main() -> None:
