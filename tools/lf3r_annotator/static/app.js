@@ -1564,14 +1564,44 @@ async function loadBaselineBatchLog(jobId) {
   }
 }
 
+function setRejectedRequestLog(message, body) {
+  var log = byId("baselineBatchLog");
+  if (!log) return;
+  log.textContent = [
+    "Request rejected before a baseline job was created.",
+    "",
+    String(message || "Unknown request validation error"),
+    "",
+    "Submitted request:",
+    JSON.stringify(body, null, 2)
+  ].join("\n");
+}
+
 async function startBaselineBatch(event) {
   if (event) event.preventDefault();
   if (state.baselineBatchSubmitting) return;
+
   var method = byId("baselineBatchMethod").value;
   var scope = byId("baselineBatchScope").value;
   var condition = byId("baselineBatchCondition").value || "full_instruction";
   var resultFilter = baselineBatchResultFilterValue();
   var memory = Number(byId("baselineBatchMemoryUtilization").value);
+
+  if (resultFilter === "missing_valid") {
+    var coverage = await loadBaselineBatchCoverage(true);
+    if (!coverage) {
+      setBaselineBatchStatus("Could not verify existing baseline result coverage.", "error");
+      return;
+    }
+    if (!coverage.missing_valid_result_rollouts) {
+      setBaselineBatchStatus(
+        "Every matching rollout already has a valid " + method + " result; nothing to run.",
+        "warning"
+      );
+      return;
+    }
+  }
+
   readBaselineBatchWorkers();
   var range = baselineBatchTotalRange();
   var summary = baselineBatchWorkerSummary();
@@ -1582,6 +1612,7 @@ async function startBaselineBatch(event) {
       end_index: baselineBatchNumber(worker.end_index)
     };
   });
+
   if (!range.valid || summary.invalid) {
     setBaselineBatchStatus("Total range and every worker must use valid ranges inside the scope.", "error");
     return;
@@ -1595,48 +1626,91 @@ async function startBaselineBatch(event) {
     byId("baselineBatchMemoryUtilization").focus();
     return;
   }
+
   var selected = baselineBatchSelectionRecords();
   if (!selected.length) {
     setBaselineBatchStatus("This scope and worker assignment selects no rollouts.", "warning");
     return;
   }
-  var gpu = workers.length ? workers[0].gpu : "0";
-  var confirmation = "Run " + method + " for " + instructionConditionLabel(condition) + " over " + selected.length + " unique rollout(s)? This launches GPU inference."
+
+  var uniqueGpus = [];
+  workers.forEach(function (worker) {
+    if (uniqueGpus.indexOf(worker.gpu) === -1) uniqueGpus.push(worker.gpu);
+  });
+  var gpu = uniqueGpus.join(",") || "0";
+
+  var confirmation = "Run " + method + " for " + instructionConditionLabel(condition)
+    + " over " + selected.length + " unique rollout(s)? This launches GPU inference."
+    + (resultFilter === "missing_valid"
+      ? " Rollouts with an existing valid result will be skipped by the server."
+      : "")
     + " It will start " + workers.length + " rollout worker(s).";
   if (!window.confirm(confirmation)) return;
+
   state.baselineBatchSubmitting = true;
   updateBaselineBatchSelection();
   setBaselineBatchStatus("Starting " + method + " batch for " + selected.length + " rollout(s)…", "");
   byId("baselineBatchLog").textContent = "";
+
+  var body = {
+    baseline: method,
+    scope: scope,
+    instruction_condition: condition,
+    result_filter: resultFilter,
+    gpu: gpu,
+    memory_utilization: memory,
+    start_index: range.start,
+    limit: null,
+    options: baselineBatchOptions()
+  };
+
+  if (workers.length === 1) {
+    body.parallel_workers = 1;
+    if (!(range.start === 0 && range.end === range.matched)) {
+      body.end_index = range.end;
+    }
+  } else {
+    body.end_index = range.end;
+    body.parallel_workers = workers.length;
+    body.workers = workers;
+  }
+
   try {
-    // The server serializes each row as a repeated --worker-spec GPU:START:END flag.
-    var body = {
-      baseline: method,
-      scope: scope,
-      instruction_condition: condition,
-      result_filter: resultFilter,
-      gpu: gpu,
-      memory_utilization: memory,
-      start_index: range.start,
-      end_index: range.end,
-      limit: null,
-      parallel_workers: workers.length,
-      workers: workers,
-      options: baselineBatchOptions()
-    };
     var response = await fetch("/api/baselines/run-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    var payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Could not start baseline batch");
+
+    var responseText = await response.text();
+    var payload = {};
+    try {
+      payload = responseText ? JSON.parse(responseText) : {};
+    } catch (_) {
+      payload = { error: responseText || "Server returned a non-JSON response" };
+    }
+
+    if (!response.ok) {
+      var message = payload.error || ("HTTP " + response.status + " while starting baseline batch");
+      setRejectedRequestLog(message, body);
+      console.error("LF3R baseline batch request rejected", {
+        status: response.status,
+        message: message,
+        request: body,
+        response: payload
+      });
+      throw new Error(message);
+    }
+
     state.baselineBatchJob = payload.job;
     rememberPersistentJob(payload.job);
     await loadBaselineBatchLog(payload.job.job_id);
     pollBaselineBatchJob(payload.job.job_id);
   } catch (error) {
     setBaselineBatchStatus("Batch baseline error: " + error.message, "error");
+    if (!byId("baselineBatchLog").textContent.trim()) {
+      setRejectedRequestLog(error.message, body);
+    }
   } finally {
     state.baselineBatchSubmitting = false;
     updateBaselineBatchSelection();
