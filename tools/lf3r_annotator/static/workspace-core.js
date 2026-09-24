@@ -1,13 +1,13 @@
 "use strict";
 
 var SETTINGS_DEFAULTS = {
-  background_color: "#0b0d10",
-  surface_color: "#11151a",
-  surface_raised_color: "#171c22",
-  control_color: "#0f1318",
-  text_color: "#f4f6f7",
-  muted_color: "#98a3ad",
-  accent_color: "#67d9b5",
+  background_color: "#0d1117",
+  surface_color: "#121820",
+  surface_raised_color: "#18202a",
+  control_color: "#0f151c",
+  text_color: "#e7edf3",
+  muted_color: "#929eaa",
+  accent_color: "#79aa9e",
   font_scale: 1.0,
   review_font_scale: 1.0,
   analysis_font_scale: 1.0,
@@ -17,13 +17,13 @@ var SETTINGS_DEFAULTS = {
 
 var SETTINGS_PRESETS = {
   midnight: {
-    background_color: "#0b0d10",
-    surface_color: "#11151a",
-    surface_raised_color: "#171c22",
-    control_color: "#0f1318",
-    text_color: "#f4f6f7",
-    muted_color: "#98a3ad",
-    accent_color: "#67d9b5",
+    background_color: "#0d1117",
+    surface_color: "#121820",
+    surface_raised_color: "#18202a",
+    control_color: "#0f151c",
+    text_color: "#e7edf3",
+    muted_color: "#929eaa",
+    accent_color: "#79aa9e",
     font_scale: 1.0,
     review_font_scale: 1.0,
     analysis_font_scale: 1.0,
@@ -59,6 +59,34 @@ var SETTINGS_PRESETS = {
     density: "comfortable"
   }
 };
+
+var SETTINGS_LEGACY_DEFAULT_PALETTE = {
+  background_color: "#0b0d10",
+  surface_color: "#11151a",
+  surface_raised_color: "#171c22",
+  control_color: "#0f1318",
+  text_color: "#f4f6f7",
+  muted_color: "#98a3ad",
+  accent_color: "#67d9b5"
+};
+
+function workspaceNormalizeLoadedSettings(settings) {
+  if (!settings) return Object.assign({}, SETTINGS_DEFAULTS);
+  var usesLegacyDefaults = Object.keys(SETTINGS_LEGACY_DEFAULT_PALETTE).every(function (key) {
+    return String(settings[key] || "").toLowerCase() === SETTINGS_LEGACY_DEFAULT_PALETTE[key];
+  });
+  return usesLegacyDefaults
+    ? Object.assign({}, settings, {
+        background_color: SETTINGS_DEFAULTS.background_color,
+        surface_color: SETTINGS_DEFAULTS.surface_color,
+        surface_raised_color: SETTINGS_DEFAULTS.surface_raised_color,
+        control_color: SETTINGS_DEFAULTS.control_color,
+        text_color: SETTINGS_DEFAULTS.text_color,
+        muted_color: SETTINGS_DEFAULTS.muted_color,
+        accent_color: SETTINGS_DEFAULTS.accent_color
+      })
+    : settings;
+}
 
 var ANALYSIS_OUTCOMES = [
   { value: "clean_success", label: "Clean success", color: "var(--success)" },
@@ -2581,7 +2609,9 @@ async function workspaceLoadSettings() {
     var response = await fetch("/api/settings", { cache: "no-store" });
     var payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Could not load shared settings");
-    workspaceState.settings = payload.settings || Object.assign({}, SETTINGS_DEFAULTS);
+    workspaceState.settings = workspaceNormalizeLoadedSettings(
+      payload.settings || Object.assign({}, SETTINGS_DEFAULTS)
+    );
     workspaceState.settingsDraft = Object.assign({}, workspaceState.settings);
     workspaceState.settingsLoaded = true;
     workspaceState.settingsDirty = false;
@@ -2682,6 +2712,9 @@ function workspaceShowView(view) {
   });
   document.documentElement.dataset.activeView = view;
   document.body.dataset.view = view;
+  if (typeof window.lf3rResultsLayoutRefresh === "function") {
+    window.lf3rResultsLayoutRefresh();
+  }
   byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "settings" ? "Settings" : view === "results" ? "Results" : view === "runs" ? "Runs" : "Annotate";
   document.title = "LF3R " + (view === "review" ? "Failure Review" : labelFor(view));
 }
