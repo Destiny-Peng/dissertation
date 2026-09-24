@@ -260,7 +260,7 @@ def convert_one(
     codec: str,
     video_preset: str,
     write_cameras: set[str],
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, Any]:
     transitions = _load_source(source)
     rollout_id = _safe_id(source.stem, index)
     metadata = transitions[0]
@@ -367,7 +367,7 @@ def main() -> int:
     parser.add_argument(
         "--primary-camera",
         default=None,
-        help="Camera used by the canonical manifest.jsonl (default: side_policy_256 when selected, otherwise first camera)",
+        help="Source observation mapped to manifest cam_high (default: side_policy_256 when selected, otherwise first camera)",
     )
     parser.add_argument("--history-index", type=int, default=-1, help="Frame index from each stacked observation; default -1 uses the latest history frame")
     parser.add_argument("--task", default="real-robot demonstration", help="Task text passed to the baseline model when the PKL has no instruction field")
