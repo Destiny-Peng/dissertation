@@ -2,6 +2,8 @@
 
 /* Rollout catalog, filtering, instruction variants, and selection. */
 
+var INSTRUCTION_CONDITION_ORDER = ["full_instruction", "subtask_a", "subtask_b"];
+
 function selectedRollout() {
   return state.rollouts.find(function (record) {
     return record.id === state.selectedId;
