@@ -201,7 +201,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         source = jobs.read_text(encoding="utf-8")
         self.assertIn("window.LF3RRunsJobs", source)
         self.assertNotIn("MutationObserver", source)
-        self.assertNotIn("window.renderPersistentJobLists =", source)
+        self.assertNotRegex(source, r"window\\.renderPersistentJobLists\\s*=(?!=)")
         for obsolete in [
             "baseline-job-filter.js",
             "runs-log-ui.js",
