@@ -163,6 +163,16 @@ def load_manifest_records(path: Path) -> list[dict[str, Any]]:
                 )
             if rollout_id in seen:
                 raise ValidationError(f"Duplicate rollout id: {rollout_id}")
+            if "video_path" in record:
+                raise ValidationError(
+                    f"Legacy video_path is not supported at manifest line {line_number}; "
+                    "rebuild the manifest with camera_video_paths-only schema"
+                )
+            if record.get("schema_version") != 2:
+                raise ValidationError(
+                    f"Manifest schema_version must be 2 at line {line_number}"
+                )
+            record_camera_video_paths(record)
             seen.add(rollout_id)
             records.append(record)
     return records
