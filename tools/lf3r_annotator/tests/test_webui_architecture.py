@@ -219,6 +219,9 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertLess(len(core), 8000)
         self.assertNotIn("MutationObserver", layout)
         self.assertNotIn("MutationObserver", config)
+        self.assertIn("document.createDocumentFragment()", layout)
+        self.assertIn("output.parentNode.appendChild(fragment)", layout)
+        self.assertNotIn("output.parentNode.appendChild(measurer)", layout)
 
         ordered = [
             "/static/results/charts.js",
