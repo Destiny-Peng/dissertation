@@ -479,10 +479,13 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("var cliHelpState = {", app_help)
         self.assertIn("function showCliHelp(", app_help)
 
+        self.assertIn('var INSTRUCTION_CONDITION_ORDER = ["full_instruction", "subtask_a", "subtask_b"];', annotate_catalog)
         self.assertIn("function loadRollouts(", annotate_catalog)
         self.assertIn("function renderRolloutList(", annotate_catalog)
+        self.assertIn("var failureTypeChoices = [", annotate_failure_events)
         self.assertIn("function renderFailureEvents(", annotate_failure_events)
         self.assertIn("function setActiveEventFrame(", annotate_failure_events)
+        self.assertIn("var TIMELINE_MARKER_DEFINITIONS = [", annotate_timeline)
         self.assertIn("function seekFrame(", annotate_timeline)
         self.assertIn("function renderTimelineMarkers(", annotate_timeline)
         self.assertIn("function saveAnnotation(", annotate_core)
