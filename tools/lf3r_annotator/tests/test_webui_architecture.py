@@ -233,7 +233,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertTrue(controller.is_file())
         source = controller.read_text(encoding="utf-8")
         app = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
-        analysis_core = (STATIC_ROOT / "analysis" / "core.js").read_text(encoding="utf-8")
+        analysis_live = (STATIC_ROOT / "analysis" / "live.js").read_text(encoding="utf-8")
         workspace_core = (STATIC_ROOT / "workspace-core.js").read_text(encoding="utf-8")
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
@@ -250,7 +250,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("LF3RDatasetScopes.matchesBaseline", app)
         self.assertIn("LF3RDatasetScopes.scopeLabel", app)
         self.assertIn("LF3RDatasetScopes.decorateHelp", app)
-        self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_core)
+        self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
         self.assertIn("LF3RDatasetScopes.refresh", workspace_core)
         self.assertIn("/static/runs/scope.js", workspace)
 
@@ -280,30 +280,41 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
     def test_analysis_frontend_is_split_from_workspace_shell(self) -> None:
         analysis_root = STATIC_ROOT / "analysis"
-        core = analysis_root / "core.js"
-        dashboard = analysis_root / "dashboard.js"
+        module_names = [
+            "live.js",
+            "snapshot.js",
+            "localization.js",
+            "change-point.js",
+            "event-triggered.js",
+            "runs.js",
+            "dashboard.js",
+        ]
         shell = STATIC_ROOT / "workspace-core.js"
         loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
 
-        self.assertTrue(core.is_file())
-        self.assertTrue(dashboard.is_file())
-        core_source = core.read_text(encoding="utf-8")
-        dashboard_source = dashboard.read_text(encoding="utf-8")
-        shell_source = shell.read_text(encoding="utf-8")
+        sources = {}
+        for name in module_names:
+            path = analysis_root / name
+            self.assertTrue(path.is_file(), name)
+            sources[name] = path.read_text(encoding="utf-8")
+        self.assertFalse((analysis_root / "core.js").exists())
 
-        self.assertIn("function workspaceRenderLocalization(", core_source)
-        self.assertIn("function workspaceRenderChangePoint(", core_source)
-        self.assertIn("function workspaceRenderEventTriggered(", core_source)
-        self.assertIn("function workspaceLoadBaselineRuns(", core_source)
-        self.assertIn("function workspaceDashboardRenderSnapshot(", dashboard_source)
-        self.assertIn("function workspaceDashboardRenderComparison(", dashboard_source)
-        self.assertIn("function workspaceRenderSnapshot(", dashboard_source)
+        shell_source = shell.read_text(encoding="utf-8")
+        self.assertIn("function workspaceRenderLiveAnalysis(", sources["live.js"])
+        self.assertIn("function workspaceRenderCoverageChart(", sources["snapshot.js"])
+        self.assertIn("function workspaceRenderLocalization(", sources["localization.js"])
+        self.assertIn("function workspaceRenderChangePoint(", sources["change-point.js"])
+        self.assertIn("function workspaceRenderEventTriggered(", sources["event-triggered.js"])
+        self.assertIn("function workspaceLoadBaselineRuns(", sources["runs.js"])
+        self.assertIn("function workspaceDashboardRenderSnapshot(", sources["dashboard.js"])
+        self.assertIn("function workspaceDashboardRenderComparison(", sources["dashboard.js"])
+        self.assertIn("function workspaceRenderSnapshot(", sources["dashboard.js"])
 
         self.assertNotIn("function workspaceRenderLocalization(", shell_source)
         self.assertNotIn("function workspaceDashboardRenderSnapshot(", shell_source)
         self.assertLess(len(shell_source), 40000)
 
-        combined = core_source + "\n" + dashboard_source + "\n" + shell_source
+        combined = "\n".join(sources.values()) + "\n" + shell_source
         for name in [
             "workspaceRenderTaskChart",
             "workspaceRenderSnapshot",
@@ -313,8 +324,12 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         ]:
             self.assertEqual(combined.count("function " + name + "("), 1, name)
 
-        self.assertLess(loader.index("/static/analysis/core.js"), loader.index("/static/workspace-core.js"))
-        self.assertLess(loader.index("/static/analysis/dashboard.js"), loader.index("/static/workspace-core.js"))
+        for name in module_names:
+            self.assertLess(
+                loader.index("/static/analysis/" + name),
+                loader.index("/static/workspace-core.js"),
+            )
+
 
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
