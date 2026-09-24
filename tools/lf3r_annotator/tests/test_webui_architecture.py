@@ -177,6 +177,21 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertNotRegex(run_server, r"server_entry_v\d+\.py")
         self.assertNotRegex(stop_server, r"server_entry_v\d+\.py")
 
+    def test_results_frontend_has_semantic_modules(self) -> None:
+        results_root = STATIC_ROOT / "results"
+        for name in ["core.js", "layout.js", "run-config.js"]:
+            self.assertTrue((results_root / name).is_file(), name)
+        for obsolete in ["results-layout.js", "results-run-config.js"]:
+            self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
+
+        core = (results_root / "core.js").read_text(encoding="utf-8")
+        layout = (results_root / "layout.js").read_text(encoding="utf-8")
+        config = (results_root / "run-config.js").read_text(encoding="utf-8")
+        self.assertIn("lf3rOpenSingleBaselineConfig", core)
+        self.assertIn("lf3rResultsLayoutRefresh", core)
+        self.assertNotIn("MutationObserver", layout)
+        self.assertNotIn("MutationObserver", config)
+
     def test_frontend_loader_has_no_manual_version_query(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("?v=", workspace)
