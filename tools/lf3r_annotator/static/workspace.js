@@ -22,7 +22,7 @@
     "/static/runs-semantics.js",
     "/static/dataset-scope-ui.js",
     "/static/runs/jobs.js",
-    "/static/procvlm-mode-ui.js"
+    "/static/baselines/procvlm.js"
   ];
 
   function loadStyle(id, href) {
