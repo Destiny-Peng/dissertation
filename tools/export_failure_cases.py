@@ -89,6 +89,16 @@ def load_manifest(path: Path) -> dict[str, dict[str, Any]]:
             raise ExportError(f"Invalid manifest JSON at line {line_number}") from error
         if not isinstance(record, dict) or not isinstance(record.get("id"), str):
             raise ExportError(f"Manifest line {line_number} has no valid id")
+        if "video_path" in record or record.get("schema_version") != 2:
+            raise ExportError(
+                f"Manifest line {line_number} must use schema_version=2 "
+                "and camera_video_paths only"
+            )
+        camera_paths = record.get("camera_video_paths")
+        if not isinstance(camera_paths, dict) or not camera_paths:
+            raise ExportError(
+                f"Manifest line {line_number} has no camera_video_paths"
+            )
         rollout_id = record["id"]
         if rollout_id in records:
             raise ExportError(f"Manifest contains duplicate rollout id: {rollout_id}")
