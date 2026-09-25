@@ -1136,6 +1136,65 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             log = json.load(response)["log"]
         self.assertEqual(log["job_id"], job["job_id"])
 
+    def test_outcome_sources_use_newest_parseable_output_per_rollout(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.store.write(
+            self.rollout,
+            {
+                "annotator": "test",
+                "review_status": "complete",
+                "outcome_label": "success",
+                "failure_type": "none_success",
+                "confidence": 5,
+                "failure_events": [],
+                "notes": "",
+            },
+        )
+
+        newer_root = self.root / "outputs" / "baselines" / "safe_newer"
+        newer_raw = newer_root / "raw" / self.rollout["id"]
+        newer_raw.mkdir(parents=True)
+        (newer_root / "run.json").write_text(
+            json.dumps({
+                "schema_version": 1,
+                "status": "complete",
+                "baseline": "safe",
+                "created_at": "2026-09-25T00:00:00+00:00",
+                "completed_at": "2026-09-25T00:00:01+00:00",
+                "selected_rollouts": 1,
+                "completed_jobs": 1,
+                "failed_jobs": 0,
+            }) + "\n",
+            encoding="utf-8",
+        )
+        (newer_root / "jobs.jsonl").write_text(
+            json.dumps({
+                "rollout_id": self.rollout["id"],
+                "status": "complete",
+            }) + "\n",
+            encoding="utf-8",
+        )
+        (newer_raw / "safe_features.csv").write_text(
+            "action_timestep,max_token_prob,avg_token_prob\n"
+            "10,0.2,0.1\n12,0.3,0.2\n",
+            encoding="utf-8",
+        )
+
+        self.app.baselines.rebuild_run_index()
+        sources = self.app.baselines.outcome_evaluation_sources("libero_10")
+
+        self.assertEqual(sources["scope_rollouts"], 1)
+        self.assertEqual(sources["evaluation_population"], 1)
+        self.assertEqual(
+            sources["source_maps"]["safe"][self.rollout["id"]],
+            "outputs/baselines/safe_newer",
+        )
+        for method in ("procvlm", "rynnvalue", "robo_dopamine"):
+            self.assertIn(self.rollout["id"], sources["source_maps"][method])
+        coverage = {row["method"]: row for row in sources["coverage"]}
+        self.assertEqual(coverage["safe"]["available_rollouts"], 1)
+        self.assertEqual(coverage["robo_dopamine"]["available_rollouts"], 1)
+
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()
 
