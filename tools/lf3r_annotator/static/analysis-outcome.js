@@ -2,15 +2,30 @@
 
 (function installOutcomeEvaluationUi() {
   var initialized = false;
+  var methods = ["safe", "procvlm", "rynnvalue", "robo_dopamine"];
+  var labels = {
+    safe: "SAFE",
+    procvlm: "ProcVLM",
+    rynnvalue: "RynnValue",
+    robo_dopamine: "Robo-Dopamine"
+  };
   var state = {
     scope: "libero_10",
-    runs: [],
-    job: null,
+    coverage: [],
+    evaluationPopulation: 0,
     loading: false,
+    job: null,
     polling: false
   };
 
   function node(id) { return document.getElementById(id); }
+
+  function escapeText(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
 
   function environmentReady() {
     return Boolean(
@@ -31,103 +46,81 @@
     target.className = "analysis-run-selection" + (kind ? " " + kind : "");
   }
 
-  function selectedValues(select) {
-    if (!select) return [];
-    return Array.prototype.filter.call(select.options, function (option) {
-      return option.selected && option.value;
-    }).map(function (option) { return option.value; });
-  }
-
-  function runLabel(run) {
-    var coverage = Number(run.selected_scope_rollouts || 0);
-    var available = Number(run.scope_rollout_count || run.run_rollout_count || run.selected_rollouts || 0);
-    var date = run.completed_at || run.created_at || "";
-    return (run.run_root || "run") + " · " + available + "/" + coverage + (date ? " · " + date : "");
-  }
-
-  function methodSelect(method) {
-    var ids = {
-      safe: "analysisOutcomeRunSafe",
-      procvlm: "analysisOutcomeRunProcvlm",
-      rynnvalue: "analysisOutcomeRunRynnvalue",
-      robo_dopamine: "analysisOutcomeRunRoboDopamine"
-    };
-    return node(ids[method]);
-  }
-
-  function populate() {
-    ["safe", "procvlm", "rynnvalue", "robo_dopamine"].forEach(function (method) {
-      var select = methodSelect(method);
-      if (!select) return;
-      var choices = state.runs.filter(function (run) {
-        if (run.baseline !== method) return false;
-        return method === "rynnvalue"
-          ? Boolean(run.compatible || run.partial_compatible)
-          : Boolean(run.compatible);
-      });
-      if (!choices.length) {
-        select.innerHTML = '<option value="">No compatible completed run</option>';
-        select.disabled = true;
-        return;
-      }
-      select.disabled = false;
-      select.innerHTML = choices.map(function (run) {
-        var label = runLabel(run).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        var value = String(run.run_root || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-        return '<option value="' + value + '">' + label + '</option>';
-      }).join("");
-      if (method === "rynnvalue") {
-        var full = choices.find(function (run) { return run.compatible; });
-        Array.prototype.forEach.call(select.options, function (option) {
-          if (full) option.selected = option.value === full.run_root;
-          else {
-            var run = choices.find(function (item) { return item.run_root === option.value; });
-            option.selected = Boolean(run && run.partial_compatible);
-          }
-        });
-      } else {
-        select.selectedIndex = 0;
-      }
+  function renderCoverage() {
+    var host = node("analysisOutcomeCoverage");
+    if (!host) return;
+    if (!state.coverage.length) {
+      host.innerHTML = '<div class="analysis-empty">No coverage information available.</div>';
+      return;
+    }
+    var html = '<table class="analysis-table analysis-summary-table" aria-label="Outcome evaluation coverage">'
+      + '<thead><tr><th>Method</th><th>Valid outputs</th><th>Evaluation population</th><th>Coverage</th></tr></thead><tbody>';
+    state.coverage.forEach(function (row) {
+      var available = Number(row.valid_result_rollouts || 0);
+      var population = Number(row.complete_annotation_rollouts || 0);
+      var fraction = population > 0 ? available / population : 0;
+      html += '<tr><th scope="row">' + escapeText(labels[row.baseline] || row.baseline) + '</th>'
+        + '<td class="numeric">' + escapeText(available) + '</td>'
+        + '<td class="numeric">' + escapeText(population) + '</td>'
+        + '<td class="numeric">' + escapeText((100 * fraction).toFixed(1) + "%") + '</td></tr>';
     });
-    updateButton();
-  }
-
-  function allRunsSelected() {
-    return ["safe", "procvlm", "rynnvalue", "robo_dopamine"].every(function (method) {
-      return selectedValues(methodSelect(method)).length > 0;
-    });
+    host.innerHTML = html + '</tbody></table>';
   }
 
   function updateButton() {
     var button = node("analysisOutcomeRunButton");
     if (!button) return;
-    button.disabled = state.loading || activeJob() || !allRunsSelected() || !environmentReady();
+    var hasAnyCoverage = state.coverage.some(function (row) {
+      return Number(row.valid_result_rollouts || 0) > 0;
+    });
+    button.disabled = state.loading || activeJob() || !environmentReady()
+      || state.evaluationPopulation <= 0 || !hasAnyCoverage;
   }
 
-  async function loadRuns() {
+  async function loadCoverage() {
     var scope = node("analysisOutcomeRunScope");
     state.scope = scope ? scope.value : state.scope;
     state.loading = true;
     updateButton();
-    setStatus("Loading completed baseline runs for " + state.scope + "…", "");
+    setStatus("Checking completed annotations and saved-output coverage for " + state.scope + "…", "");
     try {
-      var response = await fetch(
-        "/api/baselines/runs?scope=" + encodeURIComponent(state.scope),
-        { cache: "no-store" }
-      );
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not discover baseline runs");
-      state.runs = Array.isArray(payload.runs) ? payload.runs : [];
-      populate();
-      if (allRunsSelected()) {
-        setStatus("Compatible saved outputs are ready. This job only reads existing baseline results.", "");
+      var rows = await Promise.all(methods.map(async function (method) {
+        var response = await fetch(
+          "/api/baselines/result-coverage?baseline=" + encodeURIComponent(method)
+            + "&scope=" + encodeURIComponent(state.scope)
+            + "&condition=full_instruction",
+          { cache: "no-store" }
+        );
+        var payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not read " + method + " coverage");
+        return payload;
+      }));
+      state.coverage = rows;
+      state.evaluationPopulation = rows.length
+        ? Number(rows[0].complete_annotation_rollouts || 0)
+        : 0;
+      renderCoverage();
+      var availableText = rows.map(function (row) {
+        return (labels[row.baseline] || row.baseline) + " "
+          + Number(row.valid_result_rollouts || 0) + "/" + state.evaluationPopulation;
+      }).join(" · ");
+      if (!state.evaluationPopulation) {
+        setStatus("No review_status=complete rollouts are available in this scope.", "warning");
+      } else if (!rows.some(function (row) { return Number(row.valid_result_rollouts || 0) > 0; })) {
+        setStatus("No parseable saved baseline outputs overlap the completed annotations.", "warning");
       } else {
-        setStatus("A compatible completed run is required for all four methods.", "warning");
+        setStatus(
+          "Evaluation population: " + state.evaluationPopulation
+            + " completed annotation(s). Each method uses its own newest-output union: "
+            + availableText + ".",
+          ""
+        );
       }
     } catch (error) {
-      state.runs = [];
-      populate();
-      setStatus("Baseline run discovery failed: " + error.message, "error");
+      state.coverage = [];
+      state.evaluationPopulation = 0;
+      renderCoverage();
+      setStatus("Coverage check failed: " + error.message, "error");
     } finally {
       state.loading = false;
       updateButton();
@@ -163,7 +156,7 @@
       if (state.job.status === "queued" || state.job.status === "running") {
         setStatus(
           "Outcome evaluation " + state.job.status + " · "
-            + state.job.selected_rollouts + " rollout(s) · CPU post-processing only.",
+            + state.job.selected_rollouts + " completed annotation(s) · CPU post-processing only.",
           ""
         );
         state.polling = false;
@@ -176,6 +169,7 @@
         if (typeof window.workspaceLoadAnalysis === "function") {
           await window.workspaceLoadAnalysis(true);
         }
+        await loadCoverage();
       } else {
         setStatus("Outcome evaluation failed; inspect the log.", "error");
       }
@@ -189,22 +183,13 @@
 
   async function start(event) {
     event.preventDefault();
-    var runs = {};
-    ["safe", "procvlm", "robo_dopamine"].forEach(function (method) {
-      runs[method] = selectedValues(methodSelect(method))[0] || "";
-    });
-    runs.rynnvalue = selectedValues(methodSelect("rynnvalue"));
-    if (!allRunsSelected()) {
-      setStatus("Select compatible completed runs for all four methods.", "warning");
-      return;
-    }
     var label = node("analysisOutcomeOutputLabel").value.trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(label)) {
       setStatus("Output label may contain only letters, numbers, dot, underscore, or hyphen.", "error");
       return;
     }
     node("analysisOutcomeRunLog").textContent = "";
-    setStatus("Starting outcome evaluation…", "");
+    setStatus("Resolving newest saved output per rollout and starting outcome evaluation…", "");
     try {
       var response = await fetch("/api/analysis/run", {
         method: "POST",
@@ -212,9 +197,7 @@
         body: JSON.stringify({
           analysis_kind: "rollout_outcome_evaluation",
           scope: state.scope,
-          runs: runs,
-          output_label: label,
-          allow_partial_coverage: true
+          output_label: label
         })
       });
       var payload = await response.json();
@@ -239,6 +222,9 @@
         return job.analysis_kind === "rollout_outcome_evaluation";
       });
       if (!jobs.length) return;
+      jobs.sort(function (left, right) {
+        return String(right.submitted_at || "").localeCompare(String(left.submitted_at || ""));
+      });
       state.job = jobs[0];
       if (activeJob()) poll(state.job.job_id);
       else loadLog(state.job.job_id);
@@ -249,10 +235,8 @@
     if (initialized || !node("analysisOutcomeRunForm")) return;
     initialized = true;
     node("analysisOutcomeRunForm").addEventListener("submit", start);
-    node("analysisOutcomeRunScope").addEventListener("change", loadRuns);
-    ["analysisOutcomeRunSafe", "analysisOutcomeRunProcvlm", "analysisOutcomeRunRynnvalue", "analysisOutcomeRunRoboDopamine"]
-      .forEach(function (id) { node(id).addEventListener("change", updateButton); });
-    loadRuns();
+    node("analysisOutcomeRunScope").addEventListener("change", loadCoverage);
+    loadCoverage();
     recover();
     updateButton();
   }
