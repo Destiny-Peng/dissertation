@@ -119,6 +119,30 @@ class WebUIApplication(server.LF3RApplication):
             )
         return tuple(signature)
 
+    def _validate_manifest_rows(
+        self,
+        source_path: Path,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        source_label = self._relative_manifest_path(source_path)
+        for row in rows:
+            rollout_id = str(row.get("id") or "")
+            camera_paths = row.get("camera_video_paths")
+            if not isinstance(camera_paths, dict) or not camera_paths:
+                raise server.ValidationError(
+                    f"{source_label}: rollout {rollout_id} has no camera_video_paths"
+                )
+            for camera, value in camera_paths.items():
+                if not isinstance(camera, str) or not camera.strip():
+                    raise server.ValidationError(
+                        f"{source_label}: rollout {rollout_id} has an invalid camera key"
+                    )
+                if not isinstance(value, str) or not value.strip():
+                    raise server.ValidationError(
+                        f"{source_label}: rollout {rollout_id} has an invalid camera path"
+                    )
+                self.resolve_project_file(value, ".mp4")
+
     def _refresh_manifest_catalog(
         self,
         force: bool = False,
@@ -145,43 +169,64 @@ class WebUIApplication(server.LF3RApplication):
 
             for source_path in self.manifest_paths:
                 source_exists = source_path.is_file()
-                source_rows = (
-                    server.load_manifest_records(source_path)
-                    if source_exists
-                    else []
-                )
+                source_relative = self._relative_manifest_path(source_path)
+                source_primary = source_path == self.primary_manifest_path
+                try:
+                    source_rows = (
+                        server.load_manifest_records(source_path)
+                        if source_exists
+                        else []
+                    )
+                    self._validate_manifest_rows(source_path, source_rows)
+
+                    for row in source_rows:
+                        rollout_id = str(row["id"])
+                        previous = source_by_id.get(rollout_id)
+                        if previous is not None:
+                            raise server.ValidationError(
+                                "Duplicate rollout id across manifests: "
+                                + rollout_id
+                                + " ("
+                                + self._relative_manifest_path(previous)
+                                + " and "
+                                + source_relative
+                                + ")"
+                            )
+                except (OSError, json.JSONDecodeError, server.ValidationError) as error:
+                    if source_primary:
+                        raise
+                    source_info.append(
+                        {
+                            "path": source_relative,
+                            "label": source_path.stem,
+                            "primary": False,
+                            "exists": source_exists,
+                            "valid": False,
+                            "rollouts": 0,
+                            "error": str(error),
+                        }
+                    )
+                    continue
+
                 source_info.append(
                     {
-                        "path": self._relative_manifest_path(source_path),
+                        "path": source_relative,
                         "label": source_path.stem,
-                        "primary": source_path == self.primary_manifest_path,
+                        "primary": source_primary,
                         "exists": source_exists,
+                        "valid": True,
                         "rollouts": len(source_rows),
+                        "error": None,
                     }
                 )
                 for row in source_rows:
                     rollout_id = str(row["id"])
-                    previous = source_by_id.get(rollout_id)
-                    if previous is not None:
-                        raise server.ValidationError(
-                            "Duplicate rollout id across manifests: "
-                            + rollout_id
-                            + " ("
-                            + self._relative_manifest_path(previous)
-                            + " and "
-                            + self._relative_manifest_path(source_path)
-                            + ")"
-                        )
                     source_by_id[rollout_id] = source_path
                     aggregate_rows.append(row)
                     enriched = dict(row)
-                    enriched["manifest_source"] = self._relative_manifest_path(
-                        source_path
-                    )
+                    enriched["manifest_source"] = source_relative
                     enriched["manifest_label"] = source_path.stem
-                    enriched["manifest_primary"] = (
-                        source_path == self.primary_manifest_path
-                    )
+                    enriched["manifest_primary"] = source_primary
                     records.append(enriched)
 
             if self.aggregate_manifest_path != self.primary_manifest_path:

@@ -49,7 +49,7 @@ function populateManifestFilter(manifests) {
   var options = ['<option value="all">All manifests</option>'];
   (manifests || []).forEach(function (manifest) {
     var path = String(manifest.path || "");
-    if (!path) return;
+    if (!path || manifest.valid === false) return;
     var label = manifest.label && manifest.label !== path
       ? String(manifest.label) + " · " + path
       : path;
@@ -58,7 +58,7 @@ function populateManifestFilter(manifests) {
   });
   select.innerHTML = options.join("");
   var valid = current === "all" || (manifests || []).some(function (manifest) {
-    return manifest.path === current;
+    return manifest.valid !== false && manifest.path === current;
   });
   select.value = valid ? current : "all";
   state.manifestFilter = select.value;
@@ -74,16 +74,26 @@ function badge(value, cssClass) {
 
 async function loadRollouts(preferredId) {
   var response = await fetch("/api/rollouts", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Could not load rollout manifest");
-  }
   var payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load rollout manifest");
+  }
   state.rollouts = payload.rollouts || [];
   state.manifests = payload.manifests || [];
   populateManifestFilter(state.manifests);
+  var validManifestCount = state.manifests.filter(function (item) {
+    return item.valid !== false;
+  }).length || 1;
+  var invalidManifestCount = state.manifests.filter(function (item) {
+    return item.valid === false;
+  }).length;
   byId("datasetStatus").textContent = "Dataset online · " + state.rollouts.length
-    + " rollouts · " + (state.manifests.length || 1) + " manifest"
-    + ((state.manifests.length || 1) === 1 ? "" : "s");
+    + " rollouts · " + validManifestCount + " manifest"
+    + (validManifestCount === 1 ? "" : "s")
+    + (invalidManifestCount
+      ? " · " + invalidManifestCount + " invalid source"
+        + (invalidManifestCount === 1 ? "" : "s") + " skipped"
+      : "");
   updateProgress();
   applyFilters();
   if (typeof updateBaselineBatchAdvancedFields === "function") updateBaselineBatchAdvancedFields();

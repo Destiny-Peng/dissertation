@@ -63,7 +63,7 @@
     var options = ['<option value="all">All manifests</option>'];
     (manifests || []).forEach(function (manifest) {
       var path = String(manifest.path || "");
-      if (!path) return;
+      if (!path || manifest.valid === false) return;
       var label = manifest.label && manifest.label !== path
         ? String(manifest.label) + " · " + path
         : path;
@@ -72,7 +72,7 @@
     });
     select.innerHTML = options.join("");
     var valid = current === "all" || (manifests || []).some(function (manifest) {
-      return String(manifest.path) === current;
+      return manifest.valid !== false && String(manifest.path) === current;
     });
     select.value = valid ? current : "all";
     state.manifestFilter = select.value;
@@ -206,9 +206,12 @@
   function updateDatasetStatus() {
     var status = byId("datasetStatus");
     if (!status) return;
-    var count = state.manifests.length || 1;
+    var manifests = Array.isArray(state.manifests) ? state.manifests : [];
+    var count = manifests.filter(function (item) { return item.valid !== false; }).length || 1;
+    var invalid = manifests.filter(function (item) { return item.valid === false; }).length;
     status.textContent = "Dataset online · " + (state.rollouts || []).length
-      + " rollouts · " + count + " manifest" + (count === 1 ? "" : "s");
+      + " rollouts · " + count + " manifest" + (count === 1 ? "" : "s")
+      + (invalid ? " · " + invalid + " invalid source" + (invalid === 1 ? "" : "s") + " skipped" : "");
   }
 
   async function loadManifestMetadata() {

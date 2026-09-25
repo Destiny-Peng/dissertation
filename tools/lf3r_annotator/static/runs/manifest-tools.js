@@ -80,9 +80,10 @@ window.LF3RManifestTools = (function createManifestTools() {
         var input = document.createElement("input");
         input.type = "checkbox";
         input.dataset.manifestPath = String(item.path);
-        input.checked = preserveSelection
+        input.disabled = item.valid === false || item.exists === false;
+        input.checked = !input.disabled && (preserveSelection
           ? previous.indexOf(String(item.path)) >= 0
-          : true;
+          : true);
         input.addEventListener("change", updateBatchManifestSelectionCount);
 
         var copy = document.createElement("span");
@@ -91,7 +92,8 @@ window.LF3RManifestTools = (function createManifestTools() {
         var meta = document.createElement("small");
         meta.textContent = String(item.path)
           + " · " + Number(item.rollouts || 0) + " rollout(s)"
-          + (item.primary ? " · primary" : "");
+          + (item.primary ? " · primary" : "")
+          + (item.valid === false ? " · invalid: " + String(item.error || "unavailable") : "");
         copy.appendChild(title);
         copy.appendChild(meta);
         label.appendChild(input);
