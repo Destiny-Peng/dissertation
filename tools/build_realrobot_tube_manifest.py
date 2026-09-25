@@ -199,6 +199,7 @@ def build_record(episode_dir: Path, index: int) -> dict[str, Any]:
         "analysis_partition": "natural_observation",
         "dataset_role": "realrobot_tube",
         "camera_video_paths": camera_paths,
+        "primary_camera": PRIMARY_CAMERA,
         **video_metadata,
         "synchronized_frame_count": synchronized_frames,
         "sample_hz": sample_hz,
