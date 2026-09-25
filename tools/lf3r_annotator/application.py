@@ -205,6 +205,14 @@ class LF3RApplication:
                             f"Manifest record maps multiple cameras to one video at line {line_number}"
                         )
                     resolved.add(path)
+                primary_camera = record.get("primary_camera")
+                if primary_camera is not None and (
+                    not isinstance(primary_camera, str)
+                    or primary_camera not in camera_paths
+                ):
+                    raise ValidationError(
+                        f"Manifest record has invalid primary_camera at line {line_number}"
+                    )
                 records.append(record)
         return records
 
