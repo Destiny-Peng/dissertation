@@ -197,7 +197,7 @@
       "cli": "--robo-camera-mode {auto,single_view,multi_view}",
       "default": "auto",
       "applies_to": "Robo-Dopamine; batch and single-rollout Runs",
-      "description": "Selects the physical camera inputs independently of Robo-Dopamine evaluation perspective. auto uses cam_high + cam_wrist when both are present in the manifest and otherwise repeats canonical video_path. multi_view strictly requires both physical camera paths. single_view always repeats canonical video_path for all three Robo-Dopamine input slots.",
+      "description": "Selects the physical camera inputs independently of Robo-Dopamine evaluation perspective. auto uses a supported physical multiview set when present and otherwise repeats the preferred manifest camera. multi_view accepts cam_high + cam_wrist or cam_high + cam_left_wrist + cam_right_wrist. single_view repeats the preferred manifest camera for all three Robo-Dopamine input slots.",
       "forwarded_as": "Robo-Dopamine adapter maps cam_high -> cam_high_path and cam_wrist -> both cam_left_path and cam_right_path"
     },
     "goal_image": {
@@ -400,7 +400,7 @@
       "cli": "--video-view-mode MODE",
       "default": "single_view; choices: single_view, libero_three_view",
       "applies_to": "LIBERO rollout generation",
-      "description": "Controls camera-set generation for Robo-Dopamine use. libero_three_view preserves the canonical rollout, then replays recorded actions to create one cam_high MP4 and one cam_wrist MP4. camera_video_paths records those two physical videos; the Robo-Dopamine adapter maps cam_wrist to both left/right input slots.",
+      "description": "Controls camera-set generation for Robo-Dopamine use. libero_three_view preserves the original policy rollout, then replays recorded actions to create one cam_high MP4 and one cam_wrist MP4. camera_video_paths records those two physical videos; the Robo-Dopamine adapter maps cam_wrist to both left/right input slots.",
       "forwarded_as": "WebUI -> generator wrapper -> post-run generate_libero_multiview.py replay"
     }
   },

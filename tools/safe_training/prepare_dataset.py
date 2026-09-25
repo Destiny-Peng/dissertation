@@ -58,11 +58,26 @@ def success_label(row: dict[str, Any]) -> int:
     return int(row.get("ground_truth_outcome") == "success")
 
 
+def preferred_camera_video(root: Path, row: dict[str, Any]) -> Path:
+    raw = row.get("camera_video_paths")
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"Manifest row {row['id']} has no camera_video_paths")
+    for camera in ("cam_high", "cam_wrist", "cam_left_wrist", "cam_right_wrist"):
+        value = raw.get(camera)
+        if isinstance(value, str) and value.strip():
+            return project_path(root, value)
+    for camera in sorted(raw):
+        value = raw[camera]
+        if isinstance(value, str) and value.strip():
+            return project_path(root, value)
+    raise ValueError(f"Manifest row {row['id']} has no valid camera video path")
+
+
 def source_candidates(root: Path, row: dict[str, Any]) -> tuple[Path, list[Path], list[Path], list[Path], Path]:
     if not row.get("csv_path"):
         raise ValueError(f"Manifest row {row['id']} has no csv_path")
     csv_path = project_path(root, row["csv_path"])
-    video_path = project_path(root, row["video_path"]) if row.get("video_path") else csv_path.with_suffix(".mp4")
+    video_path = preferred_camera_video(root, row)
     pkl = [csv_path.with_suffix(".pkl")]
     npz = [csv_path.with_suffix(".safe_features.npz"), video_path.with_suffix(".safe_features.npz")]
     metadata = [csv_path.with_suffix(".safe_features.json"), video_path.with_suffix(".safe_features.json")]

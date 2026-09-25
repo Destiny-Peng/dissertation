@@ -174,10 +174,10 @@ window.LF3RManifestTools = (function createManifestTools() {
             ? total + Number(item.rollouts || 0)
             : total;
         }, 0);
-        var message = "Transcode canonical video_path files from "
+        var message = "Transcode all camera_video_paths files from "
           + manifests.length + " selected manifest(s)?\n\n"
           + "Selected manifest rows: " + selectedRows
-          + "\nDuplicate video_path values are deduplicated."
+          + "\nDuplicate camera video paths are deduplicated."
           + "\nAlready-H.264 videos will be skipped. Existing .orig.mp4 backups will not be overwritten.";
         if (!window.confirm(message)) return;
 

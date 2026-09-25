@@ -462,19 +462,34 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 if not rollout:
                     self.json_error(HTTPStatus.NOT_FOUND, "Unknown rollout")
                     return
+                camera_paths = rollout.get("camera_video_paths")
+                if not isinstance(camera_paths, dict) or not camera_paths:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Rollout has no camera videos")
+                    return
                 camera = str(query.get("camera", [""])[0] or "").strip()
-                if camera:
-                    camera_paths = rollout.get("camera_video_paths")
-                    value = camera_paths.get(camera) if isinstance(camera_paths, dict) else None
-                    if not isinstance(value, str) or not value:
-                        self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
-                        return
-                    video = self.app.resolve_project_file(value, ".mp4")
-                    if not video.is_file():
-                        self.json_error(HTTPStatus.NOT_FOUND, "Camera video file is unavailable")
-                        return
-                else:
-                    video = self.app.resolve_project_file(rollout["video_path"], ".mp4")
+                if not camera:
+                    observation_key = rollout.get("observation_key")
+                    if isinstance(observation_key, str) and observation_key in camera_paths:
+                        camera = observation_key
+                    else:
+                        preferred = (
+                            "cam_high",
+                            "cam_wrist",
+                            "cam_left_wrist",
+                            "cam_right_wrist",
+                        )
+                        camera = next(
+                            (name for name in preferred if name in camera_paths),
+                            next(iter(camera_paths)),
+                        )
+                value = camera_paths.get(camera)
+                if not isinstance(value, str) or not value:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
+                    return
+                video = self.app.resolve_project_file(value, ".mp4")
+                if not video.is_file():
+                    self.json_error(HTTPStatus.NOT_FOUND, "Camera video file is unavailable")
+                    return
                 self.serve_video(video)
                 return
             if path == "/":

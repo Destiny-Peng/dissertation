@@ -121,7 +121,7 @@ def make_case(annotation: dict, record: dict, reason: str) -> dict:
         "confidence": annotation.get("confidence"),
         "total_frames": record["total_frames"],
         "fps": record["fps"],
-        "video_path": record["video_path"],
+        "camera_video_paths": record["camera_video_paths"],
         "events": [{key: value for key, value in event.items() if key != "source"} for event in events],
         "annotation_notes": annotation.get("notes", ""),
         "summary": "; ".join(event_text(event, index) for index, event in enumerate(events, 1)),

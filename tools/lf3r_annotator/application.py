@@ -48,6 +48,7 @@ class LF3RApplication:
             / "manifest.jsonl"
         )
         self._instruction_variant_index: dict[str, dict[str, dict[str, Any]]] | None = None
+        self._instruction_variant_mtime_ns: int | None = None
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
@@ -85,11 +86,16 @@ class LF3RApplication:
         self.tmux.recover()
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
-        if self._instruction_variant_index is not None:
-            return self._instruction_variant_index
         path = self.instruction_variant_manifest_path
+        mtime_ns = path.stat().st_mtime_ns if path.is_file() else None
+        if (
+            self._instruction_variant_index is not None
+            and self._instruction_variant_mtime_ns == mtime_ns
+        ):
+            return self._instruction_variant_index
         if not path.is_file():
             self._instruction_variant_index = {}
+            self._instruction_variant_mtime_ns = None
             return self._instruction_variant_index
         grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for row in load_manifest_records(path):
@@ -105,6 +111,7 @@ class LF3RApplication:
                 raise ValidationError("Duplicate instruction variant for " + source_id + ": " + condition)
             grouped[source_id][condition] = row
         self._instruction_variant_index = grouped
+        self._instruction_variant_mtime_ns = mtime_ns
         return grouped
 
     def instruction_variant_options(self, record: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -125,8 +132,8 @@ class LF3RApplication:
             row = variants.get(condition)
             if row is None:
                 continue
-            if row.get("video_path") != record.get("video_path"):
-                raise ValidationError("Instruction variant video does not match source rollout: " + source_id)
+            if row.get("camera_video_paths") != record.get("camera_video_paths"):
+                raise ValidationError("Instruction variant camera videos do not match source rollout: " + source_id)
             options[condition] = {
                 "id": row["id"],
                 "condition": condition,
@@ -164,8 +171,8 @@ class LF3RApplication:
         row = self.load_instruction_variant_records().get(record["id"], {}).get(condition)
         if row is None:
             return None
-        if row.get("video_path") != record.get("video_path"):
-            raise ValidationError("Instruction variant video does not match source rollout: " + record["id"])
+        if row.get("camera_video_paths") != record.get("camera_video_paths"):
+            raise ValidationError("Instruction variant camera videos do not match source rollout: " + record["id"])
         return dict(row)
 
     def load_rollouts(self) -> list[dict[str, Any]]:
@@ -184,7 +191,21 @@ class LF3RApplication:
                 if rollout_id in seen:
                     raise ValidationError(f"Duplicate rollout id: {rollout_id}")
                 seen.add(rollout_id)
-                self.resolve_project_file(record["video_path"], ".mp4")
+                camera_paths = record.get("camera_video_paths")
+                if not isinstance(camera_paths, dict) or not camera_paths:
+                    raise ValidationError(
+                        f"Manifest record has no camera_video_paths at line {line_number}"
+                    )
+                for camera, value in camera_paths.items():
+                    if not isinstance(camera, str) or not camera.strip():
+                        raise ValidationError(
+                            f"Manifest record has an invalid camera key at line {line_number}"
+                        )
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValidationError(
+                            f"Manifest record has an invalid camera path at line {line_number}"
+                        )
+                    self.resolve_project_file(value, ".mp4")
                 records.append(record)
         return records
 

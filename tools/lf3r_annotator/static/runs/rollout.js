@@ -43,8 +43,8 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " Camera videos are generated afterward as physical dataset facts: one cam_high MP4 plus one cam_wrist MP4. Robo-Dopamine later maps cam_wrist to both left/right input slots in its adapter. Canonical policy video remains unchanged."
-      : " Only the canonical single-view replay video is generated.";
+      ? " Camera videos are generated afterward as physical dataset facts: one cam_high MP4 plus one cam_wrist MP4. Robo-Dopamine later maps cam_wrist to both left/right input slots in its adapter. The existing policy recording remains unchanged."
+      : " Only the primary single-view replay video is generated.";
     description.textContent = (isSpatial
       ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
       : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224.")

@@ -198,8 +198,6 @@ def build_record(episode_dir: Path, index: int) -> dict[str, Any]:
         "source_kind": "realrobot_tube",
         "analysis_partition": "natural_observation",
         "dataset_role": "realrobot_tube",
-        "video_path": relative_project_path(primary_video),
-        "video_view_mode": "single_view",
         "camera_video_paths": camera_paths,
         **video_metadata,
         "synchronized_frame_count": synchronized_frames,
@@ -273,7 +271,7 @@ def main() -> int:
             "baseline_usage": {
                 "data_root": "PROJECT_ROOT",
                 "manifest_argument": relative_project_path(output_path),
-                "video_field": "video_path",
+                "video_field": "camera_video_paths",
                 "task_field": "task_description",
             },
         }

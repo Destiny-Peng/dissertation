@@ -104,12 +104,12 @@
       && (review === "all" || record.annotation_status === review);
   }
 
-  function hasDatasetCameraViews(record) {
+  function cameraViewCount(record) {
     var paths = record && record.camera_video_paths;
-    if (!paths || typeof paths !== "object") return false;
-    return ["cam_high", "cam_wrist"].every(function (slot) {
-      return typeof paths[slot] === "string" && paths[slot].length > 0;
-    });
+    if (!paths || typeof paths !== "object") return 0;
+    return Object.keys(paths).filter(function (slot) {
+      return typeof paths[slot] === "string" && paths[slot].trim().length > 0;
+    }).length;
   }
 
   function renderManifestRolloutList() {
@@ -135,7 +135,9 @@
         + badge(provenanceLabel(record), originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
         + badge(record.annotation_status, record.annotation_status)
-        + (hasDatasetCameraViews(record) ? badge("2 camera views", "natural") : "")
+        + (cameraViewCount(record) > 1
+          ? badge(cameraViewCount(record) + " camera views", "natural")
+          : "")
         + "</div>"
         + '<div class="card-title">' + escapeHtml(title) + "</div>"
         + '<div class="card-footer"><span>' + escapeHtml(record.task_suite)
@@ -179,7 +181,9 @@
       )
         + badge(record.analysis_partition, originClass)
         + badge(effectiveOutcome(record), effectiveOutcome(record))
-        + (hasDatasetCameraViews(record) ? badge("2 camera views", "natural") : "");
+        + (cameraViewCount(record) > 1
+          ? badge(cameraViewCount(record) + " camera views", "natural")
+          : "");
     };
     window.selectRollout = wrappedSelectRollout;
     try { selectRollout = wrappedSelectRollout; } catch (_) {}
@@ -270,12 +274,11 @@
     if (record && window.LF3RReviewVideoViews
         && typeof window.LF3RReviewVideoViews.currentView === "function"
         && typeof window.LF3RReviewVideoViews.setView === "function") {
-      // Manual transcode only changes the canonical video. Do not silently
-      // replace an active physical camera view with Main.
-      if (window.LF3RReviewVideoViews.currentView() === "main") {
+      var activeCamera = window.LF3RReviewVideoViews.currentView();
+      if (activeCamera) {
         window.LF3RReviewVideoViews.setView(
           record,
-          "main",
+          activeCamera,
           { force: true, resumePlayback: false }
         );
       }
@@ -329,11 +332,21 @@
   async function startManualTranscode() {
     if (transcodeJobId) return;
     var record = selectedRecord();
-    if (!record || !record.video_path) return;
-    var playbackPath = record.video_path;
+    var cameraPaths = record && record.camera_video_paths;
+    if (!cameraPaths || typeof cameraPaths !== "object") return;
+    var activeCamera = window.LF3RReviewVideoViews
+      && typeof window.LF3RReviewVideoViews.currentView === "function"
+      ? window.LF3RReviewVideoViews.currentView()
+      : "";
+    var cameraKeys = Object.keys(cameraPaths).filter(function (key) {
+      return typeof cameraPaths[key] === "string" && cameraPaths[key].trim().length > 0;
+    });
+    if (!cameraKeys.length) return;
+    if (!activeCamera || cameraKeys.indexOf(activeCamera) === -1) activeCamera = cameraKeys[0];
+    var playbackPath = cameraPaths[activeCamera];
     var backup = transcodeBackupName(playbackPath);
     var confirmed = window.confirm(
-      "Convert this selected video to browser-compatible H.264?\n\n"
+      "Convert the selected camera video (" + activeCamera + ") to browser-compatible H.264?\n\n"
       + "The current file will be renamed to:\n" + backup + "\n\n"
       + "The H.264 output will use the original .mp4 path."
     );

@@ -290,10 +290,12 @@ def load_manifest_annotations(root: Path, manifest_path: Path) -> dict[str, dict
         if not line.strip():
             continue
         row = json.loads(line)
-        video = row.get("video_path")
-        if not video:
+        camera_paths = row.get("camera_video_paths")
+        if not isinstance(camera_paths, dict):
             continue
-        annotations[str(Path(video).as_posix())] = row
+        for video in camera_paths.values():
+            if isinstance(video, str) and video:
+                annotations[str(Path(video).as_posix())] = row
     return annotations
 
 

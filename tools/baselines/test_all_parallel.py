@@ -30,7 +30,7 @@ class AllBaselineParallelRunnerTest(unittest.TestCase):
             csv_path.write_text("action/timestep,feature\n0,1\n", encoding="utf-8")
             records.append({
                 "id": f"r{index}",
-                "video_path": str(video),
+                "camera_video_paths": {"cam_high": str(video)},
                 "csv_path": str(csv_path),
                 "task_description": "test task",
                 "total_frames": 20,

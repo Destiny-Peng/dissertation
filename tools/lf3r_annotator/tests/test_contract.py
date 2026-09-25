@@ -720,6 +720,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('"frames"', robo_reader)
         self.assertIn('"logits"', robo_reader)
         self.assertIn('"sigmoid_scores"', robo_reader)
+        manifest_builder = (TOOL_ROOT / "build_manifest.py").read_text(encoding="utf-8")
+        self.assertIn('"camera_video_paths"', manifest_builder)
+        self.assertNotIn('"video_path": str(relative)', manifest_builder)
+        self.assertNotIn("legacy_left", manifest_builder)
+        self.assertNotIn("DATASET_DEFAULT_CAMERA_FILES", manifest_builder)
+
         multiview = (TOOL_ROOT / "generate_libero_multiview.py").read_text(encoding="utf-8")
         self.assertIn('HIGH_CAMERA = "agentview"', multiview)
         self.assertIn('WRIST_CAMERA = "robot0_eye_in_hand"', multiview)

@@ -26,7 +26,7 @@ outputs/realrobot/baseline_rollouts/manifest_side_policy_256.jsonl
 outputs/realrobot/baseline_rollouts/manifest_wrist_1.jsonl
 ```
 
-Each view manifest has a normal `video_path` for that camera, so it can be passed directly to the baseline runner. The canonical `manifest.jsonl` uses `side_policy_256` by default. To use the wrist camera with the canonical manifest, pass `--primary-camera wrist_1`; alternatively, use `manifest_wrist_1.jsonl` directly.
+Each manifest records the available physical videos only in `camera_video_paths`, so it can be passed directly to the baseline runner. The generated camera-specific manifests retain the same camera map while preserving their observation metadata; `manifest.jsonl` remains the primary output selected by `--primary-camera`.
 
 Videos are encoded as H.264 with FFmpeg's `libx264` by default (`yuv420p`, CRF 18, `veryfast` preset). Frames are streamed directly to FFmpeg instead of building a second full-video buffer, and camera frames are no longer stacked into another video-sized array. This reduces conversion time and peak memory. To trade smaller files for slower encoding, pass `--video-preset medium`; `--video-preset ultrafast` favors speed at the cost of larger files. FFmpeg with `libx264` must be available on `PATH`. To explicitly use the OpenCV MPEG-4 Part 2 output, pass `--video-codec mp4v`.
 
@@ -54,4 +54,4 @@ Use a view-specific manifest with a baseline, for example:
 
 `--history-index` selects the frame within each camera's temporal stack and defaults to `-1` (latest). `--no-append-final-next` omits the final next-observation frame. `--fps` defaults to 30. Existing converted files are protected. Use `--resume` to keep files that already exist and rebuild the manifests; reused files are marked with `video_reused: true` and their encoder settings are left unset. Use `--overwrite` to regenerate videos and apply the selected preset (including the faster new `veryfast` default) to all files.
 
-This output is directly suitable for video baselines that consume `video_path` (ProcVLM, RynnValue, Robo-Dopamine, DenseReward). SAFE's trained detector consumes OpenVLA hidden-state pickles/CSV features, so this image-only conversion does not create SAFE latent inputs.
+This output is directly suitable for video baselines that consume manifest `camera_video_paths` (ProcVLM, RynnValue, Robo-Dopamine, DenseReward). SAFE's trained detector consumes OpenVLA hidden-state pickles/CSV features, so this image-only conversion does not create SAFE latent inputs.

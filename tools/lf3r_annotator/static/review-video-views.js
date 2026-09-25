@@ -7,7 +7,6 @@
 
   var STORAGE_KEY = "lf3r.review.videoView";
   var LABELS = {
-    main: "Main",
     cam_high: "High",
     cam_wrist: "Wrist",
     cam_left_wrist: "Left wrist",
@@ -41,9 +40,8 @@
   }
 
   function availableViews(record) {
-    var views = [{ key: "main", label: "Main", camera: "" }];
     var paths = record && record.camera_video_paths;
-    if (!paths || typeof paths !== "object") return views;
+    if (!paths || typeof paths !== "object") return [];
 
     var keys = Object.keys(paths).filter(function (key) {
       return typeof paths[key] === "string" && paths[key].trim().length > 0;
@@ -55,32 +53,36 @@
       if (rightIndex < 0) rightIndex = PREFERRED_ORDER.length;
       return leftIndex - rightIndex || left.localeCompare(right);
     });
-    keys.forEach(function (key) {
-      views.push({ key: key, label: cameraLabel(key), camera: key });
+    return keys.map(function (key) {
+      return { key: key, label: cameraLabel(key), camera: key };
     });
-    return views;
   }
 
   function storedView() {
     if (state.reviewVideoView) return String(state.reviewVideoView);
     try {
-      return sessionStorage.getItem(STORAGE_KEY) || "main";
+      return sessionStorage.getItem(STORAGE_KEY) || "";
     } catch (_error) {
-      return "main";
+      return "";
     }
   }
 
   function chooseView(record, requested) {
     var views = availableViews(record);
-    var key = String(requested || storedView() || "main");
+    if (!views.length) return "";
+    var observationKey = record && typeof record.observation_key === "string"
+      ? record.observation_key : "";
+    var fallback = views.some(function (view) { return view.key === observationKey; })
+      ? observationKey : views[0].key;
+    var key = String(requested || storedView() || fallback);
     var available = views.some(function (view) { return view.key === key; });
-    return available ? key : "main";
+    return available ? key : fallback;
   }
 
   function sourceUrl(record, viewKey) {
-    var query = ["v=review-view-" + Date.now()];
-    if (viewKey !== "main") query.push("camera=" + encodeURIComponent(viewKey));
-    return "/api/videos/" + encodeURIComponent(record.id) + "?" + query.join("&");
+    return "/api/videos/" + encodeURIComponent(record.id)
+      + "?camera=" + encodeURIComponent(viewKey)
+      + "&v=review-view-" + Date.now();
   }
 
   function renderControls(record, activeKey) {
@@ -119,6 +121,14 @@
     if (!record || !record.id) return;
     var opts = options || {};
     var viewKey = chooseView(record, requestedKey);
+    if (!viewKey) {
+      controls.hidden = true;
+      controls.innerHTML = "";
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      return;
+    }
     var frame = Number.isFinite(Number(state.currentFrame)) ? Number(state.currentFrame) : 0;
     var resumePlayback = opts.resumePlayback === true && !video.paused && !video.ended;
 
@@ -153,7 +163,7 @@
   }
 
   function currentView() {
-    return String(video.dataset.videoView || state.reviewVideoView || "main");
+    return String(video.dataset.videoView || state.reviewVideoView || "");
   }
 
   controls.addEventListener("click", function (event) {

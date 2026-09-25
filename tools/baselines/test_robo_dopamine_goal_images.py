@@ -151,7 +151,7 @@ def test_robo_camera_inputs_adapt_physical_wrist_to_three_slots() -> None:
         assert resolved["cam_left_wrist"] == resolved["cam_right_wrist"]
 
 
-def test_robo_camera_inputs_repeat_canonical_for_single_view() -> None:
+def test_robo_camera_inputs_repeat_primary_for_single_view() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
         canonical = root / "canonical.mp4"
@@ -208,13 +208,11 @@ def test_robo_camera_inputs_require_multiview_when_requested() -> None:
                 canonical,
             )
         except ValueError as error:
-            assert "multi_view requires camera_video_paths" in str(error)
-            assert "cam_high" in str(error)
-            assert "cam_wrist" in str(error)
+            assert "has no camera_video_paths" in str(error)
         else:
             raise AssertionError("Explicit multi_view did not reject missing camera videos")
 
-def test_robo_camera_inputs_reject_partial_dataset_mapping() -> None:
+def test_robo_camera_inputs_auto_falls_back_for_single_camera() -> None:
     with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
         root = Path(temporary)
         canonical = root / "canonical.mp4"
@@ -222,20 +220,46 @@ def test_robo_camera_inputs_reject_partial_dataset_mapping() -> None:
         high = root / "cam_high.mp4"
         high.touch()
 
-        try:
-            robo_dopamine_runner.resolve_robo_camera_inputs(
-                {
-                    "id": "partial-rollout",
-                    "camera_video_paths": {"cam_high": high.name},
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {
+                "id": "single-camera-rollout",
+                "camera_video_paths": {"cam_high": high.name},
+            },
+            make_args(root),
+            high,
+        )
+        assert mode == "single_view"
+        assert set(resolved.values()) == {str(high.resolve())}
+
+
+def test_robo_camera_inputs_use_distinct_left_and_right_wrist_views() -> None:
+    with tempfile.TemporaryDirectory(prefix="robo-cameras-") as temporary:
+        root = Path(temporary)
+        high = root / "high.mp4"
+        left = root / "left.mp4"
+        right = root / "right.mp4"
+        for path in (high, left, right):
+            path.touch()
+
+        resolved, mode = robo_dopamine_runner.resolve_robo_camera_inputs(
+            {
+                "id": "three-camera-rollout",
+                "camera_video_paths": {
+                    "cam_high": high.name,
+                    "cam_left_wrist": left.name,
+                    "cam_right_wrist": right.name,
                 },
-                make_args(root),
-                canonical,
-            )
-        except ValueError as error:
-            assert "Incomplete camera_video_paths" in str(error)
-            assert "cam_wrist" in str(error)
-        else:
-            raise AssertionError("Partial Robo-Dopamine camera mapping was not rejected")
+            },
+            make_args(root),
+            high,
+        )
+
+        assert mode == "multi_view"
+        assert resolved == {
+            "cam_high": str(high.resolve()),
+            "cam_left_wrist": str(left.resolve()),
+            "cam_right_wrist": str(right.resolve()),
+        }
 
 
 if __name__ == "__main__":
@@ -244,8 +268,9 @@ if __name__ == "__main__":
     test_missing_libero10_task_goal_fails_loudly()
     test_non_libero10_keeps_blank_goal_fallback()
     test_robo_camera_inputs_adapt_physical_wrist_to_three_slots()
-    test_robo_camera_inputs_repeat_canonical_for_single_view()
+    test_robo_camera_inputs_repeat_primary_for_single_view()
     test_robo_camera_inputs_force_single_view_even_when_multiview_exists()
     test_robo_camera_inputs_require_multiview_when_requested()
-    test_robo_camera_inputs_reject_partial_dataset_mapping()
+    test_robo_camera_inputs_auto_falls_back_for_single_camera()
+    test_robo_camera_inputs_use_distinct_left_and_right_wrist_views()
     print("ROBODOPAMINE_GOAL_IMAGE_TESTS_OK")

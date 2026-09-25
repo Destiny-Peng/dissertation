@@ -24,11 +24,6 @@ DEFAULT_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
 ROLLOUT_RE = re.compile(r"task(?P<task>\d+)--ep(?P<episode>\d+)--succ(?P<success>[01])\.mp4$")
-DATASET_CAMERA_SLOTS = ("cam_high", "cam_wrist")
-DATASET_DEFAULT_CAMERA_FILES = {
-    "cam_high": "cam_high",
-    "cam_wrist": "cam_wrist",
-}
 INJECTIONS = {
     "lf3r-feasibility-freeze-t50": {
         "type": "action_freeze",
@@ -140,88 +135,87 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
     camera_metadata_path = video.with_name(video.stem + ".camera_videos.json")
-    camera_metadata: dict[str, Any] = {}
+    camera_metadata: dict[str, Any] | None = None
     if camera_metadata_path.is_file():
         try:
             value = json.loads(camera_metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise RuntimeError(f"Invalid camera-video metadata: {camera_metadata_path}") from error
-        if isinstance(value, dict):
-            camera_metadata = value
-
-    metadata_camera_paths = camera_metadata.get("camera_video_paths")
-    if isinstance(metadata_camera_paths, dict) and not (
-        isinstance(metadata_camera_paths.get("cam_wrist"), str)
-        and str(metadata_camera_paths.get("cam_wrist")).strip()
-    ):
-        legacy_left = metadata_camera_paths.get("cam_left_wrist")
-        legacy_right = metadata_camera_paths.get("cam_right_wrist")
-        legacy_paths = [
-            str(value).strip()
-            for value in (legacy_left, legacy_right)
-            if isinstance(value, str) and str(value).strip()
-        ]
-        if legacy_paths:
-            if len(set(legacy_paths)) != 1:
-                raise RuntimeError(
-                    f"Legacy camera metadata declares distinct wrist videos for {video}: "
-                    f"cam_left_wrist={legacy_left!r}, cam_right_wrist={legacy_right!r}"
-                )
-            metadata_camera_paths = dict(metadata_camera_paths)
-            metadata_camera_paths["cam_wrist"] = legacy_paths[0]
-
-    camera_video_files: dict[str, Path] = {}
-    for slot in DATASET_CAMERA_SLOTS:
-        declared = (
-            metadata_camera_paths.get(slot)
-            if isinstance(metadata_camera_paths, dict)
-            else None
-        )
-        candidate = (
-            video.parent / str(declared)
-            if isinstance(declared, str) and declared.strip()
-            else video.with_name(
-                video.stem
-                + f".{DATASET_DEFAULT_CAMERA_FILES[slot]}.mp4"
+        if not isinstance(value, dict):
+            raise RuntimeError(
+                f"Camera-video metadata must be an object: {camera_metadata_path}"
             )
-        )
-        camera_video_files[slot] = candidate.resolve()
+        camera_metadata = value
+        if "camera_video_paths" not in camera_metadata:
+            raise RuntimeError(
+                f"Camera-video metadata has no camera_video_paths: {camera_metadata_path}"
+            )
 
-    existing_slots = [
-        slot for slot, path in camera_video_files.items() if path.is_file()
-    ]
-    if existing_slots and len(existing_slots) != len(DATASET_CAMERA_SLOTS):
-        missing = [
-            slot for slot in DATASET_CAMERA_SLOTS if slot not in existing_slots
-        ]
+    metadata_camera_paths = (
+        camera_metadata.get("camera_video_paths")
+        if camera_metadata is not None
+        else None
+    )
+    camera_video_files: dict[str, Path] = {}
+    if camera_metadata is None:
+        # A plain rollout still has one real camera stream. Record that stream
+        # under its physical/logical camera key instead of keeping a second
+        # top-level video_path field.
+        camera_video_files["cam_high"] = video.resolve()
+    elif isinstance(metadata_camera_paths, dict):
+        for raw_slot, declared in metadata_camera_paths.items():
+            slot = str(raw_slot).strip()
+            if not slot:
+                raise RuntimeError(
+                    f"Camera metadata contains an empty camera key for {video}"
+                )
+            if not isinstance(declared, str) or not declared.strip():
+                raise RuntimeError(
+                    f"Camera metadata has no path for {video} camera={slot!r}"
+                )
+            raw_path = Path(declared.strip()).expanduser()
+            candidate = (
+                raw_path.resolve()
+                if raw_path.is_absolute()
+                else (video.parent / raw_path).resolve()
+            )
+            camera_video_files[slot] = candidate
+    else:
         raise RuntimeError(
-            f"Incomplete camera video set for {video}: "
-            f"present={existing_slots}, missing={missing}"
+            f"camera_video_paths must be an object in {camera_metadata_path}"
         )
-    has_camera_set = len(existing_slots) == len(DATASET_CAMERA_SLOTS)
-    if has_camera_set:
-        checked_paths: set[Path] = set()
-        for camera, camera_video in camera_video_files.items():
-            try:
-                camera_video.relative_to(project_root.resolve())
-            except ValueError as error:
-                raise RuntimeError(
-                    f"Camera video escapes project root: {camera_video}"
-                ) from error
-            if camera_video in checked_paths:
-                continue
-            checked_paths.add(camera_video)
-            camera_frames, camera_fps, _ = probe_video(camera_video)
-            if camera_frames != frames:
-                raise RuntimeError(
-                    f"Camera frame count mismatch for {video} camera={camera}: "
-                    f"single={frames}, camera={camera_frames}"
-                )
-            if abs(camera_fps - fps) > 1e-3:
-                raise RuntimeError(
-                    f"Camera FPS mismatch for {video} camera={camera}: "
-                    f"single={fps}, camera={camera_fps}"
-                )
+
+    if not camera_video_files:
+        raise RuntimeError(f"No camera videos declared for {video}")
+    for camera, camera_video in camera_video_files.items():
+        try:
+            camera_video.relative_to(project_root.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                f"Camera video escapes project root: {camera_video}"
+            ) from error
+        if camera_video.suffix.lower() != ".mp4":
+            raise RuntimeError(
+                f"Camera video is not an MP4 for {video} camera={camera}: {camera_video}"
+            )
+        if not camera_video.is_file():
+            raise RuntimeError(
+                f"Declared camera video is missing for {video} camera={camera}: "
+                f"{camera_video}"
+            )
+        if camera_video == video.resolve():
+            continue
+        camera_frames, camera_fps, _ = probe_video(camera_video)
+        if camera_frames != frames:
+            raise RuntimeError(
+                f"Camera frame count mismatch for {video} camera={camera}: "
+                f"rollout={frames}, camera={camera_frames}"
+            )
+        if abs(camera_fps - fps) > 1e-3:
+            raise RuntimeError(
+                f"Camera FPS mismatch for {video} camera={camera}: "
+                f"rollout={fps}, camera={camera_fps}"
+            )
 
     record = {
         "schema_version": 1,
@@ -234,15 +228,10 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
         "source_kind": source_kind,
         "analysis_partition": partition,
         "dataset_role": dataset_role,
-        "video_path": str(relative),
-        "camera_video_paths": (
-            {
-                slot: str(path.relative_to(project_root.resolve()))
-                for slot, path in camera_video_files.items()
-            }
-            if has_camera_set
-            else None
-        ),
+        "camera_video_paths": {
+            slot: str(path.relative_to(project_root.resolve()))
+            for slot, path in camera_video_files.items()
+        },
         "csv_path": str(csv_path.resolve().relative_to(project_root.resolve())) if csv_path.exists() else None,
         "total_frames": frames,
         "fps": round(fps, 6),
@@ -298,6 +287,14 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
+    )
+    parser.add_argument(
+        "--refresh-instruction-variants",
+        action="store_true",
+        help=(
+            "After rebuilding the manifest, regenerate the LIBERO-10 "
+            "instruction-variant manifest with the same media schema."
+        ),
     )
     return parser.parse_args()
 
@@ -356,6 +353,22 @@ def main() -> None:
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
+
+    if args.refresh_instruction_variants:
+        variant_builder = project_root / "tools/prepare_libero10_instruction_variants.py"
+        command = [
+            sys.executable,
+            str(variant_builder),
+            "--source-manifest",
+            str(args.output.resolve()),
+            "--force",
+        ]
+        print(
+            "Refreshing instruction variants with rebuilt manifest: "
+            + " ".join(command),
+            file=sys.stderr,
+        )
+        subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":

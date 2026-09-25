@@ -289,7 +289,6 @@ def convert_one(
     for camera, info in camera_data.items():
         rows[camera] = {
             "id": rollout_id,
-            "video_path": info["path"],
             "camera_video_paths": paths,
             "camera_views": list(camera_keys),
             "task_suite": "realrobot",
