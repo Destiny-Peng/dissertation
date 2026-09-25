@@ -125,6 +125,28 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
                 ):
                     build_manifest.build_record(rollout, root, {})
 
+    def test_existing_camera_sidecar_must_declare_camera_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            suite_dir = root / "outputs" / "lf3r-data-natural-test" / "libero_10"
+            suite_dir.mkdir(parents=True)
+            rollout = suite_dir / "task0--ep0--succ1.mp4"
+            rollout.write_bytes(b"single")
+            rollout.with_name(rollout.stem + ".camera_videos.json").write_text(
+                json.dumps({"schema_version": 1}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                build_manifest,
+                "probe_video",
+                return_value=(42, 30.0, 1.4),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "has no camera_video_paths",
+                ):
+                    build_manifest.build_record(rollout, root, {})
+
     def test_declared_missing_camera_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
