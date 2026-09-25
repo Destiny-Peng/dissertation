@@ -55,7 +55,12 @@ class WebUIApplication(server.LF3RApplication):
         self.project_root = project_root.resolve()
         resolved: list[Path] = []
         for raw in manifest_paths:
-            path = Path(raw).expanduser().resolve()
+            candidate = Path(raw).expanduser()
+            path = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (self.project_root / candidate).resolve()
+            )
             if path not in resolved:
                 resolved.append(path)
         if not resolved:
@@ -91,9 +96,10 @@ class WebUIApplication(server.LF3RApplication):
             tmux_binary=tmux_binary,
         )
 
-        # Generation updates only the canonical primary manifest. Baseline and
+        # Writers update the currently loaded primary manifest. Baseline and
         # Analysis read the stable aggregate catalog.
         self.rollout_jobs.manifest_path = self.primary_manifest_path
+        self.project_tools.rebuild_manifest_path = self.primary_manifest_path
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
