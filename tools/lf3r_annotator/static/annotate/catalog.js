@@ -21,8 +21,21 @@ function isControlled(record) {
 }
 
 function isRealRobotManifest(record) {
-  return record.source_kind === "real_robot"
+  if (!record) return false;
+  var sourceKind = String(record.source_kind || "");
+  var datasetRole = String(record.dataset_role || "");
+  var taskSuite = String(record.task_suite || "");
+  return sourceKind === "real_robot"
+    || sourceKind.indexOf("realrobot") === 0
+    || datasetRole.indexOf("realrobot") === 0
+    || taskSuite.indexOf("realrobot") === 0
     || record.analysis_partition === "real_robot_analysis";
+}
+
+function originMatches(record, origin) {
+  if (origin === "all") return true;
+  if (origin === "real_robot") return isRealRobotManifest(record);
+  return record.source_kind === origin;
 }
 
 function provenanceClass(record) {
@@ -121,7 +134,7 @@ function applyFilters() {
   state.filtered = state.rollouts.filter(function (record) {
     var haystack = [record.id, record.task_description, record.task_suite, record.task_id, record.manifest_source, record.manifest_label].join(" ").toLowerCase();
     return (!query || haystack.indexOf(query) !== -1)
-      && (origin === "all" || record.source_kind === origin)
+      && originMatches(record, origin)
       && (manifest === "all" || record.manifest_source === manifest)
       && (outcome === "all" || effectiveOutcome(record) === outcome)
       && (review === "all" || record.annotation_status === review);
