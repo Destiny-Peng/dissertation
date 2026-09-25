@@ -1395,40 +1395,22 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
 
-    def test_analysis_run_creates_snapshot_from_superset_runs(self) -> None:
-        self.install_fake_temporal_analyzer()
+    def test_analysis_run_rejects_legacy_temporal_request(self) -> None:
         roots = self.seed_analysis_runs(include_extra=True)
-        with self.request(
-            "/api/analysis/run",
-            {
-                "scope": "libero_10",
-                "runs": roots,
-                "pre_window_frames": 60,
-                "post_window_frames": 60,
-                "background_stride_frames": 30,
-                "output_label": "web_test",
-            },
-        ) as response:
-            self.assertEqual(response.status, 202)
-            job = json.load(response)["job"]
-        self.assertEqual(job["scope"], "libero_10")
-        self.assertEqual(job["selected_rollouts"], 1)
-        selection_path = self.root / job["selection_path"]
-        self.assertTrue(selection_path.is_file())
-        self.assertEqual(json.loads(selection_path.read_text())["selection"], [{"id": self.rollout["id"]}])
-        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
-        self.assertEqual(final["status"], "complete")
-        output_dir = self.root / final["output_dir"]
-        self.assertTrue((output_dir / "metadata.json").is_file())
-        with self.request("/api/analysis-jobs/" + job["job_id"] + "/log?tail=20") as response:
-            log = json.load(response)["log"]
-        self.assertIn("fake temporal analysis complete", log["text"])
-        with self.request("/api/analysis") as response:
-            analysis = json.load(response)["analysis"]
-        self.assertTrue(analysis["available"])
-        self.assertEqual(analysis["source"]["selection_count"], 1)
-        self.assertTrue(analysis["rollout_outcome_available"])
-        self.assertEqual(analysis["rollout_outcome_summary"][0]["threshold"], "q95")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(
+                "/api/analysis/run",
+                {
+                    "scope": "libero_10",
+                    "runs": roots,
+                    "pre_window_frames": 60,
+                    "post_window_frames": 60,
+                    "background_stride_frames": 30,
+                    "output_label": "legacy_temporal",
+                },
+            )
+        self.assertEqual(caught.exception.code, 400)
+
 
     def test_label_loss_ablation_web_job_and_snapshot(self) -> None:
         self.seed_baseline_outputs()
@@ -1773,20 +1755,6 @@ print('fake label loss ablation complete')
         )
 
 
-    def test_analysis_run_rejects_missing_ids_and_paths(self) -> None:
-        self.install_fake_temporal_analyzer()
-        roots = self.seed_analysis_runs(missing_method="safe")
-        with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/analysis/run", {"scope": "libero_10", "runs": roots})
-        self.assertEqual(caught.exception.code, 400)
-        roots = self.seed_analysis_runs()
-        roots["safe"] = "../outside-run"
-        with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/analysis/run", {"scope": "libero_10", "runs": roots})
-        self.assertEqual(caught.exception.code, 400)
-        with self.assertRaises(urllib.error.HTTPError) as caught:
-            self.request("/api/analysis/run", {"scope": "controlled_analysis", "runs": roots})
-        self.assertEqual(caught.exception.code, 400)
 
     def test_analysis_snapshot_selects_latest_and_compacts_events(self) -> None:
         analysis_root = self.root / "outputs" / "baseline_signal_analysis"
@@ -2081,36 +2049,6 @@ print('fake label loss ablation complete')
             1.0,
         )
 
-    def test_analysis_run_accepts_disjoint_rynnvalue_sources(self) -> None:
-        self.install_fake_temporal_analyzer()
-        roots = self.seed_analysis_runs()
-        partial = self.root / "outputs" / "baselines" / "analysis_inputs" / "rynnvalue_partial"
-        partial.mkdir(parents=True)
-        metadata = {
-            "schema_version": 1,
-            "status": "complete",
-            "baseline": "rynnvalue",
-            "selected_rollouts": 0,
-            "completed_jobs": 0,
-            "failed_jobs": 0,
-            "created_at": "2026-08-28T00:00:00+00:00",
-            "completed_at": "2026-08-28T00:00:01+00:00",
-        }
-        (partial / "run.json").write_text(json.dumps(metadata) + chr(10), encoding="utf-8")
-        (partial / "jobs.jsonl").write_text("", encoding="utf-8")
-        runs = dict(roots)
-        runs["rynnvalue"] = [roots["rynnvalue"], str(partial.relative_to(self.root))]
-        with self.request(
-            "/api/analysis/run",
-            {"scope": "libero_10", "runs": runs, "output_label": "multi_rynn"},
-        ) as response:
-            self.assertEqual(response.status, 202)
-            job = json.load(response)["job"]
-        self.assertEqual(job["run_source_counts"]["rynnvalue"], 2)
-        self.assertTrue(job["allow_partial_coverage"])
-        self.assertEqual(job["command"].count("--rynnvalue-run"), 2)
-        final = self.wait_for_job("/api/analysis-jobs", job["job_id"])
-        self.assertEqual(final["status"], "complete")
 
     def test_analysis_snapshot_exposes_localization_and_compacts_arrays(self) -> None:
         analysis_root = self.root / "outputs" / "baseline_signal_analysis"
@@ -2432,7 +2370,7 @@ print('fake label loss ablation complete')
         finally:
             self.app.job_coordinator.release("another-compute-job")
 
-    def test_analysis_environment_is_reported_and_missing_environment_blocks_run(self) -> None:
+    def test_analysis_environment_is_reported(self) -> None:
         with self.request("/api/health") as response:
             health = json.load(response)
         self.assertTrue(health["analysis_environment"]["ready"])
@@ -2441,10 +2379,10 @@ print('fake label loss ablation complete')
                 "conda_envs/LF3R-ananlyse/bin/python"
             )
         )
-        self.app.analysis_jobs.analysis_python = self.root / "missing-analysis-python"
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.request("/api/analysis/run", {})
-        self.assertEqual(caught.exception.code, 503)
+        self.assertEqual(caught.exception.code, 400)
+
 
     def test_api_jobs_contains_persistent_job_records(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
