@@ -66,18 +66,22 @@ class WebUIApplication(server.LF3RApplication):
         if not resolved:
             raise ValueError("At least one manifest path is required")
 
-        self.manifest_paths = resolved
-        self.primary_manifest_path = resolved[0]
-        source_key = "\0".join(str(path) for path in resolved)
+        self.manifest_paths = sorted(resolved, key=lambda path: str(path))
+        source_key = "\0".join(str(path) for path in self.manifest_paths)
         digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:16]
         self.aggregate_manifest_path = (
-            self.primary_manifest_path
-            if len(resolved) == 1
-            else self.project_root
+            self.project_root
             / "cache"
             / "lf3r_annotator"
             / "manifests"
-            / f"manifest-{digest}.jsonl"
+            / f"catalog-{digest}.jsonl"
+        )
+        self.canonical_manifest_path = (
+            self.project_root
+            / "datasets"
+            / "lf3r_failure_rollouts"
+            / "v1"
+            / "manifest.jsonl"
         )
         self._manifest_catalog_lock = threading.RLock()
         self._manifest_catalog_signature: (
@@ -96,10 +100,10 @@ class WebUIApplication(server.LF3RApplication):
             tmux_binary=tmux_binary,
         )
 
-        # Writers update the currently loaded primary manifest. Baseline and
-        # Analysis read the stable aggregate catalog.
-        self.rollout_jobs.manifest_path = self.primary_manifest_path
-        self.project_tools.rebuild_manifest_path = self.primary_manifest_path
+        # Catalog sources are read-only peers. LIBERO rollout generation owns
+        # the canonical rollout manifest explicitly; rebuild_manifest uses the
+        # same canonical target in non_analysis_tools.py.
+        self.rollout_jobs.manifest_path = self.canonical_manifest_path
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
@@ -176,13 +180,16 @@ class WebUIApplication(server.LF3RApplication):
             for source_path in self.manifest_paths:
                 source_exists = source_path.is_file()
                 source_relative = self._relative_manifest_path(source_path)
-                source_primary = source_path == self.primary_manifest_path
                 try:
                     source_rows = (
                         server.load_manifest_records(source_path)
                         if source_exists
                         else []
                     )
+                    if not source_rows:
+                        raise server.ValidationError(
+                            f"{source_relative}: manifest has no rollout records"
+                        )
                     self._validate_manifest_rows(source_path, source_rows)
 
                     for row in source_rows:
@@ -199,13 +206,10 @@ class WebUIApplication(server.LF3RApplication):
                                 + ")"
                             )
                 except (OSError, json.JSONDecodeError, server.ValidationError) as error:
-                    if source_primary:
-                        raise
                     source_info.append(
                         {
                             "path": source_relative,
                             "label": source_path.stem,
-                            "primary": False,
                             "exists": source_exists,
                             "valid": False,
                             "rollouts": 0,
@@ -218,7 +222,6 @@ class WebUIApplication(server.LF3RApplication):
                     {
                         "path": source_relative,
                         "label": source_path.stem,
-                        "primary": source_primary,
                         "exists": source_exists,
                         "valid": True,
                         "rollouts": len(source_rows),
@@ -232,10 +235,9 @@ class WebUIApplication(server.LF3RApplication):
                     enriched = dict(row)
                     enriched["manifest_source"] = source_relative
                     enriched["manifest_label"] = source_path.stem
-                    enriched["manifest_primary"] = source_primary
                     records.append(enriched)
 
-            if self.aggregate_manifest_path != self.primary_manifest_path:
+            if aggregate_rows:
                 _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
 
             self._manifest_records_cache = records
@@ -299,15 +301,12 @@ class WebUIApplication(server.LF3RApplication):
 
 
 def discover_default_manifests(project_root: Path) -> list[Path]:
-    """Return the canonical manifest first, then other active manifests."""
+    """Return all top-level rollout manifests as peer catalog sources."""
     manifest_dir = project_root / "datasets/lf3r_failure_rollouts/v1"
-    primary = manifest_dir / "manifest.jsonl"
-    others = sorted(
-        (
-            path
-            for path in manifest_dir.glob("*manifest*.jsonl")
-            if path.is_file() and path.resolve() != primary.resolve()
-        ),
+    manifests = sorted(
+        (path for path in manifest_dir.glob("*manifest*.jsonl") if path.is_file()),
         key=lambda path: path.name,
     )
-    return [primary, *others]
+    if manifests:
+        return manifests
+    return [manifest_dir / "manifest.jsonl"]
