@@ -253,10 +253,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn("loadBatchManifestOptions", source)
         self.assertIn("manifest_paths: manifests", source)
         self.assertIn("transcode_manifest_videos", source)
-        self.assertIn("canonical <code>video_path</code>", source)
+        self.assertIn("<code>camera_video_paths</code>", source)
         self.assertIn("BATCH_H264_SUMMARY", source)
         manifest_support = (HERE / "static" / "manifest-support.js").read_text(encoding="utf-8")
-        self.assertIn("var playbackPath = record.video_path;", manifest_support)
+        self.assertIn("var cameraPaths = record && record.camera_video_paths;", manifest_support)
 
 
 if __name__ == "__main__":
