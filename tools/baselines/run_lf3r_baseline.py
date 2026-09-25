@@ -197,7 +197,7 @@ def preferred_record_video(record: dict[str, Any], data_root: Path) -> Path:
     cameras = record_camera_video_paths(record, data_root)
     camera = next(
         (name for name in CAMERA_PREFERENCE if name in cameras),
-        sorted(cameras)[0],
+        next(iter(cameras)),
     )
     return cameras[camera]
 
