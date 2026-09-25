@@ -22,7 +22,8 @@ from run_lf3r_baseline import (
     git_revision,
     iso_now,
     load_jsonl,
-    resolve_record_path,
+    preferred_record_video,
+    record_camera_video_paths,
     resolve_vllm_memory_budget,
     timestamp,
 )
@@ -114,13 +115,26 @@ def main() -> int:
         interval_root = run_root / f"interval_{interval}"
         for rollout_id in args.rollout_id:
             record = records_by_id[rollout_id]
-            video = resolve_record_path(str(record["video_path"]), data_root)
+            video = preferred_record_video(record, data_root)
+            cameras = record_camera_video_paths(record, data_root)
+            high = cameras.get("cam_high", video)
+            shared_wrist = cameras.get("cam_wrist")
+            left = cameras.get("cam_left_wrist") or shared_wrist or video
+            right = cameras.get("cam_right_wrist") or shared_wrist or video
             task = record.get("task", record.get("task_description"))
             if task is None:
                 raise SystemExit(f"Manifest record has no task description: {rollout_id}")
             job = {
                 "rollout_id": rollout_id,
                 "video_path": str(video),
+                "cam_high_path": str(high),
+                "cam_left_path": str(left),
+                "cam_right_path": str(right),
+                "camera_input_mode": (
+                    "multi_view"
+                    if high != video or left != video or right != video
+                    else "single_view"
+                ),
                 "task": str(task),
                 "raw_output_dir": str(interval_root / "raw" / rollout_id),
                 "goal_image": str(goal_image),
