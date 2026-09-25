@@ -494,7 +494,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   var html = '<table class="analysis-table analysis-summary-table" aria-label="Terminal rollout outcome classification">'
     + '<thead><tr><th>Method / signal</th><th>N</th><th>TP/FN</th><th>FP/TN</th>'
     + '<th>Accuracy</th><th>Failure recall</th><th>Precision</th><th>F1</th>'
-    + '<th>Specificity</th><th>FPR</th><th>AUROC</th><th>Decision</th></tr></thead><tbody>';
+    + '<th>Specificity</th><th>FPR</th><th>Balanced acc.</th><th>AUROC</th><th>Decision</th></tr></thead><tbody>';
   rows.forEach(function (row) {
     var method = (ANALYSIS_METHOD_LABELS[row.method] || row.method || "method")
       + " / " + workspaceDashboardShortSignal(row.signal);
@@ -510,6 +510,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + '<td class="numeric">' + escapeHtml(workspacePercent(row.f1)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(row.specificity)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(row.false_positive_rate)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.balanced_accuracy)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(row.auroc)) + '</td>'
       + '<td>' + escapeHtml(row.failure_rule || "Q95") + '</td></tr>';
   });
