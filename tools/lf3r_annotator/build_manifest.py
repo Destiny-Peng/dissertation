@@ -187,12 +187,6 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
 
     if not camera_video_files:
         raise RuntimeError(f"No camera videos declared for {video}")
-    resolved_paths = list(camera_video_files.values())
-    if len(set(resolved_paths)) != len(resolved_paths):
-        raise RuntimeError(
-            f"camera_video_paths maps multiple camera keys to the same file for {video}"
-        )
-
     for camera, camera_video in camera_video_files.items():
         try:
             camera_video.relative_to(project_root.resolve())
