@@ -611,6 +611,7 @@ def source_record_fields(record: dict[str, Any]) -> tuple[str, ...]:
         "task_description",
         "ground_truth_outcome",
         "camera_video_paths",
+        "primary_camera",
         "csv_path",
         "dataset_role",
         "analysis_partition",
