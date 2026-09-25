@@ -472,14 +472,16 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   var badge = byId("analysisRolloutOutcomeBadge");
   var provenance = byId("analysisRolloutOutcomeProvenance");
   if (!host) return;
+  var thresholdSelect = byId("analysisOutcomeThreshold");
+  var threshold = thresholdSelect ? thresholdSelect.value : "q95";
   var rows = Array.isArray(snapshot && snapshot.rollout_outcome_summary)
     ? snapshot.rollout_outcome_summary.filter(function (row) {
-        return String(row.threshold || "") === "q95";
+        return String(row.threshold || "") === threshold;
       })
     : [];
   if (!rows.length) {
     host.innerHTML = workspaceEmpty(
-      "No terminal rollout-outcome statistics in this snapshot. Run temporal analysis again to generate them."
+      "No final rollout-outcome statistics are available in the current analysis snapshot."
     );
     if (badge) {
       badge.className = "analysis-badge";
@@ -488,46 +490,80 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
     if (provenance) provenance.textContent = "";
     return;
   }
+
   rows.sort(function (left, right) {
     return ANALYSIS_METHODS.indexOf(left.method) - ANALYSIS_METHODS.indexOf(right.method);
   });
-  var html = '<table class="analysis-table analysis-summary-table" aria-label="Terminal rollout outcome classification">'
-    + '<thead><tr><th>Method / signal</th><th>N</th><th>TP/FN</th><th>FP/TN</th>'
-    + '<th>Accuracy</th><th>Failure recall</th><th>Precision</th><th>F1</th>'
-    + '<th>Specificity</th><th>FPR</th><th>Balanced acc.</th><th>AUROC</th><th>Decision</th></tr></thead><tbody>';
+
+  function successPositiveMetrics(row) {
+    var alreadySuccessPositive = String(row.positive_class || "").indexOf("success") !== -1;
+    var tp = Number(row.tp), fn = Number(row.fn), fp = Number(row.fp), tn = Number(row.tn);
+    if (!alreadySuccessPositive && [tp, fn, fp, tn].every(Number.isFinite)) {
+      var oldTp = tp, oldFn = fn, oldFp = fp, oldTn = tn;
+      tp = oldTn;
+      fn = oldFp;
+      fp = oldFn;
+      tn = oldTp;
+    }
+    function rate(a, b) {
+      return Number.isFinite(a) && Number.isFinite(b) && b > 0 ? a / b : null;
+    }
+    var successRecall = row.success_recall;
+    var failureRecall = row.failure_recall;
+    var precision = row.precision;
+    var f1 = row.f1;
+    if (!alreadySuccessPositive) {
+      successRecall = rate(tp, tp + fn);
+      failureRecall = rate(tn, tn + fp);
+      precision = rate(tp, tp + fp);
+      f1 = precision != null && successRecall != null && precision + successRecall > 0
+        ? 2 * precision * successRecall / (precision + successRecall) : null;
+    }
+    return {
+      tp: tp, fn: fn, fp: fp, tn: tn,
+      accuracy: row.accuracy,
+      successRecall: successRecall == null ? row.recall : successRecall,
+      failureRecall: failureRecall == null ? row.specificity : failureRecall,
+      precision: precision,
+      f1: f1,
+      auroc: row.auroc
+    };
+  }
+
+  var html = '<table class="analysis-table analysis-summary-table" aria-label="Final rollout outcome classification">'
+    + '<thead><tr><th>Method / signal</th><th>N</th><th>Accuracy</th><th>Success recall</th>'
+    + '<th>Failure recall</th><th>Precision</th><th>F1</th><th>AUROC</th></tr></thead><tbody>';
   rows.forEach(function (row) {
+    var metrics = successPositiveMetrics(row);
     var method = (ANALYSIS_METHOD_LABELS[row.method] || row.method || "method")
       + " / " + workspaceDashboardShortSignal(row.signal);
-    var rowTitle = row.signal_note || row.failure_rule || "";
+    var rule = row.success_rule || (row.failure_rule ? "success = NOT(" + row.failure_rule + ")" : threshold.toUpperCase());
+    var rowTitle = (row.signal_note || "")
+      + " | TP/FN=" + metrics.tp + "/" + metrics.fn
+      + " | FP/TN=" + metrics.fp + "/" + metrics.tn
+      + " | " + rule;
     html += '<tr title="' + escapeHtml(rowTitle) + '"><th scope="row">' + escapeHtml(method) + '</th>'
       + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(String(row.tp == null ? "n/a" : row.tp)) + ' / '
-      + escapeHtml(String(row.fn == null ? "n/a" : row.fn)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(String(row.fp == null ? "n/a" : row.fp)) + ' / '
-      + escapeHtml(String(row.tn == null ? "n/a" : row.tn)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.accuracy)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.failure_recall == null ? row.recall : row.failure_recall)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.precision)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.f1)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.specificity)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.false_positive_rate)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.balanced_accuracy)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(row.auroc)) + '</td>'
-      + '<td>' + escapeHtml(row.failure_rule || "Q95") + '</td></tr>';
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.accuracy)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.successRecall)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.failureRecall)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.precision)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.f1)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(metrics.auroc)) + '</td></tr>';
   });
   host.innerHTML = html + '</tbody></table>';
   if (badge) {
     badge.className = "analysis-badge ok";
-    badge.textContent = "Q95 · " + rows.length + " methods";
+    badge.textContent = threshold.toUpperCase() + " · " + rows.length + " methods";
   }
   if (provenance) {
     var info = snapshot.rollout_outcome || {};
-    provenance.innerHTML = '<strong>Positive:</strong> terminal failure'
-      + ' / <strong>negative:</strong> clean + recovered success'
-      + ' / <strong>threshold:</strong> Q95 of same-cohort final-success failure-oriented terminal scores'
+    provenance.innerHTML = '<strong>Positive:</strong> clean + recovered success'
+      + ' / <strong>negative:</strong> terminal failure'
+      + ' / <strong>threshold:</strong> ' + escapeHtml(threshold.toUpperCase()) + ' calibrated from same-cohort final-success terminal scores'
       + ' / <strong>uncertain:</strong> excluded from metrics'
       + ' / <strong>SAFE:</strong> handcrafted max-token-probability proxy, not a trained SAFE detector'
-      + ' / <strong>interpretation:</strong> descriptive in-sample calibration, not held-out accuracy'
+      + ' / <strong>interpretation:</strong> descriptive same-cohort calibration, not held-out accuracy'
       + (info.prediction_rows == null ? "" : ' / <strong>prediction rows:</strong> ' + escapeHtml(String(info.prediction_rows)));
   }
 }
@@ -600,39 +636,32 @@ function workspaceRenderSnapshot() {
 function workspaceDashboardRenderSnapshot() {
   var snapshot = workspaceState.analysisSnapshot;
   var status = byId("analysisStatus");
+  var route = workspaceParseRoute();
   if (!snapshot || !snapshot.available) {
     if (status) {
       status.className = "analysis-status warning";
-      status.textContent = snapshot && snapshot.message || (workspaceState.analysisLoading ? "Loading analysis..." : "No complete analysis snapshot is available.");
+      status.textContent = snapshot && snapshot.message
+        || (workspaceState.analysisLoading ? "Loading analysis..." : "No complete analysis snapshot is available.");
     }
-    workspaceDashboardRenderConclusions(snapshot);
-    workspaceDashboardRenderRolloutOutcome(snapshot);
-    workspaceDashboardRenderComparison(snapshot);
-    workspaceDashboardRenderFailureTypes(snapshot);
-    workspaceDashboardRenderSignalShape(snapshot);
-    workspaceDashboardRenderArchive(snapshot);
+    if (route.analysisTab === "outcome") {
+      workspaceDashboardRenderRolloutOutcome(snapshot);
+    } else if (route.analysisTab === "localization") {
+      workspaceDashboardRenderComparison(snapshot);
+      workspaceDashboardRenderFailureTypes(snapshot);
+    }
     return;
   }
   if (status) {
     status.className = "analysis-status";
-    status.textContent = "Dashboard loaded for LIBERO-10 by default. Live annotations update independently; snapshot data are read-only.";
+    status.textContent = "Analysis results loaded. Outcome evaluation and failure localization are kept as separate research questions.";
   }
-  workspaceDashboardRenderConclusions(snapshot);
-  workspaceDashboardRenderRolloutOutcome(snapshot);
-  var cp = snapshot.change_point || {};
-  if (byId("analysisCoverageChart")) byId("analysisCoverageChart").innerHTML = workspaceRenderCoverageChart(snapshot);
-  if (byId("analysisOverviewProvenance")) {
-    var source = cp.source || snapshot.source || {};
-    byId("analysisOverviewProvenance").innerHTML = '<strong>Snapshot:</strong> ' + escapeHtml(source.directory || "unknown") + ' / generated ' + escapeHtml(source.generated_at || "unknown") + ' / switch to Method comparison or Event explorer for details.';
+  if (route.analysisTab === "outcome") {
+    workspaceDashboardRenderRolloutOutcome(snapshot);
+    return;
   }
-  var route = workspaceParseRoute();
-  workspaceDashboardRenderArchive(snapshot);
-  if (route.analysisTab === "comparison") workspaceDashboardRenderComparison(snapshot);
-  if (route.analysisTab === "failures") workspaceDashboardRenderFailureTypes(snapshot);
-  if (route.analysisTab === "signals") workspaceDashboardRenderSignalShape(snapshot);
-  if (route.analysisTab === "events") {
-    workspaceDashboardPopulateDetailsFilters(snapshot);
-    workspaceLoadAnalysisDetails();
+  if (route.analysisTab === "localization") {
+    workspaceDashboardRenderComparison(snapshot);
+    workspaceDashboardRenderFailureTypes(snapshot);
   }
 }
 
