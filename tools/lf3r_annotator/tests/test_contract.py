@@ -292,7 +292,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Fused-hop rule tuning", html)
         self.assertIn("Learned localization model", html)
         self.assertIn('analysis_kind: "rollout_outcome_evaluation"', outcome_analysis)
-        self.assertIn("/api/baselines/result-coverage?baseline=", outcome_analysis)
+        self.assertIn("/api/analysis/outcome-coverage?scope=", outcome_analysis)
         self.assertIn("/api/analysis/run", outcome_analysis)
         self.assertIn('analysis_kind: "robo_hop_comparison"', hop_analysis)
         self.assertIn("/api/analysis/run", hop_analysis)
