@@ -100,7 +100,7 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
             assert record is not None
             self.assertEqual(set(record["camera_video_paths"]), {"cam_high", "cam_wrist"})
 
-    def test_legacy_duplicate_wrist_mapping_is_rejected_not_normalized(self) -> None:
+    def test_duplicate_wrist_aliases_are_preserved_without_normalization(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             rollout, cameras = self.make_rollout(root)
@@ -119,11 +119,15 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    "multiple camera keys to the same file",
-                ):
-                    build_manifest.build_record(rollout, root, {})
+                record = build_manifest.build_record(rollout, root, {})
+
+            assert record is not None
+            self.assertEqual(
+                record["camera_video_paths"]["cam_left_wrist"],
+                record["camera_video_paths"]["cam_right_wrist"],
+            )
+            self.assertNotIn("cam_wrist", record["camera_video_paths"])
+            self.assertNotIn("primary_camera", record)
 
     def test_existing_camera_sidecar_must_declare_camera_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
