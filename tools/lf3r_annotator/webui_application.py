@@ -174,8 +174,8 @@ class WebUIApplication(server.LF3RApplication):
 
             records: list[dict[str, Any]] = []
             aggregate_rows: list[dict[str, Any]] = []
-            source_info: list[dict[str, Any]] = []
-            source_by_id: dict[str, Path] = {}
+            source_info_by_path: dict[Path, dict[str, Any]] = {}
+            parsed_rows: dict[Path, list[dict[str, Any]]] = {}
 
             for source_path in self.manifest_paths:
                 source_exists = source_path.is_file()
@@ -191,44 +191,58 @@ class WebUIApplication(server.LF3RApplication):
                             f"{source_relative}: manifest has no rollout records"
                         )
                     self._validate_manifest_rows(source_path, source_rows)
-
-                    for row in source_rows:
-                        rollout_id = str(row["id"])
-                        previous = source_by_id.get(rollout_id)
-                        if previous is not None:
-                            raise server.ValidationError(
-                                "Duplicate rollout id across manifests: "
-                                + rollout_id
-                                + " ("
-                                + self._relative_manifest_path(previous)
-                                + " and "
-                                + source_relative
-                                + ")"
-                            )
                 except (OSError, json.JSONDecodeError, server.ValidationError) as error:
-                    source_info.append(
-                        {
-                            "path": source_relative,
-                            "label": source_path.stem,
-                            "exists": source_exists,
-                            "valid": False,
-                            "rollouts": 0,
-                            "error": str(error),
-                        }
-                    )
-                    continue
-
-                source_info.append(
-                    {
+                    source_info_by_path[source_path] = {
                         "path": source_relative,
                         "label": source_path.stem,
                         "exists": source_exists,
-                        "valid": True,
-                        "rollouts": len(source_rows),
-                        "error": None,
+                        "valid": False,
+                        "rollouts": 0,
+                        "error": str(error),
+                    }
+                    continue
+
+                parsed_rows[source_path] = source_rows
+                source_info_by_path[source_path] = {
+                    "path": source_relative,
+                    "label": source_path.stem,
+                    "exists": source_exists,
+                    "valid": True,
+                    "rollouts": len(source_rows),
+                    "error": None,
+                }
+
+            sources_by_rollout_id: dict[str, list[Path]] = {}
+            for source_path, source_rows in parsed_rows.items():
+                for row in source_rows:
+                    sources_by_rollout_id.setdefault(str(row["id"]), []).append(source_path)
+
+            conflicting_sources: dict[Path, list[str]] = {}
+            for rollout_id, source_paths in sources_by_rollout_id.items():
+                if len(source_paths) < 2:
+                    continue
+                for source_path in source_paths:
+                    conflicting_sources.setdefault(source_path, []).append(rollout_id)
+
+            for source_path, rollout_ids in conflicting_sources.items():
+                source_info_by_path[source_path].update(
+                    {
+                        "valid": False,
+                        "rollouts": 0,
+                        "error": (
+                            "Duplicate rollout ids across peer manifests: "
+                            + ", ".join(sorted(rollout_ids)[:8])
+                            + (" ..." if len(rollout_ids) > 8 else "")
+                        ),
                     }
                 )
-                for row in source_rows:
+
+            source_by_id: dict[str, Path] = {}
+            for source_path in self.manifest_paths:
+                if source_path not in parsed_rows or source_path in conflicting_sources:
+                    continue
+                source_relative = self._relative_manifest_path(source_path)
+                for row in parsed_rows[source_path]:
                     rollout_id = str(row["id"])
                     source_by_id[rollout_id] = source_path
                     aggregate_rows.append(row)
@@ -237,8 +251,12 @@ class WebUIApplication(server.LF3RApplication):
                     enriched["manifest_label"] = source_path.stem
                     records.append(enriched)
 
-            if aggregate_rows:
-                _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
+            source_info = [
+                source_info_by_path[path]
+                for path in self.manifest_paths
+                if path in source_info_by_path
+            ]
+            _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
 
             self._manifest_records_cache = records
             self._manifest_info_cache = source_info
