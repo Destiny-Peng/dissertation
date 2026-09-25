@@ -66,18 +66,22 @@ class WebUIApplication(server.LF3RApplication):
         if not resolved:
             raise ValueError("At least one manifest path is required")
 
-        self.manifest_paths = resolved
-        self.primary_manifest_path = resolved[0]
-        source_key = "\0".join(str(path) for path in resolved)
+        self.manifest_paths = sorted(resolved, key=lambda path: str(path))
+        source_key = "\0".join(str(path) for path in self.manifest_paths)
         digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:16]
         self.aggregate_manifest_path = (
-            self.primary_manifest_path
-            if len(resolved) == 1
-            else self.project_root
+            self.project_root
             / "cache"
             / "lf3r_annotator"
             / "manifests"
-            / f"manifest-{digest}.jsonl"
+            / f"catalog-{digest}.jsonl"
+        )
+        self.canonical_manifest_path = (
+            self.project_root
+            / "datasets"
+            / "lf3r_failure_rollouts"
+            / "v1"
+            / "manifest.jsonl"
         )
         self._manifest_catalog_lock = threading.RLock()
         self._manifest_catalog_signature: (
@@ -96,10 +100,10 @@ class WebUIApplication(server.LF3RApplication):
             tmux_binary=tmux_binary,
         )
 
-        # Writers update the currently loaded primary manifest. Baseline and
-        # Analysis read the stable aggregate catalog.
-        self.rollout_jobs.manifest_path = self.primary_manifest_path
-        self.project_tools.rebuild_manifest_path = self.primary_manifest_path
+        # Catalog sources are read-only peers. LIBERO rollout generation owns
+        # the canonical rollout manifest explicitly; rebuild_manifest uses the
+        # same canonical target in non_analysis_tools.py.
+        self.rollout_jobs.manifest_path = self.canonical_manifest_path
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
@@ -170,73 +174,89 @@ class WebUIApplication(server.LF3RApplication):
 
             records: list[dict[str, Any]] = []
             aggregate_rows: list[dict[str, Any]] = []
-            source_info: list[dict[str, Any]] = []
-            source_by_id: dict[str, Path] = {}
+            source_info_by_path: dict[Path, dict[str, Any]] = {}
+            parsed_rows: dict[Path, list[dict[str, Any]]] = {}
 
             for source_path in self.manifest_paths:
                 source_exists = source_path.is_file()
                 source_relative = self._relative_manifest_path(source_path)
-                source_primary = source_path == self.primary_manifest_path
                 try:
                     source_rows = (
                         server.load_manifest_records(source_path)
                         if source_exists
                         else []
                     )
+                    if not source_rows:
+                        raise server.ValidationError(
+                            f"{source_relative}: manifest has no rollout records"
+                        )
                     self._validate_manifest_rows(source_path, source_rows)
-
-                    for row in source_rows:
-                        rollout_id = str(row["id"])
-                        previous = source_by_id.get(rollout_id)
-                        if previous is not None:
-                            raise server.ValidationError(
-                                "Duplicate rollout id across manifests: "
-                                + rollout_id
-                                + " ("
-                                + self._relative_manifest_path(previous)
-                                + " and "
-                                + source_relative
-                                + ")"
-                            )
                 except (OSError, json.JSONDecodeError, server.ValidationError) as error:
-                    if source_primary:
-                        raise
-                    source_info.append(
-                        {
-                            "path": source_relative,
-                            "label": source_path.stem,
-                            "primary": False,
-                            "exists": source_exists,
-                            "valid": False,
-                            "rollouts": 0,
-                            "error": str(error),
-                        }
-                    )
-                    continue
-
-                source_info.append(
-                    {
+                    source_info_by_path[source_path] = {
                         "path": source_relative,
                         "label": source_path.stem,
-                        "primary": source_primary,
                         "exists": source_exists,
-                        "valid": True,
-                        "rollouts": len(source_rows),
-                        "error": None,
+                        "valid": False,
+                        "rollouts": 0,
+                        "error": str(error),
+                    }
+                    continue
+
+                parsed_rows[source_path] = source_rows
+                source_info_by_path[source_path] = {
+                    "path": source_relative,
+                    "label": source_path.stem,
+                    "exists": source_exists,
+                    "valid": True,
+                    "rollouts": len(source_rows),
+                    "error": None,
+                }
+
+            sources_by_rollout_id: dict[str, list[Path]] = {}
+            for source_path, source_rows in parsed_rows.items():
+                for row in source_rows:
+                    sources_by_rollout_id.setdefault(str(row["id"]), []).append(source_path)
+
+            conflicting_sources: dict[Path, list[str]] = {}
+            for rollout_id, source_paths in sources_by_rollout_id.items():
+                if len(source_paths) < 2:
+                    continue
+                for source_path in source_paths:
+                    conflicting_sources.setdefault(source_path, []).append(rollout_id)
+
+            for source_path, rollout_ids in conflicting_sources.items():
+                source_info_by_path[source_path].update(
+                    {
+                        "valid": False,
+                        "rollouts": 0,
+                        "error": (
+                            "Duplicate rollout ids across peer manifests: "
+                            + ", ".join(sorted(rollout_ids)[:8])
+                            + (" ..." if len(rollout_ids) > 8 else "")
+                        ),
                     }
                 )
-                for row in source_rows:
+
+            source_by_id: dict[str, Path] = {}
+            for source_path in self.manifest_paths:
+                if source_path not in parsed_rows or source_path in conflicting_sources:
+                    continue
+                source_relative = self._relative_manifest_path(source_path)
+                for row in parsed_rows[source_path]:
                     rollout_id = str(row["id"])
                     source_by_id[rollout_id] = source_path
                     aggregate_rows.append(row)
                     enriched = dict(row)
                     enriched["manifest_source"] = source_relative
                     enriched["manifest_label"] = source_path.stem
-                    enriched["manifest_primary"] = source_primary
                     records.append(enriched)
 
-            if self.aggregate_manifest_path != self.primary_manifest_path:
-                _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
+            source_info = [
+                source_info_by_path[path]
+                for path in self.manifest_paths
+                if path in source_info_by_path
+            ]
+            _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
 
             self._manifest_records_cache = records
             self._manifest_info_cache = source_info
@@ -299,15 +319,12 @@ class WebUIApplication(server.LF3RApplication):
 
 
 def discover_default_manifests(project_root: Path) -> list[Path]:
-    """Return the canonical manifest first, then other active manifests."""
+    """Return all top-level rollout manifests as peer catalog sources."""
     manifest_dir = project_root / "datasets/lf3r_failure_rollouts/v1"
-    primary = manifest_dir / "manifest.jsonl"
-    others = sorted(
-        (
-            path
-            for path in manifest_dir.glob("*manifest*.jsonl")
-            if path.is_file() and path.resolve() != primary.resolve()
-        ),
+    manifests = sorted(
+        (path for path in manifest_dir.glob("*manifest*.jsonl") if path.is_file()),
         key=lambda path: path.name,
     )
-    return [primary, *others]
+    if manifests:
+        return manifests
+    return [manifest_dir / "manifest.jsonl"]

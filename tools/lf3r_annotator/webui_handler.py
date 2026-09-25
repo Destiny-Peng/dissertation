@@ -48,9 +48,6 @@ class WebUIHandler(server.LF3RHandler):
                     HTTPStatus.OK,
                     {
                         "manifests": self.app.manifest_info(),
-                        "primary_manifest": self.app._relative_manifest_path(
-                            self.app.primary_manifest_path
-                        ),
                         "dataset_groups": self.app.dataset_groups(),
                     },
                 )

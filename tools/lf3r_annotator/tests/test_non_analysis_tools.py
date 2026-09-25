@@ -118,6 +118,10 @@ class NonAnalysisToolTests(unittest.TestCase):
         self.assertIn((tools.PROJECT_ROOT / "tools").resolve(), roots)
         self.assertEqual(len(roots), len(set(roots)))
         self.assertEqual(roots[: len(expected_defaults)], expected_defaults)
+        self.assertEqual(
+            Path(command[command.index("--output") + 1]).resolve(),
+            tools.CANONICAL_ROLLOUT_MANIFEST.resolve(),
+        )
         self.assertIn("--refresh-instruction-variants", command)
 
     def test_manifest_rebuild_rejects_missing_extra_root(self):

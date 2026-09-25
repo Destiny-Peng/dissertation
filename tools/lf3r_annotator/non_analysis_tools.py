@@ -25,6 +25,9 @@ DEFAULT_MANIFEST_SCAN_ROOTS = (
     PROJECT_ROOT / "outputs/openvla_libero",
     PROJECT_ROOT / "outputs/openvla_libero_spatial_native",
 )
+CANONICAL_ROLLOUT_MANIFEST = (
+    PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl"
+)
 
 
 def project_path(value: str | Path) -> Path:
@@ -280,12 +283,7 @@ def rebuild_manifest_command(payload: dict[str, Any]) -> list[str]:
         "/usr/bin/python3",
         str(PROJECT_ROOT / "tools/lf3r_annotator/build_manifest.py"),
     ]
-    raw_output = str(payload.get("output_manifest") or "").strip()
-    if raw_output:
-        output_manifest = project_path(raw_output)
-        if output_manifest.suffix.lower() != ".jsonl":
-            raise ValueError("output_manifest must be a .jsonl file")
-        command.extend(["--output", str(output_manifest)])
+    command.extend(["--output", str(CANONICAL_ROLLOUT_MANIFEST)])
     roots: list[Path] = list(DEFAULT_MANIFEST_SCAN_ROOTS)
     raw_extra = payload.get("extra_scan_roots") or []
     if isinstance(raw_extra, str):
@@ -491,10 +489,6 @@ class NonAnalysisToolService:
             )
 
         payload = dict(payload or {})
-        if action == "rebuild_manifest":
-            target = getattr(self, "rebuild_manifest_path", None)
-            if target is not None:
-                payload["output_manifest"] = str(Path(target).resolve())
         stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
         job_id = f"tool-{action}-{stamp}-{uuid.uuid4().hex[:8]}"
         log_path = self.project_root / "logs/annotator_tools" / f"{job_id}.log"

@@ -16,7 +16,6 @@
     if (record && (record.source_kind === "real_robot" || record.analysis_partition === "real_robot_analysis")) {
       return "external";
     }
-    if (record && record.manifest_primary === false) return "external";
     return "natural";
   }
 
@@ -25,7 +24,6 @@
     if (record && (record.source_kind === "real_robot" || record.analysis_partition === "real_robot_analysis")) {
       return "real robot";
     }
-    if (record && record.manifest_primary === false) return "secondary";
     return "natural";
   }
 
@@ -47,12 +45,6 @@
       grid.insertBefore(label, outcomeLabel || null);
     }
 
-    var key = document.querySelector(".partition-key");
-    if (key && !key.querySelector(".key-dot.external")) {
-      var item = document.createElement("span");
-      item.innerHTML = '<i class="key-dot external"></i> Other manifest';
-      key.appendChild(item);
-    }
   }
 
   function populateManifestFilter(manifests) {
@@ -207,11 +199,13 @@
     var status = byId("datasetStatus");
     if (!status) return;
     var manifests = Array.isArray(state.manifests) ? state.manifests : [];
-    var count = manifests.filter(function (item) { return item.valid !== false; }).length || 1;
+    var count = manifests.filter(function (item) { return item.valid !== false; }).length;
     var invalid = manifests.filter(function (item) { return item.valid === false; }).length;
-    status.textContent = "Dataset online · " + (state.rollouts || []).length
-      + " rollouts · " + count + " manifest" + (count === 1 ? "" : "s")
-      + (invalid ? " · " + invalid + " invalid source" + (invalid === 1 ? "" : "s") + " skipped" : "");
+    status.textContent = count
+      ? "Dataset online · " + (state.rollouts || []).length
+        + " rollouts · " + count + " manifest" + (count === 1 ? "" : "s")
+        + (invalid ? " · " + invalid + " invalid source" + (invalid === 1 ? "" : "s") + " skipped" : "")
+      : "No valid rollout manifests · " + invalid + " invalid source" + (invalid === 1 ? "" : "s");
   }
 
   async function loadManifestMetadata() {

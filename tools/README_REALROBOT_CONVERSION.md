@@ -26,7 +26,7 @@ outputs/realrobot/baseline_rollouts/manifest_side_policy_256.jsonl
 outputs/realrobot/baseline_rollouts/manifest_wrist_1.jsonl
 ```
 
-Each manifest records the available physical videos only in `camera_video_paths`, so it can be passed directly to the baseline runner. The generated camera-specific manifests retain the same camera map while preserving their observation metadata; `manifest.jsonl` remains the primary output selected by `--primary-camera`.
+Each manifest records the available physical videos only in `camera_video_paths`, so it can be passed directly to the baseline runner. The generated camera-specific manifests retain the same camera map while preserving their observation metadata; `manifest.jsonl` remains the canonical convenience output using the camera selected by `--primary-camera`.
 
 Videos are encoded as H.264 with FFmpeg's `libx264` by default (`yuv420p`, CRF 18, `veryfast` preset). Frames are streamed directly to FFmpeg instead of building a second full-video buffer, and camera frames are no longer stacked into another video-sized array. This reduces conversion time and peak memory. To trade smaller files for slower encoding, pass `--video-preset medium`; `--video-preset ultrafast` favors speed at the cost of larger files. FFmpeg with `libx264` must be available on `PATH`. To explicitly use the OpenCV MPEG-4 Part 2 output, pass `--video-codec mp4v`.
 

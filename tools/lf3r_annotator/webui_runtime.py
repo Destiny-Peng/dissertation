@@ -92,8 +92,7 @@ def main() -> None:
         )
     for source_path in app.manifest_paths:
         print(f"Manifest source: {source_path}")
-    if app.aggregate_manifest_path != app.primary_manifest_path:
-        print(f"Aggregate manifest: {app.aggregate_manifest_path}")
+    print(f"Aggregate catalog: {app.aggregate_manifest_path}")
     groups = app.dataset_groups()
     suites = ", ".join(
         f"{item['value']} ({item['count']})"
@@ -103,7 +102,7 @@ def main() -> None:
     print(f"Controlled rollouts: {groups['controlled_count']}")
     print(f"Annotations: {annotations}")
     print(
-        "Video serving: preferred manifest camera by default; "
+        "Video serving: preferred available camera by default; "
         "?camera=<name> serves manifest camera_video_paths; "
         "runtime transcoding disabled"
     )

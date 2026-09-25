@@ -92,7 +92,6 @@ window.LF3RManifestTools = (function createManifestTools() {
         var meta = document.createElement("small");
         meta.textContent = String(item.path)
           + " · " + Number(item.rollouts || 0) + " rollout(s)"
-          + (item.primary ? " · primary" : "")
           + (item.valid === false ? " · invalid: " + String(item.error || "unavailable") : "");
         copy.appendChild(title);
         copy.appendChild(meta);

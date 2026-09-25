@@ -12,7 +12,7 @@ The current versioned manifest contains 136 natural observations:
 | `libero_spatial` | `libero_spatial` | 11 | 11 success |
 | `controlled_analysis` | — | 0 | no controlled rows currently installed |
 
-The primary LIBERO-10 set includes tasks 0–9. Task counts are 16 each for tasks 0–3, 11 for task 4, and 10 each for tasks 5–9. The reference LIBERO-Spatial rows remain available for comparison but are not part of the LIBERO-10-failure summary. The manifest can later include controlled injections, but those rows must stay in the explicit `controlled_analysis` partition.
+The canonical LIBERO-10 set includes tasks 0–9. Task counts are 16 each for tasks 0–3, 11 for task 4, and 10 each for tasks 5–9. The reference LIBERO-Spatial rows remain available for comparison but are not part of the LIBERO-10-failure summary. The manifest can later include controlled injections, but those rows must stay in the explicit `controlled_analysis` partition.
 
 `task` and `trial` are separate dimensions. A task identifies one LIBERO instruction/environment; a trial is an independent episode for that task. The filename suffix `succ0`/`succ1` is the evaluator outcome, not a human annotation. The Review page lets an annotator replace that provisional outcome with `clean_success`, `recovered_success`, `terminal_failure`, or `uncertain`.
 
@@ -485,7 +485,7 @@ The requirement-level verifier can be run after data generation:
 
     python3 tools/lf3r_annotator/verify_pipeline.py
 
-`verify_pipeline.py` checks primary dataset size and outcomes, natural/controlled partition integrity, MP4 frame counts, LIBERO-10 checkpoint normalization metadata, required annotation-tool files, and project-local storage. Its historical small-smoke gate expects 3–12 primary LIBERO-10 rollouts; the current expanded 125-rollout primary manifest therefore reports that size check as expected. It is read-only with respect to rollouts and annotations. The unit tests separately exercise the frontend contract, byte-range playback, atomic save/reload, Settings/Analysis APIs, invalid onset ordering, and path confinement.
+`verify_pipeline.py` checks primary dataset size and outcomes, natural/controlled partition integrity, MP4 frame counts, LIBERO-10 checkpoint normalization metadata, required annotation-tool files, and project-local storage. Its historical small-smoke gate expects 3–12 primary LIBERO-10 rollouts; the current expanded 125-rollout canonical LIBERO-10 manifest therefore reports that size check as expected. It is read-only with respect to rollouts and annotations. The unit tests separately exercise the frontend contract, byte-range playback, atomic save/reload, Settings/Analysis APIs, invalid onset ordering, and path confinement.
 
 ### ProcVLM value-head option
 
