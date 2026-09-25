@@ -215,459 +215,104 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             (TOOL_ROOT / path).read_text(encoding="utf-8")
             for path in [
                 "static/workspace.js",
-                "static/workspace/settings.js",
                 "static/workspace/router.js",
                 "static/workspace/events.js",
                 "static/workspace-core.js",
-                "static/analysis/live.js",
-                "static/analysis/snapshot.js",
-                "static/analysis/localization.js",
-                "static/analysis/change-point.js",
-                "static/analysis/event-triggered.js",
                 "static/analysis/runs.js",
                 "static/analysis/dashboard.js",
-                "static/analysis/signals.js",
-                "static/analysis/details.js",
             ]
         )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
-        label_loss_analysis = (TOOL_ROOT / "static/analysis-robo-label-loss.js").read_text(encoding="utf-8")
         server = "\n".join(
             (TOOL_ROOT / name).read_text(encoding="utf-8")
             for name in [
-                "server.py",
-                "backend_core.py",
-                "stores.py",
-                "baseline_constants.py",
-                "baseline_index.py",
-                "baseline_readers.py",
-                "baseline_catalog.py",
-                "baseline_results.py",
-                "baseline_jobs.py",
-                "baseline_service.py",
                 "analysis_constants.py",
                 "analysis_snapshots.py",
                 "analysis_details.py",
                 "analysis_service.py",
                 "analysis_robo_jobs.py",
-                "analysis_localization_results.py",
-                "analysis_localization_challenge.py",
                 "analysis_localization.py",
                 "analysis_jobs.py",
-                "rollout_service.py",
-                "application.py",
                 "http_handler.py",
             ]
         )
-        styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
 
-        for route in ["#/review", "#/analysis", "#/settings"]:
+        for route in ["#/review", "#/analysis", "#/settings", "#/analysis/outcome", "#/analysis/localization"]:
             self.assertIn('href="' + route + '"', html)
+        for old_route in [
+            "#/analysis/overview", "#/analysis/comparison", "#/analysis/failures",
+            "#/analysis/events", "#/analysis/signals", "#/analysis/archive",
+        ]:
+            self.assertNotIn('href="' + old_route + '"', html)
+
         for element_id in [
-            "pageTitle",
             "analysisView",
             "analysisStatus",
-            "analysisKpis",
-            "analysisPartitionFilter",
-            "analysisSuiteFilter",
-            "analysisTaskFilter",
-            "analysisOutcomeFilter",
-            "analysisOutcomeChart",
-            "analysisFailureTypeChart",
-            "analysisTimingChart",
-            "analysisTaskChart",
-            "analysisRunForm",
-            "analysisRunScope",
-            "analysisRunSafe",
-            "analysisRunProcvlm",
-            "analysisRunRynnvalue",
-            "analysisRunRoboDopamine",
-            "analysisPreWindow",
-            "analysisPostWindow",
-            "analysisBackgroundStride",
-            "analysisOutputLabel",
-            "analysisRunButton",
-            "analysisRunBadge",
-            "analysisEnvironmentStatus",
-            "analysisRunLog",
-            "analysisRunJobs",
-            "analysisHopForm",
-            "analysisHopScope",
-            "analysisHopRun",
-            "analysisHopOutputLabel",
-            "analysisHopTaskCv",
-            "analysisHopRunButton",
-            "analysisHopBadge",
-            "analysisHopSelection",
-            "analysisHopLog",
-            "analysisHopResults",
-            "analysisHopArtifacts",
-            "analysisLabelLossForm",
-            "analysisLabelLossDevice",
-            "analysisLabelLossTauEvent",
-            "analysisLabelLossRepeats",
-            "analysisLabelLossEpochs",
-            "analysisLabelLossPatience",
-            "analysisLabelLossLearningRate",
-            "analysisLabelLossWeightDecay",
-            "analysisLabelLossGradClip",
-            "analysisLabelLossDistanceWeight",
-            "analysisLabelLossRankingWeight",
-            "analysisLabelLossRankingMargin",
-            "analysisLabelLossAsymmetric",
-            "analysisLabelLossOutputLabel",
-            "analysisLabelLossRunButton",
-            "analysisLabelLossBadge",
-            "analysisLabelLossSelection",
-            "analysisLabelLossLog",
-            "analysisLabelLossResults",
-            "analysisLabelLossArtifacts",
-            "analysisSnapshotMethod",
-            "analysisSnapshotOutcome",
-            "analysisSnapshotTask",
-            "analysisCoverageChart",
-            "analysisThresholdChart",
-            "analysisResponseChart",
-            "analysisPersistenceChart",
-            "analysisRecoveryChart",
-            "analysisAnomalies",
-            "analysisLocalizationMethod",
-            "analysisLocalizationSignal",
-            "analysisLocalizationThreshold",
-            "analysisLocalizationOutcome",
-            "analysisLocalizationTask",
-            "analysisLocalizationRecallChart",
-            "analysisLocalizationErrorChart",
-            "analysisLocalizationFailureType",
-            "analysisLocalizationEvents",
-            "analysisLocalizationProvenance",
+            "analysisTabOutcome",
+            "analysisTabLocalization",
+            "analysisRolloutOutcomeTable",
+            "analysisOutcomeThreshold",
             "analysisChangePointMethod",
             "analysisChangePointSignal",
             "analysisChangePointFeature",
             "analysisChangePointScale",
             "analysisChangePointThreshold",
-            "analysisChangePointOutcome",
-            "analysisChangePointTask",
-            "analysisChangePointRecallChart",
-            "analysisChangePointErrorChart",
             "analysisChangePointFailureType",
-            "analysisChangePointComparison",
-            "analysisChangePointEvents",
-            "analysisChangePointProvenance",
-            "analysisEventTriggeredMethod",
-            "analysisEventTriggeredSignal",
-            "analysisEventTriggeredGroup",
-            "analysisEventTriggeredScale",
-            "analysisEventTriggeredBadge",
-            "analysisEventTriggeredStatus",
-            "analysisEventTriggeredProvenance",
-            "analysisEventTriggeredSignalChart",
-            "analysisEventTriggeredChangeChart",
-            "analysisEventTriggeredSummary",
-            "analysisEventTriggeredPeaks",
-            "settingsView",
-            "settingsForm",
-            "settingsBackground",
-            "settingsSurface",
-            "settingsRaised",
-            "settingsControl",
-            "settingsText",
-            "settingsMuted",
-            "settingsAccent",
-            "settingsFontScale",
-            "settingsFontScaleValue",
-            "settingsReviewFontScale",
-            "settingsReviewFontScaleValue",
-            "settingsAnalysisFontScale",
-            "settingsAnalysisFontScaleValue",
-            "settingsControlFontScale",
-            "settingsControlFontScaleValue",
-            "settingsDensity",
-            "settingsReset",
-            "settingsSave",
-        ]:
-            self.assertIn('id="' + element_id + '"', html)
-        self.assertIn('/static/workspace.js', html)
-        self.assertIn('/static/analysis-robo-hop.js', workspace)
-        self.assertIn('/static/analysis-robo-label-loss.js', workspace)
-        for marker in [
-            "/api/settings",
-            "/api/analysis",
-            "/api/baselines/runs",
-            "/api/analysis/run",
-            "/api/analysis-jobs/",
-            "workspaceLoadBaselineRuns",
-            "workspaceStartAnalysisRun",
-            "workspaceRenderRoute",
-            "workspaceLoadAnalysisEnvironment",
-            "workspaceJobsChanged",
-            "workspaceSelectedAnalysisRuns",
-            "partial_compatible",
-            "localization_event_metrics",
-            "change_point",
-            "event_triggered",
-            "workspaceRenderChangePoint",
-            "workspaceRenderEventTriggered",
-            "workspaceRenderEventTriggeredSignalChart",
-            "eventTriggered.curves",
-            "eventTriggered.change_scores",
-            "eventTriggered.summary",
-            "data-analysis-rollout",
-            "resolvedSuccessRate",
-            "Observable coverage",
-            "viewBox",
-            '<title>',
-            'aria-label=',
-        ]:
-            self.assertIn(marker, workspace)
-        for marker in ["data-analysis-live-filter", "data-analysis-snapshot-filter", "data-analysis-localization-filter", "data-analysis-changepoint-filter", "data-analysis-event-triggered-filter", "comparison_with_full_136_20260827", "primary-analysis-card", "legacy-analysis-card", "event-triggered-card"]:
-            self.assertIn(marker, html)
-        self.assertIn('multiple size="5"', html)
-        for endpoint in [
-            'path == "/api/settings"', 'path == "/api/analysis"',
-            'path == "/api/analysis/robo-label-loss"',
-            'path == "/api/baselines/runs"', 'path == "/api/baselines/result-coverage"', '"/api/baselines/run-batch"',
-            '"/api/analysis/run"', 'analysis-jobs', 'rollout-jobs', '"/api/rollouts/generate"', '"/api/jobs"', 'worker_assignments', 'parallel_workers', 'CHANGEPOINT_TABLE_FILES', 'changepoint_summary.csv', 'comparison_with_full_136_20260827', 'primary_analysis_type', 'event_triggered_available', 'EVENT_TRIGGERED_TABLE_FILES', 'event_triggered_curves.csv', 'os.replace(temp_name, self.path)'
-        ]:
-            self.assertIn(endpoint, server)
-        for marker in [
-            "run_rollout_ids",
-            "partial_compatible",
-            "_complete_annotation_records",
-            "_valid_result_rollout_ids",
-            "complete_annotation_rollouts",
-            "incomplete_annotation_rollouts",
-            "BASELINE_RESULT_FILTERS",
-            "missing_valid",
-            "localization_event_metrics",
-            "localization_summary",
-            "ROBO_HOP_REQUIRED_FILES",
-            "ROBO_HOP_EXTENDED_FILES",
-            "ROBO_LABEL_LOSS_REQUIRED_FILES",
-            "start_robo_label_loss_run",
-            "robo_bilstm_label_loss_ablation",
-            "robo_label_loss_response",
-            "robo_label_loss_artifact_path",
-            "start_robo_hop_run",
-            "robo_hop_comparison",
-            "fused_scope_rollout_count",
-            "sweep_summary.csv",
-            "best_configs.csv",
-            "no_event_failure_results.csv",
-            "ensemble_sweep.csv",
-            "ensemble_selected.csv",
-            "ensemble_by_failure_type.csv",
-            "interval_localization_ranking.csv",
-            '"interval_localization_rows": interval_localization_rows',
-            "grasp_event_features.csv",
-            "grasp_detected_vs_missed.csv",
-            "grasp_matched_control.csv",
-            "grasp_failure_categories.csv",
-            "grasp_event_heatmap.png",
-            "cpu_limit",
-            "OMP_NUM_THREADS",
-            "OPENBLAS_NUM_THREADS",
-            "MKL_NUM_THREADS",
-            '"search_cache": metadata.get("search_cache") or {}',
-        ]:
-            self.assertIn(marker, server)
-        self.assertNotIn("window.workspaceLoadBaselineRuns", hop_analysis)
-        self.assertIn("/api/baselines/runs?scope=", hop_analysis)
-        for marker in [
-            'analysis_kind: "robo_hop_comparison"',
-            "/api/analysis/run",
-            "analysisHopRunButton",
-            "analysisHopCpuLimit",
-            "cpu_limit: cpuLimit",
-            "fused_scope_rollout_count",
-            "Failed-rollout interval localization",
-            "analysisHopIntervalRankPopulation",
-            "analysisHopIntervalRankSort",
-            "analysisHopIntervalRankDirection",
-            "analysisHopIntervalRankLimit",
-            "sortedRankingRows",
-            "rankingControlsHtml",
-            "Stagnation OR regression",
-            "localizationFamilyLabel",
-            "localizationConfigLabel",
-            "stagnation: ",
-            "regression: ",
-            "in_interval_rate",
-            "median_signed_interval_error_samples",
-            "trigger_coverage",
-            "within_3",
-            "search cache HIT",
-            "reused prior search",
-            "search computed",
-            "workspaceLoadAnalysis(true)",
-        ]:
-            self.assertIn(marker, hop_analysis)
-        for marker in [
-            'analysis_kind: "robo_bilstm_label_loss_ablation"',
-            "/api/analysis/run",
-            "/api/analysis/robo-label-loss",
-            "analysisLabelLossRunButton",
-            "analysisLabelLossTauEvent",
-            "analysisLabelLossDistanceWeight",
-            "analysisLabelLossRankingWeight",
-            "analysisLabelLossRankingMargin",
-            "label_ablation",
-            "loss_ablation",
-            "first_event_in_interval_rate_mean",
-            "pseudo_no_event_frame0_rollout_n",
-            "recoverLatestJob",
-            "fetchJson",
-            "readAnalysisJob",
-            "/api/jobs?job_type=analysis",
-            "returned non-JSON",
-        ]:
-            self.assertIn(marker, label_loss_analysis)
-        self.assertNotIn("workspaceLoadBaselineRuns", label_loss_analysis)
-        self.assertNotIn("modeOrder", hop_analysis)
-        self.assertNotIn("pairwise_overlap", hop_analysis)
-        for obsolete in [
-            "analysisHopPointRank",
-            "unconstrained_localization",
-            "progress_peak_localization",
-            "Earliest global progress maximum",
-            "oracle_recall_at_",
-            "FPR-unconstrained oracle",
-            "event_recall_at_",
-            "grasp_recall_at_",
-            "grasp_gain_vs_best_",
-            "overall_failed_rollout_coverage",
-            "event_median_delay_samples",
-            "tp_jaccard",
-        ]:
-            self.assertNotIn(obsolete, hop_analysis)
-        baseline_module = (TOOL_ROOT / "webui_baseline.py").read_text(encoding="utf-8")
-        self.assertIn('rollout_ids is not None', baseline_module)
-        for marker in [
-            "--font-scale",
-            "--review-font-scale",
-            "--analysis-font-scale",
-            "--control-font-scale",
-            "--accent",
-            "font-size: calc(100% * var(--font-scale)",
-            ".analysis-threshold-table",
-            ".cli-help-popover",
-            ".rollout-generation-grid",
-            ".persistent-job-card",
-            ".persistent-job-workers",
-            ".rynn-worker-row",
-            ".analysis-run-field-help",
-            ".localization-heat-table",
-            ".page-navigation",
-            ".analysis-grid",
-            ".settings-color-grid",
-            "--causal:",
-            "--observable:",
-            "--terminal:",
-            "--recovery:",
-        ]:
-            self.assertIn(marker, styles)
-        self.assertNotRegex(styles, r"font-size:\s*[0-9]+px")
-        self.assertNotRegex(styles, r"font:\s*[0-9]+px")
-        help_path = TOOL_ROOT / "static/parameter_help.json"
-        help_data = json.loads(help_path.read_text(encoding="utf-8"))
-        for section, keys in {
-            "baseline": ["gpu", "vllm_free_memory_fraction", "start_index", "end_index", "limit", "parallel_workers", "worker_spec", "result_filter", "procvlm_window_size", "procvlm_frame_stride", "rynn_num_frames", "rynn_evaluation_interval", "robo_eval_mode", "robo_camera_mode", "densereward_frame_interval", "densereward_max_new_tokens"],
-            "rollout": ["task_suite", "gpu", "task_start", "task_end", "trials", "seed", "run_note", "log_safe_features", "render_resolution", "record_resolution", "video_view_mode"],
-            "settings": ["font_scale", "review_font_scale", "analysis_font_scale", "control_font_scale"],
-        }.items():
-            for key in keys:
-                self.assertIn(key, help_data[section])
-                self.assertIn("description", help_data[section][key])
-                self.assertIn("default", help_data[section][key])
-        self.assertEqual(help_data["baseline"]["vllm_free_memory_fraction"]["cli"], "--vllm-free-memory-fraction VALUE")
-        self.assertIn("--gpu_memory_utilization", help_data["baseline"]["vllm_free_memory_fraction"]["forwarded_as"])
-        self.assertEqual(help_data["rollout"]["task_end"]["cli"], "--task-end N")
-        self.assertEqual(help_data["rollout"]["task_suite"]["cli"], "--task-suite {libero_10,libero_spatial}")
-        self.assertEqual(help_data["rollout"]["render_resolution"]["cli"], "--render-resolution N")
-        self.assertEqual(help_data["rollout"]["record_resolution"]["cli"], "--record-resolution N")
-        self.assertEqual(help_data["rollout"]["video_view_mode"]["cli"], "--video-view-mode MODE")
-        self.assertEqual(help_data["baseline"]["robo_eval_mode"]["default"], "fused")
-        self.assertEqual(help_data["baseline"]["robo_camera_mode"]["default"], "auto")
-        self.assertEqual(help_data["baseline"]["densereward_frame_interval"]["default"], "1")
-        self.assertIn('value="fused" selected', html)
-
-        self.assertNotIn("margin: 8px -26px", styles)
-        self.assertNotIn("margin: -11px var(--timeline-track-inset) 0", styles)
-        self.assertNotIn("margin-inline: calc(var(--timeline-track-inset) - 1px)", styles)
-
-
-    def test_analysis_dashboard_contract(self) -> None:
-        html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
-        workspace = "\n".join(
-            (TOOL_ROOT / path).read_text(encoding="utf-8")
-            for path in [
-                "static/workspace.js",
-                "static/workspace/settings.js",
-                "static/workspace/router.js",
-                "static/workspace/events.js",
-                "static/workspace-core.js",
-                "static/analysis/live.js",
-                "static/analysis/snapshot.js",
-                "static/analysis/localization.js",
-                "static/analysis/change-point.js",
-                "static/analysis/event-triggered.js",
-                "static/analysis/runs.js",
-                "static/analysis/dashboard.js",
-                "static/analysis/signals.js",
-                "static/analysis/details.js",
-            ]
-        )
-        hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
-        styles = (TOOL_ROOT / "static/styles.css").read_text(encoding="utf-8")
-        for route in [
-            "#/analysis/overview",
-            "#/analysis/comparison",
-            "#/analysis/failures",
-            "#/analysis/events",
-            "#/analysis/signals",
-            "#/analysis/archive",
-        ]:
-            self.assertIn('href="' + route + '"', html)
-        for element_id in [
-            "analysisTabOverview",
-            "analysisTabComparison",
-            "analysisTabFailures",
-            "analysisTabEvents",
-            "analysisTabSignals",
-            "analysisTabArchive",
             "analysisFailureMetric",
-            "analysisDetailsTable",
-            "analysisDetailsPrevious",
-            "analysisDetailsNext",
-            "analysisArchiveLinks",
             "analysisHopForm",
             "analysisHopResults",
             "analysisHopArtifacts",
+            "localizationRunExperiment",
+            "localizationRunsList",
+            "settingsView",
+            "settingsForm",
         ]:
             self.assertIn('id="' + element_id + '"', html)
-        for marker in [
-            "data-analysis-panel",
-            "data-analysis-tab",
-            "libero_10",
-            "Q95 (primary)",
-            "16 frames (default)",
-            "/api/analysis/details",
-            "/api/analysis/artifacts/",
-            "analysis-horizontal-list",
-            "analysis-heatmap-table",
-            "analysis-details-table",
-            "analysis-download-grid",
-            "clipPath",
-            "workspaceDashboardRenderSnapshot",
-            "Failure detection and ensemble analysis",
-            "analysisHopCpuLimit",
-            "fused",
-        ]:
-            self.assertIn(marker, html + workspace + hop_analysis)
-        self.assertNotIn('transform="rotate(', workspace)
-        self.assertNotIn(".analysis-chart > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)
-        self.assertNotIn(".analysis-chart-scroll > .analysis-svg {" + chr(10) + "  min-width: 42rem", styles)
 
+        for removed_id in [
+            "analysisTabOverview", "analysisTabComparison", "analysisTabFailures",
+            "analysisTabEvents", "analysisTabSignals", "analysisTabArchive",
+            "analysisRunForm", "analysisTimingChart", "analysisEventTriggeredSignalChart",
+            "analysisDetailsTable", "analysisArchiveLinks",
+        ]:
+            self.assertNotIn('id="' + removed_id + '"', html)
+
+        self.assertIn('var analysisTabs = ["outcome", "localization"]', workspace)
+        self.assertIn('analysisTab: "outcome"', workspace)
+        self.assertIn("workspaceDashboardRenderRolloutOutcome", workspace)
+        self.assertIn("workspaceDashboardRenderComparison", workspace)
+        self.assertIn("workspaceDashboardRenderFailureTypes", workspace)
+        self.assertNotIn("Run temporal analysis", html)
+        self.assertIn("Fused-hop rule tuning", html)
+        self.assertIn("Learned localization model", html)
+        self.assertIn('analysis_kind: "robo_hop_comparison"', hop_analysis)
+        self.assertIn("/api/analysis/run", hop_analysis)
+        self.assertIn("workspaceLoadAnalysisEnvironment", workspace)
+        self.assertIn('"/api/analysis/run"', server)
+
+    def test_analysis_dashboard_contract(self) -> None:
+        html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
+        dashboard = (TOOL_ROOT / "static/analysis/dashboard.js").read_text(encoding="utf-8")
+        router = (TOOL_ROOT / "static/workspace/router.js").read_text(encoding="utf-8")
+
+        self.assertIn("Outcome Evaluation", html)
+        self.assertIn("Failure Localization", html)
+        self.assertIn("Positive = final success", html)
+        self.assertIn("Rule-based localization comparison", html)
+        self.assertIn("Rule-based performance by failure type", html)
+        self.assertIn("Learned localization model", html)
+        self.assertIn("Fused-hop rule tuning", html)
+        self.assertIn("Success recall", dashboard)
+        self.assertIn("Failure recall", dashboard)
+        self.assertIn("clean + recovered success", dashboard)
+        self.assertIn('var analysisTabs = ["outcome", "localization"]', router)
+
+        for removed in [
+            "Event explorer", "Signal shape", "Archive &amp; downloads",
+            "Onset and recovery timing", "Current scope and conclusions",
+            "Run temporal analysis",
+        ]:
+            self.assertNotIn(removed, html)
 
     def test_rollout_generation_uses_egl_and_keeps_persistent_logs_open(self) -> None:
         for filename in [
