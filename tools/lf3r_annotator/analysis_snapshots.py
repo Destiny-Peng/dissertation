@@ -21,6 +21,7 @@ from analysis_constants import (
     EVENT_TRIGGERED_TABLE_FILES,
     ROBO_HOP_REQUIRED_FILES,
     ROBO_HOP_TABLE_FILES,
+    ROLLOUT_OUTCOME_TABLE_FILES,
 )
 
 
@@ -588,6 +589,13 @@ class AnalysisSnapshotsMixin:
         }
         comparison_path = directory / "comparison_with_full_136_20260827.csv"
         comparison = self._read_csv(comparison_path) if comparison_path.is_file() else []
+        rollout_outcome_summary_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["summary"]
+        rollout_outcome_predictions_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
+        rollout_outcome_summary = (
+            self._read_csv(rollout_outcome_summary_path)
+            if rollout_outcome_summary_path.is_file()
+            else []
+        )
         return {
             "available": True,
             "source": {
@@ -642,6 +650,10 @@ class AnalysisSnapshotsMixin:
                 "event_metrics": events,
             },
             "event_metrics": events,
+            "rollout_outcome_available": bool(rollout_outcome_summary),
+            "rollout_outcome_summary": rollout_outcome_summary,
+            "rollout_outcome_predictions_available": rollout_outcome_predictions_path.is_file(),
+            "rollout_outcome": metadata.get("rollout_outcome_classification") or {},
             "comparison": comparison,
         }
 
