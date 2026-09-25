@@ -9,6 +9,11 @@ ANALYSIS_TABLE_FILES = {
     "onset_signal_statistics": "onset_signal_statistics.csv",
     "clean_background_summary": "clean_background_summary.csv",
 }
+ROLLOUT_OUTCOME_TABLE_FILES = {
+    "summary": "rollout_outcome_summary.csv",
+    "predictions": "rollout_outcome_predictions.csv",
+}
+
 ANALYSIS_LOCALIZATION_TABLE_FILES = {
     "summary": "localization_summary.csv",
     "thresholds": "localization_thresholds.csv",
@@ -123,6 +128,8 @@ ANALYSIS_ARTIFACT_NAMES = {
     "summary_by_method_outcome.csv",
     "onset_signal_statistics.csv",
     "clean_background_summary.csv",
+    "rollout_outcome_summary.csv",
+    "rollout_outcome_predictions.csv",
     "event_metrics.jsonl",
     "localization_summary.csv",
     "localization_thresholds.csv",

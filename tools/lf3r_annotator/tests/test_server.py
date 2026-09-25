@@ -837,7 +837,7 @@ class ServerTest(unittest.TestCase):
         script = self.root / "tools" / "analyze_baseline_temporal_signals.py"
         script.parent.mkdir(parents=True, exist_ok=True)
         script.write_text(
-            """import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--output-dir', type=Path, required=True)\nparser.add_argument('--selection', type=Path, required=True)\nargs = parser.parse_known_args()[0]\nargs.output_dir.mkdir(parents=True, exist_ok=True)\nselection = json.loads(args.selection.read_text())\n(args.output_dir / 'metadata.json').write_text(json.dumps({'counts': {'rollouts': len(selection['selection'])}, 'selection': str(args.selection)}))\n(args.output_dir / 'event_metrics.jsonl').write_text('')\nfor name in ('method_coverage.csv', 'summary_by_method_signal_outcome.csv', 'summary_by_method_outcome.csv', 'onset_signal_statistics.csv', 'clean_background_summary.csv'):\n    (args.output_dir / name).write_text('method\\n')\nprint('fake temporal analysis complete')\n""",
+            """import argparse\nimport json\nfrom pathlib import Path\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--output-dir', type=Path, required=True)\nparser.add_argument('--selection', type=Path, required=True)\nargs = parser.parse_known_args()[0]\nargs.output_dir.mkdir(parents=True, exist_ok=True)\nselection = json.loads(args.selection.read_text())\n(args.output_dir / 'metadata.json').write_text(json.dumps({'counts': {'rollouts': len(selection['selection'])}, 'selection': str(args.selection)}))\n(args.output_dir / 'event_metrics.jsonl').write_text('')\nfor name in ('method_coverage.csv', 'summary_by_method_signal_outcome.csv', 'summary_by_method_outcome.csv', 'onset_signal_statistics.csv', 'clean_background_summary.csv'):\n    (args.output_dir / name).write_text('method\\n')\n(args.output_dir / 'rollout_outcome_summary.csv').write_text('method,signal,threshold,accuracy,recall,precision,f1,specificity,false_positive_rate,auroc\\nsafe,max_token_prob,q95,0.8,0.7,0.7,0.7,0.9,0.1,0.8\\n')\n(args.output_dir / 'rollout_outcome_predictions.csv').write_text('rollout_id,method,threshold,predicted_failure\\n')\nprint('fake temporal analysis complete')\n""",
             encoding="utf-8",
         )
 
@@ -1427,6 +1427,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             analysis = json.load(response)["analysis"]
         self.assertTrue(analysis["available"])
         self.assertEqual(analysis["source"]["selection_count"], 1)
+        self.assertTrue(analysis["rollout_outcome_available"])
+        self.assertEqual(analysis["rollout_outcome_summary"][0]["threshold"], "q95")
 
     def test_label_loss_ablation_web_job_and_snapshot(self) -> None:
         self.seed_baseline_outputs()
