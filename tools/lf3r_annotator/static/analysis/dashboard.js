@@ -523,8 +523,9 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
     var info = snapshot.rollout_outcome || {};
     provenance.innerHTML = '<strong>Positive:</strong> terminal failure'
       + ' / <strong>negative:</strong> clean + recovered success'
-      + ' / <strong>threshold:</strong> Q95 of final-success failure-oriented terminal scores'
+      + ' / <strong>threshold:</strong> Q95 of same-cohort final-success failure-oriented terminal scores'
       + ' / <strong>uncertain:</strong> excluded from metrics'
+      + ' / <strong>interpretation:</strong> descriptive in-sample calibration, not held-out accuracy'
       + (info.prediction_rows == null ? "" : ' / <strong>prediction rows:</strong> ' + escapeHtml(String(info.prediction_rows)));
   }
 }
