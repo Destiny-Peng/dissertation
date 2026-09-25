@@ -135,18 +135,29 @@ def build_record(video: Path, project_root: Path, task_metadata: dict[str, dict[
     dataset_role = "controlled_analysis" if source_kind == "controlled_injected" else suite
     description = task_metadata.get(suite, {}).get(str(task), f"{suite} task {task}")
     camera_metadata_path = video.with_name(video.stem + ".camera_videos.json")
-    camera_metadata: dict[str, Any] = {}
+    camera_metadata: dict[str, Any] | None = None
     if camera_metadata_path.is_file():
         try:
             value = json.loads(camera_metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise RuntimeError(f"Invalid camera-video metadata: {camera_metadata_path}") from error
-        if isinstance(value, dict):
-            camera_metadata = value
+        if not isinstance(value, dict):
+            raise RuntimeError(
+                f"Camera-video metadata must be an object: {camera_metadata_path}"
+            )
+        camera_metadata = value
+        if "camera_video_paths" not in camera_metadata:
+            raise RuntimeError(
+                f"Camera-video metadata has no camera_video_paths: {camera_metadata_path}"
+            )
 
-    metadata_camera_paths = camera_metadata.get("camera_video_paths")
+    metadata_camera_paths = (
+        camera_metadata.get("camera_video_paths")
+        if camera_metadata is not None
+        else None
+    )
     camera_video_files: dict[str, Path] = {}
-    if metadata_camera_paths is None:
+    if camera_metadata is None:
         # A plain rollout still has one real camera stream. Record that stream
         # under its physical/logical camera key instead of keeping a second
         # top-level video_path field.
