@@ -61,6 +61,23 @@ SAFE_PRIMARY_SIGNALS = (
 )
 ROBO_SIGNALS = ("progress", "hop")
 
+ROLLOUT_OUTCOME_PRIMARY_SIGNALS = {
+    "safe": "max_token_prob",
+    "procvlm": "progress",
+    "rynnvalue": "value",
+    "robo_dopamine": "progress",
+}
+ROLLOUT_OUTCOME_THRESHOLDS = ("q90", "q95", "q99")
+ROLLOUT_OUTCOME_SIGNAL_NOTES = {
+    "safe": (
+        "handcrafted max_token_prob proxy; the baseline run does not contain "
+        "a trained SAFE detector checkpoint"
+    ),
+    "procvlm": "native terminal progress",
+    "rynnvalue": "native terminal value / remaining-time semantics",
+    "robo_dopamine": "native terminal progress",
+}
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
@@ -179,6 +196,243 @@ def normalize_outcome(annotation: dict[str, Any]) -> str:
     if outcome == "success":
         return "clean_success"
     return str(outcome or "uncertain")
+
+
+def _classification_rate(numerator: int, denominator: int) -> float:
+    return float(numerator / denominator) if denominator else math.nan
+
+
+def _classification_auc(scores: list[float], labels: list[int]) -> float:
+    pairs = [
+        (float(score), int(label))
+        for score, label in zip(scores, labels)
+        if math.isfinite(float(score))
+    ]
+    positives = sum(label == 1 for _, label in pairs)
+    negatives = sum(label == 0 for _, label in pairs)
+    if not positives or not negatives:
+        return math.nan
+    ordered = sorted(pairs, key=lambda pair: pair[0])
+    rank_sum = 0.0
+    index = 0
+    while index < len(ordered):
+        end = index + 1
+        while end < len(ordered) and ordered[end][0] == ordered[index][0]:
+            end += 1
+        average_rank = (index + 1 + end) / 2.0
+        rank_sum += average_rank * sum(
+            label == 1 for _, label in ordered[index:end]
+        )
+        index = end
+    return float(
+        (rank_sum - positives * (positives + 1) / 2.0)
+        / (positives * negatives)
+    )
+
+
+def _terminal_signal_point(series: dict[str, Any]) -> tuple[int, float] | None:
+    frames = np.asarray(series.get("frames", []), dtype=int)
+    values = np.asarray(series.get("values", []), dtype=float)
+    if len(frames) != len(values) or not len(frames):
+        return None
+    finite = np.isfinite(values)
+    if not finite.any():
+        return None
+    frames = frames[finite]
+    values = values[finite]
+    position = int(np.argmax(frames))
+    return int(frames[position]), float(values[position])
+
+
+def compute_rollout_outcome_classification(
+    rollouts: dict[str, dict[str, Any]],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Classify final rollout outcome from each method's terminal native score.
+
+    terminal_failure is the positive class. clean_success and recovered_success
+    are final-success negatives. uncertain rollouts are retained in the
+    prediction artifact but excluded from metric denominators. Thresholds are
+    calibrated only from final-success scores (Q90/Q95/Q99) after orienting each
+    method so larger values mean more failure-like.
+    """
+    terminal_rows: list[dict[str, Any]] = []
+    for rollout_id, rollout in rollouts.items():
+        outcome = normalize_outcome(rollout["annotation"])
+        if outcome == "terminal_failure":
+            true_failure = 1
+        elif outcome in {"clean_success", "recovered_success"}:
+            true_failure = 0
+        else:
+            true_failure = None
+        record = rollout["record"]
+        total_frames = int(record.get("total_frames") or 0)
+        for method in METHODS:
+            signal_name = ROLLOUT_OUTCOME_PRIMARY_SIGNALS[method]
+            method_data = rollout["methods"].get(method)
+            if not method_data:
+                continue
+            series = method_data.get("signals", {}).get(signal_name)
+            if not isinstance(series, dict):
+                continue
+            point = _terminal_signal_point(series)
+            if point is None:
+                continue
+            terminal_frame, terminal_value = point
+            direction = float(
+                series.get("direction", METHOD_SIGNAL_DIRECTIONS[method])
+            )
+            oriented_score = direction * terminal_value
+            terminal_rows.append({
+                "rollout_id": rollout_id,
+                "method": method,
+                "method_label": METHOD_LABELS[method],
+                "signal": signal_name,
+                "signal_note": ROLLOUT_OUTCOME_SIGNAL_NOTES[method],
+                "task_suite": record.get("task_suite"),
+                "task_id": record.get("task_id"),
+                "outcome": outcome,
+                "true_failure": true_failure,
+                "included_in_metrics": true_failure is not None,
+                "terminal_sample_frame": terminal_frame,
+                "video_final_frame": max(0, total_frames - 1),
+                "terminal_frame_gap": (
+                    max(0, total_frames - 1) - terminal_frame
+                    if total_frames > 0
+                    else None
+                ),
+                "terminal_value": terminal_value,
+                "failure_direction": direction,
+                "failure_oriented_terminal_score": oriented_score,
+            })
+
+    summary_rows: list[dict[str, Any]] = []
+    prediction_rows: list[dict[str, Any]] = []
+    for method in METHODS:
+        signal_name = ROLLOUT_OUTCOME_PRIMARY_SIGNALS[method]
+        method_rows = [
+            row for row in terminal_rows
+            if row["method"] == method
+            and bool(row["included_in_metrics"])
+            and math.isfinite(float(row["failure_oriented_terminal_score"]))
+        ]
+        success_scores = [
+            float(row["failure_oriented_terminal_score"])
+            for row in method_rows
+            if int(row["true_failure"]) == 0
+        ]
+        failure_scores = [
+            float(row["failure_oriented_terminal_score"])
+            for row in method_rows
+            if int(row["true_failure"]) == 1
+        ]
+        all_scores = [
+            float(row["failure_oriented_terminal_score"])
+            for row in method_rows
+        ]
+        all_labels = [int(row["true_failure"]) for row in method_rows]
+        auroc = _classification_auc(all_scores, all_labels)
+        if not success_scores:
+            continue
+        thresholds = {
+            name: float(np.quantile(success_scores, float(name[1:]) / 100.0))
+            for name in ROLLOUT_OUTCOME_THRESHOLDS
+        }
+        direction = float(METHOD_SIGNAL_DIRECTIONS[method])
+        for threshold_name in ROLLOUT_OUTCOME_THRESHOLDS:
+            threshold = thresholds[threshold_name]
+            tp = fp = tn = fn = 0
+            for row in method_rows:
+                predicted_failure = (
+                    float(row["failure_oriented_terminal_score"]) >= threshold
+                )
+                truth = int(row["true_failure"])
+                if truth == 1 and predicted_failure:
+                    tp += 1
+                elif truth == 1:
+                    fn += 1
+                elif predicted_failure:
+                    fp += 1
+                else:
+                    tn += 1
+            recall = _classification_rate(tp, tp + fn)
+            precision = _classification_rate(tp, tp + fp)
+            specificity = _classification_rate(tn, tn + fp)
+            accuracy = _classification_rate(tp + tn, tp + tn + fp + fn)
+            f1 = (
+                float(2.0 * precision * recall / (precision + recall))
+                if math.isfinite(precision)
+                and math.isfinite(recall)
+                and precision + recall > 0.0
+                else math.nan
+            )
+            balanced_accuracy = (
+                float((recall + specificity) / 2.0)
+                if math.isfinite(recall) and math.isfinite(specificity)
+                else math.nan
+            )
+            raw_threshold = threshold / direction
+            failure_rule = (
+                f"{signal_name} >= {raw_threshold:.6g}"
+                if direction > 0
+                else f"{signal_name} <= {raw_threshold:.6g}"
+            )
+            summary_rows.append({
+                "method": method,
+                "method_label": METHOD_LABELS[method],
+                "signal": signal_name,
+                "signal_note": ROLLOUT_OUTCOME_SIGNAL_NOTES[method],
+                "threshold": threshold_name,
+                "threshold_value_failure_oriented": threshold,
+                "raw_terminal_threshold": raw_threshold,
+                "failure_rule": failure_rule,
+                "threshold_calibration": "final_success_terminal_score_quantile",
+                "positive_class": "terminal_failure",
+                "negative_class": "clean_success+recovered_success",
+                "n_resolved": len(method_rows),
+                "n_final_success": len(success_scores),
+                "n_terminal_failure": len(failure_scores),
+                "tp": tp,
+                "fn": fn,
+                "fp": fp,
+                "tn": tn,
+                "accuracy": accuracy,
+                "recall": recall,
+                "failure_recall": recall,
+                "precision": precision,
+                "f1": f1,
+                "specificity": specificity,
+                "success_recall": specificity,
+                "false_positive_rate": (
+                    1.0 - specificity if math.isfinite(specificity) else math.nan
+                ),
+                "balanced_accuracy": balanced_accuracy,
+                "auroc": auroc,
+            })
+
+        for row in terminal_rows:
+            if row["method"] != method:
+                continue
+            for threshold_name in ROLLOUT_OUTCOME_THRESHOLDS:
+                threshold = thresholds[threshold_name]
+                predicted_failure = (
+                    float(row["failure_oriented_terminal_score"]) >= threshold
+                )
+                prediction_rows.append({
+                    **row,
+                    "threshold": threshold_name,
+                    "threshold_value_failure_oriented": threshold,
+                    "predicted_failure": predicted_failure,
+                    "predicted_outcome": (
+                        "terminal_failure" if predicted_failure else "final_success"
+                    ),
+                    "prediction_correct": (
+                        None
+                        if row["true_failure"] is None
+                        else bool(predicted_failure == bool(row["true_failure"]))
+                    ),
+                })
+
+    return pd.DataFrame(summary_rows), pd.DataFrame(prediction_rows)
 
 
 def extract_frame_from_path(value: str) -> int | None:
@@ -1741,6 +1995,18 @@ def main() -> int:
         })
     pd.DataFrame(coverage_rows).to_csv(output_dir / "method_coverage.csv", index=False)
 
+    rollout_outcome_summary, rollout_outcome_predictions = (
+        compute_rollout_outcome_classification(rollouts)
+    )
+    rollout_outcome_summary.to_csv(
+        output_dir / "rollout_outcome_summary.csv",
+        index=False,
+    )
+    rollout_outcome_predictions.to_csv(
+        output_dir / "rollout_outcome_predictions.csv",
+        index=False,
+    )
+
     event_jsonl = output_dir / "event_metrics.jsonl"
     background_jsonl = output_dir / "clean_background_metrics.jsonl"
     with event_jsonl.open("w", encoding="utf-8") as handle:
@@ -1843,6 +2109,19 @@ def main() -> int:
         "native_sampling_preserved": True,
         "orientation": METHOD_SIGNAL_DIRECTIONS,
         "signal_units": METHOD_SIGNAL_UNITS,
+        "rollout_outcome_classification": {
+            "positive_class": "terminal_failure",
+            "negative_class": "clean_success+recovered_success",
+            "uncertain_policy": "excluded_from_metrics",
+            "primary_signals": ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
+            "signal_notes": ROLLOUT_OUTCOME_SIGNAL_NOTES,
+            "thresholds": list(ROLLOUT_OUTCOME_THRESHOLDS),
+            "default_threshold": "q95",
+            "threshold_calibration": "final_success_terminal_score_quantile",
+            "failure_oriented_score": "method_direction * terminal_native_value",
+            "summary_rows": int(len(rollout_outcome_summary)),
+            "prediction_rows": int(len(rollout_outcome_predictions)),
+        },
         "comparison_snapshot": str(resolve_path(args.compare_snapshot)) if args.compare_snapshot and resolve_path(args.compare_snapshot).is_dir() else None,
         "comparison_path": str(comparison_path) if comparison_path else None,
         "localization": {
@@ -1865,6 +2144,8 @@ def main() -> int:
             "localization_summary_rows": len(localization["summary"]),
             "localization_failure_type_rows": len(localization["by_failure_type"]),
             "localization_threshold_rows": len(localization["thresholds"]),
+            "rollout_outcome_summary_rows": int(len(rollout_outcome_summary)),
+            "rollout_outcome_prediction_rows": int(len(rollout_outcome_predictions)),
         },
     }
     (output_dir / "metadata.json").write_text(json.dumps(json_safe(metadata), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -1891,6 +2172,7 @@ def main() -> int:
     print(f"background_pseudo_event_signal_rows={metadata['counts']['background_pseudo_event_signal_rows']}")
     print(f"localization_event_metrics={metadata['counts']['localization_event_metrics']}")
     print(f"localization_summary_rows={metadata['counts']['localization_summary_rows']}")
+    print(f"rollout_outcome_summary_rows={metadata['counts']['rollout_outcome_summary_rows']}")
     print(f"plots={len(list(plot_dir.rglob('*.png')))}")
     return 0
 

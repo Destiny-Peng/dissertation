@@ -467,6 +467,72 @@ function workspaceDashboardRenderFailureTypes(snapshot) {
   workspaceDashboardRenderFailureHeatmap(workspaceDashboardFailureRows(snapshot));
 }
 
+function workspaceDashboardRenderRolloutOutcome(snapshot) {
+  var host = byId("analysisRolloutOutcomeTable");
+  var badge = byId("analysisRolloutOutcomeBadge");
+  var provenance = byId("analysisRolloutOutcomeProvenance");
+  if (!host) return;
+  var rows = Array.isArray(snapshot && snapshot.rollout_outcome_summary)
+    ? snapshot.rollout_outcome_summary.filter(function (row) {
+        return String(row.threshold || "") === "q95";
+      })
+    : [];
+  if (!rows.length) {
+    host.innerHTML = workspaceEmpty(
+      "No terminal rollout-outcome statistics in this snapshot. Run temporal analysis again to generate them."
+    );
+    if (badge) {
+      badge.className = "analysis-badge";
+      badge.textContent = "Unavailable";
+    }
+    if (provenance) provenance.textContent = "";
+    return;
+  }
+  rows.sort(function (left, right) {
+    return ANALYSIS_METHODS.indexOf(left.method) - ANALYSIS_METHODS.indexOf(right.method);
+  });
+  var html = '<table class="analysis-table analysis-summary-table" aria-label="Terminal rollout outcome classification">'
+    + '<thead><tr><th>Method / signal</th><th>N</th><th>TP/FN</th><th>FP/TN</th>'
+    + '<th>Accuracy</th><th>Failure recall</th><th>Precision</th><th>F1</th>'
+    + '<th>Specificity</th><th>FPR</th><th>Balanced acc.</th><th>AUROC</th><th>Decision</th></tr></thead><tbody>';
+  rows.forEach(function (row) {
+    var method = (ANALYSIS_METHOD_LABELS[row.method] || row.method || "method")
+      + " / " + workspaceDashboardShortSignal(row.signal);
+    var rowTitle = row.signal_note || row.failure_rule || "";
+    html += '<tr title="' + escapeHtml(rowTitle) + '"><th scope="row">' + escapeHtml(method) + '</th>'
+      + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(String(row.tp == null ? "n/a" : row.tp)) + ' / '
+      + escapeHtml(String(row.fn == null ? "n/a" : row.fn)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(String(row.fp == null ? "n/a" : row.fp)) + ' / '
+      + escapeHtml(String(row.tn == null ? "n/a" : row.tn)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.accuracy)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.failure_recall == null ? row.recall : row.failure_recall)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.precision)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.f1)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.specificity)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.false_positive_rate)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.balanced_accuracy)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(row.auroc)) + '</td>'
+      + '<td>' + escapeHtml(row.failure_rule || "Q95") + '</td></tr>';
+  });
+  host.innerHTML = html + '</tbody></table>';
+  if (badge) {
+    badge.className = "analysis-badge ok";
+    badge.textContent = "Q95 · " + rows.length + " methods";
+  }
+  if (provenance) {
+    var info = snapshot.rollout_outcome || {};
+    provenance.innerHTML = '<strong>Positive:</strong> terminal failure'
+      + ' / <strong>negative:</strong> clean + recovered success'
+      + ' / <strong>threshold:</strong> Q95 of same-cohort final-success failure-oriented terminal scores'
+      + ' / <strong>uncertain:</strong> excluded from metrics'
+      + ' / <strong>SAFE:</strong> handcrafted max-token-probability proxy, not a trained SAFE detector'
+      + ' / <strong>interpretation:</strong> descriptive in-sample calibration, not held-out accuracy'
+      + (info.prediction_rows == null ? "" : ' / <strong>prediction rows:</strong> ' + escapeHtml(String(info.prediction_rows)));
+  }
+}
+
+
 function workspaceDashboardRenderConclusions(snapshot) {
   var host = byId("analysisTopConclusions");
   if (!host) return;
@@ -540,6 +606,7 @@ function workspaceDashboardRenderSnapshot() {
       status.textContent = snapshot && snapshot.message || (workspaceState.analysisLoading ? "Loading analysis..." : "No complete analysis snapshot is available.");
     }
     workspaceDashboardRenderConclusions(snapshot);
+    workspaceDashboardRenderRolloutOutcome(snapshot);
     workspaceDashboardRenderComparison(snapshot);
     workspaceDashboardRenderFailureTypes(snapshot);
     workspaceDashboardRenderSignalShape(snapshot);
@@ -551,6 +618,7 @@ function workspaceDashboardRenderSnapshot() {
     status.textContent = "Dashboard loaded for LIBERO-10 by default. Live annotations update independently; snapshot data are read-only.";
   }
   workspaceDashboardRenderConclusions(snapshot);
+  workspaceDashboardRenderRolloutOutcome(snapshot);
   var cp = snapshot.change_point || {};
   if (byId("analysisCoverageChart")) byId("analysisCoverageChart").innerHTML = workspaceRenderCoverageChart(snapshot);
   if (byId("analysisOverviewProvenance")) {

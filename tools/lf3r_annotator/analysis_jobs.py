@@ -16,6 +16,7 @@ from typing import Any
 from analysis_constants import (
     ANALYSIS_BASELINE_METHODS,
     ANALYSIS_TABLE_FILES,
+    ROLLOUT_OUTCOME_TABLE_FILES,
     ROBO_HOP_EXTENDED_FILES,
     ROBO_HOP_REQUIRED_FILES,
     ROBO_LABEL_LOSS_REQUIRED_FILES,
@@ -429,6 +430,7 @@ class AnalysisJobService(
                         "metadata.json",
                         "event_metrics.jsonl",
                         *ANALYSIS_TABLE_FILES.values(),
+                        *ROLLOUT_OUTCOME_TABLE_FILES.values(),
                     )
                     missing_message = (
                         "Temporal analysis completed without all required artifacts"
