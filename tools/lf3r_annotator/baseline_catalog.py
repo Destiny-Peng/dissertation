@@ -16,6 +16,7 @@ from backend_core import (
     validate_instruction_condition,
     validate_run_scope,
 )
+from analysis_constants import ANALYSIS_BASELINE_METHODS
 from baseline_constants import (
     BASELINE_METHODS,
     BASELINE_RESULT_FILTERS,
@@ -99,13 +100,18 @@ class BaselineCatalogMixin:
                 incomplete_source_ids.append(source_id)
         return complete, incomplete_source_ids
 
-    def _valid_result_rollout_ids(
+    def _result_source_map(
         self,
         baseline: str,
         condition: str,
         records: list[dict[str, Any]],
-    ) -> set[str]:
-        """Return record IDs with at least one parseable completed baseline output."""
+    ) -> dict[str, str]:
+        """Resolve each rollout to its newest parseable completed baseline run.
+
+        Run candidates are already ordered newest-first by BaselineRunIndex.
+        A rollout is therefore assigned once, to the first parseable output,
+        and later/older runs only fill still-missing rollout IDs.
+        """
         if baseline not in BASELINE_METHODS:
             raise ValidationError("Invalid baseline method")
         condition = validate_instruction_condition(condition)
@@ -113,17 +119,16 @@ class BaselineCatalogMixin:
             {condition, "unknown"} if condition == "full_instruction" else {condition}
         )
         remaining = {str(record["id"]): record for record in records}
-        valid: set[str] = set()
+        resolved: dict[str, str] = {}
         for run_path, metadata in self._run_candidates(baseline):
             if self._run_instruction_condition(metadata) not in allowed_conditions:
                 continue
             completed_ids = run_rollout_ids(run_path)
-            if not completed_ids:
+            overlap = set(remaining).intersection(completed_ids)
+            if not overlap:
                 continue
             run_summary = self._run_summary(run_path, metadata)
-            for rollout_id in list(remaining):
-                if rollout_id not in completed_ids:
-                    continue
+            for rollout_id in list(overlap):
                 record = remaining[rollout_id]
                 try:
                     self._read_method(
@@ -141,11 +146,54 @@ class BaselineCatalogMixin:
                     json.JSONDecodeError,
                 ):
                     continue
-                valid.add(rollout_id)
+                resolved[rollout_id] = self._relative(run_path)
                 remaining.pop(rollout_id, None)
             if not remaining:
                 break
-        return valid
+        return resolved
+
+    def _valid_result_rollout_ids(
+        self,
+        baseline: str,
+        condition: str,
+        records: list[dict[str, Any]],
+    ) -> set[str]:
+        """Return record IDs with at least one parseable completed baseline output."""
+        return set(self._result_source_map(baseline, condition, records))
+
+    def outcome_evaluation_sources(
+        self,
+        scope: Any = "libero_10",
+    ) -> dict[str, Any]:
+        """Resolve latest per-rollout outputs independently for each baseline."""
+        scope = validate_run_scope(scope)
+        condition = "full_instruction"
+        scope_records = self._condition_records(condition, scope)
+        records, incomplete_source_ids = self._complete_annotation_records(
+            scope_records,
+            condition,
+        )
+        source_maps: dict[str, dict[str, str]] = {}
+        coverage: list[dict[str, Any]] = []
+        for baseline in ANALYSIS_BASELINE_METHODS:
+            mapping = self._result_source_map(baseline, condition, records)
+            source_maps[baseline] = mapping
+            coverage.append({
+                "method": baseline,
+                "evaluation_population": len(records),
+                "available_rollouts": len(mapping),
+                "missing_rollouts": len(records) - len(mapping),
+            })
+        return {
+            "scope": scope,
+            "condition": condition,
+            "scope_rollouts": len(scope_records),
+            "evaluation_population": len(records),
+            "incomplete_annotation_rollouts": len(incomplete_source_ids),
+            "evaluation_rollout_ids": [str(record["id"]) for record in records],
+            "source_maps": source_maps,
+            "coverage": coverage,
+        }
 
     def result_coverage(
         self,
