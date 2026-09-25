@@ -159,7 +159,6 @@ def load_cases(
                 f"Manifest record has no camera_video_paths: {rollout_id}"
             )
         camera_paths: dict[str, Path] = {}
-        seen_media: set[Path] = set()
         for camera, value in raw_camera_paths.items():
             if not isinstance(camera, str) or not camera.strip():
                 raise ExportError(f"Invalid camera key for {rollout_id}")
@@ -173,11 +172,6 @@ def load_cases(
                     f"Camera video for {rollout_id} camera={camera} does not exist: "
                     f"{relative_project_path(video)}"
                 )
-            if video in seen_media:
-                raise ExportError(
-                    f"Manifest record maps multiple cameras to one file: {rollout_id}"
-                )
-            seen_media.add(video)
             camera_paths[camera] = video
 
         camera_files: dict[str, list[Path]] = {}
