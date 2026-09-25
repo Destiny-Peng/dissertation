@@ -68,7 +68,6 @@ def read_manifest_video_paths(
                         f"manifest row has no valid camera_video_paths: "
                         f"{path} line {line_number}"
                     )
-                row_seen: set[Path] = set()
                 for camera, value in camera_paths.items():
                     if not isinstance(camera, str) or not camera.strip():
                         raise ValueError(
@@ -85,12 +84,6 @@ def read_manifest_video_paths(
                         raise ValueError(
                             f"camera_video_paths[{camera!r}] is not an .mp4 file: {value}"
                         )
-                    if video in row_seen:
-                        raise ValueError(
-                            f"manifest row maps multiple cameras to one video: "
-                            f"{path} line {line_number}"
-                        )
-                    row_seen.add(video)
                     if video not in seen:
                         seen.add(video)
                         videos.append(video)
