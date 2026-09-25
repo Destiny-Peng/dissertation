@@ -290,9 +290,14 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/analysis/outcome-coverage":
                 scope = query.get("scope", ["libero_10"])[0]
+                outcome_sources = self.app.baselines.outcome_evaluation_sources(scope)
                 self.json_response(
                     HTTPStatus.OK,
-                    self.app.baselines.outcome_evaluation_sources(scope),
+                    {
+                        key: value
+                        for key, value in outcome_sources.items()
+                        if key != "source_maps"
+                    },
                 )
                 return
             if path == "/api/baselines/result-coverage":
