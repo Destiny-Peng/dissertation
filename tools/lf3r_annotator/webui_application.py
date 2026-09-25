@@ -251,6 +251,15 @@ class WebUIApplication(server.LF3RApplication):
                         + str(record.get("id"))
                     )
                 resolved.add(path)
+            primary_camera = record.get("primary_camera")
+            if primary_camera is not None and (
+                not isinstance(primary_camera, str)
+                or primary_camera not in camera_paths
+            ):
+                raise server.ValidationError(
+                    "Manifest record has invalid primary_camera: "
+                    + str(record.get("id"))
+                )
         return records
 
 
