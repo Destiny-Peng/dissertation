@@ -11,7 +11,7 @@ The generated package contains:
   selection.json       analyzer-compatible list of selected rollout IDs
   index.json           provenance and per-case file mapping
   annotations/         selected annotation JSON files
-  rollouts/<id>/       the matching camera videos and same-stem sidecar files
+  rollouts/<id>/<camera>/  each camera video and its same-stem sidecar files
 
 The source project is never modified. Existing output directories are never
 overwritten.
@@ -180,11 +180,11 @@ def load_cases(
             seen_media.add(video)
             camera_paths[camera] = video
 
-        sidecars: list[Path] = []
-        seen_sidecars: set[Path] = set()
-        for video in camera_paths.values():
-            candidates = [video, *sorted(video.parent.glob(video.stem + ".*"))]
-            for candidate in candidates:
+        camera_files: dict[str, list[Path]] = {}
+        for camera, video in camera_paths.items():
+            files: list[Path] = []
+            seen_files: set[Path] = set()
+            for candidate in [video, *sorted(video.parent.glob(video.stem + ".*"))]:
                 if not candidate.is_file():
                     continue
                 resolved_candidate = candidate.resolve()
@@ -194,10 +194,11 @@ def load_cases(
                     raise ExportError(
                         f"Sidecar points outside project root: {candidate}"
                     ) from error
-                if resolved_candidate in seen_sidecars:
+                if resolved_candidate in seen_files:
                     continue
-                seen_sidecars.add(resolved_candidate)
-                sidecars.append(resolved_candidate)
+                seen_files.add(resolved_candidate)
+                files.append(resolved_candidate)
+            camera_files[camera] = files
 
         cases.append(
             {
@@ -206,7 +207,7 @@ def load_cases(
                 "annotation": annotation,
                 "record": record,
                 "camera_paths": camera_paths,
-                "sidecars": sidecars,
+                "camera_files": camera_files,
             }
         )
 
@@ -226,22 +227,23 @@ def copy_case(case: dict[str, Any], package_root: Path) -> dict[str, Any]:
     case_root.mkdir(parents=True, exist_ok=False)
 
     copied_files: list[str] = []
-    copied_by_source: dict[Path, str] = {}
-    for source in case["sidecars"]:
-        destination = case_root / source.name
-        shutil.copy2(source, destination)
-        relative_destination = destination.relative_to(package_root).as_posix()
-        copied_files.append(relative_destination)
-        copied_by_source[source.resolve()] = relative_destination
-
     shared_cameras: dict[str, str] = {}
-    for camera, source in case["camera_paths"].items():
-        shared = copied_by_source.get(source.resolve())
-        if shared is None:
+    for camera, source_video in case["camera_paths"].items():
+        camera_root = case_root / camera
+        camera_root.mkdir(parents=True, exist_ok=False)
+        shared_video: str | None = None
+        for source in case["camera_files"][camera]:
+            destination = camera_root / source.name
+            shutil.copy2(source, destination)
+            relative_destination = destination.relative_to(package_root).as_posix()
+            copied_files.append(relative_destination)
+            if source.resolve() == source_video.resolve():
+                shared_video = relative_destination
+        if shared_video is None:
             raise ExportError(
                 f"Selected camera video was not copied for {rollout_id}: {camera}"
             )
-        shared_cameras[camera] = shared
+        shared_cameras[camera] = shared_video
 
     annotation_destination = package_root / "annotations" / f"{rollout_id}.json"
     shutil.copy2(case["annotation_path"], annotation_destination)
@@ -350,7 +352,7 @@ def write_package(
             "- manifest.jsonl: package-local manifest; camera_video_paths point into this package.\n"
             "- selection.json: selected rollout IDs in analyzer-compatible format.\n"
             "- annotations/<rollout-id>.json: human annotation records.\n"
-            "- rollouts/<rollout-id>/: camera videos and matching same-stem sidecar files.\n"
+            "- rollouts/<rollout-id>/<camera>/: one camera video and its matching sidecars.\n"
             "- index.json: source-to-package provenance and per-case mapping.\n\n"
             "The package contains selected annotation/media files only. It does not "
             "include baseline model raw outputs.\n"
