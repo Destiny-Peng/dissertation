@@ -40,8 +40,10 @@ def media_is_valid(project_root: Path, record: dict[str, Any]) -> bool:
             video.relative_to(project_root.resolve())
         except ValueError:
             return False
-        if video in seen or not video.is_file():
+        if not video.is_file():
             return False
+        if video in seen:
+            continue
         seen.add(video)
         command = [
             "ffprobe",
