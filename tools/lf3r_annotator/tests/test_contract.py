@@ -223,6 +223,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             ]
         )
         hop_analysis = (TOOL_ROOT / "static/analysis-robo-hop.js").read_text(encoding="utf-8")
+        outcome_analysis = (TOOL_ROOT / "static/analysis-outcome.js").read_text(encoding="utf-8")
         server = "\n".join(
             (TOOL_ROOT / name).read_text(encoding="utf-8")
             for name in [
@@ -252,6 +253,13 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisTabLocalization",
             "analysisRolloutOutcomeTable",
             "analysisOutcomeThreshold",
+            "analysisOutcomeRunForm",
+            "analysisOutcomeRunScope",
+            "analysisOutcomeRunSafe",
+            "analysisOutcomeRunProcvlm",
+            "analysisOutcomeRunRynnvalue",
+            "analysisOutcomeRunRoboDopamine",
+            "analysisOutcomeRunButton",
             "analysisChangePointMethod",
             "analysisChangePointSignal",
             "analysisChangePointFeature",
@@ -283,8 +291,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("workspaceDashboardRenderComparison", workspace)
         self.assertIn("workspaceDashboardRenderFailureTypes", workspace)
         self.assertNotIn("Run temporal analysis", html)
+        self.assertIn("Run outcome evaluation", html)
         self.assertIn("Fused-hop rule tuning", html)
         self.assertIn("Learned localization model", html)
+        self.assertIn('analysis_kind: "rollout_outcome_evaluation"', outcome_analysis)
+        self.assertIn("/api/baselines/runs?scope=", outcome_analysis)
+        self.assertIn("/api/analysis/run", outcome_analysis)
         self.assertIn('analysis_kind: "robo_hop_comparison"', hop_analysis)
         self.assertIn("/api/analysis/run", hop_analysis)
         self.assertIn("workspaceLoadAnalysisEnvironment", workspace)

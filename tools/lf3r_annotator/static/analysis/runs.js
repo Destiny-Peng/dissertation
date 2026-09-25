@@ -1,18 +1,37 @@
 "use strict";
 
-/* Shared Analysis environment state.
- *
- * The legacy temporal-analysis runner was removed. Rule-based fused-hop
- * analysis still uses the dedicated CPU Analysis environment, so this module
- * only keeps the health check that those focused tools share.
- */
+/* Shared Analysis snapshot/environment state. Focused tools own job polling. */
 
-function workspaceJobChanged(_job) {
-  // Focused Analysis tools own their job polling.
-}
+function workspaceJobChanged(_job) {}
+function workspaceJobsChanged(_jobs) {}
 
-function workspaceJobsChanged(_jobs) {
-  // Focused Analysis tools own their job polling.
+async function workspaceLoadAnalysis(force) {
+  if (workspaceState.analysisLoading || (workspaceState.analysisLoaded && !force)) {
+    workspaceRenderSnapshot();
+    return workspaceState.analysisSnapshot;
+  }
+  workspaceState.analysisLoading = true;
+  workspaceRenderSnapshot();
+  try {
+    var response = await fetch("/api/analysis", { cache: "no-store" });
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not load analysis snapshot");
+    workspaceState.analysisSnapshot = payload.analysis || {
+      available: false,
+      message: "Empty analysis response"
+    };
+    workspaceState.analysisLoaded = true;
+  } catch (error) {
+    workspaceState.analysisSnapshot = {
+      available: false,
+      message: "Analysis snapshot error: " + error.message
+    };
+    workspaceState.analysisLoaded = true;
+  } finally {
+    workspaceState.analysisLoading = false;
+    workspaceRenderSnapshot();
+  }
+  return workspaceState.analysisSnapshot;
 }
 
 async function workspaceLoadAnalysisEnvironment() {
@@ -29,8 +48,13 @@ async function workspaceLoadAnalysisEnvironment() {
     };
   } finally {
     workspaceState.analysisEnvironmentLoading = false;
+    if (typeof window.lf3rOutcomeEnvironmentChanged === "function") {
+      window.lf3rOutcomeEnvironmentChanged();
+    }
     if (typeof window.lf3rRoboHopEnvironmentChanged === "function") {
       window.lf3rRoboHopEnvironmentChanged();
     }
   }
 }
+
+window.workspaceLoadAnalysis = workspaceLoadAnalysis;

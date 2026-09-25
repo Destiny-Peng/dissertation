@@ -22,6 +22,7 @@ from analysis_constants import (
     ROBO_HOP_REQUIRED_FILES,
     ROBO_HOP_TABLE_FILES,
     ROLLOUT_OUTCOME_TABLE_FILES,
+    ROLLOUT_OUTCOME_REQUIRED_FILES,
 )
 
 
@@ -476,6 +477,79 @@ class AnalysisSnapshotsMixin:
                 )
                 if (directory / name).is_file()
             ],
+        }
+
+    def _latest_outcome_snapshot(self) -> tuple[Path, dict[str, Any]] | None:
+        if not self.analysis_root.is_dir():
+            return None
+        candidates = []
+        for metadata_path in self.analysis_root.glob("*/metadata.json"):
+            directory = metadata_path.parent
+            if not all((directory / name).is_file() for name in ROLLOUT_OUTCOME_REQUIRED_FILES):
+                continue
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if metadata.get("analysis") != "lf3r_rollout_outcome_evaluation":
+                continue
+            candidates.append((metadata_path.stat().st_mtime, directory, metadata))
+        if not candidates:
+            return None
+        _, directory, metadata = max(candidates, key=lambda item: item[0])
+        return directory, metadata
+
+    def _outcome_response(self) -> dict[str, Any]:
+        selected = self._latest_outcome_snapshot()
+        if selected is None:
+            return {
+                "available": False,
+                "message": "No dedicated rollout-outcome snapshot is available.",
+            }
+        directory, metadata = selected
+        metadata_path = directory / "metadata.json"
+        generated_at = str(
+            metadata.get("generated_at")
+            or metadata.get("completed_at")
+            or self._iso_mtime(metadata_path)
+        )
+        current_manifest_hash = self._sha256(self.manifest_path)
+        snapshot_manifest_hash = metadata.get("manifest_sha256")
+        latest_annotation_update = self._latest_annotation_update()
+        stale = bool(
+            snapshot_manifest_hash
+            and snapshot_manifest_hash != current_manifest_hash
+        )
+        if latest_annotation_update and latest_annotation_update > generated_at:
+            stale = True
+        summary_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["summary"]
+        predictions_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
+        coverage_path = directory / "method_coverage.csv"
+        summary = self._read_csv(summary_path)
+        coverage = self._read_csv(coverage_path)
+        return {
+            "available": bool(summary),
+            "source": {
+                "directory": self._relative(directory),
+                "metadata": self._relative(metadata_path),
+                "generated_at": generated_at,
+                "selection_count": int(
+                    (metadata.get("counts") or {}).get("rollouts")
+                    or len(metadata.get("rollouts") or [])
+                    or 0
+                ),
+            },
+            "freshness": {
+                "stale": stale,
+                "manifest_matches": snapshot_manifest_hash == current_manifest_hash,
+                "snapshot_manifest_sha256": snapshot_manifest_hash,
+                "current_manifest_sha256": current_manifest_hash,
+                "latest_annotation_update": latest_annotation_update,
+            },
+            "summary": summary,
+            "predictions_available": predictions_path.is_file(),
+            "method_coverage": coverage,
+            "config": metadata.get("rollout_outcome_classification") or {},
         }
 
     def _latest_change_point_snapshot(self) -> tuple[Path, dict[str, Any]] | None:

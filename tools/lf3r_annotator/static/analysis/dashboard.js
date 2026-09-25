@@ -558,8 +558,11 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   }
   if (provenance) {
     var info = snapshot.rollout_outcome || {};
+    var outcomeSnapshot = snapshot.rollout_outcome_snapshot || {};
+    var outcomeSource = outcomeSnapshot.source || {};
     provenance.innerHTML = '<strong>Positive:</strong> clean + recovered success'
       + ' / <strong>negative:</strong> terminal failure'
+      + (outcomeSource.directory ? ' / <strong>snapshot:</strong> ' + escapeHtml(outcomeSource.directory) : '')
       + ' / <strong>threshold:</strong> ' + escapeHtml(threshold.toUpperCase()) + ' calibrated from same-cohort final-success terminal scores'
       + ' / <strong>uncertain:</strong> excluded from metrics'
       + ' / <strong>SAFE:</strong> handcrafted max-token-probability proxy, not a trained SAFE detector'

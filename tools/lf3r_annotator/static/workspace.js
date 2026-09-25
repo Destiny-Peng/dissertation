@@ -51,6 +51,7 @@
   // These modules have top-level initialization that expects either
   // workspaceState or the complete Runs controller graph.
   var postCoreScripts = [
+    "/static/analysis-outcome.js",
     "/static/analysis-robo-hop.js",
     "/static/runs/layout.js"
   ];
