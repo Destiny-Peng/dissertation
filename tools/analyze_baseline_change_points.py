@@ -48,6 +48,10 @@ from analyze_baseline_temporal_signals import (  # noqa: E402
     resolve_path,
     sha256,
     normalize_outcome,
+    compute_rollout_outcome_classification,
+    ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
+    ROLLOUT_OUTCOME_SIGNAL_NOTES,
+    ROLLOUT_OUTCOME_THRESHOLDS,
 )
 
 
@@ -1378,6 +1382,18 @@ def main() -> int:
             "source_run_count": len(source_metadata[method]["source_runs"]),
         })
 
+    rollout_outcome_summary, rollout_outcome_predictions = (
+        compute_rollout_outcome_classification(rollouts)
+    )
+    rollout_outcome_summary.to_csv(
+        output_dir / "rollout_outcome_summary.csv",
+        index=False,
+    )
+    rollout_outcome_predictions.to_csv(
+        output_dir / "rollout_outcome_predictions.csv",
+        index=False,
+    )
+
     event_rows: list[dict[str, Any]] = []
     summary_rows: list[dict[str, Any]] = []
     reference_rows: list[dict[str, Any]] = []
@@ -1651,6 +1667,8 @@ def main() -> int:
         "localization_summary_rows": len(summary_rows),
         "localization_failure_type_rows": len(by_failure_type_rows),
         "localization_threshold_rows": len(scale_rows),
+        "rollout_outcome_summary_rows": int(len(rollout_outcome_summary)),
+        "rollout_outcome_prediction_rows": int(len(rollout_outcome_predictions)),
     }
     metadata = {
         "schema_version": 1,
@@ -1693,6 +1711,19 @@ def main() -> int:
         "tolerances_frames": list(TOLERANCES),
         "frame_coordinate": "video_frame_index",
         "native_sampling_preserved": True,
+        "rollout_outcome_classification": {
+            "positive_class": "clean_success+recovered_success",
+            "negative_class": "terminal_failure",
+            "uncertain_policy": "excluded_from_metrics",
+            "primary_signals": ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
+            "signal_notes": ROLLOUT_OUTCOME_SIGNAL_NOTES,
+            "thresholds": list(ROLLOUT_OUTCOME_THRESHOLDS),
+            "default_threshold": "q95",
+            "threshold_calibration": "final_success_terminal_score_quantile",
+            "failure_oriented_score": "method_direction * terminal_native_value",
+            "summary_rows": int(len(rollout_outcome_summary)),
+            "prediction_rows": int(len(rollout_outcome_predictions)),
+        },
         "direction_used_after_detection": {
             "level": METHOD_SIGNAL_DIRECTIONS,
             "variance": "reported positive/negative only; no expected failure direction",
