@@ -13,6 +13,12 @@ ROLLOUT_OUTCOME_TABLE_FILES = {
     "summary": "rollout_outcome_summary.csv",
     "predictions": "rollout_outcome_predictions.csv",
 }
+ROLLOUT_OUTCOME_REQUIRED_FILES = (
+    "metadata.json",
+    "method_coverage.csv",
+    *ROLLOUT_OUTCOME_TABLE_FILES.values(),
+)
+
 
 ANALYSIS_LOCALIZATION_TABLE_FILES = {
     "summary": "localization_summary.csv",
