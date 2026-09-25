@@ -271,9 +271,7 @@ class AnalysisDetailsMixin:
         compact = copy.deepcopy(payload)
         compact["dashboard"] = True
         compact["default_scope"] = "libero_10"
-        compact["available_tabs"] = [
-            "overview", "comparison", "failures", "events", "signals", "archive"
-        ]
+        compact["available_tabs"] = ["outcome", "localization"]
         compact["artifact_links"] = self._artifact_links()
         compact["live"] = self._live_summary()
         detail_counts: dict[str, int] = {}
