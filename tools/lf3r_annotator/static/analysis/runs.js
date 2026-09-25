@@ -14,8 +14,28 @@ async function workspaceLoadAnalysis(force) {
   workspaceRenderSnapshot();
   try {
     var response = await fetch("/api/analysis", { cache: "no-store" });
-    var payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Could not load analysis snapshot");
+    var body = await response.text();
+    var payload = null;
+    if (body) {
+      try {
+        payload = JSON.parse(body);
+      } catch (parseError) {
+        throw new Error(
+          "HTTP " + response.status + " returned invalid JSON"
+            + (body ? ": " + body.slice(0, 240) : "")
+        );
+      }
+    }
+    if (!response.ok) {
+      throw new Error(
+        payload && payload.error
+          ? payload.error + (payload.error_type ? " [" + payload.error_type + "]" : "")
+          : "HTTP " + response.status + " while loading analysis snapshot"
+      );
+    }
+    if (!payload) {
+      throw new Error("Analysis endpoint returned an empty response");
+    }
     workspaceState.analysisSnapshot = payload.analysis || {
       available: false,
       message: "Empty analysis response"
