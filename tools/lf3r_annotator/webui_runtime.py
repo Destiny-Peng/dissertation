@@ -57,7 +57,12 @@ def main() -> None:
     args = _parse_args()
     project_root = args.project_root.resolve()
     manifest_paths = (
-        list(args.manifest_paths)
+        [
+            path.expanduser().resolve()
+            if path.expanduser().is_absolute()
+            else (project_root / path.expanduser()).resolve()
+            for path in args.manifest_paths
+        ]
         if args.manifest_paths is not None
         else discover_default_manifests(project_root)
     )
