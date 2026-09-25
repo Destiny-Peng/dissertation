@@ -523,43 +523,197 @@
     <div class="page-container analysis-page-container">
       <div class="page-heading">
         <div>
-          <p class="eyebrow">DATASET ANALYSIS</p>
-          <h2>Failure localization dashboard</h2>
-          <p class="page-subtitle">Conclusion-first view of the annotated LIBERO-10 set. Detailed rows, legacy
-            comparisons, and downloadable artifacts are available on demand.</p>
+          <p class="eyebrow">FAILURE ANALYSIS</p>
+          <h2>Outcome and failure-localization evaluation</h2>
+          <p class="page-subtitle">Two research questions only: whether existing signals identify the final rollout outcome, and whether failure onset can be localized.</p>
         </div>
-        <button id="analysisRefresh" class="ghost-button" type="button" data-analysis-legacy-global>Refresh analysis</button>
+        <button id="analysisRefresh" class="ghost-button" type="button">Refresh results</button>
       </div>
 
-      <div id="analysisStatus" class="analysis-status" role="status" data-analysis-legacy-global>Loading analysis...</div>
-
+      <div id="analysisStatus" class="analysis-status" role="status">Loading analysis...</div>
 
       <nav class="analysis-subtabs" aria-label="Analysis sections">
-        <a href="#/analysis/localization" data-analysis-tab="localization" class="active" aria-current="page">Localization Lab</a>
-        <a href="#/analysis/overview" data-analysis-tab="overview">Overview</a>
-        <a href="#/analysis/comparison" data-analysis-tab="comparison">Method comparison</a>
-        <a href="#/analysis/failures" data-analysis-tab="failures">Failure types</a>
-        <a href="#/analysis/events" data-analysis-tab="events">Event explorer</a>
-        <a href="#/analysis/signals" data-analysis-tab="signals">Signal shape</a>
-        <a href="#/analysis/archive" data-analysis-tab="archive">Archive &amp; downloads</a>
+        <a href="#/analysis/outcome" data-analysis-tab="outcome" class="active" aria-current="page">Outcome Evaluation</a>
+        <a href="#/analysis/localization" data-analysis-tab="localization">Failure Localization</a>
       </nav>
 
-      <section id="analysisTabLocalization" class="analysis-tab-panel" data-analysis-panel="localization">
+      <section id="analysisTabOutcome" class="analysis-tab-panel" data-analysis-panel="outcome">
+        <section class="analysis-card primary-analysis-card" aria-labelledby="analysisRolloutOutcomeTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">FINAL OUTCOME CLASSIFICATION</p>
+              <h3 id="analysisRolloutOutcomeTitle">Terminal signal vs rollout result</h3>
+            </div>
+            <span id="analysisRolloutOutcomeBadge" class="analysis-badge">Unavailable</span>
+          </div>
+          <p class="analysis-card-note">Positive = final success (clean or recovered). Negative = terminal failure. Uncertain rollouts are excluded. Thresholds are calibrated from final-success terminal scores; these metrics describe the selected cohort rather than a held-out classifier benchmark.</p>
+          <div class="analysis-filter-grid">
+            <label><span>Threshold</span>
+              <select id="analysisOutcomeThreshold">
+                <option value="q95" selected>Q95 (primary)</option>
+                <option value="q90">Q90</option>
+                <option value="q99">Q99</option>
+              </select>
+            </label>
+          </div>
+          <div id="analysisRolloutOutcomeTable" class="analysis-table-wrap"></div>
+          <div id="analysisRolloutOutcomeProvenance" class="analysis-provenance"></div>
+        </section>
+      </section>
+
+      <section id="analysisTabLocalization" class="analysis-tab-panel hidden" data-analysis-panel="localization">
+        <section class="analysis-card primary-analysis-card">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">FAILURE LOCALIZATION</p>
+              <h3>Rule-based and learned localization</h3>
+              <p class="analysis-card-note">Compare handcrafted rules with learned localization models while keeping the rule infrastructure reusable for ProcVLM, RynnValue, SAFE, or future signals.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="analysis-card changepoint-card primary-analysis-card"
+          aria-labelledby="analysisChangePointTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">RULE-BASED LOCALIZATION</p>
+              <h3 id="analysisChangePointTitle">Rule-based localization comparison</h3>
+            </div>
+            <span id="analysisChangePointBadge" class="analysis-badge">Unavailable</span>
+          </div>
+          <p id="analysisChangePointStatus" class="analysis-status">Default: Q95 threshold, local level feature,
+            16-frame scale, all observable events.</p>
+          <p class="analysis-card-note">Compare reusable handcrafted localization rules across available baseline signals. Method, signal, feature, scale, and threshold remain explicit so additional baselines can be added later.</p>
+          <div class="analysis-filter-grid changepoint-filter-grid">
+            <label><span>Method</span><select id="analysisChangePointMethod" data-analysis-changepoint-filter="method">
+                <option value="all">All methods</option>
+                <option value="safe">SAFE</option>
+                <option value="procvlm">ProcVLM</option>
+                <option value="rynnvalue">RynnValue</option>
+                <option value="robo_dopamine">Robo-Dopamine</option>
+              </select></label>
+            <label><span>Signal</span><select id="analysisChangePointSignal" data-analysis-changepoint-filter="signal">
+                <option value="all">All native signals</option>
+              </select></label>
+            <label><span>Local feature</span><select id="analysisChangePointFeature"
+                data-analysis-changepoint-filter="feature">
+                <option value="level" selected>Local level change</option>
+                <option value="variance">Local variance change</option>
+                <option value="slope">Local slope change</option>
+                <option value="all">All features</option>
+              </select></label>
+            <label><span>Scale</span><select id="analysisChangePointScale" data-analysis-changepoint-filter="scale">
+                <option value="16" selected>16 frames (default)</option>
+                <option value="all">All scales</option>
+              </select></label>
+            <label><span>Threshold</span><select id="analysisChangePointThreshold"
+                data-analysis-changepoint-filter="threshold">
+                <option value="q95" selected>Q95 (primary)</option>
+                <option value="q90">Q90</option>
+                <option value="q99">Q99</option>
+              </select></label>
+            <label><span>Outcome</span><select id="analysisChangePointOutcome"
+                data-analysis-changepoint-filter="outcome">
+                <option value="all">All events</option>
+                <option value="recovered_success">Recovered success</option>
+                <option value="terminal_failure">Terminal failure</option>
+                <option value="uncertain">Uncertain</option>
+              </select></label>
+            <label><span>Task</span><select id="analysisChangePointTask" data-analysis-changepoint-filter="task">
+                <option value="all">All tasks</option>
+              </select></label>
+          </div>
+          <div id="analysisChangePointProvenance" class="analysis-provenance"></div>
+          <div class="analysis-comparison-grid">
+            <div>
+              <h4>Recall and clean-success false alarm</h4>
+              <div id="analysisChangePointRecallChart" class="analysis-chart"></div>
+            </div>
+            <div>
+              <h4>Localization error and tolerance hits</h4>
+              <div id="analysisChangePointErrorChart" class="analysis-chart"></div>
+            </div>
+          </div>
+          <div class="analysis-card-subsection">
+            <h4>Selected metric rows</h4>
+            <div id="analysisChangePointComparison" class="analysis-table-wrap"></div>
+          </div>
+        </section>
+
+        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisHopTitle">
+          <summary class="analysis-run-summary">
+            <div>
+              <p class="eyebrow">RULE-BASED · ROBO-DOPAMINE</p>
+              <h3 id="analysisHopTitle">Fused-hop rule tuning</h3>
+              <small>Handcrafted rule sweep and localization</small>
+            </div>
+            <span id="analysisHopBadge" class="analysis-badge">Idle</span>
+          </summary>
+          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
+            <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
+            events use rollout-start detection latency. The detector is searched as
+            <strong>stagnation OR short/strong regression</strong>, with grasp-failure Recall@10/eventual as the
+            primary selection targets. No inference is rerun.</p>
+          <form id="analysisHopForm" class="analysis-run-form">
+            <div class="analysis-run-grid">
+              <label><span>Rollout scope</span>
+                <select id="analysisHopScope">
+                  <option value="libero_10" selected>LIBERO-10 (default)</option>
+                  <option value="all">All loaded rollouts</option>
+                  <option value="libero_spatial">LIBERO-Spatial</option>
+                  <option value="controlled_analysis">Controlled</option>
+                </select>
+              </label>
+              <label><span>Robo-Dopamine run</span>
+                <select id="analysisHopRun">
+                  <option value="">Loading compatible runs...</option>
+                </select>
+                <small class="analysis-run-field-help">Choose a completed Robo-Dopamine run with saved fused
+                  hop output for the selected rollout scope.</small>
+              </label>
+              <label><span>Output label</span>
+                <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+              </label>
+              <label><span>CPU limit</span>
+                <input id="analysisHopCpuLimit" type="number" value="4" min="1" max="16" step="1">
+                <small class="analysis-run-field-help">Maximum logical CPUs for this analysis process. Default: 4.</small>
+              </label>
+              <label><span>Generalization</span>
+                <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
+              </label>
+            </div>
+            <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
+              Robo-Dopamine runs.</p>
+            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run fused-hop analysis</button>
+          </form>
+          <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
+        </details>
+
+        <section class="analysis-card analysis-result-card" aria-labelledby="analysisHopResultsTitle">
+          <div class="analysis-card-heading">
+            <div>
+              <p class="eyebrow">RULE-BASED RESULTS</p>
+              <h3 id="analysisHopResultsTitle">Fused-hop localization results</h3>
+            </div>
+          </div>
+          <div id="analysisHopResults" class="analysis-table-wrap"></div>
+          <div id="analysisHopArtifacts" class="analysis-provenance"></div>
+        </section>
+
         <section class="analysis-card localization-lab-shell">
           <div class="analysis-card-heading">
             <div>
-              <p class="eyebrow">EXPERIMENT DESIGN</p>
-              <h3>Localization Lab</h3>
-              <p class="analysis-card-note">Build training experiments from a base preset, fixed parameters, sweeps, repeats, and optional sequential stages.</p>
+              <p class="eyebrow">LEARNED LOCALIZATION</p>
+              <h3>Learned localization model</h3>
+              <p class="analysis-card-note">Train and compare learned failure-localization models. The current implementation uses Robo-Dopamine signals with a BiLSTM head; the input source can be extended later without changing this page structure.</p>
             </div>
             <span id="localizationJobBadge" class="analysis-badge">Idle</span>
           </div>
 
           <nav class="analysis-subtabs localization-lab-tabs" aria-label="Localization Lab sections">
-            <button type="button" data-localization-tab="builder" class="active">Experiment Builder</button>
+            <button type="button" data-localization-tab="builder" class="active">Experiments</button>
             <button type="button" data-localization-tab="runs">Runs</button>
-            <button type="button" data-localization-tab="challenge">Challenge Set</button>
-            <button type="button" data-localization-tab="presets">Presets</button>
           </nav>
 
           <section data-localization-panel="builder">
@@ -823,343 +977,20 @@
             <div id="localizationPresetList" class="analysis-table-wrap"></div>
           </section>
         </section>
-      </section>
 
-      <section class="analysis-card analysis-filter-card" aria-labelledby="analysisFiltersTitle" data-analysis-legacy-global>
-        <div class="analysis-card-heading">
-          <div>
-            <p class="eyebrow">LIVE SCOPE</p>
-            <h3 id="analysisFiltersTitle">Current annotations</h3>
-          </div>
-          <button id="analysisResetFilters" class="ghost-button" type="button">Reset filters</button>
-        </div>
-        <div class="analysis-filter-grid">
-          <label><span>Partition</span>
-            <select id="analysisPartitionFilter" data-analysis-live-filter="partition">
-              <option value="libero_10" selected>LIBERO-10 (default)</option>
-              <option value="libero_spatial">LIBERO-Spatial</option>
-              <option value="controlled_analysis">Controlled</option>
-              <option value="all">All partitions</option>
-            </select>
-          </label>
-          <label><span>Task suite</span>
-            <select id="analysisSuiteFilter" data-analysis-live-filter="suite">
-              <option value="all">All suites</option>
-            </select>
-          </label>
-          <label><span>Task</span>
-            <select id="analysisTaskFilter" data-analysis-live-filter="task">
-              <option value="all">All tasks</option>
-            </select>
-          </label>
-          <label><span>Outcome</span>
-            <select id="analysisOutcomeFilter" data-analysis-live-filter="outcome">
-              <option value="all">All outcomes</option>
-              <option value="clean_success">Clean success</option>
-              <option value="recovered_success">Recovered success</option>
-              <option value="terminal_failure">Terminal failure</option>
-              <option value="uncertain">Uncertain</option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section id="analysisTabOverview" class="analysis-tab-panel" data-analysis-panel="overview">
-        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisRunTitle">
-          <summary class="analysis-run-summary">
-            <div>
-              <p class="eyebrow">TEMPORAL ANALYSIS RUNNER</p>
-              <h3 id="analysisRunTitle">Run temporal analysis</h3>
-              <small>Baseline-aligned temporal diagnostics</small>
-            </div>
-            <span id="analysisRunBadge" class="analysis-badge">Idle</span>
-          </summary>
-          <p class="analysis-run-help">Uses completed baseline outputs only; it does not start GPU inference. Choose a
-            run for each method and keep the default LIBERO-10 scope for a fair comparison.</p>
-          <p id="analysisEnvironmentStatus" class="analysis-run-selection" role="status">Checking the dedicated Analysis
-            environment...</p>
-          <form id="analysisRunForm" class="analysis-run-form">
-            <div class="analysis-run-grid">
-              <label><span>Rollout scope</span>
-                <select id="analysisRunScope">
-                  <option value="libero_10" selected>LIBERO-10 (default)</option>
-                  <option value="all">All loaded rollouts</option>
-                  <option value="libero_spatial">LIBERO-Spatial</option>
-                  <option value="controlled_analysis">Controlled</option>
-                </select>
-              </label>
-              <label data-analysis-run-label="safe"><span>SAFE run</span><select id="analysisRunSafe"
-                  data-analysis-run-method="safe">
-                  <option value="">Loading compatible runs...</option>
-                </select></label>
-              <label data-analysis-run-label="procvlm"><span>ProcVLM run</span><select id="analysisRunProcvlm"
-                  data-analysis-run-method="procvlm">
-                  <option value="">Loading compatible runs...</option>
-                </select></label>
-              <label data-analysis-run-label="rynnvalue"><span>RynnValue source run(s)</span><select
-                  id="analysisRunRynnvalue" data-analysis-run-method="rynnvalue" multiple size="5"
-                  aria-label="RynnValue source runs">
-                  <option value="">Loading compatible runs...</option>
-                </select><small class="analysis-run-field-help">Ctrl/Cmd-click to merge disjoint source runs by rollout
-                  ID.</small></label>
-              <label data-analysis-run-label="robo_dopamine"><span>Robo-Dopamine run</span><select
-                  id="analysisRunRoboDopamine" data-analysis-run-method="robo_dopamine">
-                  <option value="">Loading compatible runs...</option>
-                </select></label>
-            </div>
-            <p id="analysisRunSelection" class="analysis-run-selection">Select a scope to discover compatible completed
-              runs.</p>
-            <details class="analysis-run-advanced">
-              <summary>Advanced analysis parameters</summary>
-              <div class="analysis-run-advanced-grid">
-                <label><span>Pre-event window (frames)</span><input id="analysisPreWindow" type="number" min="1"
-                    step="1" value="60"></label>
-                <label><span>Post-event window (frames)</span><input id="analysisPostWindow" type="number" min="1"
-                    step="1" value="60"></label>
-                <label><span>Background stride (frames)</span><input id="analysisBackgroundStride" type="number" min="1"
-                    step="1" value="30"></label>
-                <label><span>Output label</span><input id="analysisOutputLabel" type="text" value="web_analysis"
-                    maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]*"></label>
-              </div>
-            </details>
-            <button id="analysisRunButton" class="save-button" type="submit" disabled>Run temporal analysis</button>
-          </form>
-          <pre id="analysisRunLog" class="job-log" aria-label="Latest temporal analysis log"></pre>
-          <div id="analysisRunJobs" class="persistent-job-list" aria-live="polite"
-            aria-label="Persistent temporal analysis jobs"></div>
-        </details>
-
-        <details class="analysis-card analysis-run-card analysis-run-disclosure" aria-labelledby="analysisHopTitle">
-          <summary class="analysis-run-summary">
-            <div>
-              <p class="eyebrow">ROBO-DOPAMINE FUSED HOP</p>
-              <h3 id="analysisHopTitle">Failure detection and ensemble analysis</h3>
-              <small>Sweep, ensemble, and offline localization</small>
-            </div>
-            <span id="analysisHopBadge" class="analysis-badge">Idle</span>
-          </summary>
-          <p class="analysis-run-help">CPU-only post-processing of saved Robo-Dopamine
-            <strong>fused hop</strong>. Event-annotated failures use onset localization; terminal failures without
-            events use rollout-start detection latency. The detector is searched as
-            <strong>stagnation OR short/strong regression</strong>, with grasp-failure Recall@10/eventual as the
-            primary selection targets. No inference is rerun.</p>
-          <form id="analysisHopForm" class="analysis-run-form">
-            <div class="analysis-run-grid">
-              <label><span>Rollout scope</span>
-                <select id="analysisHopScope">
-                  <option value="libero_10" selected>LIBERO-10 (default)</option>
-                  <option value="all">All loaded rollouts</option>
-                  <option value="libero_spatial">LIBERO-Spatial</option>
-                  <option value="controlled_analysis">Controlled</option>
-                </select>
-              </label>
-              <label><span>Robo-Dopamine run</span>
-                <select id="analysisHopRun">
-                  <option value="">Loading compatible runs...</option>
-                </select>
-                <small class="analysis-run-field-help">Choose a completed Robo-Dopamine run with saved fused
-                  hop output for the selected rollout scope.</small>
-              </label>
-              <label><span>Output label</span>
-                <input id="analysisHopOutputLabel" type="text" value="web_robo_hop" maxlength="64"
-                  pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
-              </label>
-              <label><span>CPU limit</span>
-                <input id="analysisHopCpuLimit" type="number" value="4" min="1" max="16" step="1">
-                <small class="analysis-run-field-help">Maximum logical CPUs for this analysis process. Default: 4.</small>
-              </label>
-              <label><span>Generalization</span>
-                <span><input id="analysisHopTaskCv" type="checkbox"> Also run leave-one-task-out CV</span>
-              </label>
-            </div>
-            <p id="analysisHopSelection" class="analysis-run-selection">Select a scope to discover compatible completed
-              Robo-Dopamine runs.</p>
-            <button id="analysisHopRunButton" class="save-button" type="submit" disabled>Run fused-hop analysis</button>
-          </form>
-          <pre id="analysisHopLog" class="job-log" aria-label="Latest fused-hop analysis log"></pre>
-        </details>
-
-        <section class="analysis-card analysis-result-card" aria-labelledby="analysisHopResultsTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">ROBO-DOPAMINE ANALYSIS RESULTS</p>
-              <h3 id="analysisHopResultsTitle">Latest fused-hop sweep snapshot</h3>
-            </div>
-          </div>
-          <div id="analysisHopResults" class="analysis-table-wrap"></div>
-          <div id="analysisHopArtifacts" class="analysis-provenance"></div>
-        </section>
-
-        <section id="analysisKpis" class="analysis-kpis" aria-label="Analysis summary"></section>
-        <section class="analysis-card primary-analysis-card" aria-labelledby="analysisConclusionTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">READ THIS FIRST</p>
-              <h3 id="analysisConclusionTitle">Current scope and conclusions</h3>
-            </div>
-          </div>
-          <div id="analysisTopConclusions" class="analysis-conclusions"></div>
-        </section>
-
-        <div class="analysis-grid analysis-grid-two">
-          <section class="analysis-card" aria-labelledby="analysisOutcomeTitle">
-            <div class="analysis-card-heading">
-              <div>
-                <p class="eyebrow">OUTCOMES</p>
-                <h3 id="analysisOutcomeTitle">Trajectory outcomes</h3>
-              </div>
-            </div>
-            <div id="analysisOutcomeChart" class="analysis-chart"></div>
-          </section>
-          <section class="analysis-card" aria-labelledby="analysisFailureTypeTitle">
-            <div class="analysis-card-heading">
-              <div>
-                <p class="eyebrow">EVENT TAXONOMY</p>
-                <h3 id="analysisFailureTypeTitle">Failure event types</h3>
-              </div>
-            </div>
-            <div id="analysisFailureTypeChart" class="analysis-chart"></div>
-          </section>
-        </div>
-        <div class="analysis-grid analysis-grid-two">
-          <section class="analysis-card" aria-labelledby="analysisTimingTitle">
-            <div class="analysis-card-heading">
-              <div>
-                <p class="eyebrow">TEMPORAL BOUNDARIES</p>
-                <h3 id="analysisTimingTitle">Onset and recovery timing</h3>
-              </div>
-            </div>
-            <div id="analysisTimingChart" class="analysis-chart"></div>
-          </section>
-          <section class="analysis-card" aria-labelledby="analysisTaskTitle">
-            <div class="analysis-card-heading">
-              <div>
-                <p class="eyebrow">TASK COMPARISON</p>
-                <h3 id="analysisTaskTitle">Outcome by task</h3>
-              </div>
-            </div>
-            <div id="analysisTaskChart" class="analysis-chart"></div>
-          </section>
-        </div>
-        <section class="analysis-card" aria-labelledby="analysisRolloutOutcomeTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">FINAL OUTCOME CLASSIFICATION</p>
-              <h3 id="analysisRolloutOutcomeTitle">Terminal signal vs rollout result</h3>
-            </div>
-            <span id="analysisRolloutOutcomeBadge" class="analysis-badge">Unavailable</span>
-          </div>
-          <p class="analysis-card-note">Failure is the positive class. Clean success and recovered success count as
-            final success; uncertain rollouts are excluded. Each method uses its primary terminal signal. The default
-            Q95 threshold is calibrated from final-success terminal scores in this same analysis cohort after orienting
-            each method so larger values mean more failure-like; the thresholded metrics are descriptive, not held-out
-            classification estimates.</p>
-          <div id="analysisRolloutOutcomeTable" class="analysis-table-wrap"></div>
-          <div id="analysisRolloutOutcomeProvenance" class="analysis-provenance"></div>
-        </section>
-
-        <section class="analysis-card" aria-labelledby="analysisCoverageTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">BASELINE COVERAGE</p>
-              <h3 id="analysisCoverageTitle">Available method outputs</h3>
-            </div>
-          </div>
-          <div id="analysisCoverageChart" class="analysis-chart"></div>
-          <div id="analysisOverviewProvenance" class="analysis-provenance"></div>
-        </section>
-      </section>
-
-      <section id="analysisTabComparison" class="analysis-tab-panel hidden" data-analysis-panel="comparison">
-        <section class="analysis-card changepoint-card primary-analysis-card"
-          aria-labelledby="analysisChangePointTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">METHOD COMPARISON</p>
-              <h3 id="analysisChangePointTitle">Failure localization at a glance</h3>
-            </div>
-            <span id="analysisChangePointBadge" class="analysis-badge">Unavailable</span>
-          </div>
-          <p id="analysisChangePointStatus" class="analysis-status">Default: Q95 threshold, local level feature,
-            16-frame scale, all observable events.</p>
-          <p class="analysis-card-note">Categorical labels are shortened for readability. Hover or focus a row for the
-            complete method, signal, feature, scale, and threshold metadata. Every native signal remains separate; no
-            best signal is selected.</p>
-          <div class="analysis-filter-grid changepoint-filter-grid">
-            <label><span>Method</span><select id="analysisChangePointMethod" data-analysis-changepoint-filter="method">
-                <option value="all">All methods</option>
-                <option value="safe">SAFE</option>
-                <option value="procvlm">ProcVLM</option>
-                <option value="rynnvalue">RynnValue</option>
-                <option value="robo_dopamine">Robo-Dopamine</option>
-              </select></label>
-            <label><span>Signal</span><select id="analysisChangePointSignal" data-analysis-changepoint-filter="signal">
-                <option value="all">All native signals</option>
-              </select></label>
-            <label><span>Local feature</span><select id="analysisChangePointFeature"
-                data-analysis-changepoint-filter="feature">
-                <option value="level" selected>Local level change</option>
-                <option value="variance">Local variance change</option>
-                <option value="slope">Local slope change</option>
-                <option value="all">All features</option>
-              </select></label>
-            <label><span>Scale</span><select id="analysisChangePointScale" data-analysis-changepoint-filter="scale">
-                <option value="16" selected>16 frames (default)</option>
-                <option value="all">All scales</option>
-              </select></label>
-            <label><span>Threshold</span><select id="analysisChangePointThreshold"
-                data-analysis-changepoint-filter="threshold">
-                <option value="q95" selected>Q95 (primary)</option>
-                <option value="q90">Q90</option>
-                <option value="q99">Q99</option>
-              </select></label>
-            <label><span>Outcome</span><select id="analysisChangePointOutcome"
-                data-analysis-changepoint-filter="outcome">
-                <option value="all">All events</option>
-                <option value="recovered_success">Recovered success</option>
-                <option value="terminal_failure">Terminal failure</option>
-                <option value="uncertain">Uncertain</option>
-              </select></label>
-            <label><span>Task</span><select id="analysisChangePointTask" data-analysis-changepoint-filter="task">
-                <option value="all">All tasks</option>
-              </select></label>
-          </div>
-          <div id="analysisChangePointProvenance" class="analysis-provenance"></div>
-          <div class="analysis-comparison-grid">
-            <div>
-              <h4>Recall and clean-success false alarm</h4>
-              <div id="analysisChangePointRecallChart" class="analysis-chart"></div>
-            </div>
-            <div>
-              <h4>Localization error and tolerance hits</h4>
-              <div id="analysisChangePointErrorChart" class="analysis-chart"></div>
-            </div>
-          </div>
-          <div class="analysis-card-subsection">
-            <h4>Selected metric rows</h4>
-            <div id="analysisChangePointComparison" class="analysis-table-wrap"></div>
-          </div>
-        </section>
-      </section>
-
-      <section id="analysisTabFailures" class="analysis-tab-panel hidden" data-analysis-panel="failures">
         <section class="analysis-card localization-card" aria-labelledby="analysisFailuresPageTitle">
           <div class="analysis-card-heading">
             <div>
-              <p class="eyebrow">FAILURE TYPES</p>
-              <h3 id="analysisFailuresPageTitle">Failure type x method / signal</h3>
+              <p class="eyebrow">FAILURE-TYPE EVALUATION</p>
+              <h3 id="analysisFailuresPageTitle">Rule-based performance by failure type</h3>
             </div>
             <span id="analysisLocalizationBadge" class="analysis-badge">Unavailable</span>
           </div>
-          <p id="analysisLocalizationStatus" class="analysis-status">Select one metric to compare failure types. Cells
-            show value and sample count.</p>
+          <p id="analysisLocalizationStatus" class="analysis-status">Compare localization recall or median localization error across annotated failure types.</p>
           <div class="analysis-filter-grid localization-filter-grid">
             <label><span>Metric</span><select id="analysisFailureMetric" data-analysis-failure-filter="metric">
                 <option value="recall">Recall</option>
-                <option value="false_alarm">False alarm</option>
-                <option value="f1">F1</option>
                 <option value="localization_error">Median localization error</option>
-                <option value="auroc">AUROC</option>
               </select></label>
             <label><span>Method</span><select id="analysisLocalizationMethod"
                 data-analysis-localization-filter="method">
@@ -1194,215 +1025,6 @@
           <div id="analysisChangePointFailureType" class="analysis-table-wrap analysis-heatmap-host"></div>
           <div id="analysisLocalizationFailureType" class="analysis-table-wrap hidden"></div>
         </section>
-      </section>
-
-      <section id="analysisTabEvents" class="analysis-tab-panel hidden" data-analysis-panel="events">
-        <section class="analysis-card" aria-labelledby="analysisEventsPageTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">EVENT EXPLORER</p>
-              <h3 id="analysisEventsPageTitle">Inspect event-level rows</h3>
-            </div>
-            <span id="analysisDetailsCount" class="analysis-badge">0 rows</span>
-          </div>
-          <p class="analysis-card-note">Rows are loaded from the selected snapshot on demand. Use Review for video
-            context; the dashboard never dumps the full CSV.</p>
-          <div class="analysis-filter-grid details-filter-grid">
-            <label><span>Dataset</span><select id="analysisDetailsKind" data-analysis-details-filter="kind">
-                <option value="changepoint_events">Change-point events</option>
-                <option value="localization_events">Localization events</option>
-                <option value="event_triggered_peaks">Event-triggered peaks</option>
-                <option value="legacy_anomalies">Legacy anomalies</option>
-              </select></label>
-            <label><span>Method</span><select id="analysisDetailsMethod" data-analysis-details-filter="method">
-                <option value="all">All methods</option>
-              </select></label>
-            <label><span>Signal</span><select id="analysisDetailsSignal" data-analysis-details-filter="signal">
-                <option value="all">All native signals</option>
-              </select></label>
-            <label><span>Feature</span><select id="analysisDetailsFeature" data-analysis-details-filter="feature">
-                <option value="all">All features</option>
-              </select></label>
-            <label><span>Scale</span><select id="analysisDetailsScale" data-analysis-details-filter="scale">
-                <option value="all">All scales</option>
-              </select></label>
-            <label><span>Threshold</span><select id="analysisDetailsThreshold" data-analysis-details-filter="threshold">
-                <option value="all">All thresholds</option>
-                <option value="q95">Q95</option>
-                <option value="q90">Q90</option>
-                <option value="q99">Q99</option>
-              </select></label>
-            <label><span>Outcome</span><select id="analysisDetailsOutcome" data-analysis-details-filter="outcome">
-                <option value="all">All outcomes</option>
-                <option value="recovered_success">Recovered success</option>
-                <option value="terminal_failure">Terminal failure</option>
-                <option value="uncertain">Uncertain</option>
-              </select></label>
-            <label><span>Failure type</span><select id="analysisDetailsFailureType"
-                data-analysis-details-filter="failure_type">
-                <option value="all">All failure types</option>
-              </select></label>
-            <label><span>Task</span><select id="analysisDetailsTask" data-analysis-details-filter="task">
-                <option value="all">All tasks</option>
-              </select></label>
-            <label><span>Sort</span><select id="analysisDetailsSort" data-analysis-details-filter="sort">
-                <option value="score">Event score</option>
-                <option value="localization_error">Localization error</option>
-                <option value="recall">Recall</option>
-                <option value="false_alarm">False alarm</option>
-                <option value="rollout">Rollout</option>
-                <option value="task">Task</option>
-              </select></label>
-          </div>
-          <div id="analysisDetailsStatus" class="analysis-status" role="status"></div>
-          <div id="analysisDetailsTable" class="analysis-table-wrap"></div>
-          <div class="page-navigation" aria-label="Event explorer pages">
-            <button id="analysisDetailsPrevious" class="ghost-button" type="button">Previous</button>
-            <span id="analysisDetailsPage">Page 1</span>
-            <button id="analysisDetailsNext" class="ghost-button" type="button">Next</button>
-          </div>
-          <div id="analysisChangePointEvents" class="hidden"></div>
-          <div id="analysisLocalizationEvents" class="hidden"></div>
-        </section>
-      </section>
-
-      <section id="analysisTabSignals" class="analysis-tab-panel hidden" data-analysis-panel="signals">
-        <section class="analysis-card event-triggered-card" aria-labelledby="analysisEventTriggeredTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">SIGNAL SHAPE</p>
-              <h3 id="analysisEventTriggeredTitle">Onset-aligned signal response</h3>
-            </div>
-            <span id="analysisEventTriggeredBadge" class="analysis-badge">Unavailable</span>
-          </div>
-          <p id="analysisEventTriggeredStatus" class="analysis-status">Choose one method, signal, and event group to
-            show a single compact curve.</p>
-          <p class="analysis-card-note">The x axis is relative frame -60 to +60. Lines show case/control medians, shaded
-            ranges show IQR, and the onset marker is fixed at zero. Native sample positions are retained; this is a
-            descriptive diagnostic.</p>
-          <div class="analysis-filter-grid event-triggered-filter-grid">
-            <label><span>Method</span><select id="analysisEventTriggeredMethod"
-                data-analysis-event-triggered-filter="method">
-                <option value="all">All methods</option>
-                <option value="safe">SAFE</option>
-                <option value="procvlm">ProcVLM</option>
-                <option value="rynnvalue">RynnValue</option>
-                <option value="robo_dopamine">Robo-Dopamine</option>
-              </select></label>
-            <label><span>Signal</span><select id="analysisEventTriggeredSignal"
-                data-analysis-event-triggered-filter="signal">
-                <option value="all">All native signals</option>
-              </select></label>
-            <label><span>Event group</span><select id="analysisEventTriggeredGroup"
-                data-analysis-event-triggered-filter="event_group">
-                <option value="terminal_failure">Terminal failure</option>
-                <option value="recovered_success">Recovered success</option>
-                <option value="uncertain">Uncertain</option>
-                <option value="all">All event groups</option>
-              </select></label>
-            <label><span>Change-score scale</span><select id="analysisEventTriggeredScale"
-                data-analysis-event-triggered-filter="scale">
-                <option value="all">All scales</option>
-              </select></label>
-          </div>
-          <div id="analysisEventTriggeredProvenance" class="analysis-provenance"></div>
-          <div class="analysis-grid analysis-grid-two event-triggered-chart-grid">
-            <div>
-              <h4>Case / control signal</h4>
-              <div id="analysisEventTriggeredSignalChart" class="analysis-chart"></div>
-            </div>
-            <div>
-              <h4>Local change score</h4>
-              <div id="analysisEventTriggeredChangeChart" class="analysis-chart"></div>
-            </div>
-          </div>
-          <div class="analysis-card-subsection">
-            <h4>Separation summary</h4>
-            <div id="analysisEventTriggeredSummary" class="analysis-table-wrap"></div>
-          </div>
-          <div class="analysis-card-subsection">
-            <h4>Peak events</h4>
-            <div id="analysisEventTriggeredPeaks" class="analysis-table-wrap"></div>
-          </div>
-        </section>
-      </section>
-
-      <section id="analysisTabArchive" class="analysis-tab-panel hidden" data-analysis-panel="archive">
-        <section class="analysis-card legacy-analysis-card" aria-labelledby="baselineSnapshotTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">ARCHIVE &amp; DOWNLOADS</p>
-              <h3 id="baselineSnapshotTitle" data-comparison-file="comparison_with_full_136_20260827.csv">Legacy
-                temporal comparison</h3>
-            </div>
-            <span id="analysisSnapshotBadge" class="analysis-badge">Loading</span>
-          </div>
-          <p class="analysis-card-note">Legacy outputs are comparison-only. They are collapsed by default so the page
-            stays readable; use the links below to download complete artifacts.</p>
-          <p id="analysisSnapshotStatus" class="analysis-status"></p>
-          <details class="analysis-legacy-details">
-            <summary>Show legacy summary charts</summary>
-            <div class="analysis-filter-grid snapshot-filter-grid">
-              <label><span>Method</span><select id="analysisSnapshotMethod" data-analysis-snapshot-filter="method">
-                  <option value="all">All methods</option>
-                  <option value="safe">SAFE</option>
-                  <option value="procvlm">ProcVLM</option>
-                  <option value="rynnvalue">RynnValue</option>
-                  <option value="robo_dopamine">Robo-Dopamine</option>
-                </select></label>
-              <label><span>Snapshot outcome</span><select id="analysisSnapshotOutcome"
-                  data-analysis-snapshot-filter="outcome">
-                  <option value="all">All snapshot outcomes</option>
-                  <option value="recovered_success">Recovered success</option>
-                  <option value="terminal_failure">Terminal failure</option>
-                  <option value="uncertain">Uncertain</option>
-                </select></label>
-              <label><span>Snapshot task</span><select id="analysisSnapshotTask" data-analysis-snapshot-filter="task">
-                  <option value="all">All tasks</option>
-                </select></label>
-            </div>
-            <div class="analysis-grid analysis-grid-two baseline-chart-grid">
-              <div>
-                <h4>Onset threshold / direction</h4>
-                <div id="analysisThresholdChart" class="analysis-chart"></div>
-              </div>
-              <div>
-                <h4>Largest normalized responses</h4>
-                <div id="analysisAnomalies" class="analysis-table-wrap"></div>
-              </div>
-            </div>
-            <div class="analysis-grid analysis-grid-three baseline-chart-grid">
-              <div>
-                <h4>Response magnitude</h4>
-                <div id="analysisResponseChart" class="analysis-chart"></div>
-              </div>
-              <div>
-                <h4>Post-event persistence</h4>
-                <div id="analysisPersistenceChart" class="analysis-chart"></div>
-              </div>
-              <div>
-                <h4>Recovery to baseline</h4>
-                <div id="analysisRecoveryChart" class="analysis-chart"></div>
-              </div>
-            </div>
-          </details>
-          <div id="analysisArchiveLinks" class="analysis-artifact-links"></div>
-          <div id="analysisProvenance" class="analysis-provenance"></div>
-        </section>
-
-        <section class="analysis-card localization-card legacy-analysis-card"
-          aria-labelledby="analysisLocalizationTitle">
-          <div class="analysis-card-heading">
-            <div>
-              <p class="eyebrow">COMPATIBILITY</p>
-              <h3 id="analysisLocalizationTitle">Legacy threshold diagnostics</h3>
-            </div>
-          </div>
-          <p class="analysis-card-note">The detailed localization view is now under Failure types and Event explorer.
-            This compatibility section remains for older links.</p>
-        </section>
-        <div id="analysisLocalizationRecallChart" class="hidden"></div>
-        <div id="analysisLocalizationErrorChart" class="hidden"></div>
       </section>
     </div>
   </main>
