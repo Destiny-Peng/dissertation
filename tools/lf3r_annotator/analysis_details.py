@@ -242,6 +242,7 @@ class AnalysisDetailsMixin:
 
     def _artifact_links(self) -> list[dict[str, Any]]:
         selected = [
+            ("rollout_outcome", self._latest_outcome_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
             ("event_triggered", self._latest_event_triggered_snapshot()),
             ("legacy", self._latest_snapshot()),
@@ -438,15 +439,19 @@ class AnalysisDetailsMixin:
         raise FileNotFoundError(name)
 
     def _full_response(self) -> dict[str, Any]:
+        outcome_snapshot = self._outcome_response()
         change_point = self._change_point_response()
         event_triggered = self._event_triggered_response()
         robo_hop = self._robo_hop_response()
+        dedicated_outcome_summary = outcome_snapshot.get("summary", [])
+        dedicated_outcome = outcome_snapshot.get("config", {})
         change_point_outcome_summary = change_point.get("rollout_outcome_summary", [])
         change_point_outcome = change_point.get("rollout_outcome", {})
         selected = self._latest_snapshot()
         if selected is None:
             has_analysis_artifact = bool(
-                change_point.get("available")
+                outcome_snapshot.get("available")
+                or change_point.get("available")
                 or event_triggered.get("available")
                 or robo_hop.get("available")
             )
@@ -469,12 +474,25 @@ class AnalysisDetailsMixin:
                 "summary_by_method_outcome": [],
                 "onset_signal_statistics": [],
                 "clean_background_summary": [],
-                "rollout_outcome_available": bool(change_point_outcome_summary),
-                "rollout_outcome_summary": change_point_outcome_summary,
-                "rollout_outcome_predictions_available": bool(
-                    change_point.get("rollout_outcome_predictions_available")
+                "rollout_outcome_available": bool(
+                    dedicated_outcome_summary or change_point_outcome_summary
                 ),
-                "rollout_outcome": change_point_outcome,
+                "rollout_outcome_summary": (
+                    dedicated_outcome_summary
+                    if dedicated_outcome_summary
+                    else change_point_outcome_summary
+                ),
+                "rollout_outcome_predictions_available": (
+                    bool(outcome_snapshot.get("predictions_available"))
+                    if dedicated_outcome_summary
+                    else bool(change_point.get("rollout_outcome_predictions_available"))
+                ),
+                "rollout_outcome": (
+                    dedicated_outcome
+                    if dedicated_outcome_summary
+                    else change_point_outcome
+                ),
+                "rollout_outcome_snapshot": outcome_snapshot,
                 "event_metrics": [],
                 "localization_available": bool(change_point.get("available")),
                 "localization_summary": change_point.get("localization_summary", []),
@@ -548,19 +566,31 @@ class AnalysisDetailsMixin:
             else []
         )
         rollout_outcome_summary = (
-            change_point_outcome_summary
-            if change_point_outcome_summary
-            else temporal_rollout_outcome_summary
+            dedicated_outcome_summary
+            if dedicated_outcome_summary
+            else (
+                change_point_outcome_summary
+                if change_point_outcome_summary
+                else temporal_rollout_outcome_summary
+            )
         )
         rollout_outcome_predictions_available = (
-            bool(change_point.get("rollout_outcome_predictions_available"))
-            if change_point_outcome_summary
-            else rollout_outcome_predictions_path.is_file()
+            bool(outcome_snapshot.get("predictions_available"))
+            if dedicated_outcome_summary
+            else (
+                bool(change_point.get("rollout_outcome_predictions_available"))
+                if change_point_outcome_summary
+                else rollout_outcome_predictions_path.is_file()
+            )
         )
         rollout_outcome_metadata = (
-            change_point_outcome
-            if change_point_outcome_summary
-            else (metadata.get("rollout_outcome_classification") or {})
+            dedicated_outcome
+            if dedicated_outcome_summary
+            else (
+                change_point_outcome
+                if change_point_outcome_summary
+                else (metadata.get("rollout_outcome_classification") or {})
+            )
         )
         localization_tables = {
             name: self._read_csv(directory / filename)
@@ -615,6 +645,7 @@ class AnalysisDetailsMixin:
             "rollout_outcome_summary": rollout_outcome_summary,
             "rollout_outcome_predictions_available": rollout_outcome_predictions_available,
             "rollout_outcome": rollout_outcome_metadata,
+            "rollout_outcome_snapshot": outcome_snapshot,
             "event_metrics": self._event_metrics(directory / "event_metrics.jsonl", manifest),
             "localization_available": localization_available,
             "localization_summary": localization_tables["summary"],
