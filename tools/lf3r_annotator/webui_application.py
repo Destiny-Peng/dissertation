@@ -226,13 +226,31 @@ class WebUIApplication(server.LF3RApplication):
     def load_rollouts(self) -> list[dict[str, Any]]:
         records = self._refresh_manifest_catalog()
         for record in records:
-            video_path = record.get("video_path")
-            if not isinstance(video_path, str) or not video_path:
+            camera_paths = record.get("camera_video_paths")
+            if not isinstance(camera_paths, dict) or not camera_paths:
                 raise server.ValidationError(
-                    "Manifest record has an invalid video_path: "
+                    "Manifest record has invalid camera_video_paths: "
                     + str(record.get("id"))
                 )
-            self.resolve_project_file(video_path, ".mp4")
+            resolved: set[Path] = set()
+            for camera, value in camera_paths.items():
+                if not isinstance(camera, str) or not camera.strip():
+                    raise server.ValidationError(
+                        "Manifest record has an invalid camera key: "
+                        + str(record.get("id"))
+                    )
+                if not isinstance(value, str) or not value.strip():
+                    raise server.ValidationError(
+                        "Manifest record has an invalid camera video path: "
+                        + str(record.get("id"))
+                    )
+                path = self.resolve_project_file(value, ".mp4")
+                if path in resolved:
+                    raise server.ValidationError(
+                        "Manifest record maps multiple camera keys to one file: "
+                        + str(record.get("id"))
+                    )
+                resolved.add(path)
         return records
 
 
