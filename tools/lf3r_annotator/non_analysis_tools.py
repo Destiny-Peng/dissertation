@@ -307,6 +307,7 @@ def rebuild_manifest_command(payload: dict[str, Any]) -> list[str]:
 
     for root in roots:
         command.extend(["--scan-root", str(root)])
+    command.append("--refresh-instruction-variants")
     return command
 
 
