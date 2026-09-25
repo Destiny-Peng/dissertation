@@ -443,6 +443,8 @@ class AnalysisDetailsMixin:
         change_point = self._change_point_response()
         event_triggered = self._event_triggered_response()
         robo_hop = self._robo_hop_response()
+        change_point_outcome_summary = change_point.get("rollout_outcome_summary", [])
+        change_point_outcome = change_point.get("rollout_outcome", {})
         selected = self._latest_snapshot()
         if selected is None:
             has_analysis_artifact = bool(
@@ -469,8 +471,12 @@ class AnalysisDetailsMixin:
                 "summary_by_method_outcome": [],
                 "onset_signal_statistics": [],
                 "clean_background_summary": [],
-                "rollout_outcome_available": False,
-                "rollout_outcome_summary": [],
+                "rollout_outcome_available": bool(change_point_outcome_summary),
+                "rollout_outcome_summary": change_point_outcome_summary,
+                "rollout_outcome_predictions_available": bool(
+                    change_point.get("rollout_outcome_predictions_available")
+                ),
+                "rollout_outcome": change_point_outcome,
                 "event_metrics": [],
                 "localization_available": bool(change_point.get("available")),
                 "localization_summary": change_point.get("localization_summary", []),
@@ -538,10 +544,25 @@ class AnalysisDetailsMixin:
         rollout_outcome_predictions_path = (
             directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
         )
-        rollout_outcome_summary = (
+        temporal_rollout_outcome_summary = (
             self._read_csv(rollout_outcome_summary_path)
             if rollout_outcome_summary_path.is_file()
             else []
+        )
+        rollout_outcome_summary = (
+            change_point_outcome_summary
+            if change_point_outcome_summary
+            else temporal_rollout_outcome_summary
+        )
+        rollout_outcome_predictions_available = (
+            bool(change_point.get("rollout_outcome_predictions_available"))
+            if change_point_outcome_summary
+            else rollout_outcome_predictions_path.is_file()
+        )
+        rollout_outcome_metadata = (
+            change_point_outcome
+            if change_point_outcome_summary
+            else (metadata.get("rollout_outcome_classification") or {})
         )
         localization_tables = {
             name: self._read_csv(directory / filename)
@@ -594,8 +615,8 @@ class AnalysisDetailsMixin:
             "clean_background_summary": tables["clean_background_summary"],
             "rollout_outcome_available": bool(rollout_outcome_summary),
             "rollout_outcome_summary": rollout_outcome_summary,
-            "rollout_outcome_predictions_available": rollout_outcome_predictions_path.is_file(),
-            "rollout_outcome": metadata.get("rollout_outcome_classification") or {},
+            "rollout_outcome_predictions_available": rollout_outcome_predictions_available,
+            "rollout_outcome": rollout_outcome_metadata,
             "event_metrics": self._event_metrics(directory / "event_metrics.jsonl", manifest),
             "localization_available": localization_available,
             "localization_summary": localization_tables["summary"],
