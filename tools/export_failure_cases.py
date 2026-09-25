@@ -7,11 +7,11 @@ rollout_id; evaluator filename suffixes such as succ0/succ1 are not used as
 human labels.
 
 The generated package contains:
-  manifest.jsonl       package-local manifest with rewritten video_path values
+  manifest.jsonl       package-local manifest with rewritten camera_video_paths
   selection.json       analyzer-compatible list of selected rollout IDs
   index.json           provenance and per-case file mapping
   annotations/         selected annotation JSON files
-  rollouts/<id>/       the matching video and same-stem sidecar files
+  rollouts/<id>/       the matching camera videos and same-stem sidecar files
 
 The source project is never modified. Existing output directories are never
 overwritten.
@@ -153,29 +153,51 @@ def load_cases(
         if dataset_role is not None and record.get("dataset_role") != dataset_role:
             continue
 
-        raw_video_path = record.get("video_path")
-        if not isinstance(raw_video_path, str) or not raw_video_path:
-            raise ExportError(f"Manifest record has no video_path: {rollout_id}")
-        video_path = project_path(raw_video_path)
-        if not video_path.is_file():
+        raw_camera_paths = record.get("camera_video_paths")
+        if not isinstance(raw_camera_paths, dict) or not raw_camera_paths:
             raise ExportError(
-                f"Video for {rollout_id} does not exist: {relative_project_path(video_path)}"
+                f"Manifest record has no camera_video_paths: {rollout_id}"
             )
+        camera_paths: dict[str, Path] = {}
+        seen_media: set[Path] = set()
+        for camera, value in raw_camera_paths.items():
+            if not isinstance(camera, str) or not camera.strip():
+                raise ExportError(f"Invalid camera key for {rollout_id}")
+            if not isinstance(value, str) or not value.strip():
+                raise ExportError(
+                    f"Manifest record has no path for camera {camera!r}: {rollout_id}"
+                )
+            video = project_path(value)
+            if not video.is_file():
+                raise ExportError(
+                    f"Camera video for {rollout_id} camera={camera} does not exist: "
+                    f"{relative_project_path(video)}"
+                )
+            if video in seen_media:
+                raise ExportError(
+                    f"Manifest record maps multiple cameras to one file: {rollout_id}"
+                )
+            seen_media.add(video)
+            camera_paths[camera] = video
 
         sidecars: list[Path] = []
-        for candidate in sorted(video_path.parent.glob(video_path.stem + ".*")):
-            if not candidate.is_file():
-                continue
-            resolved_candidate = candidate.resolve()
-            try:
-                resolved_candidate.relative_to(PROJECT_ROOT)
-            except ValueError as error:
-                raise ExportError(
-                    f"Sidecar points outside project root: {candidate}"
-                ) from error
-            sidecars.append(resolved_candidate)
-        if video_path.resolve() not in sidecars:
-            sidecars.insert(0, video_path.resolve())
+        seen_sidecars: set[Path] = set()
+        for video in camera_paths.values():
+            candidates = [video, *sorted(video.parent.glob(video.stem + ".*"))]
+            for candidate in candidates:
+                if not candidate.is_file():
+                    continue
+                resolved_candidate = candidate.resolve()
+                try:
+                    resolved_candidate.relative_to(PROJECT_ROOT)
+                except ValueError as error:
+                    raise ExportError(
+                        f"Sidecar points outside project root: {candidate}"
+                    ) from error
+                if resolved_candidate in seen_sidecars:
+                    continue
+                seen_sidecars.add(resolved_candidate)
+                sidecars.append(resolved_candidate)
 
         cases.append(
             {
@@ -183,14 +205,13 @@ def load_cases(
                 "annotation_path": annotation_path.resolve(),
                 "annotation": annotation,
                 "record": record,
-                "video_path": video_path.resolve(),
+                "camera_paths": camera_paths,
                 "sidecars": sidecars,
             }
         )
 
     cases.sort(key=lambda case: case["rollout_id"])
     return cases
-
 
 def json_write(path: Path, payload: Any) -> None:
     path.write_text(
@@ -205,23 +226,28 @@ def copy_case(case: dict[str, Any], package_root: Path) -> dict[str, Any]:
     case_root.mkdir(parents=True, exist_ok=False)
 
     copied_files: list[str] = []
-    shared_video: str | None = None
+    copied_by_source: dict[Path, str] = {}
     for source in case["sidecars"]:
         destination = case_root / source.name
         shutil.copy2(source, destination)
         relative_destination = destination.relative_to(package_root).as_posix()
         copied_files.append(relative_destination)
-        if source == case["video_path"]:
-            shared_video = relative_destination
+        copied_by_source[source.resolve()] = relative_destination
 
-    if shared_video is None:
-        raise ExportError(f"Selected video was not copied for {rollout_id}")
+    shared_cameras: dict[str, str] = {}
+    for camera, source in case["camera_paths"].items():
+        shared = copied_by_source.get(source.resolve())
+        if shared is None:
+            raise ExportError(
+                f"Selected camera video was not copied for {rollout_id}: {camera}"
+            )
+        shared_cameras[camera] = shared
 
     annotation_destination = package_root / "annotations" / f"{rollout_id}.json"
     shutil.copy2(case["annotation_path"], annotation_destination)
 
     manifest_record = dict(case["record"])
-    manifest_record["video_path"] = shared_video
+    manifest_record["camera_video_paths"] = shared_cameras
 
     return {
         "rollout_id": rollout_id,
@@ -234,13 +260,15 @@ def copy_case(case: dict[str, Any], package_root: Path) -> dict[str, Any]:
         "failure_type": case["annotation"].get("failure_type"),
         "failure_event_count": effective_event_count(case["annotation"]),
         "annotation": annotation_destination.relative_to(package_root).as_posix(),
-        "video": shared_video,
+        "camera_videos": shared_cameras,
         "files": copied_files,
         "source_annotation": relative_project_path(case["annotation_path"]),
-        "source_video": relative_project_path(case["video_path"]),
+        "source_camera_videos": {
+            camera: relative_project_path(path)
+            for camera, path in case["camera_paths"].items()
+        },
         "manifest_record": manifest_record,
     }
-
 
 def write_package(
     output_dir: Path,
@@ -319,10 +347,10 @@ def write_package(
             f"Selected rollouts: {len(index_rows)}\n"
             f"Selection criteria: {json.dumps(criteria, ensure_ascii=False)}\n\n"
             "Files:\n"
-            "- manifest.jsonl: package-local manifest; video_path values point into this package.\n"
+            "- manifest.jsonl: package-local manifest; camera_video_paths point into this package.\n"
             "- selection.json: selected rollout IDs in analyzer-compatible format.\n"
             "- annotations/<rollout-id>.json: human annotation records.\n"
-            "- rollouts/<rollout-id>/: rollout video and matching same-stem sidecar files.\n"
+            "- rollouts/<rollout-id>/: camera videos and matching same-stem sidecar files.\n"
             "- index.json: source-to-package provenance and per-case mapping.\n\n"
             "The package contains selected annotation/media files only. It does not "
             "include baseline model raw outputs.\n"
