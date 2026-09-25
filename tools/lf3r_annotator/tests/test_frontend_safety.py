@@ -247,6 +247,8 @@ class FrontendSafetyContractTest(unittest.TestCase):
         self.assertIn('"cam_high"', views)
         self.assertIn('"cam_wrist"', views)
         self.assertIn('camera=" + encodeURIComponent(viewKey)', views)
+        self.assertNotIn('{ key: "main"', views)
+        self.assertIn("views[0].key", views)
         self.assertIn("state.currentFrame", views)
         self.assertIn('video.addEventListener("loadedmetadata"', views)
         self.assertIn("LF3RReviewVideoViews.applyRecord(record)", catalog)
