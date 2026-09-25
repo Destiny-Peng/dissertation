@@ -569,7 +569,13 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
 
     def test_manifest_support_reuses_initial_rollout_metadata(self) -> None:
+        application = (TOOL_ROOT / "webui_application.py").read_text(encoding="utf-8")
         manifest = (STATIC_ROOT / "manifest-support.js").read_text(encoding="utf-8")
+        catalog = (STATIC_ROOT / "annotate" / "catalog.js").read_text(encoding="utf-8")
+        self.assertNotIn("primary_manifest_path", application)
+        self.assertNotIn("manifest_primary", application)
+        self.assertNotIn("manifest_primary", manifest)
+        self.assertNotIn("manifest_primary", catalog)
         self.assertIn("window.lf3rInitialRolloutsPromise", manifest)
         self.assertIn("Array.isArray(state.manifests)", manifest)
         self.assertIn("if (!manifests.length)", manifest)
