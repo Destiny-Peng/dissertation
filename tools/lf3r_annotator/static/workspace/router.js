@@ -83,9 +83,9 @@ function workspaceRenderRoute() {
   } else if (route.view === "analysis") {
     workspaceRenderAnalysisTabs(route.analysisTab);
     workspaceLoadAnalysis(false);
+    workspaceLoadAnalysisEnvironment();
     if (route.analysisTab === "localization") {
       if (typeof window.localizationLabRefresh === "function") window.localizationLabRefresh();
-      workspaceLoadAnalysisEnvironment();
     }
   } else if (route.view === "settings") {
     workspaceLoadSettings();
