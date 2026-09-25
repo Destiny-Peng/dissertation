@@ -530,8 +530,15 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
     };
   }
 
+  var coverageRows = (
+    snapshot
+    && snapshot.rollout_outcome_snapshot
+    && Array.isArray(snapshot.rollout_outcome_snapshot.method_coverage)
+  ) ? snapshot.rollout_outcome_snapshot.method_coverage : [];
+  var coverageByMethod = {};
+  coverageRows.forEach(function (row) { coverageByMethod[row.method] = row; });
   var html = '<table class="analysis-table analysis-summary-table" aria-label="Final rollout outcome classification">'
-    + '<thead><tr><th>Method / signal</th><th>N</th><th>Accuracy</th><th>Success recall</th>'
+    + '<thead><tr><th>Method / signal</th><th>N</th><th>Coverage</th><th>Accuracy</th><th>Success recall</th>'
     + '<th>Failure recall</th><th>Precision</th><th>F1</th><th>AUROC</th></tr></thead><tbody>';
   rows.forEach(function (row) {
     var metrics = successPositiveMetrics(row);
@@ -544,6 +551,13 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + " | " + rule;
     html += '<tr title="' + escapeHtml(rowTitle) + '"><th scope="row">' + escapeHtml(method) + '</th>'
       + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
+      + '<td class="numeric">' + (function () {
+          var coverage = coverageByMethod[row.method] || {};
+          var available = Number(coverage.available_rollouts);
+          var population = Number(coverage.evaluation_population);
+          if (!Number.isFinite(available) || !Number.isFinite(population) || population <= 0) return "n/a";
+          return escapeHtml(String(available) + "/" + String(population));
+        })() + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.accuracy)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.successRecall)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.failureRecall)) + '</td>'
