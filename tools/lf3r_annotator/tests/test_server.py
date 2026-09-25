@@ -1195,6 +1195,13 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(coverage["safe"]["available_rollouts"], 1)
         self.assertEqual(coverage["robo_dopamine"]["available_rollouts"], 1)
 
+        with self.request("/api/analysis/outcome-coverage?scope=libero_10") as response:
+            public_coverage = json.load(response)
+        self.assertEqual(public_coverage["evaluation_population"], 1)
+        self.assertNotIn("source_maps", public_coverage)
+        public_rows = {row["method"]: row for row in public_coverage["coverage"]}
+        self.assertEqual(public_rows["safe"]["available_rollouts"], 1)
+
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()
 
