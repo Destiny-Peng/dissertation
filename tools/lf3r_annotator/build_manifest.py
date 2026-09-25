@@ -328,6 +328,12 @@ def main() -> None:
             item["id"],
         )
     )
+    if not records:
+        roots_text = ", ".join(str(path) for path in scan_roots)
+        raise RuntimeError(
+            "No rollout records discovered; refusing to overwrite the manifest. "
+            "Check the scan roots and rollout provenance. Scan roots: " + roots_text
+        )
     manifest_text = "".join(
         json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records
     )
