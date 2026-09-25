@@ -10,23 +10,7 @@ function workspaceInstallEvents() {
       event.returnValue = "";
     }
   });
-  byId("analysisRefresh").addEventListener("click", function () { workspaceLoadAnalysis(true); });
-  byId("analysisResetFilters").addEventListener("click", function () {
-    workspaceState.liveFilters = Object.assign({}, ANALYSIS_DEFAULT_LIVE_FILTERS);
-    workspaceState.localizationFilters = {
-      method: "all", signal: "all", threshold: "q95", outcome: "all", task: "all"
-    };
-    workspaceState.changePointFilters = {
-      method: "all", signal: "all", feature: "level", scale: "16", threshold: "q95", outcome: "all", task: "all"
-    };
-    workspaceState.eventTriggeredFilters = {
-      method: "all", signal: "all", event_group: "terminal_failure", scale: "all"
-    };
-    workspaceState.analysisDashboardRows = null;
-    workspaceState.analysisSignalRows = null;
-    workspaceRenderLiveAnalysis();
-    workspaceRenderSnapshot();
-  });
+  if (byId("analysisRefresh")) byId("analysisRefresh").addEventListener("click", function () { workspaceLoadAnalysis(true); });
   byId("analysisView").addEventListener("change", function (event) {
     if (event.target.id === "analysisRunScope") {
       workspaceState.analysisRunScope = event.target.value;
@@ -88,7 +72,7 @@ function workspaceInstallEvents() {
       window.location.hash = "#/review/" + encodeURIComponent(rolloutButton.dataset.analysisRollout);
     }
   });
-  byId("analysisRunForm").addEventListener("submit", workspaceStartAnalysisRun);
+  if (byId("analysisRunForm")) byId("analysisRunForm").addEventListener("submit", workspaceStartAnalysisRun);
   byId("settingsForm").addEventListener("input", workspaceHandleSettingsInput);
   byId("settingsForm").addEventListener("change", workspaceHandleSettingsInput);
   byId("settingsForm").addEventListener("submit", workspaceSaveSettings);
@@ -103,6 +87,10 @@ function workspaceInstallAnalysisDashboardEvents() {
   var view = byId("analysisView");
   if (!view) return;
   view.addEventListener("change", function (event) {
+    if (event.target.id === "analysisOutcomeThreshold") {
+      workspaceDashboardRenderRolloutOutcome(workspaceState.analysisSnapshot);
+      return;
+    }
     var failureField = event.target.dataset.analysisFailureFilter;
     if (failureField === "metric") {
       workspaceState.analysisFailureMetric = event.target.value;
@@ -140,13 +128,13 @@ function workspaceInstallAnalysisDashboardEvents() {
       if (workspaceState.analysisTab === "events") workspaceLoadAnalysisDetails();
     }
   });
-  byId("analysisDetailsPrevious").addEventListener("click", function () {
+  if (byId("analysisDetailsPrevious")) byId("analysisDetailsPrevious").addEventListener("click", function () {
     if (workspaceState.analysisDetails.page > 1) {
       workspaceState.analysisDetails.page -= 1;
       workspaceLoadAnalysisDetails();
     }
   });
-  byId("analysisDetailsNext").addEventListener("click", function () {
+  if (byId("analysisDetailsNext")) byId("analysisDetailsNext").addEventListener("click", function () {
     var payload = workspaceState.analysisDetails.payload;
     if (payload && workspaceState.analysisDetails.page < payload.page_count) {
       workspaceState.analysisDetails.page += 1;
