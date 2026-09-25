@@ -6,13 +6,13 @@
     "subtask_b"
   ],
   "existing_baseline_outputs_untouched": true,
-  "generated_at": "2026-09-08T04:12:28.602189+00:00",
+  "generated_at": "2026-09-25T08:24:01.820817+00:00",
   "output_directory": "tools/lf3r_annotator/instruction_variants/libero_10_v1",
   "output_namespace": "outputs/baselines/instruction_variants/libero_10",
   "schema_version": 1,
   "source_files_untouched": true,
   "source_manifest": "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
-  "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
+  "source_manifest_sha256": "ed125580a04d8570f5c06f40a57e7cba7024d060a0a221c4a1cd885f92264025",
   "source_selection": {
     "analysis_partition": "natural_observation",
     "dataset_role": "libero_10",

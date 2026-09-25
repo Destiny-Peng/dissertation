@@ -1,5 +1,5 @@
 {
-  "compatible_rollouts": 115,
+  "compatible_rollouts": 417,
   "compatible_tasks": [
     0,
     1,
@@ -12,12 +12,12 @@
     9
   ],
   "condition_counts": {
-    "full_instruction": 125,
-    "subtask_a": 115,
-    "subtask_b": 115
+    "full_instruction": 477,
+    "subtask_a": 417,
+    "subtask_b": 417
   },
-  "generated_at": "2026-09-08T04:12:28.602189+00:00",
-  "generated_rows": 355,
+  "generated_at": "2026-09-25T08:24:01.820817+00:00",
+  "generated_rows": 1311,
   "incompatible_tasks": [
     5
   ],
@@ -26,20 +26,20 @@
   "schema_version": 1,
   "source_excluded_ids": [],
   "source_excluded_libero10_rows": 0,
-  "source_libero10_rows": 125,
+  "source_libero10_rows": 477,
   "source_manifest": "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
-  "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
-  "source_manifest_total_rows": 166,
-  "source_rollouts": 125,
-  "source_selected_rows": 125,
+  "source_manifest_sha256": "ed125580a04d8570f5c06f40a57e7cba7024d060a0a221c4a1cd885f92264025",
+  "source_manifest_total_rows": 518,
+  "source_rollouts": 477,
+  "source_selected_rows": 477,
   "task_row_counts": {
-    "0": 48,
-    "1": 48,
-    "2": 48,
-    "3": 48,
-    "4": 33,
-    "5": 10,
-    "6": 30,
+    "0": 201,
+    "1": 201,
+    "2": 198,
+    "3": 198,
+    "4": 183,
+    "5": 60,
+    "6": 180,
     "7": 30,
     "8": 30,
     "9": 30

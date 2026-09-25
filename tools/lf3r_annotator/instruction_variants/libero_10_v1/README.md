@@ -7,7 +7,7 @@ videos, frame sidecars, annotations, or existing baseline outputs.
 The source selection is task_suite=libero_10, dataset_role=libero_10,
 and analysis_partition=natural_observation. The source manifest hash is:
 
-    e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980
+    ed125580a04d8570f5c06f40a57e7cba7024d060a0a221c4a1cd885f92264025
 
 The generated manifest contains one full_instruction row for every selected
 rollout. Tasks 0-4 and 6-9 are compatible with two independent atomic goals,

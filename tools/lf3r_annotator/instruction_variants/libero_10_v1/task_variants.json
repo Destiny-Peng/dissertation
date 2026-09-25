@@ -4,7 +4,7 @@
   "output_namespace": "outputs/baselines/instruction_variants/libero_10",
   "schema_version": 1,
   "source_manifest": "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
-  "source_manifest_sha256": "e57cf4710ecb3c824dd93de6c5955c8cf1b242efc2d4606059acf7f7bc3e6980",
+  "source_manifest_sha256": "ed125580a04d8570f5c06f40a57e7cba7024d060a0a221c4a1cd885f92264025",
   "tasks": {
     "0": {
       "auxiliary_goal_atoms": [],
