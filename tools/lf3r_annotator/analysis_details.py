@@ -249,9 +249,6 @@ class AnalysisDetailsMixin:
         selected = [
             ("rollout_outcome", self._latest_outcome_snapshot()),
             ("change_point", self._latest_change_point_snapshot()),
-            ("event_triggered", self._latest_event_triggered_snapshot()),
-            ("legacy", self._latest_snapshot()),
-            ("robo_incremental_hop", self._latest_robo_hop_snapshot()),
         ]
         links: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -444,250 +441,127 @@ class AnalysisDetailsMixin:
         raise FileNotFoundError(name)
 
     def _full_response(self) -> dict[str, Any]:
+        """Return only the analysis families still exposed by the current UI.
+
+        Outcome Evaluation uses its dedicated snapshot. Rule-based failure
+        localization uses the latest change-point snapshot. Learned
+        localization and Robo-Dopamine fused-hop already have dedicated API
+        endpoints, so legacy temporal/event-triggered snapshots are deliberately
+        not loaded here.
+        """
         outcome_snapshot = self._outcome_response()
         change_point = self._change_point_response()
-        event_triggered = self._event_triggered_response()
-        robo_hop = self._robo_hop_response()
+
         dedicated_outcome_summary = outcome_snapshot.get("summary", [])
-        dedicated_outcome = outcome_snapshot.get("config", {})
-        change_point_outcome_summary = change_point.get("rollout_outcome_summary", [])
-        change_point_outcome = change_point.get("rollout_outcome", {})
-        selected = self._latest_snapshot()
-        if selected is None:
-            has_analysis_artifact = bool(
-                outcome_snapshot.get("available")
-                or change_point.get("available")
-                or event_triggered.get("available")
-                or robo_hop.get("available")
-            )
-            return {
-                "available": has_analysis_artifact,
-                "temporal_available": False,
-                "message": (
-                    None
-                    if has_analysis_artifact
-                    else "No complete baseline analysis snapshot found under outputs/baseline_signal_analysis."
-                ),
-                "source": None,
-                "freshness": {},
-                "parameters": {},
-                "methods": list(ANALYSIS_BASELINE_METHODS),
-                "orientation": {},
-                "signal_units": {},
-                "method_coverage": [],
-                "summary_by_method_signal_outcome": [],
-                "summary_by_method_outcome": [],
-                "onset_signal_statistics": [],
-                "clean_background_summary": [],
-                "rollout_outcome_available": bool(
-                    dedicated_outcome_summary or change_point_outcome_summary
-                ),
-                "rollout_outcome_summary": (
-                    dedicated_outcome_summary
-                    if dedicated_outcome_summary
-                    else change_point_outcome_summary
-                ),
-                "rollout_outcome_predictions_available": (
-                    bool(outcome_snapshot.get("predictions_available"))
-                    if dedicated_outcome_summary
-                    else bool(change_point.get("rollout_outcome_predictions_available"))
-                ),
-                "rollout_outcome": (
-                    dedicated_outcome
-                    if dedicated_outcome_summary
-                    else change_point_outcome
-                ),
-                "rollout_outcome_snapshot": outcome_snapshot,
-                "event_metrics": [],
-                "localization_available": bool(change_point.get("available")),
-                "localization_summary": change_point.get("localization_summary", []),
-                "localization_thresholds": change_point.get("localization_thresholds", []),
-                "localization_by_failure_type": change_point.get("localization_by_failure_type", []),
-                "localization_event_metrics": change_point.get("localization_event_metrics", []),
-                "localization": change_point.get("localization", {
-                    "available": False,
-                    "summary": [],
-                    "thresholds": [],
-                    "by_failure_type": [],
-                    "event_metrics": [],
-                }),
-                "change_point_available": bool(change_point.get("available")),
-                "change_point": change_point,
-                "event_triggered_available": bool(event_triggered.get("available")),
-                "event_triggered": event_triggered,
-                "robo_hop_available": bool(robo_hop.get("available")),
-                "robo_hop": robo_hop,
-                "robo_incremental_hop_available": bool(robo_hop.get("available")),
-                "robo_incremental_hop": robo_hop,
-                "primary_analysis_type": (
-                    "change_point"
-                    if change_point.get("available")
-                    else ("event_triggered" if event_triggered.get("available") else None)
-                ),
-                "primary_analysis_source": (
-                    change_point.get("source")
-                    if change_point.get("available")
-                    else (event_triggered.get("source") if event_triggered.get("available") else None)
-                ),
-                "legacy_temporal_available": False,
-            }
-        directory, metadata = selected
-        manifest = self._manifest()
-        metadata_path = directory / "metadata.json"
-        generated_at = str(
-            metadata.get("generated_at")
-            or metadata.get("completed_at")
-            or self._iso_mtime(metadata_path)
-        )
-        current_manifest_hash = self._sha256(self.manifest_path)
-        snapshot_manifest_hash = metadata.get("manifest_sha256")
-        snapshot_rollout_count = int(
-            (metadata.get("counts") or {}).get("rollouts")
-            or len(metadata.get("rollouts") or [])
-            or 0
-        )
-        latest_annotation_update = self._latest_annotation_update()
-        selection_path = None
-        if metadata.get("selection"):
-            selection_path = Path(str(metadata["selection"]))
-            if not selection_path.is_absolute():
-                selection_path = self.project_root / selection_path
-        stale = bool(snapshot_manifest_hash and snapshot_manifest_hash != current_manifest_hash)
-        if latest_annotation_update and latest_annotation_update > generated_at:
-            stale = True
-        tables = {
-            name: self._read_csv(directory / filename)
-            for name, filename in ANALYSIS_TABLE_FILES.items()
-        }
-        rollout_outcome_summary_path = (
-            directory / ROLLOUT_OUTCOME_TABLE_FILES["summary"]
-        )
-        rollout_outcome_predictions_path = (
-            directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
-        )
-        temporal_rollout_outcome_summary = (
-            self._read_csv(rollout_outcome_summary_path)
-            if rollout_outcome_summary_path.is_file()
-            else []
+        change_point_outcome_summary = change_point.get(
+            "rollout_outcome_summary", []
         )
         rollout_outcome_summary = (
             dedicated_outcome_summary
             if dedicated_outcome_summary
-            else (
-                change_point_outcome_summary
-                if change_point_outcome_summary
-                else temporal_rollout_outcome_summary
-            )
+            else change_point_outcome_summary
+        )
+        rollout_outcome_metadata = (
+            outcome_snapshot.get("config", {})
+            if dedicated_outcome_summary
+            else change_point.get("rollout_outcome", {})
         )
         rollout_outcome_predictions_available = (
             bool(outcome_snapshot.get("predictions_available"))
             if dedicated_outcome_summary
-            else (
-                bool(change_point.get("rollout_outcome_predictions_available"))
-                if change_point_outcome_summary
-                else rollout_outcome_predictions_path.is_file()
-            )
+            else bool(change_point.get("rollout_outcome_predictions_available"))
         )
-        rollout_outcome_metadata = (
-            dedicated_outcome
-            if dedicated_outcome_summary
-            else (
-                change_point_outcome
-                if change_point_outcome_summary
-                else (metadata.get("rollout_outcome_classification") or {})
-            )
+
+        localization = change_point.get("localization")
+        if not isinstance(localization, dict):
+            localization = {
+                "available": False,
+                "summary": [],
+                "thresholds": [],
+                "by_failure_type": [],
+                "event_metrics": [],
+            }
+
+        has_analysis_artifact = bool(
+            outcome_snapshot.get("available")
+            or change_point.get("available")
         )
-        localization_tables = {
-            name: self._read_csv(directory / filename)
-            if (directory / filename).is_file()
-            else []
-            for name, filename in ANALYSIS_LOCALIZATION_TABLE_FILES.items()
-        }
-        localization_events = self._localization_event_metrics(
-            directory / "localization_event_metrics.jsonl",
-            manifest,
+        primary_source = (
+            change_point.get("source")
+            if change_point.get("available")
+            else outcome_snapshot.get("source")
         )
-        localization_available = bool(
-            localization_events
-            or localization_tables["summary"]
-            or localization_tables["thresholds"]
+        primary_freshness = (
+            change_point.get("freshness")
+            if change_point.get("available")
+            else outcome_snapshot.get("freshness")
         )
+
         return {
-            "available": True,
-            "temporal_available": True,
-            "source": {
-                "directory": self._relative(directory),
-                "metadata": self._relative(metadata_path),
-                "generated_at": generated_at,
-                "selection": self._relative(selection_path) if selection_path else None,
-                "selection_count": snapshot_rollout_count,
-            },
-            "freshness": {
-                "stale": stale,
-                "manifest_matches": snapshot_manifest_hash == current_manifest_hash,
-                "snapshot_manifest_sha256": snapshot_manifest_hash,
-                "current_manifest_sha256": current_manifest_hash,
-                "snapshot_rollout_count": snapshot_rollout_count,
-                "current_rollout_count": len(manifest),
-                "latest_annotation_update": latest_annotation_update,
-            },
-            "parameters": {
-                "pre_window_frames": metadata.get("pre_window_frames"),
-                "post_window_frames": metadata.get("post_window_frames"),
-                "background_stride_frames": metadata.get("background_stride_frames"),
-                "frame_coordinate": metadata.get("frame_coordinate"),
-                "native_sampling_preserved": metadata.get("native_sampling_preserved"),
-            },
-            "methods": metadata.get("methods") or list(ANALYSIS_BASELINE_METHODS),
-            "orientation": metadata.get("orientation") or {},
-            "signal_units": metadata.get("signal_units") or {},
-            "method_coverage": tables["method_coverage"],
-            "summary_by_method_signal_outcome": tables["summary_by_method_signal_outcome"],
-            "summary_by_method_outcome": tables["summary_by_method_outcome"],
-            "onset_signal_statistics": tables["onset_signal_statistics"],
-            "clean_background_summary": tables["clean_background_summary"],
+            "available": has_analysis_artifact,
+            "temporal_available": False,
+            "legacy_temporal_available": False,
+            "message": (
+                None
+                if has_analysis_artifact
+                else "No current outcome or change-point analysis snapshot is available."
+            ),
+            "source": primary_source,
+            "freshness": primary_freshness or {},
+            "parameters": change_point.get("parameters", {}),
+            "methods": list(ANALYSIS_BASELINE_METHODS),
+            "orientation": {},
+            "signal_units": {},
+            "method_coverage": change_point.get("method_coverage", []),
+            "summary_by_method_signal_outcome": [],
+            "summary_by_method_outcome": [],
+            "onset_signal_statistics": [],
+            "clean_background_summary": [],
+            "event_metrics": [],
             "rollout_outcome_available": bool(rollout_outcome_summary),
             "rollout_outcome_summary": rollout_outcome_summary,
-            "rollout_outcome_predictions_available": rollout_outcome_predictions_available,
+            "rollout_outcome_predictions_available": (
+                rollout_outcome_predictions_available
+            ),
             "rollout_outcome": rollout_outcome_metadata,
             "rollout_outcome_snapshot": outcome_snapshot,
-            "event_metrics": self._event_metrics(directory / "event_metrics.jsonl", manifest),
-            "localization_available": localization_available,
-            "localization_summary": localization_tables["summary"],
-            "localization_thresholds": localization_tables["thresholds"],
-            "localization_by_failure_type": localization_tables["by_failure_type"],
-            "localization_event_metrics": localization_events,
-            "localization": {
-                "available": localization_available,
-                "summary": localization_tables["summary"],
-                "thresholds": localization_tables["thresholds"],
-                "by_failure_type": localization_tables["by_failure_type"],
-                "event_metrics": localization_events,
-            },
+            "localization_available": bool(localization.get("available")),
+            "localization_summary": localization.get("summary", []),
+            "localization_thresholds": localization.get("thresholds", []),
+            "localization_by_failure_type": localization.get(
+                "by_failure_type", []
+            ),
+            "localization_event_metrics": localization.get(
+                "event_metrics", []
+            ),
+            "localization": localization,
             "change_point_available": bool(change_point.get("available")),
             "change_point": change_point,
-            "event_triggered_available": bool(event_triggered.get("available")),
-            "event_triggered": event_triggered,
-            "robo_hop_available": bool(robo_hop.get("available")),
-            "robo_hop": robo_hop,
-            "robo_incremental_hop_available": bool(robo_hop.get("available")),
-            "robo_incremental_hop": robo_hop,
+            "event_triggered_available": False,
+            "event_triggered": {
+                "available": False,
+                "message": "Legacy event-triggered analysis is not part of the current Analysis UI.",
+            },
+            "robo_hop_available": False,
+            "robo_hop": {
+                "available": False,
+                "message": "Robo-Dopamine fused-hop uses /api/analysis/robo-hop.",
+            },
+            "robo_incremental_hop_available": False,
+            "robo_incremental_hop": {
+                "available": False,
+                "message": "Robo-Dopamine fused-hop uses /api/analysis/robo-hop.",
+            },
             "primary_analysis_type": (
                 "change_point"
                 if change_point.get("available")
-                else "legacy_temporal"
+                else (
+                    "rollout_outcome"
+                    if outcome_snapshot.get("available")
+                    else None
+                )
             ),
-            "primary_analysis_source": (
-                change_point.get("source")
-                if change_point.get("available")
-                else {
-                    "directory": self._relative(directory),
-                    "metadata": self._relative(metadata_path),
-                    "generated_at": generated_at,
-                    "selection_count": snapshot_rollout_count,
-                }
-            ),
-            "legacy_temporal_available": True,
+            "primary_analysis_source": primary_source,
         }
 
 

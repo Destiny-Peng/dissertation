@@ -1822,6 +1822,33 @@ print('fake label loss ablation complete')
 
 
 
+    def test_analysis_compact_response_does_not_load_legacy_snapshots(self) -> None:
+        self.app.analysis._latest_snapshot = mock.Mock(
+            side_effect=AssertionError("legacy temporal snapshot must not be loaded")
+        )
+        self.app.analysis._latest_event_triggered_snapshot = mock.Mock(
+            side_effect=AssertionError("event-triggered snapshot must not be loaded")
+        )
+        self.app.analysis._latest_robo_hop_snapshot = mock.Mock(
+            side_effect=AssertionError("robo-hop snapshot must use its dedicated endpoint")
+        )
+
+        with self.request("/api/analysis") as response:
+            payload = json.load(response)
+        self.assertIn("analysis", payload)
+        self.assertFalse(payload["analysis"]["legacy_temporal_available"])
+
+    def test_analysis_endpoint_returns_json_on_unexpected_failure(self) -> None:
+        self.app.analysis.response = mock.Mock(
+            side_effect=RuntimeError("synthetic analysis failure")
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request("/api/analysis")
+        self.assertEqual(caught.exception.code, 500)
+        payload = json.loads(caught.exception.read().decode("utf-8"))
+        self.assertEqual(payload["error_type"], "RuntimeError")
+        self.assertIn("synthetic analysis failure", payload["error"])
+
     def test_analysis_snapshot_selects_latest_and_compacts_events(self) -> None:
         analysis_root = self.root / "outputs" / "baseline_signal_analysis"
         selection = self.root / "selection.jsonl"

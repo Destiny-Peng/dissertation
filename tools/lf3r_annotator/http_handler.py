@@ -8,6 +8,7 @@ import mimetypes
 import re
 import subprocess
 import time
+import traceback
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -195,10 +196,22 @@ class LF3RHandler(BaseHTTPRequestHandler):
                 compact = requested_view not in {"full", "legacy", "compatibility"}
                 if query.get("include_details", [""])[0] in {"1", "true", "yes"}:
                     compact = False
-                self.json_response(
-                    HTTPStatus.OK,
-                    {"analysis": self.app.analysis.response(compact=compact)},
-                )
+                try:
+                    analysis = self.app.analysis.response(compact=compact)
+                    self.json_response(HTTPStatus.OK, {"analysis": analysis})
+                except Exception as exc:
+                    self.log_error(
+                        "analysis response failed: %s\n%s",
+                        exc,
+                        traceback.format_exc(),
+                    )
+                    self.json_response(
+                        HTTPStatus.INTERNAL_SERVER_ERROR,
+                        {
+                            "error": "Analysis response failed: " + str(exc),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
                 return
             if path == "/api/analysis/robo-localization-head":
                 self.json_response(
