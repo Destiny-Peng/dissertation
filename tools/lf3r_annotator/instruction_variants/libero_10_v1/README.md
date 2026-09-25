@@ -21,7 +21,7 @@ for task 8, official object identifier order (moka_pot_1 right then
 moka_pot_2 left). They make no assumption about which subtask was executed
 first in the original video.
 
-Every row keeps the original video_path, task ID, episode ID, source rollout
+Every row keeps the original camera_video_paths, task ID, episode ID, source rollout
 ID, and original_full_instruction. The actual evaluator instruction is in
 task_description and instruction. Counterfactual rows are explicitly marked
 with instruction_type=counterfactual_single_subtask,
