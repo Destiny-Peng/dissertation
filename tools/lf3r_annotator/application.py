@@ -196,7 +196,6 @@ class LF3RApplication:
                     raise ValidationError(
                         f"Manifest record has no camera_video_paths at line {line_number}"
                     )
-                resolved: set[Path] = set()
                 for camera, value in camera_paths.items():
                     if not isinstance(camera, str) or not camera.strip():
                         raise ValidationError(
@@ -206,20 +205,7 @@ class LF3RApplication:
                         raise ValidationError(
                             f"Manifest record has an invalid camera path at line {line_number}"
                         )
-                    path = self.resolve_project_file(value, ".mp4")
-                    if path in resolved:
-                        raise ValidationError(
-                            f"Manifest record maps multiple cameras to one video at line {line_number}"
-                        )
-                    resolved.add(path)
-                primary_camera = record.get("primary_camera")
-                if primary_camera is not None and (
-                    not isinstance(primary_camera, str)
-                    or primary_camera not in camera_paths
-                ):
-                    raise ValidationError(
-                        f"Manifest record has invalid primary_camera at line {line_number}"
-                    )
+                    self.resolve_project_file(value, ".mp4")
                 records.append(record)
         return records
 
