@@ -19,42 +19,39 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
     def make_rollout(self, root: Path) -> tuple[Path, dict[str, Path]]:
         suite_dir = root / "outputs" / "lf3r-data-natural-test" / "libero_10"
         suite_dir.mkdir(parents=True)
-        canonical = suite_dir / "task0--ep0--succ1.mp4"
-        canonical.write_bytes(b"canonical")
-        high = suite_dir / "task0--ep0--succ1.cam_high.mp4"
-        wrist = suite_dir / "task0--ep0--succ1.cam_wrist.mp4"
+        rollout = suite_dir / "task0--ep0--succ1.mp4"
+        rollout.write_bytes(b"canonical")
+        high = suite_dir / "high-view-any-name.mp4"
+        wrist = suite_dir / "wrist-view-any-name.mp4"
         high.write_bytes(b"high")
         wrist.write_bytes(b"wrist")
-        cameras = {
-            "cam_high": high,
-            "cam_wrist": wrist,
-        }
+        cameras = {"cam_high": high, "cam_wrist": wrist}
         metadata = {
             "schema_version": 1,
             "camera_video_paths": {
                 slot: path.name for slot, path in cameras.items()
             },
         }
-        canonical.with_name(canonical.stem + ".camera_videos.json").write_text(
+        rollout.with_name(rollout.stem + ".camera_videos.json").write_text(
             json.dumps(metadata),
             encoding="utf-8",
         )
-        return canonical, cameras
+        return rollout, cameras
 
-    def test_build_record_emits_physical_camera_paths(self) -> None:
+    def test_build_record_emits_only_declared_physical_camera_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
+            rollout, cameras = self.make_rollout(root)
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
             ) as probe:
-                record = build_manifest.build_record(canonical, root, {})
+                record = build_manifest.build_record(rollout, root, {})
 
             self.assertIsNotNone(record)
             assert record is not None
-            self.assertEqual(record["video_path"], str(canonical.relative_to(root)))
+            self.assertNotIn("video_path", record)
             self.assertEqual(
                 record["camera_video_paths"],
                 {
@@ -63,50 +60,75 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
                 },
             )
             self.assertNotIn("camera_source_names", record)
-            # canonical + two unique camera files; shared wrist is probed once.
             self.assertEqual(probe.call_count, 3)
 
-    def test_build_record_normalizes_legacy_shared_wrist_sidecar(self) -> None:
+    def test_plain_single_view_rollout_is_cam_high(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
-            new_wrist = cameras["cam_wrist"]
-            legacy_wrist = new_wrist.with_name(
-                new_wrist.name.replace(".cam_wrist.mp4", ".cam_left_wrist.mp4")
-            )
-            new_wrist.rename(legacy_wrist)
-            metadata_path = canonical.with_name(canonical.stem + ".camera_videos.json")
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            metadata["camera_video_paths"] = {
-                "cam_high": cameras["cam_high"].name,
-                "cam_left_wrist": legacy_wrist.name,
-                "cam_right_wrist": legacy_wrist.name,
-            }
-            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-
+            suite_dir = root / "outputs" / "lf3r-data-natural-test" / "libero_10"
+            suite_dir.mkdir(parents=True)
+            rollout = suite_dir / "task0--ep0--succ1.mp4"
+            rollout.write_bytes(b"single")
             with mock.patch.object(
                 build_manifest,
                 "probe_video",
                 return_value=(42, 30.0, 1.4),
-            ):
-                record = build_manifest.build_record(canonical, root, {})
+            ) as probe:
+                record = build_manifest.build_record(rollout, root, {})
 
             self.assertIsNotNone(record)
             assert record is not None
             self.assertEqual(
                 record["camera_video_paths"],
-                {
-                    "cam_high": str(cameras["cam_high"].relative_to(root)),
-                    "cam_wrist": str(legacy_wrist.relative_to(root)),
-                },
+                {"cam_high": str(rollout.relative_to(root))},
             )
-            self.assertNotIn("cam_left_wrist", record["camera_video_paths"])
-            self.assertNotIn("cam_right_wrist", record["camera_video_paths"])
+            self.assertNotIn("video_path", record)
+            self.assertEqual(probe.call_count, 1)
 
-    def test_build_record_rejects_missing_shared_wrist_file(self) -> None:
+    def test_camera_paths_do_not_depend_on_filename_suffixes(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical, cameras = self.make_rollout(root)
+            rollout, cameras = self.make_rollout(root)
+            self.assertFalse(cameras["cam_high"].name.endswith(".cam_high.mp4"))
+            self.assertFalse(cameras["cam_wrist"].name.endswith(".cam_wrist.mp4"))
+            with mock.patch.object(
+                build_manifest,
+                "probe_video",
+                return_value=(42, 30.0, 1.4),
+            ):
+                record = build_manifest.build_record(rollout, root, {})
+            assert record is not None
+            self.assertEqual(set(record["camera_video_paths"]), {"cam_high", "cam_wrist"})
+
+    def test_legacy_duplicate_wrist_mapping_is_rejected_not_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rollout, cameras = self.make_rollout(root)
+            metadata_path = rollout.with_name(rollout.stem + ".camera_videos.json")
+            metadata = {
+                "schema_version": 1,
+                "camera_video_paths": {
+                    "cam_high": cameras["cam_high"].name,
+                    "cam_left_wrist": cameras["cam_wrist"].name,
+                    "cam_right_wrist": cameras["cam_wrist"].name,
+                },
+            }
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            with mock.patch.object(
+                build_manifest,
+                "probe_video",
+                return_value=(42, 30.0, 1.4),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "multiple camera keys to the same file",
+                ):
+                    build_manifest.build_record(rollout, root, {})
+
+    def test_declared_missing_camera_file_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rollout, cameras = self.make_rollout(root)
             cameras["cam_wrist"].unlink()
             with mock.patch.object(
                 build_manifest,
@@ -115,9 +137,9 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     RuntimeError,
-                    "Incomplete camera video set",
+                    "Declared camera video is missing",
                 ):
-                    build_manifest.build_record(canonical, root, {})
+                    build_manifest.build_record(rollout, root, {})
 
 
 if __name__ == "__main__":
