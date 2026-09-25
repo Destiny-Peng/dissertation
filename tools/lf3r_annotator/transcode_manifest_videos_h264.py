@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batch-transcode manifest video_path entries to browser-compatible H.264."""
+"""Batch-transcode all manifest camera_video_paths to browser-compatible H.264."""
 
 from __future__ import annotations
 
@@ -62,17 +62,38 @@ def read_manifest_video_paths(
                     raise ValueError(
                         f"manifest row must be an object: {path} line {line_number}"
                     )
-                value = row.get("video_path")
-                if not isinstance(value, str) or not value.strip():
+                camera_paths = row.get("camera_video_paths")
+                if not isinstance(camera_paths, dict) or not camera_paths:
                     raise ValueError(
-                        f"manifest row has no valid video_path: {path} line {line_number}"
+                        f"manifest row has no valid camera_video_paths: "
+                        f"{path} line {line_number}"
                     )
-                video = resolve_project_path(project_root, value.strip())
-                if video.suffix.lower() != ".mp4":
-                    raise ValueError(f"video_path is not an .mp4 file: {value}")
-                if video not in seen:
-                    seen.add(video)
-                    videos.append(video)
+                row_seen: set[Path] = set()
+                for camera, value in camera_paths.items():
+                    if not isinstance(camera, str) or not camera.strip():
+                        raise ValueError(
+                            f"manifest row has an invalid camera key: "
+                            f"{path} line {line_number}"
+                        )
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValueError(
+                            f"manifest row has no path for camera {camera!r}: "
+                            f"{path} line {line_number}"
+                        )
+                    video = resolve_project_path(project_root, value.strip())
+                    if video.suffix.lower() != ".mp4":
+                        raise ValueError(
+                            f"camera_video_paths[{camera!r}] is not an .mp4 file: {value}"
+                        )
+                    if video in row_seen:
+                        raise ValueError(
+                            f"manifest row maps multiple cameras to one video: "
+                            f"{path} line {line_number}"
+                        )
+                    row_seen.add(video)
+                    if video not in seen:
+                        seen.add(video)
+                        videos.append(video)
     return videos
 
 
