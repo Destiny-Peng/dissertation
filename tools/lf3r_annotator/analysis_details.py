@@ -101,7 +101,7 @@ class AnalysisDetailsMixin:
                 values = (row.get("scale_frames"), row.get("scale"))
             else:
                 values = (row.get(field),)
-            if not any(AnalysisService._same_detail_value(value, wanted) for value in values):
+            if not any(AnalysisDetailsMixin._same_detail_value(value, wanted) for value in values):
                 return False
         return True
 
@@ -173,14 +173,14 @@ class AnalysisDetailsMixin:
             return rows
         exact = [
             row for row in rows
-            if AnalysisService._same_detail_value(row.get("feature"), feature)
-            and AnalysisService._same_detail_value(row.get("scale_frames"), scale)
-            and AnalysisService._same_detail_value(
+            if AnalysisDetailsMixin._same_detail_value(row.get("feature"), feature)
+            and AnalysisDetailsMixin._same_detail_value(row.get("scale_frames"), scale)
+            and AnalysisDetailsMixin._same_detail_value(
                 row.get("threshold") or row.get("threshold_name"), threshold
             )
             and (
                 outcome == "all_events"
-                or AnalysisService._same_detail_value(row.get("outcome_group"), outcome)
+                or AnalysisDetailsMixin._same_detail_value(row.get("outcome_group"), outcome)
             )
         ]
         return exact[:limit] or rows[:limit]
