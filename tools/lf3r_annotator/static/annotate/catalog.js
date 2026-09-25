@@ -49,7 +49,7 @@ function populateManifestFilter(manifests) {
   var options = ['<option value="all">All manifests</option>'];
   (manifests || []).forEach(function (manifest) {
     var path = String(manifest.path || "");
-    if (!path) return;
+    if (!path || manifest.valid === false) return;
     var label = manifest.label && manifest.label !== path
       ? String(manifest.label) + " · " + path
       : path;
@@ -74,10 +74,10 @@ function badge(value, cssClass) {
 
 async function loadRollouts(preferredId) {
   var response = await fetch("/api/rollouts", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Could not load rollout manifest");
-  }
   var payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not load rollout manifest");
+  }
   state.rollouts = payload.rollouts || [];
   state.manifests = payload.manifests || [];
   populateManifestFilter(state.manifests);
