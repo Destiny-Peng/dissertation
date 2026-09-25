@@ -105,7 +105,7 @@ window.LF3RRunsToolsLayout = (function createRunsToolsLayout() {
             '<div class="runs-tool-action"><span>Diagnostic sweep only; it does not claim detector performance.</span><button id="roboSweepRun" class="save-button" type="button">Run interval sweep</button></div>',
           '</section>',
           '<section class="runs-tool-card">',
-            '<div class="runs-tool-card-heading"><div><h3>Batch H.264 transcode</h3><p>Choose which loaded manifests to process. Only each selected manifest\'s canonical <code>video_path</code> entries are used; multiview files are ignored.</p></div></div>',
+            '<div class="runs-tool-card-heading"><div><h3>Batch H.264 transcode</h3><p>Choose which loaded manifests to process. Every <code>camera_video_paths</code> entry in the selected manifests is processed; duplicate file paths are transcoded once.</p></div></div>',
             '<div class="runs-manifest-choice-toolbar">',
               '<div><strong>Manifest selection</strong><span id="batchManifestTranscodeSelectionCount">Loading manifests…</span></div>',
               '<div><button id="batchManifestTranscodeSelectAll" class="ghost-button" type="button">Select all</button><button id="batchManifestTranscodeSelectNone" class="ghost-button" type="button">Clear</button></div>',
