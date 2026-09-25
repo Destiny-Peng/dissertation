@@ -17,6 +17,7 @@ from analysis_constants import (
     ANALYSIS_BASELINE_METHODS,
     ANALYSIS_TABLE_FILES,
     ROLLOUT_OUTCOME_TABLE_FILES,
+    ROLLOUT_OUTCOME_REQUIRED_FILES,
     ROBO_HOP_EXTENDED_FILES,
     ROBO_HOP_REQUIRED_FILES,
     ROBO_LABEL_LOSS_REQUIRED_FILES,
@@ -239,10 +240,130 @@ class AnalysisJobService(
             validated[method] = method_runs
         return validated
 
+    def start_outcome_evaluation_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.require_environment()
+        allowed_fields = {
+            "analysis_kind", "scope", "runs", "output_label",
+            "allow_partial_coverage",
+        }
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            raise ValidationError(
+                "Unknown outcome-evaluation field(s): "
+                + ", ".join(sorted(unknown_fields))
+            )
+        scope = validate_run_scope(payload.get("scope"))
+        records = select_scope_records(self._manifest_records(), scope)
+        if not records:
+            raise ValidationError(f"No rollouts matched scope {scope}")
+        selected_ids = {record["id"] for record in records}
+        raw_runs = payload.get("runs")
+        allow_partial = bool(payload.get("allow_partial_coverage", False))
+        if (
+            isinstance(raw_runs, dict)
+            and isinstance(raw_runs.get("rynnvalue"), list)
+            and len(raw_runs["rynnvalue"]) > 1
+        ):
+            allow_partial = True
+        validated_runs = self._validate_runs(
+            raw_runs,
+            selected_ids,
+            allow_partial_coverage=allow_partial,
+        )
+        label = str(payload.get("output_label") or "web_outcome").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
+            raise ValidationError(
+                "output_label must contain only letters, numbers, dot, underscore, or hyphen"
+            )
+        script = self.project_root / "tools" / "analyze_baseline_rollout_outcomes.py"
+        if not script.is_file():
+            raise ValidationError("Rollout outcome evaluator is not installed")
+
+        job_id = "analysis-outcome-" + uuid.uuid4().hex[:12]
+        workspace = self.analysis_root / ".web_jobs" / job_id
+        output_temp = workspace / "output"
+        output_final = self.analysis_root / (
+            "outcome_" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + "_" + label + "_" + job_id[-8:]
+        )
+        selection_path = workspace / "selection.json"
+        selection_doc = {
+            "schema_version": 1,
+            "scope": scope,
+            "selection": [{"id": record["id"]} for record in records],
+        }
+        command = [
+            str(self.analysis_python), str(script),
+            "--selection", str(selection_path),
+            "--manifest", str(self.manifest_path),
+            "--annotations-dir", str(self.annotation_root / "records"),
+            "--output-dir", str(output_temp),
+            "--safe-run", str(validated_runs["safe"][0][0]),
+            "--procvlm-run", str(validated_runs["procvlm"][0][0]),
+            "--robo-dopamine-run", str(validated_runs["robo_dopamine"][0][0]),
+        ]
+        for run_path, _metadata in validated_runs["rynnvalue"]:
+            command.extend(["--rynnvalue-run", str(run_path)])
+
+        self.analysis_root.mkdir(parents=True, exist_ok=True)
+        self.log_root.mkdir(parents=True, exist_ok=True)
+        (self.analysis_root / ".web_jobs").mkdir(parents=True, exist_ok=True)
+        self.coordinator.acquire(job_id, "analysis")
+        try:
+            workspace.mkdir(parents=True, exist_ok=False)
+            atomic_json_write(selection_path, selection_doc)
+            job = {
+                "job_id": job_id,
+                "job_type": "analysis",
+                "analysis_kind": "rollout_outcome_evaluation",
+                "status": "queued",
+                "scope": scope,
+                "selected_rollouts": len(records),
+                "allow_partial_coverage": allow_partial,
+                "runs": {
+                    method: (
+                        [self._relative(pair[0]) for pair in pairs]
+                        if len(pairs) > 1
+                        else self._relative(pairs[0][0])
+                    )
+                    for method, pairs in validated_runs.items()
+                },
+                "command": command,
+                "output_dir": self._relative(output_final),
+                "output_temp": self._relative(output_temp),
+                "selection_path": self._relative(selection_path),
+                "log_path": self._relative(self.log_root / f"{job_id}.log"),
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "interpreter": str(self.analysis_python),
+            }
+            with self.jobs_lock:
+                self.jobs[job_id] = job
+            self.tmux.submit(
+                job,
+                command,
+                self.log_root / f"{job_id}.log",
+                interpreter=str(self.analysis_python),
+                environment={"MPLBACKEND": "Agg"},
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            with self.jobs_lock:
+                self.jobs.pop(job_id, None)
+            self.coordinator.release(job_id)
+            raise
+        return dict(job)
+
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
         analysis_kind = payload.get("analysis_kind")
+        if analysis_kind == "rollout_outcome_evaluation":
+            return self.start_outcome_evaluation_run(payload)
         if analysis_kind == "robo_localization_experiment":
             return self.start_localization_spec_run(payload)
         if analysis_kind == "robo_bilstm_success_ablation":
@@ -280,7 +401,12 @@ class AnalysisJobService(
             if error is None and return_code == 0:
                 output_temp = self._project_path(str(job["output_temp"]))
                 output_final = self._project_path(str(job["output_dir"]))
-                if job.get("analysis_kind") == "robo_localization_experiment":
+                if job.get("analysis_kind") == "rollout_outcome_evaluation":
+                    required = ROLLOUT_OUTCOME_REQUIRED_FILES
+                    missing_message = (
+                        "Outcome evaluation completed without all required artifacts"
+                    )
+                elif job.get("analysis_kind") == "robo_localization_experiment":
                     required = (
                         "metadata.json", "config.json", "experiment_manifest.json",
                         "training_records.json", "summary.csv", "per_rollout_predictions.csv",
@@ -333,7 +459,9 @@ class AnalysisJobService(
                 job["status"] = "complete"
             else:
                 job["status"] = "failed"
-                if job.get("analysis_kind") == "robo_localization_experiment":
+                if job.get("analysis_kind") == "rollout_outcome_evaluation":
+                    label = "Outcome evaluation"
+                elif job.get("analysis_kind") == "robo_localization_experiment":
                     label = "Localization experiment"
                 elif job.get("analysis_kind") == "robo_bilstm_success_ablation":
                     label = "BiLSTM localization-head training"
