@@ -70,10 +70,7 @@
   function chooseView(record, requested) {
     var views = availableViews(record);
     if (!views.length) return "";
-    var declared = record && typeof record.primary_camera === "string"
-      ? record.primary_camera : "";
-    var fallback = views.some(function (view) { return view.key === declared; })
-      ? declared : views[0].key;
+    var fallback = views[0].key;
     var key = String(requested || storedView() || fallback);
     var available = views.some(function (view) { return view.key === key; });
     return available ? key : fallback;
