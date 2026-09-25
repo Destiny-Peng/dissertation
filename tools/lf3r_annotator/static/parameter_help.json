@@ -400,7 +400,7 @@
       "cli": "--video-view-mode MODE",
       "default": "single_view; choices: single_view, libero_three_view",
       "applies_to": "LIBERO rollout generation",
-      "description": "Controls camera-set generation for Robo-Dopamine use. libero_three_view preserves the canonical rollout, then replays recorded actions to create one cam_high MP4 and one cam_wrist MP4. camera_video_paths records those two physical videos; the Robo-Dopamine adapter maps cam_wrist to both left/right input slots.",
+      "description": "Controls camera-set generation for Robo-Dopamine use. libero_three_view preserves the original policy rollout, then replays recorded actions to create one cam_high MP4 and one cam_wrist MP4. camera_video_paths records those two physical videos; the Robo-Dopamine adapter maps cam_wrist to both left/right input slots.",
       "forwarded_as": "WebUI -> generator wrapper -> post-run generate_libero_multiview.py replay"
     }
   },
