@@ -56,8 +56,8 @@
     var html = '<table class="analysis-table analysis-summary-table" aria-label="Outcome evaluation coverage">'
       + '<thead><tr><th>Method</th><th>Valid outputs</th><th>Evaluation population</th><th>Coverage</th></tr></thead><tbody>';
     state.coverage.forEach(function (row) {
-      var available = Number(row.valid_result_rollouts || 0);
-      var population = Number(row.complete_annotation_rollouts || 0);
+      var available = Number(row.available_rollouts || 0);
+      var population = Number(row.evaluation_population || state.evaluationPopulation || 0);
       var fraction = population > 0 ? available / population : 0;
       html += '<tr><th scope="row">' + escapeText(labels[row.baseline] || row.baseline) + '</th>'
         + '<td class="numeric">' + escapeText(available) + '</td>'
@@ -71,7 +71,7 @@
     var button = node("analysisOutcomeRunButton");
     if (!button) return;
     var hasAnyCoverage = state.coverage.some(function (row) {
-      return Number(row.valid_result_rollouts || 0) > 0;
+      return Number(row.available_rollouts || 0) > 0;
     });
     button.disabled = state.loading || activeJob() || !environmentReady()
       || state.evaluationPopulation <= 0 || !hasAnyCoverage;
@@ -84,29 +84,22 @@
     updateButton();
     setStatus("Checking completed annotations and saved-output coverage for " + state.scope + "…", "");
     try {
-      var rows = await Promise.all(methods.map(async function (method) {
-        var response = await fetch(
-          "/api/baselines/result-coverage?baseline=" + encodeURIComponent(method)
-            + "&scope=" + encodeURIComponent(state.scope)
-            + "&condition=full_instruction",
-          { cache: "no-store" }
-        );
-        var payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Could not read " + method + " coverage");
-        return payload;
-      }));
-      state.coverage = rows;
-      state.evaluationPopulation = rows.length
-        ? Number(rows[0].complete_annotation_rollouts || 0)
-        : 0;
+      var response = await fetch(
+        "/api/analysis/outcome-coverage?scope=" + encodeURIComponent(state.scope),
+        { cache: "no-store" }
+      );
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not read outcome coverage");
+      state.coverage = Array.isArray(payload.coverage) ? payload.coverage : [];
+      state.evaluationPopulation = Number(payload.evaluation_population || 0);
       renderCoverage();
-      var availableText = rows.map(function (row) {
-        return (labels[row.baseline] || row.baseline) + " "
-          + Number(row.valid_result_rollouts || 0) + "/" + state.evaluationPopulation;
+      var availableText = state.coverage.map(function (row) {
+        return (labels[row.method] || row.method) + " "
+          + Number(row.available_rollouts || 0) + "/" + state.evaluationPopulation;
       }).join(" · ");
       if (!state.evaluationPopulation) {
         setStatus("No review_status=complete rollouts are available in this scope.", "warning");
-      } else if (!rows.some(function (row) { return Number(row.valid_result_rollouts || 0) > 0; })) {
+      } else if (!state.coverage.some(function (row) { return Number(row.available_rollouts || 0) > 0; })) {
         setStatus("No parseable saved baseline outputs overlap the completed annotations.", "warning");
       } else {
         setStatus(
