@@ -2349,7 +2349,7 @@ def parse_args() -> argparse.Namespace:
         "--robo-camera-mode",
         choices=("auto", "single_view", "multi_view"),
         default="auto",
-        help="Robo-Dopamine camera input: auto uses physical multiview when available, single_view repeats video_path, multi_view requires cam_high + cam_wrist",
+        help="Robo-Dopamine camera input: auto uses physical multiview when available, single_view repeats the preferred manifest camera, multi_view requires a supported physical camera set",
     )
     parser.add_argument(
         "--robo-eval-modes",
