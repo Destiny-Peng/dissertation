@@ -647,7 +647,6 @@ def select_source_rows(
             raise VariantError(
                 f"Source row has no camera_video_paths: {rollout_id}"
             )
-        resolved_paths: set[Path] = set()
         for camera, value in camera_paths.items():
             if not isinstance(camera, str) or not camera.strip():
                 raise VariantError(
@@ -658,11 +657,6 @@ def select_source_rows(
                     f"Source row has no path for camera {camera!r}: {rollout_id}"
                 )
             camera_path = project_path(value, project_root)
-            if camera_path in resolved_paths:
-                raise VariantError(
-                    f"Source row maps multiple cameras to one file: {rollout_id}"
-                )
-            resolved_paths.add(camera_path)
             if not camera_path.is_file():
                 raise VariantError(
                     f"Source camera video is missing for {rollout_id} camera={camera}: "
