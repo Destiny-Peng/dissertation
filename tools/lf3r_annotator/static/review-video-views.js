@@ -70,7 +70,10 @@
   function chooseView(record, requested) {
     var views = availableViews(record);
     if (!views.length) return "";
-    var fallback = views[0].key;
+    var observationKey = record && typeof record.observation_key === "string"
+      ? record.observation_key : "";
+    var fallback = views.some(function (view) { return view.key === observationKey; })
+      ? observationKey : views[0].key;
     var key = String(requested || storedView() || fallback);
     var available = views.some(function (view) { return view.key === key; });
     return available ? key : fallback;
