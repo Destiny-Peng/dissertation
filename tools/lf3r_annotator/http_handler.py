@@ -288,6 +288,13 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     records.append(enriched)
                 self.json_response(HTTPStatus.OK, {"rollouts": records})
                 return
+            if path == "/api/analysis/outcome-coverage":
+                scope = query.get("scope", ["libero_10"])[0]
+                self.json_response(
+                    HTTPStatus.OK,
+                    self.app.baselines.outcome_evaluation_sources(scope),
+                )
+                return
             if path == "/api/baselines/result-coverage":
                 baseline = query.get("baseline", [""])[0]
                 scope = query.get("scope", ["libero_10"])[0]
