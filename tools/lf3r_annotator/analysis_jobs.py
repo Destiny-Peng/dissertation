@@ -242,10 +242,7 @@ class AnalysisJobService(
 
     def start_outcome_evaluation_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
-        allowed_fields = {
-            "analysis_kind", "scope", "runs", "output_label",
-            "allow_partial_coverage",
-        }
+        allowed_fields = {"analysis_kind", "scope", "output_label"}
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
             raise ValidationError(
@@ -253,23 +250,17 @@ class AnalysisJobService(
                 + ", ".join(sorted(unknown_fields))
             )
         scope = validate_run_scope(payload.get("scope"))
-        records = select_scope_records(self._manifest_records(), scope)
-        if not records:
-            raise ValidationError(f"No rollouts matched scope {scope}")
-        selected_ids = {record["id"] for record in records}
-        raw_runs = payload.get("runs")
-        allow_partial = bool(payload.get("allow_partial_coverage", False))
-        if (
-            isinstance(raw_runs, dict)
-            and isinstance(raw_runs.get("rynnvalue"), list)
-            and len(raw_runs["rynnvalue"]) > 1
-        ):
-            allow_partial = True
-        validated_runs = self._validate_runs(
-            raw_runs,
-            selected_ids,
-            allow_partial_coverage=allow_partial,
-        )
+        sources = self.baselines.outcome_evaluation_sources(scope)
+        evaluation_ids = list(sources["evaluation_rollout_ids"])
+        if not evaluation_ids:
+            raise ValidationError(
+                f"No completed annotations matched scope {scope}"
+            )
+        if not any(row["available_rollouts"] for row in sources["coverage"]):
+            raise ValidationError(
+                f"No saved baseline outputs matched completed annotations in scope {scope}"
+            )
+
         label = str(payload.get("output_label") or "web_outcome").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
             raise ValidationError(
@@ -287,23 +278,27 @@ class AnalysisJobService(
             + "_" + label + "_" + job_id[-8:]
         )
         selection_path = workspace / "selection.json"
+        source_map_path = workspace / "source_map.json"
         selection_doc = {
             "schema_version": 1,
             "scope": scope,
-            "selection": [{"id": record["id"]} for record in records],
+            "selection": [{"id": rollout_id} for rollout_id in evaluation_ids],
+        }
+        source_map_doc = {
+            "schema_version": 1,
+            "scope": scope,
+            "source_resolution": "newest_parseable_output_per_rollout",
+            "source_maps": sources["source_maps"],
+            "coverage": sources["coverage"],
         }
         command = [
             str(self.analysis_python), str(script),
             "--selection", str(selection_path),
+            "--source-map", str(source_map_path),
             "--manifest", str(self.manifest_path),
             "--annotations-dir", str(self.annotation_root / "records"),
             "--output-dir", str(output_temp),
-            "--safe-run", str(validated_runs["safe"][0][0]),
-            "--procvlm-run", str(validated_runs["procvlm"][0][0]),
-            "--robo-dopamine-run", str(validated_runs["robo_dopamine"][0][0]),
         ]
-        for run_path, _metadata in validated_runs["rynnvalue"]:
-            command.extend(["--rynnvalue-run", str(run_path)])
 
         self.analysis_root.mkdir(parents=True, exist_ok=True)
         self.log_root.mkdir(parents=True, exist_ok=True)
@@ -312,26 +307,24 @@ class AnalysisJobService(
         try:
             workspace.mkdir(parents=True, exist_ok=False)
             atomic_json_write(selection_path, selection_doc)
+            atomic_json_write(source_map_path, source_map_doc)
             job = {
                 "job_id": job_id,
                 "job_type": "analysis",
                 "analysis_kind": "rollout_outcome_evaluation",
                 "status": "queued",
                 "scope": scope,
-                "selected_rollouts": len(records),
-                "allow_partial_coverage": allow_partial,
-                "runs": {
-                    method: (
-                        [self._relative(pair[0]) for pair in pairs]
-                        if len(pairs) > 1
-                        else self._relative(pairs[0][0])
-                    )
-                    for method, pairs in validated_runs.items()
-                },
+                "selected_rollouts": len(evaluation_ids),
+                "scope_rollouts": int(sources["scope_rollouts"]),
+                "incomplete_annotation_rollouts": int(
+                    sources["incomplete_annotation_rollouts"]
+                ),
+                "coverage": sources["coverage"],
                 "command": command,
                 "output_dir": self._relative(output_final),
                 "output_temp": self._relative(output_temp),
                 "selection_path": self._relative(selection_path),
+                "source_map_path": self._relative(source_map_path),
                 "log_path": self._relative(self.log_root / f"{job_id}.log"),
                 "started_at": None,
                 "finished_at": None,
