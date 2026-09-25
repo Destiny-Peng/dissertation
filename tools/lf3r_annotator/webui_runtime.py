@@ -98,7 +98,7 @@ def main() -> None:
     print(f"Controlled rollouts: {groups['controlled_count']}")
     print(f"Annotations: {annotations}")
     print(
-        "Video serving: canonical by default; "
+        "Video serving: preferred manifest camera by default; "
         "?camera=<name> serves manifest camera_video_paths; "
         "runtime transcoding disabled"
     )
