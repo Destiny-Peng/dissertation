@@ -471,22 +471,26 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/16")
             self.assertEqual(response.read(), b"2345")
 
-    def test_video_endpoint_uses_canonical_by_default_and_explicit_camera_path(self) -> None:
+    def test_video_endpoint_defaults_to_primary_camera_and_supports_explicit_camera(self) -> None:
         high = self.root / "outputs" / "sample.cam_high.mp4"
         wrist = self.root / "outputs" / "sample.cam_wrist.mp4"
+        right = self.root / "outputs" / "sample.cam_right_wrist.mp4"
         high.write_bytes(b"HIGH")
         wrist.write_bytes(b"WRIST")
+        right.write_bytes(b"RIGHT")
         self.rollout["camera_video_paths"] = {
             "cam_high": "outputs/sample.cam_high.mp4",
             "cam_wrist": "outputs/sample.cam_wrist.mp4",
+            "cam_right_wrist": "outputs/sample.cam_right_wrist.mp4",
         }
+        self.rollout["primary_camera"] = "cam_wrist"
         self.app.manifest_path.write_text(
             json.dumps(self.rollout) + "\n",
             encoding="utf-8",
         )
 
         with self.request("/api/videos/sample-rollout") as response:
-            self.assertEqual(response.read(), b"0123456789abcdef")
+            self.assertEqual(response.read(), b"WRIST")
         with self.request("/api/videos/sample-rollout?camera=cam_high") as response:
             self.assertEqual(response.read(), b"HIGH")
         with self.request("/api/videos/sample-rollout?camera=cam_wrist") as response:
