@@ -28,31 +28,41 @@ def read_manifest(path: Path) -> list[dict[str, Any]]:
 
 
 def media_is_valid(project_root: Path, record: dict[str, Any]) -> bool:
-    try:
-        video = (project_root / record["video_path"]).resolve()
-        video.relative_to(project_root.resolve())
-    except (KeyError, ValueError):
+    raw = record.get("camera_video_paths")
+    if not isinstance(raw, dict) or not raw:
         return False
-    if not video.is_file():
-        return False
-    command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-count_frames",
-        "-show_entries",
-        "stream=nb_read_frames",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(video),
-    ]
-    try:
-        frames = int(subprocess.check_output(command, text=True).strip())
-    except (OSError, ValueError, subprocess.CalledProcessError):
-        return False
-    return frames == int(record.get("total_frames", -1))
+    seen: set[Path] = set()
+    for value in raw.values():
+        if not isinstance(value, str) or not value:
+            return False
+        try:
+            video = (project_root / value).resolve()
+            video.relative_to(project_root.resolve())
+        except ValueError:
+            return False
+        if video in seen or not video.is_file():
+            return False
+        seen.add(video)
+        command = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video),
+        ]
+        try:
+            frames = int(subprocess.check_output(command, text=True).strip())
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            return False
+        if frames != int(record.get("total_frames", -1)):
+            return False
+    return True
 
 
 def verify(project_root: Path, manifest_path: Path) -> dict[str, Any]:
