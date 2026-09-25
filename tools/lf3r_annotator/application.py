@@ -48,6 +48,7 @@ class LF3RApplication:
             / "manifest.jsonl"
         )
         self._instruction_variant_index: dict[str, dict[str, dict[str, Any]]] | None = None
+        self._instruction_variant_mtime_ns: int | None = None
         self.store = AnnotationStore(annotation_root)
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
@@ -85,11 +86,16 @@ class LF3RApplication:
         self.tmux.recover()
 
     def load_instruction_variant_records(self) -> dict[str, dict[str, dict[str, Any]]]:
-        if self._instruction_variant_index is not None:
-            return self._instruction_variant_index
         path = self.instruction_variant_manifest_path
+        mtime_ns = path.stat().st_mtime_ns if path.is_file() else None
+        if (
+            self._instruction_variant_index is not None
+            and self._instruction_variant_mtime_ns == mtime_ns
+        ):
+            return self._instruction_variant_index
         if not path.is_file():
             self._instruction_variant_index = {}
+            self._instruction_variant_mtime_ns = None
             return self._instruction_variant_index
         grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for row in load_manifest_records(path):
@@ -105,6 +111,7 @@ class LF3RApplication:
                 raise ValidationError("Duplicate instruction variant for " + source_id + ": " + condition)
             grouped[source_id][condition] = row
         self._instruction_variant_index = grouped
+        self._instruction_variant_mtime_ns = mtime_ns
         return grouped
 
     def instruction_variant_options(self, record: dict[str, Any]) -> dict[str, dict[str, Any]]:
