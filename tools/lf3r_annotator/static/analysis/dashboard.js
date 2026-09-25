@@ -498,7 +498,8 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   rows.forEach(function (row) {
     var method = (ANALYSIS_METHOD_LABELS[row.method] || row.method || "method")
       + " / " + workspaceDashboardShortSignal(row.signal);
-    html += '<tr><th scope="row">' + escapeHtml(method) + '</th>'
+    var rowTitle = row.signal_note || row.failure_rule || "";
+    html += '<tr title="' + escapeHtml(rowTitle) + '"><th scope="row">' + escapeHtml(method) + '</th>'
       + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
       + '<td class="numeric">' + escapeHtml(String(row.tp == null ? "n/a" : row.tp)) + ' / '
       + escapeHtml(String(row.fn == null ? "n/a" : row.fn)) + '</td>'
@@ -525,6 +526,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + ' / <strong>negative:</strong> clean + recovered success'
       + ' / <strong>threshold:</strong> Q95 of same-cohort final-success failure-oriented terminal scores'
       + ' / <strong>uncertain:</strong> excluded from metrics'
+      + ' / <strong>SAFE:</strong> handcrafted max-token-probability proxy, not a trained SAFE detector'
       + ' / <strong>interpretation:</strong> descriptive in-sample calibration, not held-out accuracy'
       + (info.prediction_rows == null ? "" : ' / <strong>prediction rows:</strong> ' + escapeHtml(String(info.prediction_rows)));
   }
