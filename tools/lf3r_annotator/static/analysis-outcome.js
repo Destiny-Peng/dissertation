@@ -214,7 +214,7 @@
           scope: state.scope,
           runs: runs,
           output_label: label,
-          allow_partial_coverage: runs.rynnvalue.length > 1
+          allow_partial_coverage: true
         })
       });
       var payload = await response.json();
