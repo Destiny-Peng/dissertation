@@ -25,20 +25,15 @@ function isRealRobotManifest(record) {
     || record.analysis_partition === "real_robot_analysis";
 }
 
-function isExternalManifest(record) {
-  return record.manifest_primary === false || isRealRobotManifest(record);
-}
-
 function provenanceClass(record) {
   if (isControlled(record)) return "controlled";
-  if (isExternalManifest(record)) return "external";
+  if (isRealRobotManifest(record)) return "external";
   return "natural";
 }
 
 function provenanceLabel(record) {
   if (isControlled(record)) return "controlled";
   if (isRealRobotManifest(record)) return "real robot";
-  if (isExternalManifest(record)) return "secondary";
   return "natural";
 }
 
@@ -83,17 +78,20 @@ async function loadRollouts(preferredId) {
   populateManifestFilter(state.manifests);
   var validManifestCount = state.manifests.filter(function (item) {
     return item.valid !== false;
-  }).length || 1;
+  }).length;
   var invalidManifestCount = state.manifests.filter(function (item) {
     return item.valid === false;
   }).length;
-  byId("datasetStatus").textContent = "Dataset online · " + state.rollouts.length
-    + " rollouts · " + validManifestCount + " manifest"
-    + (validManifestCount === 1 ? "" : "s")
-    + (invalidManifestCount
-      ? " · " + invalidManifestCount + " invalid source"
-        + (invalidManifestCount === 1 ? "" : "s") + " skipped"
-      : "");
+  byId("datasetStatus").textContent = validManifestCount
+    ? "Dataset online · " + state.rollouts.length
+      + " rollouts · " + validManifestCount + " manifest"
+      + (validManifestCount === 1 ? "" : "s")
+      + (invalidManifestCount
+        ? " · " + invalidManifestCount + " invalid source"
+          + (invalidManifestCount === 1 ? "" : "s") + " skipped"
+        : "")
+    : "No valid rollout manifests · " + invalidManifestCount
+      + " invalid source" + (invalidManifestCount === 1 ? "" : "s");
   updateProgress();
   applyFilters();
   if (typeof updateBaselineBatchAdvancedFields === "function") updateBaselineBatchAdvancedFields();
@@ -248,7 +246,7 @@ function selectRollout(id) {
 
   var originClass = provenanceClass(record);
   byId("recordBadges").innerHTML = badge(
-    isControlled(record) ? "controlled injection" : (isRealRobotManifest(record) ? "real robot" : (isExternalManifest(record) ? "secondary manifest" : "natural policy")),
+    isControlled(record) ? "controlled injection" : (isRealRobotManifest(record) ? "real robot" : "natural policy"),
     originClass
   )
     + badge(record.analysis_partition, originClass)
