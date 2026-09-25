@@ -2,7 +2,8 @@
 """Create separate per-camera LIBERO videos by replaying recorded rollout actions.
 
 This is intentionally a post-processing step. It does not query OpenVLA and it
-never changes the canonical single-view MP4 used by LF3R baselines.
+never changes the original policy rollout MP4; the generated camera videos are
+advertised through camera_video_paths when the manifest is rebuilt.
 """
 
 from __future__ import annotations
