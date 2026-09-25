@@ -68,6 +68,15 @@ ROLLOUT_OUTCOME_PRIMARY_SIGNALS = {
     "robo_dopamine": "progress",
 }
 ROLLOUT_OUTCOME_THRESHOLDS = ("q90", "q95", "q99")
+ROLLOUT_OUTCOME_SIGNAL_NOTES = {
+    "safe": (
+        "handcrafted max_token_prob proxy; the baseline run does not contain "
+        "a trained SAFE detector checkpoint"
+    ),
+    "procvlm": "native terminal progress",
+    "rynnvalue": "native terminal value / remaining-time semantics",
+    "robo_dopamine": "native terminal progress",
+}
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -278,6 +287,7 @@ def compute_rollout_outcome_classification(
                 "method": method,
                 "method_label": METHOD_LABELS[method],
                 "signal": signal_name,
+                "signal_note": ROLLOUT_OUTCOME_SIGNAL_NOTES[method],
                 "task_suite": record.get("task_suite"),
                 "task_id": record.get("task_id"),
                 "outcome": outcome,
@@ -370,6 +380,7 @@ def compute_rollout_outcome_classification(
                 "method": method,
                 "method_label": METHOD_LABELS[method],
                 "signal": signal_name,
+                "signal_note": ROLLOUT_OUTCOME_SIGNAL_NOTES[method],
                 "threshold": threshold_name,
                 "threshold_value_failure_oriented": threshold,
                 "raw_terminal_threshold": raw_threshold,
@@ -2103,6 +2114,7 @@ def main() -> int:
             "negative_class": "clean_success+recovered_success",
             "uncertain_policy": "excluded_from_metrics",
             "primary_signals": ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
+            "signal_notes": ROLLOUT_OUTCOME_SIGNAL_NOTES,
             "thresholds": list(ROLLOUT_OUTCOME_THRESHOLDS),
             "default_threshold": "q95",
             "threshold_calibration": "final_success_terminal_score_quantile",
