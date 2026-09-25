@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import robo_dopamine_persistent_worker as worker
 from robo_dopamine_persistent_worker import infer_rollout
 from robo_dopamine_multi_perspective import (
     FUSED_EVAL_MODE,
@@ -32,6 +33,187 @@ def _rows(values: list[float]) -> list[dict[str, object]]:
 
 
 class MultiPerspectiveTests(unittest.TestCase):
+    def test_terminal_off_by_one_camera_mismatch_is_aligned(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="robo-camera-align-") as temporary:
+            root = Path(temporary)
+            cam_high = root / "cam_high.mp4"
+            cam_left = root / "cam_left.mp4"
+            cam_right = root / "cam_right.mp4"
+            for path in (cam_high, cam_left, cam_right):
+                path.touch()
+
+            original_probe = worker._probe_video_frame_count
+            original_truncate = worker._truncate_video_to_frame_count
+            truncated: list[tuple[Path, Path, int]] = []
+            counts = {
+                str(cam_high.resolve()): 502,
+                str(cam_left.resolve()): 501,
+                str(cam_right.resolve()): 501,
+            }
+            try:
+                worker._probe_video_frame_count = lambda path: counts[str(path.resolve())]
+
+                def fake_truncate(source: Path, destination: Path, frame_count: int) -> str:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.touch()
+                    truncated.append((source, destination, frame_count))
+                    counts[str(destination.resolve())] = frame_count
+                    return "stream_copy"
+
+                worker._truncate_video_to_frame_count = fake_truncate
+                effective, metadata = worker._align_multiview_camera_inputs(
+                    cam_high=str(cam_high),
+                    cam_left=str(cam_left),
+                    cam_right=str(cam_right),
+                    output_dir=root / "raw",
+                )
+            finally:
+                worker._probe_video_frame_count = original_probe
+                worker._truncate_video_to_frame_count = original_truncate
+
+            self.assertTrue(metadata["applied"])
+            self.assertEqual(metadata["effective_frame_count"], 501)
+            self.assertEqual(
+                metadata["dropped_frames"],
+                {"cam_high": 1, "cam_left_wrist": 0, "cam_right_wrist": 0},
+            )
+            self.assertEqual(len(truncated), 1)
+            self.assertEqual(truncated[0][0], cam_high.resolve())
+            self.assertEqual(truncated[0][2], 501)
+            self.assertNotEqual(effective["cam_high"], str(cam_high.resolve()))
+            self.assertEqual(effective["cam_left_wrist"], str(cam_left.resolve()))
+            self.assertEqual(effective["cam_right_wrist"], str(cam_right.resolve()))
+
+    def test_camera_mismatch_larger_than_one_frame_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="robo-camera-reject-") as temporary:
+            root = Path(temporary)
+            cam_high = root / "cam_high.mp4"
+            cam_left = root / "cam_left.mp4"
+            cam_right = root / "cam_right.mp4"
+            for path in (cam_high, cam_left, cam_right):
+                path.touch()
+
+            original_probe = worker._probe_video_frame_count
+            counts = {
+                str(cam_high.resolve()): 503,
+                str(cam_left.resolve()): 501,
+                str(cam_right.resolve()): 501,
+            }
+            try:
+                worker._probe_video_frame_count = lambda path: counts[str(path.resolve())]
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"Frame count mismatch among cameras: \[503, 501, 501\]",
+                ):
+                    worker._align_multiview_camera_inputs(
+                        cam_high=str(cam_high),
+                        cam_left=str(cam_left),
+                        cam_right=str(cam_right),
+                        output_dir=root / "raw",
+                    )
+            finally:
+                worker._probe_video_frame_count = original_probe
+
+    def test_infer_rollout_retries_after_terminal_frame_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="robo-camera-retry-") as temporary:
+            root = Path(temporary)
+            model_path = root / "checkpoint"
+            model_path.mkdir()
+            goal = root / "blank_goal.png"
+            goal.touch()
+            output_dir = root / "raw" / "rollout"
+            canonical = root / "video.mp4"
+            cam_high = root / "cam_high.mp4"
+            cam_left = root / "cam_left.mp4"
+            cam_right = root / "cam_right.mp4"
+            aligned_high = output_dir / "aligned_camera_inputs" / "cam_high.frames501.mp4"
+            for path in (canonical, cam_high, cam_left, cam_right):
+                path.touch()
+
+            calls: list[dict[str, object]] = []
+
+            class FakeModel:
+                def run_pipeline(self, *, out_root, **kwargs):
+                    calls.append(dict(kwargs))
+                    if len(calls) == 1:
+                        raise ValueError("Frame count mismatch among cameras: [502, 501, 501]")
+                    official = Path(out_root) / "official_forward"
+                    official.mkdir(parents=True, exist_ok=True)
+                    prediction = official / "pred_vllm.json"
+                    prediction.write_text(json.dumps(_rows([0.1, 0.2, 0.3])), encoding="utf-8")
+                    return str(official)
+
+            args = type("Args", (), {
+                "repo": root,
+                "model_path": model_path,
+                "goal_image": goal,
+                "frame_interval": 4,
+                "batch_size": 1,
+                "eval_mode": "forward",
+                "eval_modes": ["forward"],
+                "render_video": False,
+                "localization_checkpoint": None,
+            })()
+
+            original_align = worker._align_multiview_camera_inputs
+            try:
+                def fake_align(**kwargs):
+                    aligned_high.parent.mkdir(parents=True, exist_ok=True)
+                    aligned_high.touch()
+                    return (
+                        {
+                            "cam_high": str(aligned_high),
+                            "cam_left_wrist": str(cam_left.resolve()),
+                            "cam_right_wrist": str(cam_right.resolve()),
+                        },
+                        {
+                            "applied": True,
+                            "policy": "terminal_off_by_one_only",
+                            "original_frame_counts": {
+                                "cam_high": 502,
+                                "cam_left_wrist": 501,
+                                "cam_right_wrist": 501,
+                            },
+                            "effective_frame_count": 501,
+                            "dropped_frames": {
+                                "cam_high": 1,
+                                "cam_left_wrist": 0,
+                                "cam_right_wrist": 0,
+                            },
+                        },
+                    )
+
+                worker._align_multiview_camera_inputs = fake_align
+                result = infer_rollout(
+                    {
+                        "rollout_id": "rollout",
+                        "video_path": str(canonical),
+                        "cam_high_path": str(cam_high),
+                        "cam_left_path": str(cam_left),
+                        "cam_right_path": str(cam_right),
+                        "camera_input_mode": "multi_view",
+                        "task": "test task",
+                        "raw_output_dir": str(output_dir),
+                        "goal_image": str(goal),
+                    },
+                    args,
+                    FakeModel(),
+                )
+            finally:
+                worker._align_multiview_camera_inputs = original_align
+
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1]["cam_high_path"], str(aligned_high))
+            self.assertEqual(calls[1]["cam_left_path"], str(cam_left.resolve()))
+            self.assertEqual(calls[1]["cam_right_path"], str(cam_right.resolve()))
+            worker_result = json.loads((output_dir / "worker_result.json").read_text())
+            self.assertEqual(
+                worker_result["camera_video_paths"]["cam_high"],
+                str(cam_high.resolve()),
+            )
+            self.assertEqual(worker_result["camera_alignment"]["effective_frame_count"], 501)
+            self.assertEqual(result["camera_alignment"]["dropped_frames"]["cam_high"], 1)
+
     def test_worker_reuses_one_model_for_three_modes_and_writes_contract(self) -> None:
         with tempfile.TemporaryDirectory(prefix="robo-worker-multi-") as temporary:
             root = Path(temporary)
