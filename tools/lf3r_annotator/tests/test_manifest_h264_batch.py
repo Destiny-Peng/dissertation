@@ -16,22 +16,22 @@ SPEC.loader.exec_module(batch)
 
 
 class ManifestBatchH264Tests(unittest.TestCase):
-    def test_manifest_reader_uses_only_canonical_video_path_and_deduplicates(self) -> None:
+    def test_manifest_reader_uses_all_camera_paths_and_deduplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            canonical = root / "outputs" / "canonical.mp4"
-            cam_high = root / "outputs" / "canonical.cam_high.mp4"
-            canonical.parent.mkdir(parents=True)
-            canonical.write_bytes(b"canonical")
-            cam_high.write_bytes(b"cam-high")
+            high = root / "outputs" / "high.mp4"
+            wrist = root / "outputs" / "wrist.mp4"
+            high.parent.mkdir(parents=True)
+            high.write_bytes(b"high")
+            wrist.write_bytes(b"wrist")
 
             first = root / "first.jsonl"
             second = root / "second.jsonl"
             row = {
                 "id": "r1",
-                "video_path": "outputs/canonical.mp4",
                 "camera_video_paths": {
-                    "cam_high": "outputs/canonical.cam_high.mp4",
+                    "cam_high": "outputs/high.mp4",
+                    "cam_wrist": "outputs/wrist.mp4",
                 },
             }
             first.write_text(json.dumps(row) + "\n", encoding="utf-8")
@@ -42,18 +42,37 @@ class ManifestBatchH264Tests(unittest.TestCase):
 
             videos = batch.read_manifest_video_paths(root.resolve(), [first, second])
 
-            self.assertEqual(videos, [canonical.resolve()])
-            self.assertNotIn(cam_high.resolve(), videos)
+            self.assertEqual(videos, [high.resolve(), wrist.resolve()])
 
-    def test_manifest_reader_rejects_non_mp4_video_path(self) -> None:
+    def test_manifest_reader_rejects_non_mp4_camera_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             manifest = root / "manifest.jsonl"
             manifest.write_text(
-                json.dumps({"id": "r1", "video_path": "outputs/video.avi"}) + "\n",
+                json.dumps({
+                    "id": "r1",
+                    "camera_video_paths": {"cam_high": "outputs/video.avi"},
+                }) + "\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "not an .mp4"):
+                batch.read_manifest_video_paths(root.resolve(), [manifest])
+
+    def test_manifest_reader_rejects_duplicate_camera_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest = root / "manifest.jsonl"
+            manifest.write_text(
+                json.dumps({
+                    "id": "r1",
+                    "camera_video_paths": {
+                        "cam_left_wrist": "outputs/wrist.mp4",
+                        "cam_right_wrist": "outputs/wrist.mp4",
+                    },
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "multiple cameras to one video"):
                 batch.read_manifest_video_paths(root.resolve(), [manifest])
 
 
