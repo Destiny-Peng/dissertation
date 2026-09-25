@@ -547,6 +547,32 @@
             <span id="analysisRolloutOutcomeBadge" class="analysis-badge">Unavailable</span>
           </div>
           <p class="analysis-card-note">Positive = final success (clean or recovered). Negative = terminal failure. Uncertain rollouts are excluded. Thresholds are calibrated from final-success terminal scores; these metrics describe the selected cohort rather than a held-out classifier benchmark.</p>
+          <details class="analysis-run-disclosure">
+            <summary>Generate / refresh outcome metrics from saved baseline outputs</summary>
+            <form id="analysisOutcomeRunForm" class="analysis-run-form">
+              <div class="analysis-run-grid">
+                <label><span>Scope</span>
+                  <select id="analysisOutcomeRunScope">
+                    <option value="libero_10" selected>LIBERO-10</option>
+                    <option value="libero_spatial">LIBERO-Spatial</option>
+                    <option value="all">All loaded rollouts</option>
+                    <option value="controlled_analysis">Controlled</option>
+                  </select>
+                </label>
+                <label><span>SAFE run</span><select id="analysisOutcomeRunSafe"></select></label>
+                <label><span>ProcVLM run</span><select id="analysisOutcomeRunProcvlm"></select></label>
+                <label><span>RynnValue run(s)</span><select id="analysisOutcomeRunRynnvalue" multiple size="4"></select></label>
+                <label><span>Robo-Dopamine run</span><select id="analysisOutcomeRunRoboDopamine"></select></label>
+                <label><span>Output label</span>
+                  <input id="analysisOutcomeOutputLabel" type="text" value="web_outcome" maxlength="64"
+                    pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
+                </label>
+              </div>
+              <p id="analysisOutcomeRunStatus" class="analysis-run-selection">Loading completed baseline runs…</p>
+              <button id="analysisOutcomeRunButton" class="save-button" type="submit" disabled>Run outcome evaluation</button>
+            </form>
+            <pre id="analysisOutcomeRunLog" class="job-log" aria-label="Latest outcome evaluation log"></pre>
+          </details>
           <div class="analysis-filter-grid">
             <label><span>Threshold</span>
               <select id="analysisOutcomeThreshold">
