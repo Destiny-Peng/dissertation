@@ -108,6 +108,9 @@ async function workspaceLoadAnalysisEnvironment() {
   } finally {
     workspaceState.analysisEnvironmentLoading = false;
     workspaceRenderAnalysisRunPanel();
+    if (typeof window.lf3rRoboHopEnvironmentChanged === "function") {
+      window.lf3rRoboHopEnvironmentChanged();
+    }
   }
 }
 
@@ -204,7 +207,7 @@ function workspaceRenderAnalysisRunPanel() {
     } else if (workspaceState.analysisEnvironment && workspaceState.analysisEnvironment.ready) {
       environmentStatus.textContent = "Analysis environment ready: "
         + (workspaceState.analysisEnvironment.path || "project-local venv")
-        + " / CPU-only temporal analysis.";
+        + " / CPU-only analysis.";
       environmentStatus.className = "analysis-run-selection";
     }
   }
