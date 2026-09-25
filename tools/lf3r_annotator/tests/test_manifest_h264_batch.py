@@ -58,9 +58,12 @@ class ManifestBatchH264Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not an .mp4"):
                 batch.read_manifest_video_paths(root.resolve(), [manifest])
 
-    def test_manifest_reader_rejects_duplicate_camera_aliases(self) -> None:
+    def test_manifest_reader_deduplicates_shared_camera_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            wrist = root / "outputs" / "wrist.mp4"
+            wrist.parent.mkdir(parents=True)
+            wrist.write_bytes(b"wrist")
             manifest = root / "manifest.jsonl"
             manifest.write_text(
                 json.dumps({
@@ -72,8 +75,10 @@ class ManifestBatchH264Tests(unittest.TestCase):
                 }) + "\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "multiple cameras to one video"):
-                batch.read_manifest_video_paths(root.resolve(), [manifest])
+            self.assertEqual(
+                batch.read_manifest_video_paths(root.resolve(), [manifest]),
+                [wrist.resolve()],
+            )
 
 
 if __name__ == "__main__":
