@@ -242,136 +242,21 @@ class AnalysisJobService(
     def start_run(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValidationError("Analysis request must be a JSON object")
-        if payload.get("analysis_kind") == "robo_localization_experiment":
+        analysis_kind = payload.get("analysis_kind")
+        if analysis_kind == "robo_localization_experiment":
             return self.start_localization_spec_run(payload)
-        if payload.get("analysis_kind") == "robo_bilstm_success_ablation":
+        if analysis_kind == "robo_bilstm_success_ablation":
             return self.start_robo_localization_head_run(payload)
-        if payload.get("analysis_kind") == "robo_bilstm_label_loss_ablation":
+        if analysis_kind == "robo_bilstm_label_loss_ablation":
             return self.start_robo_label_loss_run(payload)
-        if payload.get("analysis_kind") in {
+        if analysis_kind in {
             "robo_incremental_hop",
             "robo_hop_comparison",
         }:
             return self.start_robo_hop_run(payload)
-        self.require_environment()
-        allowed_fields = {
-            "scope", "runs", "pre_window_frames", "post_window_frames",
-            "background_stride_frames", "output_label", "allow_partial_coverage",
-        }
-        unknown_fields = set(payload) - allowed_fields
-        if unknown_fields:
-            raise ValidationError("Unknown analysis field(s): " + ", ".join(sorted(unknown_fields)))
-        scope = validate_run_scope(payload.get("scope"))
-        records = self._manifest_records()
-        records = select_scope_records(records, scope)
-        if not records:
-            raise ValidationError(f"No rollouts matched scope {scope}")
-        selected_ids = {record["id"] for record in records}
-        raw_runs = payload.get("runs")
-        allow_partial_coverage = bool(payload.get("allow_partial_coverage", False))
-        if isinstance(raw_runs, dict) and isinstance(raw_runs.get("rynnvalue"), list) and len(raw_runs["rynnvalue"]) > 1:
-            allow_partial_coverage = True
-        validated_runs = self._validate_runs(
-            raw_runs,
-            selected_ids,
-            allow_partial_coverage=allow_partial_coverage,
+        raise ValidationError(
+            "analysis_kind is required; the legacy temporal analysis runner has been removed"
         )
-        pre_window = self._integer(payload.get("pre_window_frames", 60), "pre_window_frames")
-        post_window = self._integer(payload.get("post_window_frames", 60), "post_window_frames")
-        stride = self._integer(payload.get("background_stride_frames", 30), "background_stride_frames")
-        label = str(payload.get("output_label") or "web_analysis").strip()
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
-            raise ValidationError("output_label must contain only letters, numbers, dot, underscore, or hyphen")
-        script = self.project_root / "tools" / "analyze_baseline_temporal_signals.py"
-        if not script.is_file():
-            raise ValidationError("Temporal analysis script is not installed")
-        job_id = "analysis-" + uuid.uuid4().hex[:12]
-        workspace = self.analysis_root / ".web_jobs" / job_id
-        output_temp = workspace / "output"
-        output_final = self.analysis_root / (
-            "web_" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
-            + "_" + label + "_" + job_id[-8:]
-        )
-        selection_path = workspace / "selection.json"
-        selection_doc = {
-            "schema_version": 1,
-            "scope": scope,
-            "selection": [{"id": record["id"]} for record in records],
-        }
-        command = [
-            str(self.analysis_python), str(script),
-            "--selection", str(selection_path),
-            "--manifest", str(self.manifest_path),
-            "--annotations-dir", str(self.annotation_root / "records"),
-            "--output-dir", str(output_temp),
-            "--safe-run", str(validated_runs["safe"][0][0]),
-            "--procvlm-run", str(validated_runs["procvlm"][0][0]),
-            "--robo-dopamine-run", str(validated_runs["robo_dopamine"][0][0]),
-            "--pre-window-frames", str(pre_window),
-            "--post-window-frames", str(post_window),
-            "--background-stride-frames", str(stride),
-        ]
-        for run_path, _metadata in validated_runs["rynnvalue"]:
-            command.extend(["--rynnvalue-run", str(run_path)])
-        self.analysis_root.mkdir(parents=True, exist_ok=True)
-        self.log_root.mkdir(parents=True, exist_ok=True)
-        (self.analysis_root / ".web_jobs").mkdir(parents=True, exist_ok=True)
-        self.coordinator.acquire(job_id, "analysis")
-        try:
-            workspace.mkdir(parents=True, exist_ok=False)
-            atomic_json_write(selection_path, selection_doc)
-            job = {
-                "job_id": job_id,
-                "job_type": "analysis",
-                "status": "queued",
-                "scope": scope,
-                "selected_rollouts": len(records),
-                "allow_partial_coverage": allow_partial_coverage,
-                "runs": {
-                    method: (
-                        [self._relative(pair[0]) for pair in pairs]
-                        if len(pairs) > 1
-                        else self._relative(pairs[0][0])
-                    )
-                    for method, pairs in validated_runs.items()
-                },
-                "run_source_counts": {
-                    method: len(pairs) for method, pairs in validated_runs.items()
-                },
-                "parameters": {
-                    "pre_window_frames": pre_window,
-                    "post_window_frames": post_window,
-                    "background_stride_frames": stride,
-                },
-                "command": command,
-                "output_dir": self._relative(output_final),
-                "output_temp": self._relative(output_temp),
-                "selection_path": self._relative(selection_path),
-                "log_path": self._relative(self.log_root / f"{job_id}.log"),
-                "started_at": None,
-                "finished_at": None,
-                "return_code": None,
-                "error": None,
-                "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                "interpreter": str(self.analysis_python),
-            }
-            with self.jobs_lock:
-                self.jobs[job_id] = job
-            self.tmux.submit(
-                job,
-                command,
-                self.log_root / f"{job_id}.log",
-                interpreter=str(self.analysis_python),
-                environment={"MPLBACKEND": "Agg"},
-                on_poll=self._on_job_poll,
-                on_finished=self._on_job_finished,
-            )
-        except Exception:
-            with self.jobs_lock:
-                self.jobs.pop(job_id, None)
-            self.coordinator.release(job_id)
-            raise
-        return dict(job)
 
     def _on_job_loaded(self, job: dict[str, Any]) -> None:
         job_id = str(job["job_id"])
