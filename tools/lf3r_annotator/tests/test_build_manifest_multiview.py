@@ -129,6 +129,30 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
             self.assertNotIn("cam_wrist", record["camera_video_paths"])
             self.assertNotIn("primary_camera", record)
 
+    def test_empty_scan_refuses_to_overwrite_existing_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            scan_root = root / "outputs"
+            scan_root.mkdir()
+            output = root / "manifest.jsonl"
+            output.write_text("keep-existing\n", encoding="utf-8")
+            args = mock.Mock(
+                project_root=root,
+                scan_root=[scan_root],
+                task_metadata=root / "missing-task-metadata.json",
+                output=output,
+                refresh_instruction_variants=False,
+            )
+
+            with mock.patch.object(build_manifest, "parse_args", return_value=args):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "No rollout records discovered; refusing to overwrite",
+                ):
+                    build_manifest.main()
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "keep-existing\n")
+
     def test_existing_camera_sidecar_must_declare_camera_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
