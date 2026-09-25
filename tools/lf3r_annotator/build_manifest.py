@@ -283,6 +283,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1/manifest.jsonl",
     )
+    parser.add_argument(
+        "--refresh-instruction-variants",
+        action="store_true",
+        help=(
+            "After rebuilding the manifest, regenerate the LIBERO-10 "
+            "instruction-variant manifest with the same media schema."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -340,6 +348,22 @@ def main() -> None:
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
+
+    if args.refresh_instruction_variants:
+        variant_builder = project_root / "tools/prepare_libero10_instruction_variants.py"
+        command = [
+            sys.executable,
+            str(variant_builder),
+            "--source-manifest",
+            str(args.output.resolve()),
+            "--force",
+        ]
+        print(
+            "Refreshing instruction variants with rebuilt manifest: "
+            + " ".join(command),
+            file=sys.stderr,
+        )
+        subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":
