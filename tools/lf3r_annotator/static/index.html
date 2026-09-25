@@ -559,16 +559,13 @@
                     <option value="controlled_analysis">Controlled</option>
                   </select>
                 </label>
-                <label><span>SAFE run</span><select id="analysisOutcomeRunSafe"></select></label>
-                <label><span>ProcVLM run</span><select id="analysisOutcomeRunProcvlm"></select></label>
-                <label><span>RynnValue run(s)</span><select id="analysisOutcomeRunRynnvalue" multiple size="4"></select></label>
-                <label><span>Robo-Dopamine run</span><select id="analysisOutcomeRunRoboDopamine"></select></label>
                 <label><span>Output label</span>
                   <input id="analysisOutcomeOutputLabel" type="text" value="web_outcome" maxlength="64"
                     pattern="[A-Za-z0-9][A-Za-z0-9._-]*">
                 </label>
               </div>
-              <p id="analysisOutcomeRunStatus" class="analysis-run-selection">Loading completed baseline runs…</p>
+              <div id="analysisOutcomeCoverage" class="analysis-table-wrap"></div>
+              <p id="analysisOutcomeRunStatus" class="analysis-run-selection">Checking annotated population and saved-output coverage…</p>
               <button id="analysisOutcomeRunButton" class="save-button" type="submit" disabled>Run outcome evaluation</button>
             </form>
             <pre id="analysisOutcomeRunLog" class="job-log" aria-label="Latest outcome evaluation log"></pre>
