@@ -195,6 +195,9 @@ def record_camera_video_paths(
 
 def preferred_record_video(record: dict[str, Any], data_root: Path) -> Path:
     cameras = record_camera_video_paths(record, data_root)
+    declared = record.get("primary_camera")
+    if isinstance(declared, str) and declared in cameras:
+        return cameras[declared]
     camera = next(
         (name for name in CAMERA_PREFERENCE if name in cameras),
         next(iter(cameras)),
