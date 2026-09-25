@@ -1853,6 +1853,55 @@ print('fake label loss ablation complete')
         self.assertNotIn("pre_sample_frames", compact)
         self.assertEqual(analysis["method_coverage"][0]["available_rollouts"], 1)
 
+    def test_analysis_snapshot_exposes_dedicated_outcome_evaluation(self) -> None:
+        analysis_root = self.root / "outputs" / "baseline_signal_analysis"
+        directory = analysis_root / "outcome_test"
+        directory.mkdir(parents=True)
+        manifest_hash = hashlib.sha256((self.root / "manifest.jsonl").read_bytes()).hexdigest()
+        metadata = {
+            "schema_version": 1,
+            "analysis": "lf3r_rollout_outcome_evaluation",
+            "manifest_sha256": manifest_hash,
+            "generated_at": "2026-09-25T00:00:00+00:00",
+            "rollouts": [self.rollout["id"]],
+            "counts": {"rollouts": 1, "summary_rows": 1, "prediction_rows": 1},
+            "rollout_outcome_classification": {
+                "positive_class": "clean_success+recovered_success",
+                "negative_class": "terminal_failure",
+                "default_threshold": "q95",
+            },
+        }
+        (directory / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+        (directory / "method_coverage.csv").write_text(
+            "method,selected_rollouts,available_rollouts,missing_rollouts\n"
+            "safe,1,1,0\n",
+            encoding="utf-8",
+        )
+        (directory / "rollout_outcome_summary.csv").write_text(
+            "method,signal,threshold,n_resolved,tp,fn,fp,tn,accuracy,success_recall,failure_recall,precision,f1,auroc,positive_class,negative_class\n"
+            "safe,max_token_prob,q95,1,1,0,0,0,1.0,1.0,,1.0,1.0,,clean_success+recovered_success,terminal_failure\n",
+            encoding="utf-8",
+        )
+        (directory / "rollout_outcome_predictions.csv").write_text(
+            "rollout_id,method,threshold,predicted_success\n"
+            + self.rollout["id"] + ",safe,q95,true\n",
+            encoding="utf-8",
+        )
+
+        with self.request("/api/analysis") as response:
+            analysis = json.load(response)["analysis"]
+        self.assertTrue(analysis["available"])
+        self.assertTrue(analysis["rollout_outcome_available"])
+        self.assertEqual(len(analysis["rollout_outcome_summary"]), 1)
+        self.assertEqual(
+            analysis["rollout_outcome_snapshot"]["source"]["directory"],
+            "outputs/baseline_signal_analysis/outcome_test",
+        )
+        self.assertEqual(
+            analysis["rollout_outcome"]["positive_class"],
+            "clean_success+recovered_success",
+        )
+
     def test_analysis_snapshot_exposes_change_point_artifacts(self) -> None:
         analysis_root = self.root / "outputs" / "baseline_signal_analysis"
         directory = analysis_root / "changepoint_test"
