@@ -1045,13 +1045,15 @@
           <div class="analysis-card-heading">
             <div>
               <p class="eyebrow">FINAL OUTCOME CLASSIFICATION</p>
-              <h3 id="analysisRolloutOutcomeTitle">Terminal progress vs rollout result</h3>
+              <h3 id="analysisRolloutOutcomeTitle">Terminal signal vs rollout result</h3>
             </div>
             <span id="analysisRolloutOutcomeBadge" class="analysis-badge">Unavailable</span>
           </div>
           <p class="analysis-card-note">Failure is the positive class. Clean success and recovered success count as
-            final success; uncertain rollouts are excluded. The default Q95 threshold is calibrated from final-success
-            terminal scores only, after orienting each method so larger values mean more failure-like.</p>
+            final success; uncertain rollouts are excluded. Each method uses its primary terminal signal. The default
+            Q95 threshold is calibrated from final-success terminal scores in this same analysis cohort after orienting
+            each method so larger values mean more failure-like; the thresholded metrics are descriptive, not held-out
+            classification estimates.</p>
           <div id="analysisRolloutOutcomeTable" class="analysis-table-wrap"></div>
           <div id="analysisRolloutOutcomeProvenance" class="analysis-provenance"></div>
         </section>
