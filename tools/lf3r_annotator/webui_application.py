@@ -232,7 +232,6 @@ class WebUIApplication(server.LF3RApplication):
                     "Manifest record has invalid camera_video_paths: "
                     + str(record.get("id"))
                 )
-            resolved: set[Path] = set()
             for camera, value in camera_paths.items():
                 if not isinstance(camera, str) or not camera.strip():
                     raise server.ValidationError(
@@ -244,22 +243,7 @@ class WebUIApplication(server.LF3RApplication):
                         "Manifest record has an invalid camera video path: "
                         + str(record.get("id"))
                     )
-                path = self.resolve_project_file(value, ".mp4")
-                if path in resolved:
-                    raise server.ValidationError(
-                        "Manifest record maps multiple camera keys to one file: "
-                        + str(record.get("id"))
-                    )
-                resolved.add(path)
-            primary_camera = record.get("primary_camera")
-            if primary_camera is not None and (
-                not isinstance(primary_camera, str)
-                or primary_camera not in camera_paths
-            ):
-                raise server.ValidationError(
-                    "Manifest record has invalid primary_camera: "
-                    + str(record.get("id"))
-                )
+                self.resolve_project_file(value, ".mp4")
         return records
 
 
