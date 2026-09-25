@@ -21,6 +21,8 @@ from run_lf3r_baseline import (
     load_jsonl,
     log_line,
     make_execution_environment,
+    preferred_record_video,
+    record_camera_video_paths,
     resolve_record_path,
     selected_gpu_ids,
     run_streamed,
@@ -92,9 +94,9 @@ def resolve_goal_image(
 def resolve_robo_camera_inputs(
     record: dict[str, Any],
     args: argparse.Namespace,
-    canonical_video: Path,
+    primary_video: Path,
 ) -> tuple[dict[str, str], str]:
-    """Adapt dataset camera facts to Robo-Dopamine's fixed three input slots."""
+    """Adapt manifest camera facts to Robo-Dopamine's fixed three input slots."""
     requested_mode = str(getattr(args, "robo_camera_mode", "auto") or "auto").strip()
     if requested_mode not in {"auto", "single_view", "multi_view"}:
         raise ValueError(
@@ -103,57 +105,61 @@ def resolve_robo_camera_inputs(
         )
 
     if requested_mode == "single_view":
-        canonical = str(canonical_video)
+        primary = str(primary_video)
         return {
-            "cam_high": canonical,
-            "cam_left_wrist": canonical,
-            "cam_right_wrist": canonical,
+            "cam_high": primary,
+            "cam_left_wrist": primary,
+            "cam_right_wrist": primary,
         }, "single_view"
 
-    raw = record.get("camera_video_paths")
-    if not isinstance(raw, dict):
-        raw = {}
+    cameras = record_camera_video_paths(record, args.data_root)
+    high = cameras.get("cam_high")
+    shared_wrist = cameras.get("cam_wrist")
+    left_wrist = cameras.get("cam_left_wrist")
+    right_wrist = cameras.get("cam_right_wrist")
 
-    dataset_slots = ("cam_high", "cam_wrist")
-    present = [
-        slot for slot in dataset_slots
-        if isinstance(raw.get(slot), str) and str(raw.get(slot)).strip()
-    ]
-    if present and len(present) != len(dataset_slots):
-        missing = [slot for slot in dataset_slots if slot not in present]
+    if high is not None and shared_wrist is not None:
+        for slot, path in (("cam_high", high), ("cam_wrist", shared_wrist)):
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Robo-Dopamine camera input {slot} does not exist: {path}"
+                )
+        wrist = str(shared_wrist)
+        return {
+            "cam_high": str(high),
+            "cam_left_wrist": wrist,
+            "cam_right_wrist": wrist,
+        }, "multi_view"
+
+    if high is not None and left_wrist is not None and right_wrist is not None:
+        for slot, path in (
+            ("cam_high", high),
+            ("cam_left_wrist", left_wrist),
+            ("cam_right_wrist", right_wrist),
+        ):
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"Robo-Dopamine camera input {slot} does not exist: {path}"
+                )
+        return {
+            "cam_high": str(high),
+            "cam_left_wrist": str(left_wrist),
+            "cam_right_wrist": str(right_wrist),
+        }, "multi_view"
+
+    if requested_mode == "multi_view":
         raise ValueError(
-            "Incomplete camera_video_paths for "
-            f"{record.get('id') or record.get('rollout_id')}: "
-            f"present={present}, missing={missing}"
+            "Robo-Dopamine multi_view requires either cam_high + cam_wrist "
+            "or cam_high + cam_left_wrist + cam_right_wrist for "
+            f"{record.get('id') or record.get('rollout_id')}"
         )
 
-    if not present:
-        if requested_mode == "multi_view":
-            raise ValueError(
-                "Robo-Dopamine multi_view requires camera_video_paths with "
-                f"cam_high and cam_wrist for {record.get('id') or record.get('rollout_id')}"
-            )
-        canonical = str(canonical_video)
-        return {
-            "cam_high": canonical,
-            "cam_left_wrist": canonical,
-            "cam_right_wrist": canonical,
-        }, "single_view"
-
-    cam_high = resolve_record_path(str(raw["cam_high"]), args.data_root)
-    cam_wrist = resolve_record_path(str(raw["cam_wrist"]), args.data_root)
-    for slot, path in (("cam_high", cam_high), ("cam_wrist", cam_wrist)):
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"Robo-Dopamine camera input {slot} does not exist: {path}"
-            )
-
-    wrist = str(cam_wrist)
+    primary = str(primary_video)
     return {
-        "cam_high": str(cam_high),
-        "cam_left_wrist": wrist,
-        "cam_right_wrist": wrist,
-    }, "multi_view"
+        "cam_high": primary,
+        "cam_left_wrist": primary,
+        "cam_right_wrist": primary,
+    }, "single_view"
 
 
 def build_job_specs(
@@ -167,10 +173,7 @@ def build_job_specs(
         rollout_id = str(record.get("rollout_id", record.get("id", "")))
         if not rollout_id:
             raise ValueError("Robo-Dopamine job is missing rollout ID")
-        video_value = record.get("video_path")
-        if video_value is None:
-            raise ValueError(f"Robo-Dopamine job {rollout_id} is missing video path")
-        video = resolve_record_path(str(video_value), args.data_root)
+        video = preferred_record_video(record, args.data_root)
         if not video.is_file():
             raise FileNotFoundError(f"Input for {rollout_id} does not exist: {video}")
         camera_inputs, camera_input_mode = resolve_robo_camera_inputs(
