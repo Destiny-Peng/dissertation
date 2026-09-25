@@ -125,8 +125,8 @@ class LF3RApplication:
             row = variants.get(condition)
             if row is None:
                 continue
-            if row.get("video_path") != record.get("video_path"):
-                raise ValidationError("Instruction variant video does not match source rollout: " + source_id)
+            if row.get("camera_video_paths") != record.get("camera_video_paths"):
+                raise ValidationError("Instruction variant camera videos do not match source rollout: " + source_id)
             options[condition] = {
                 "id": row["id"],
                 "condition": condition,
@@ -164,8 +164,8 @@ class LF3RApplication:
         row = self.load_instruction_variant_records().get(record["id"], {}).get(condition)
         if row is None:
             return None
-        if row.get("video_path") != record.get("video_path"):
-            raise ValidationError("Instruction variant video does not match source rollout: " + record["id"])
+        if row.get("camera_video_paths") != record.get("camera_video_paths"):
+            raise ValidationError("Instruction variant camera videos do not match source rollout: " + record["id"])
         return dict(row)
 
     def load_rollouts(self) -> list[dict[str, Any]]:
@@ -184,7 +184,27 @@ class LF3RApplication:
                 if rollout_id in seen:
                     raise ValidationError(f"Duplicate rollout id: {rollout_id}")
                 seen.add(rollout_id)
-                self.resolve_project_file(record["video_path"], ".mp4")
+                camera_paths = record.get("camera_video_paths")
+                if not isinstance(camera_paths, dict) or not camera_paths:
+                    raise ValidationError(
+                        f"Manifest record has no camera_video_paths at line {line_number}"
+                    )
+                resolved: set[Path] = set()
+                for camera, value in camera_paths.items():
+                    if not isinstance(camera, str) or not camera.strip():
+                        raise ValidationError(
+                            f"Manifest record has an invalid camera key at line {line_number}"
+                        )
+                    if not isinstance(value, str) or not value.strip():
+                        raise ValidationError(
+                            f"Manifest record has an invalid camera path at line {line_number}"
+                        )
+                    path = self.resolve_project_file(value, ".mp4")
+                    if path in resolved:
+                        raise ValidationError(
+                            f"Manifest record maps multiple cameras to one video at line {line_number}"
+                        )
+                    resolved.add(path)
                 records.append(record)
         return records
 
