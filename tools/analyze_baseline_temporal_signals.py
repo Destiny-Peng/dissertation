@@ -249,21 +249,22 @@ def compute_rollout_outcome_classification(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Classify final rollout outcome from each method's terminal native score.
 
-    terminal_failure is the positive class. clean_success and recovered_success
-    are final-success negatives. uncertain rollouts are retained in the
-    prediction artifact but excluded from metric denominators. Thresholds are
-    calibrated only from final-success scores (Q90/Q95/Q99) after orienting each
-    method so larger values mean more failure-like.
+    Final success (clean_success or recovered_success) is the positive class and
+    terminal_failure is the negative class. Uncertain rollouts are retained in
+    the prediction artifact but excluded from metric denominators. Thresholds
+    are calibrated from final-success scores (Q90/Q95/Q99) after orienting each
+    method so larger values mean more failure-like. A rollout is predicted
+    successful when its failure-oriented terminal score stays below threshold.
     """
     terminal_rows: list[dict[str, Any]] = []
     for rollout_id, rollout in rollouts.items():
         outcome = normalize_outcome(rollout["annotation"])
-        if outcome == "terminal_failure":
-            true_failure = 1
-        elif outcome in {"clean_success", "recovered_success"}:
-            true_failure = 0
+        if outcome in {"clean_success", "recovered_success"}:
+            true_success = 1
+        elif outcome == "terminal_failure":
+            true_success = 0
         else:
-            true_failure = None
+            true_success = None
         record = rollout["record"]
         total_frames = int(record.get("total_frames") or 0)
         for method in METHODS:
@@ -291,8 +292,11 @@ def compute_rollout_outcome_classification(
                 "task_suite": record.get("task_suite"),
                 "task_id": record.get("task_id"),
                 "outcome": outcome,
-                "true_failure": true_failure,
-                "included_in_metrics": true_failure is not None,
+                "true_success": true_success,
+                "true_failure": (
+                    None if true_success is None else int(not bool(true_success))
+                ),
+                "included_in_metrics": true_success is not None,
                 "terminal_sample_frame": terminal_frame,
                 "video_final_frame": max(0, total_frames - 1),
                 "terminal_frame_gap": (
@@ -318,19 +322,19 @@ def compute_rollout_outcome_classification(
         success_scores = [
             float(row["failure_oriented_terminal_score"])
             for row in method_rows
-            if int(row["true_failure"]) == 0
+            if int(row["true_success"]) == 1
         ]
         failure_scores = [
             float(row["failure_oriented_terminal_score"])
             for row in method_rows
-            if int(row["true_failure"]) == 1
+            if int(row["true_success"]) == 0
         ]
-        all_scores = [
-            float(row["failure_oriented_terminal_score"])
+        success_oriented_scores = [
+            -float(row["failure_oriented_terminal_score"])
             for row in method_rows
         ]
-        all_labels = [int(row["true_failure"]) for row in method_rows]
-        auroc = _classification_auc(all_scores, all_labels)
+        all_labels = [int(row["true_success"]) for row in method_rows]
+        auroc = _classification_auc(success_oriented_scores, all_labels)
         if not success_scores:
             continue
         thresholds = {
@@ -342,32 +346,35 @@ def compute_rollout_outcome_classification(
             threshold = thresholds[threshold_name]
             tp = fp = tn = fn = 0
             for row in method_rows:
-                predicted_failure = (
-                    float(row["failure_oriented_terminal_score"]) >= threshold
+                predicted_success = (
+                    float(row["failure_oriented_terminal_score"]) < threshold
                 )
-                truth = int(row["true_failure"])
-                if truth == 1 and predicted_failure:
+                truth = int(row["true_success"])
+                if truth == 1 and predicted_success:
                     tp += 1
                 elif truth == 1:
                     fn += 1
-                elif predicted_failure:
+                elif predicted_success:
                     fp += 1
                 else:
                     tn += 1
-            recall = _classification_rate(tp, tp + fn)
+            success_recall = _classification_rate(tp, tp + fn)
             precision = _classification_rate(tp, tp + fp)
-            specificity = _classification_rate(tn, tn + fp)
+            failure_recall = _classification_rate(tn, tn + fp)
             accuracy = _classification_rate(tp + tn, tp + tn + fp + fn)
             f1 = (
-                float(2.0 * precision * recall / (precision + recall))
+                float(
+                    2.0 * precision * success_recall
+                    / (precision + success_recall)
+                )
                 if math.isfinite(precision)
-                and math.isfinite(recall)
-                and precision + recall > 0.0
+                and math.isfinite(success_recall)
+                and precision + success_recall > 0.0
                 else math.nan
             )
             balanced_accuracy = (
-                float((recall + specificity) / 2.0)
-                if math.isfinite(recall) and math.isfinite(specificity)
+                float((success_recall + failure_recall) / 2.0)
+                if math.isfinite(success_recall) and math.isfinite(failure_recall)
                 else math.nan
             )
             raw_threshold = threshold / direction
@@ -375,6 +382,11 @@ def compute_rollout_outcome_classification(
                 f"{signal_name} >= {raw_threshold:.6g}"
                 if direction > 0
                 else f"{signal_name} <= {raw_threshold:.6g}"
+            )
+            success_rule = (
+                f"{signal_name} < {raw_threshold:.6g}"
+                if direction > 0
+                else f"{signal_name} > {raw_threshold:.6g}"
             )
             summary_rows.append({
                 "method": method,
@@ -384,10 +396,11 @@ def compute_rollout_outcome_classification(
                 "threshold": threshold_name,
                 "threshold_value_failure_oriented": threshold,
                 "raw_terminal_threshold": raw_threshold,
+                "success_rule": success_rule,
                 "failure_rule": failure_rule,
                 "threshold_calibration": "final_success_terminal_score_quantile",
-                "positive_class": "terminal_failure",
-                "negative_class": "clean_success+recovered_success",
+                "positive_class": "clean_success+recovered_success",
+                "negative_class": "terminal_failure",
                 "n_resolved": len(method_rows),
                 "n_final_success": len(success_scores),
                 "n_terminal_failure": len(failure_scores),
@@ -396,14 +409,16 @@ def compute_rollout_outcome_classification(
                 "fp": fp,
                 "tn": tn,
                 "accuracy": accuracy,
-                "recall": recall,
-                "failure_recall": recall,
+                "recall": success_recall,
+                "success_recall": success_recall,
                 "precision": precision,
                 "f1": f1,
-                "specificity": specificity,
-                "success_recall": specificity,
+                "specificity": failure_recall,
+                "failure_recall": failure_recall,
                 "false_positive_rate": (
-                    1.0 - specificity if math.isfinite(specificity) else math.nan
+                    1.0 - failure_recall
+                    if math.isfinite(failure_recall)
+                    else math.nan
                 ),
                 "balanced_accuracy": balanced_accuracy,
                 "auroc": auroc,
@@ -414,26 +429,26 @@ def compute_rollout_outcome_classification(
                 continue
             for threshold_name in ROLLOUT_OUTCOME_THRESHOLDS:
                 threshold = thresholds[threshold_name]
-                predicted_failure = (
-                    float(row["failure_oriented_terminal_score"]) >= threshold
+                predicted_success = (
+                    float(row["failure_oriented_terminal_score"]) < threshold
                 )
                 prediction_rows.append({
                     **row,
                     "threshold": threshold_name,
                     "threshold_value_failure_oriented": threshold,
-                    "predicted_failure": predicted_failure,
+                    "predicted_success": predicted_success,
+                    "predicted_failure": not predicted_success,
                     "predicted_outcome": (
-                        "terminal_failure" if predicted_failure else "final_success"
+                        "final_success" if predicted_success else "terminal_failure"
                     ),
                     "prediction_correct": (
                         None
-                        if row["true_failure"] is None
-                        else bool(predicted_failure == bool(row["true_failure"]))
+                        if row["true_success"] is None
+                        else bool(predicted_success == bool(row["true_success"]))
                     ),
                 })
 
     return pd.DataFrame(summary_rows), pd.DataFrame(prediction_rows)
-
 
 def extract_frame_from_path(value: str) -> int | None:
     match = re.search(r"frame_(\d+)\.png", value)
@@ -2110,8 +2125,8 @@ def main() -> int:
         "orientation": METHOD_SIGNAL_DIRECTIONS,
         "signal_units": METHOD_SIGNAL_UNITS,
         "rollout_outcome_classification": {
-            "positive_class": "terminal_failure",
-            "negative_class": "clean_success+recovered_success",
+            "positive_class": "clean_success+recovered_success",
+            "negative_class": "terminal_failure",
             "uncertain_policy": "excluded_from_metrics",
             "primary_signals": ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
             "signal_notes": ROLLOUT_OUTCOME_SIGNAL_NOTES,

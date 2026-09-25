@@ -29,7 +29,16 @@ function persistentJobProgress(job) {
 
 function persistentJobMethod(job) {
   if (job.job_type === "baseline") return job.baseline || "baseline";
-  if (job.job_type === "analysis") return "Temporal analysis";
+  if (job.job_type === "analysis") {
+    var kind = String(job.analysis_kind || "");
+    if (kind === "robo_hop_comparison" || kind === "robo_incremental_hop") {
+      return "Rule-based localization";
+    }
+    if (kind.indexOf("localization") !== -1 || kind.indexOf("bilstm") !== -1) {
+      return "Learned localization";
+    }
+    return "Analysis";
+  }
   return "OpenVLA rollout generation";
 }
 

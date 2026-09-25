@@ -35,16 +35,16 @@ function workspaceParseRoute() {
   var parts = raw.split("/");
   var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
   if (view === "review") view = "annotate";
-  var analysisTabs = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
-  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "localization";
+  var analysisTabs = ["outcome", "localization"];
+  var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "outcome";
   var id = ["annotate", "results"].indexOf(view) !== -1 && parts.length > 1 && parts[1]
     ? decodeURIComponent(parts.slice(1).join("/")) : null;
   return { view: view, id: id, analysisTab: analysisTab, hash: hash };
 }
 
 function workspaceRenderAnalysisTabs(tab) {
-  var allowed = ["localization", "overview", "comparison", "failures", "events", "signals", "archive"];
-  if (allowed.indexOf(tab) === -1) tab = "localization";
+  var allowed = ["outcome", "localization"];
+  if (allowed.indexOf(tab) === -1) tab = "outcome";
   workspaceState.analysisTab = tab;
   document.querySelectorAll("[data-analysis-panel]").forEach(function (panel) {
     panel.classList.toggle("hidden", panel.dataset.analysisPanel !== tab);
@@ -54,9 +54,6 @@ function workspaceRenderAnalysisTabs(tab) {
     link.classList.toggle("active", active);
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
-  });
-  document.querySelectorAll("[data-analysis-legacy-global]").forEach(function (node) {
-    node.classList.toggle("hidden", tab === "localization");
   });
 }
 
@@ -85,14 +82,10 @@ function workspaceRenderRoute() {
     }
   } else if (route.view === "analysis") {
     workspaceRenderAnalysisTabs(route.analysisTab);
+    workspaceLoadAnalysis(false);
     if (route.analysisTab === "localization") {
       if (typeof window.localizationLabRefresh === "function") window.localizationLabRefresh();
-    } else {
-      workspaceRenderLiveAnalysis();
-      workspaceRenderAnalysisRunPanel();
       workspaceLoadAnalysisEnvironment();
-      workspaceLoadAnalysis(false);
-      workspaceLoadBaselineRuns(workspaceState.analysisRunScope || "libero_10");
     }
   } else if (route.view === "settings") {
     workspaceLoadSettings();
@@ -110,8 +103,6 @@ function workspaceDataChanged() {
       selectRollout(route.id);
     }
   } else if (workspaceState.view === "analysis") {
-    workspaceRenderLiveAnalysis();
-    workspaceRenderAnalysisRunPanel();
     workspaceDashboardRenderSnapshot();
   }
 }

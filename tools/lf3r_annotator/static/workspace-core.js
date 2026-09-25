@@ -144,7 +144,7 @@ var workspaceState = {
     event_group: "terminal_failure",
     scale: "all"
   },
-  analysisTab: "localization",
+  analysisTab: "outcome",
   analysisDetails: {
     kind: "changepoint_events",
     page: 1,

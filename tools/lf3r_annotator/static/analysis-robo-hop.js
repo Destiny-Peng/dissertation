@@ -752,6 +752,7 @@
     if (view === "analysis") init();
   }
 
+  window.lf3rRoboHopEnvironmentChanged = updateButton;
   window.addEventListener("lf3r:viewchange", maybeInit);
   maybeInit();
 })();
