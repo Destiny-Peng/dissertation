@@ -43,6 +43,183 @@ DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB = 2048
 _LOCALIZATION_CHECKPOINT_CACHE: dict[str, dict[str, Any]] = {}
 
 
+def _probe_video_frame_count(path: Path) -> int:
+    """Return the decoded video-frame count reported by ffprobe."""
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames,nb_frames",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    streams = payload.get("streams") or []
+    if not streams:
+        raise ValueError(f"No video stream found while counting frames: {path}")
+    stream = streams[0]
+    raw_count = stream.get("nb_read_frames") or stream.get("nb_frames")
+    if raw_count in (None, "", "N/A"):
+        raise ValueError(f"Could not determine video frame count: {path}")
+    count = int(raw_count)
+    if count <= 0:
+        raise ValueError(f"Video has no decodable frames: {path}")
+    return count
+
+
+def _truncate_video_to_frame_count(source: Path, destination: Path, frame_count: int) -> str:
+    """Create a project-local aligned copy without modifying the source video."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.stem + ".tmp" + destination.suffix)
+    temporary.unlink(missing_ok=True)
+
+    copy_command = [
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        str(frame_count),
+        "-c:v",
+        "copy",
+        "-an",
+        str(temporary),
+    ]
+    subprocess.run(copy_command, check=True)
+    method = "stream_copy"
+
+    if _probe_video_frame_count(temporary) != frame_count:
+        temporary.unlink(missing_ok=True)
+        reencode_command = [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            str(frame_count),
+            "-vsync",
+            "0",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "0",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+            str(temporary),
+        ]
+        subprocess.run(reencode_command, check=True)
+        method = "lossless_reencode_fallback"
+
+    actual = _probe_video_frame_count(temporary)
+    if actual != frame_count:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Aligned camera copy has {actual} frames; expected {frame_count}: {source}"
+        )
+    temporary.replace(destination)
+    return method
+
+
+def _align_multiview_camera_inputs(
+    *,
+    cam_high: str,
+    cam_left: str,
+    cam_right: str,
+    output_dir: Path,
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Tolerate only a one-frame terminal mismatch among multiview inputs."""
+    source_paths = {
+        "cam_high": Path(cam_high).resolve(),
+        "cam_left_wrist": Path(cam_left).resolve(),
+        "cam_right_wrist": Path(cam_right).resolve(),
+    }
+    counts = {
+        slot: _probe_video_frame_count(path)
+        for slot, path in source_paths.items()
+    }
+    ordered_counts = [
+        counts["cam_high"],
+        counts["cam_left_wrist"],
+        counts["cam_right_wrist"],
+    ]
+    target = min(ordered_counts)
+    spread = max(ordered_counts) - target
+    if spread == 0:
+        return (
+            {slot: str(path) for slot, path in source_paths.items()},
+            {
+                "applied": False,
+                "policy": "terminal_off_by_one_only",
+                "original_frame_counts": counts,
+                "effective_frame_count": target,
+                "dropped_frames": {slot: 0 for slot in source_paths},
+            },
+        )
+    if spread > 1:
+        raise ValueError(f"Frame count mismatch among cameras: {ordered_counts}")
+
+    aligned_root = output_dir / "aligned_camera_inputs"
+    aligned_by_source: dict[str, tuple[Path, str]] = {}
+    effective: dict[str, str] = {}
+    methods: dict[str, str] = {}
+    for slot, source in source_paths.items():
+        if counts[slot] == target:
+            effective[slot] = str(source)
+            continue
+        source_key = str(source)
+        cached = aligned_by_source.get(source_key)
+        if cached is None:
+            destination = aligned_root / f"{slot}.frames{target}.mp4"
+            method = _truncate_video_to_frame_count(source, destination, target)
+            cached = (destination, method)
+            aligned_by_source[source_key] = cached
+        effective[slot] = str(cached[0])
+        methods[slot] = cached[1]
+
+    dropped = {slot: counts[slot] - target for slot in source_paths}
+    metadata = {
+        "applied": True,
+        "policy": "terminal_off_by_one_only",
+        "original_frame_counts": counts,
+        "effective_frame_count": target,
+        "dropped_frames": dropped,
+        "effective_camera_video_paths": effective,
+        "trim_methods": methods,
+    }
+    print(
+        "CAMERA_FRAME_ALIGNMENT "
+        f"counts={ordered_counts} using={target} "
+        f"dropped={[dropped['cam_high'], dropped['cam_left_wrist'], dropped['cam_right_wrist']]}",
+        flush=True,
+    )
+    return effective, metadata
+
+
 def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
     """Load one saved LF3R localization head for lightweight CPU inference."""
     resolved = path.expanduser().resolve()
@@ -398,6 +575,12 @@ def infer_rollout(
     cam_high = str(Path(job.get("cam_high_path", video)).resolve())
     cam_left = str(Path(job.get("cam_left_path", video)).resolve())
     cam_right = str(Path(job.get("cam_right_path", video)).resolve())
+    source_camera_video_paths = {
+        "cam_high": cam_high,
+        "cam_left_wrist": cam_left,
+        "cam_right_wrist": cam_right,
+    }
+    camera_alignment: dict[str, Any] | None = None
     camera_input_mode = str(job.get("camera_input_mode", "single_view"))
     goal_image = str(Path(job.get("goal_image", args.goal_image)).resolve())
     frame_interval = int(job.get("frame_interval", args.frame_interval))
@@ -413,19 +596,46 @@ def infer_rollout(
     mode_predictions: dict[str, Path] = {}
     mode_seconds: dict[str, float] = {}
     for mode in eval_modes:
-        prediction, elapsed = _run_official_mode(
-            model=model,
-            cam_high=cam_high,
-            cam_left=cam_left,
-            cam_right=cam_right,
-            goal_image=goal_image,
-            output_dir=output_dir,
-            task=task,
-            frame_interval=frame_interval,
-            batch_size=batch_size,
-            eval_mode=mode,
-            render_video=render_video,
-        )
+        try:
+            prediction, elapsed = _run_official_mode(
+                model=model,
+                cam_high=cam_high,
+                cam_left=cam_left,
+                cam_right=cam_right,
+                goal_image=goal_image,
+                output_dir=output_dir,
+                task=task,
+                frame_interval=frame_interval,
+                batch_size=batch_size,
+                eval_mode=mode,
+                render_video=render_video,
+            )
+        except ValueError as error:
+            mismatch = "Frame count mismatch among cameras:" in str(error)
+            if camera_input_mode != "multi_view" or not mismatch or camera_alignment is not None:
+                raise
+            effective_paths, camera_alignment = _align_multiview_camera_inputs(
+                cam_high=cam_high,
+                cam_left=cam_left,
+                cam_right=cam_right,
+                output_dir=output_dir,
+            )
+            cam_high = effective_paths["cam_high"]
+            cam_left = effective_paths["cam_left_wrist"]
+            cam_right = effective_paths["cam_right_wrist"]
+            prediction, elapsed = _run_official_mode(
+                model=model,
+                cam_high=cam_high,
+                cam_left=cam_left,
+                cam_right=cam_right,
+                goal_image=goal_image,
+                output_dir=output_dir,
+                task=task,
+                frame_interval=frame_interval,
+                batch_size=batch_size,
+                eval_mode=mode,
+                render_video=render_video,
+            )
         mode_predictions[mode] = prediction
         mode_seconds[mode] = elapsed
 
@@ -520,14 +730,12 @@ def infer_rollout(
         "source_commit": official_source_revision(args.repo),
         "video_path": video,
         "camera_input_mode": camera_input_mode,
-        "camera_video_paths": {
-            "cam_high": cam_high,
-            "cam_left_wrist": cam_left,
-            "cam_right_wrist": cam_right,
-        },
+        "camera_video_paths": source_camera_video_paths,
         "task": task,
         "eval_mode": eval_mode,
     }
+    if camera_alignment is not None:
+        result["camera_alignment"] = camera_alignment
     if localization_prediction is not None:
         result["localization_prediction"] = {
             key: localization_prediction[key]
@@ -590,6 +798,7 @@ def infer_rollout(
         "fused_model_output": str(fused_path) if fused_path else None,
         "mode_seconds": mode_seconds,
         "fusion": fusion_metadata,
+        "camera_alignment": result.get("camera_alignment"),
         "localization_prediction": result.get("localization_prediction"),
     }
 
@@ -792,6 +1001,7 @@ def run_persistent_jobs(
                         "fused_model_output",
                         "mode_seconds",
                         "fusion",
+                        "camera_alignment",
                         "localization_prediction",
                     }
                 }
