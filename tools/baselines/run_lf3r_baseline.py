@@ -175,7 +175,6 @@ def record_camera_video_paths(
     if not isinstance(raw, dict) or not raw:
         raise ValueError(f"Manifest record {rollout_id} has no camera_video_paths")
     resolved: dict[str, Path] = {}
-    seen: set[Path] = set()
     for camera, value in raw.items():
         if not isinstance(camera, str) or not camera.strip():
             raise ValueError(f"Manifest record {rollout_id} has an invalid camera key")
@@ -184,20 +183,12 @@ def record_camera_video_paths(
                 f"Manifest record {rollout_id} has no path for camera {camera!r}"
             )
         path = resolve_record_path(value, data_root)
-        if path in seen:
-            raise ValueError(
-                f"Manifest record {rollout_id} maps multiple cameras to one video"
-            )
-        seen.add(path)
         resolved[camera] = path
     return resolved
 
 
 def preferred_record_video(record: dict[str, Any], data_root: Path) -> Path:
     cameras = record_camera_video_paths(record, data_root)
-    declared = record.get("primary_camera")
-    if isinstance(declared, str) and declared in cameras:
-        return cameras[declared]
     camera = next(
         (name for name in CAMERA_PREFERENCE if name in cameras),
         next(iter(cameras)),
