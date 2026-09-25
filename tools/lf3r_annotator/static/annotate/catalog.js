@@ -58,7 +58,7 @@ function populateManifestFilter(manifests) {
   });
   select.innerHTML = options.join("");
   var valid = current === "all" || (manifests || []).some(function (manifest) {
-    return manifest.path === current;
+    return manifest.valid !== false && manifest.path === current;
   });
   select.value = valid ? current : "all";
   state.manifestFilter = select.value;
@@ -81,9 +81,19 @@ async function loadRollouts(preferredId) {
   state.rollouts = payload.rollouts || [];
   state.manifests = payload.manifests || [];
   populateManifestFilter(state.manifests);
+  var validManifestCount = state.manifests.filter(function (item) {
+    return item.valid !== false;
+  }).length || 1;
+  var invalidManifestCount = state.manifests.filter(function (item) {
+    return item.valid === false;
+  }).length;
   byId("datasetStatus").textContent = "Dataset online · " + state.rollouts.length
-    + " rollouts · " + (state.manifests.length || 1) + " manifest"
-    + ((state.manifests.length || 1) === 1 ? "" : "s");
+    + " rollouts · " + validManifestCount + " manifest"
+    + (validManifestCount === 1 ? "" : "s")
+    + (invalidManifestCount
+      ? " · " + invalidManifestCount + " invalid source"
+        + (invalidManifestCount === 1 ? "" : "s") + " skipped"
+      : "");
   updateProgress();
   applyFilters();
   if (typeof updateBaselineBatchAdvancedFields === "function") updateBaselineBatchAdvancedFields();
