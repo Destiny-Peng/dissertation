@@ -144,6 +144,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("AnalysisDetailsMixin", service)
         self.assertIn("class AnalysisSnapshotsMixin:", snapshots)
         self.assertIn("class AnalysisDetailsMixin:", details)
+        self.assertIn("@classmethod\n    def _dashboard_rows(", details)
+        self.assertNotIn("AnalysisService.", details)
         self.assertNotIn("analysis_service", snapshots)
         self.assertNotIn("analysis_service", details)
 

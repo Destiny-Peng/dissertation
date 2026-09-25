@@ -82,8 +82,12 @@ class AnalysisDetailsMixin:
             return self._localization_event_metrics(path, manifest)
         return self._event_metrics(path, manifest)
 
-    @staticmethod
-    def _detail_matches(row: dict[str, Any], filters: dict[str, str]) -> bool:
+    @classmethod
+    def _detail_matches(
+        cls,
+        row: dict[str, Any],
+        filters: dict[str, str],
+    ) -> bool:
         for field, wanted in filters.items():
             if wanted in {"", "all"}:
                 continue
@@ -101,7 +105,7 @@ class AnalysisDetailsMixin:
                 values = (row.get("scale_frames"), row.get("scale"))
             else:
                 values = (row.get(field),)
-            if not any(AnalysisService._same_detail_value(value, wanted) for value in values):
+            if not any(cls._same_detail_value(value, wanted) for value in values):
                 return False
         return True
 
@@ -159,8 +163,9 @@ class AnalysisDetailsMixin:
             keys.difference(preferred)
         )
 
-    @staticmethod
+    @classmethod
     def _dashboard_rows(
+        cls,
         rows: list[dict[str, Any]],
         *,
         limit: int = 64,
@@ -173,14 +178,14 @@ class AnalysisDetailsMixin:
             return rows
         exact = [
             row for row in rows
-            if AnalysisService._same_detail_value(row.get("feature"), feature)
-            and AnalysisService._same_detail_value(row.get("scale_frames"), scale)
-            and AnalysisService._same_detail_value(
+            if cls._same_detail_value(row.get("feature"), feature)
+            and cls._same_detail_value(row.get("scale_frames"), scale)
+            and cls._same_detail_value(
                 row.get("threshold") or row.get("threshold_name"), threshold
             )
             and (
                 outcome == "all_events"
-                or AnalysisService._same_detail_value(row.get("outcome_group"), outcome)
+                or cls._same_detail_value(row.get("outcome_group"), outcome)
             )
         ]
         return exact[:limit] or rows[:limit]
