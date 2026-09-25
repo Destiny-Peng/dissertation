@@ -468,16 +468,20 @@ class LF3RHandler(BaseHTTPRequestHandler):
                     return
                 camera = str(query.get("camera", [""])[0] or "").strip()
                 if not camera:
-                    preferred = (
-                        "cam_high",
-                        "cam_wrist",
-                        "cam_left_wrist",
-                        "cam_right_wrist",
-                    )
-                    camera = next(
-                        (name for name in preferred if name in camera_paths),
-                        next(iter(camera_paths)),
-                    )
+                    observation_key = rollout.get("observation_key")
+                    if isinstance(observation_key, str) and observation_key in camera_paths:
+                        camera = observation_key
+                    else:
+                        preferred = (
+                            "cam_high",
+                            "cam_wrist",
+                            "cam_left_wrist",
+                            "cam_right_wrist",
+                        )
+                        camera = next(
+                            (name for name in preferred if name in camera_paths),
+                            next(iter(camera_paths)),
+                        )
                 value = camera_paths.get(camera)
                 if not isinstance(value, str) or not value:
                     self.json_error(HTTPStatus.NOT_FOUND, "Camera video is unavailable")
