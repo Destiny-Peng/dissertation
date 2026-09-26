@@ -645,18 +645,24 @@ function workspaceDashboardOutcomeSweepChart(rows, title) {
     + '<svg class="analysis-svg analysis-sweep-svg" viewBox="0 0 ' + width + ' ' + height
     + '" role="img" aria-label="' + escapeHtml(title + " threshold sweep") + '">';
 
-  [0, 0.25, 0.5, 0.75, 1].forEach(function (tick) {
+  [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1].forEach(function (tick, index) {
     var py = y(tick);
-    html += '<line class="analysis-sweep-gridline" x1="' + margin.left + '" y1="' + py.toFixed(2)
-      + '" x2="' + (margin.left + plotWidth) + '" y2="' + py.toFixed(2) + '"></line>'
-      + '<text class="analysis-sweep-axis-label" x="' + (margin.left - 8) + '" y="' + (py + 4).toFixed(2)
-      + '" text-anchor="end">' + Math.round(tick * 100) + '%</text>';
+    var major = index % 2 === 0;
+    html += '<line class="analysis-sweep-gridline analysis-sweep-gridline-horizontal'
+      + (major ? ' major' : ' minor') + '" x1="' + margin.left + '" y1="' + py.toFixed(2)
+      + '" x2="' + (margin.left + plotWidth) + '" y2="' + py.toFixed(2) + '"></line>';
+    if (major) {
+      html += '<text class="analysis-sweep-axis-label" x="' + (margin.left - 8) + '" y="' + (py + 4).toFixed(2)
+        + '" text-anchor="end">' + Math.round(tick * 100) + '%</text>';
+    }
   });
 
-  thresholds.forEach(function (threshold, index) {
-    if (index % 2 !== 0 && index !== thresholds.length - 1) return;
+  thresholds.forEach(function (threshold) {
     var px = x(threshold);
-    html += '<line class="analysis-sweep-tick" x1="' + px.toFixed(2) + '" y1="'
+    html += '<line class="analysis-sweep-gridline analysis-sweep-gridline-vertical" x1="'
+      + px.toFixed(2) + '" y1="' + margin.top + '" x2="' + px.toFixed(2) + '" y2="'
+      + (margin.top + plotHeight) + '"></line>'
+      + '<line class="analysis-sweep-tick" x1="' + px.toFixed(2) + '" y1="'
       + (margin.top + plotHeight) + '" x2="' + px.toFixed(2) + '" y2="'
       + (margin.top + plotHeight + 4) + '"></line>'
       + '<text class="analysis-sweep-axis-label" x="' + px.toFixed(2) + '" y="'
