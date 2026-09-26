@@ -231,9 +231,11 @@ class A2WorldAdapter(WorldModelAdapter):
         if not python.is_file():
             reasons.append("A2World Python interpreter is unavailable: " + str(python))
 
-        action_adapter = (
-            self.ACTION_ADAPTER if variant == "libero" else self.GENERIC_ACTION_ADAPTER
-        )
+        # Input trajectories are LIBERO servo controls regardless of which
+        # checkpoint variant is selected. Upstream A2World's auto loader also
+        # applies libero_servo_actions to 3D LIBERO action arrays for the
+        # pretrained variant, so preprocessing is data-domain specific.
+        action_adapter = self.ACTION_ADAPTER
         result = {
             "adapter": self.name,
             "available": not reasons,
@@ -358,22 +360,10 @@ class A2WorldAdapter(WorldModelAdapter):
             array = np.pad(array, ((0, 0), (0, 7)))
         array = array.astype(np.float32, copy=True)
 
-        variant = (
-            (self._validation or {}).get("variant")
-            or (
-                "pretrained"
-                if self.config.get("checkpoint_type") == "generic_pretrained"
-                else "libero"
-            )
-        )
-        if variant == "libero":
-            array[:, 6] = (1.0 - array[:, 6]) / 2.0
-            scale = np.asarray(self.LIBERO_SERVO_SCALE, dtype=np.float32)
-            array *= scale
-            adapter_name = self.ACTION_ADAPTER
-        else:
-            adapter_name = self.GENERIC_ACTION_ADAPTER
-        return array, adapter_name
+        array[:, 6] = (1.0 - array[:, 6]) / 2.0
+        scale = np.asarray(self.LIBERO_SERVO_SCALE, dtype=np.float32)
+        array *= scale
+        return array, self.ACTION_ADAPTER
 
     def prepare_actions(self, actions: Any, *, output_dir: Path) -> Path:
         try:
