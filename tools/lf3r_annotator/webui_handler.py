@@ -76,19 +76,23 @@ class WebUIHandler(server.LF3RHandler):
 
             if path.startswith("/api/repair/synthetic-suffix/jobs/"):
                 parts = path.strip("/").split("/")
-                if len(parts) == 6 and parts[5] == "log":
-                    job_id = parts[4]
-                    tail = query.get("tail", ["240"])[0]
-                    self.json_response(
-                        HTTPStatus.OK,
-                        {"log": self.app.repair.log(job_id, tail)},
-                    )
-                    return
-                if len(parts) == 5:
-                    self.json_response(
-                        HTTPStatus.OK,
-                        {"job": self.app.repair.job(parts[4])},
-                    )
+                try:
+                    if len(parts) == 6 and parts[5] == "log":
+                        job_id = parts[4]
+                        tail = query.get("tail", ["240"])[0]
+                        self.json_response(
+                            HTTPStatus.OK,
+                            {"log": self.app.repair.log(job_id, tail)},
+                        )
+                        return
+                    if len(parts) == 5:
+                        self.json_response(
+                            HTTPStatus.OK,
+                            {"job": self.app.repair.job(parts[4])},
+                        )
+                        return
+                except KeyError:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Unknown Repair job")
                     return
                 self.json_error(HTTPStatus.NOT_FOUND, "Repair job not found")
                 return
