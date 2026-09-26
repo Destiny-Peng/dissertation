@@ -762,7 +762,7 @@ class ServerTest(unittest.TestCase):
         with self.request("/api/settings") as response:
             payload = json.load(response)
         defaults = payload["settings"]
-        self.assertEqual(defaults["background_color"], "#0b0d10")
+        self.assertEqual(defaults["background_color"], "#f6f8fb")
         self.assertEqual(defaults["font_scale"], 1.0)
         self.assertEqual(defaults["density"], "comfortable")
         self.assertIsNone(payload["updated_at"])
@@ -804,6 +804,35 @@ class ServerTest(unittest.TestCase):
             fallback = json.load(response)
         self.assertEqual(fallback["settings"], defaults)
         self.assertIsNone(fallback["updated_at"])
+
+
+    def test_settings_migrates_previous_dark_default_palette(self) -> None:
+        settings_path = self.root / "config" / "lf3r_annotator.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "background_color": "#0d1117",
+                    "surface_color": "#121820",
+                    "surface_raised_color": "#18202a",
+                    "control_color": "#0f151c",
+                    "text_color": "#e7edf3",
+                    "muted_color": "#929eaa",
+                    "accent_color": "#79aa9e",
+                    "font_scale": 1.0,
+                    "review_font_scale": 1.0,
+                    "analysis_font_scale": 1.0,
+                    "control_font_scale": 1.0,
+                    "density": "comfortable",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with self.request("/api/settings") as response:
+            payload = json.load(response)
+        self.assertEqual(payload["settings"]["background_color"], "#f6f8fb")
+        self.assertEqual(payload["settings"]["surface_color"], "#ffffff")
+        self.assertEqual(payload["settings"]["accent_color"], "#4f7df3")
 
     def seed_analysis_runs(self, missing_method: str | None = None, include_extra: bool = False) -> dict[str, str]:
         roots = {}

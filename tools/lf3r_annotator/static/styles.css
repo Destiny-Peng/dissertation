@@ -703,3 +703,439 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Academic Light appearance
+   The configurable seven-color palette stays authoritative. These overrides
+   replace the older dark-only visual hardcodes whenever Settings resolves to
+   a light background. */
+:root[data-appearance="light"] {
+  color-scheme: light;
+  --line: #d8e2ee;
+  --line-soft: #e7edf5;
+  --natural: #2f9e6f;
+  --controlled: #d99032;
+  --success: #2f9e6f;
+  --failure: #d96c6c;
+  --causal: #d19a2c;
+  --observable: #d97745;
+  --recovery: #4c8bf5;
+  --terminal: #d96c6c;
+  --focus: #4f7df3;
+  --shadow-soft: 0 16px 42px rgba(31, 42, 55, .08);
+  --shadow-card: 0 7px 22px rgba(31, 42, 55, .07);
+}
+
+:root[data-appearance="light"] body {
+  background:
+    radial-gradient(circle at 15% -12%, rgba(79, 125, 243, .08), transparent 34rem),
+    radial-gradient(circle at 82% 0%, rgba(99, 179, 168, .055), transparent 28rem),
+    linear-gradient(180deg, #fbfcfe 0%, var(--bg) 28rem);
+}
+
+:root[data-appearance="light"] ::selection {
+  background: rgba(79, 125, 243, .18);
+}
+
+:root[data-appearance="light"] * {
+  scrollbar-color: #c3d2e3 transparent;
+}
+
+:root[data-appearance="light"] *::-webkit-scrollbar-thumb {
+  background: #c3d2e3;
+  border-color: transparent;
+}
+
+:root[data-appearance="light"] *::-webkit-scrollbar-thumb:hover {
+  background-color: #9eb1c7;
+}
+
+:root[data-appearance="light"] button,
+:root[data-appearance="light"] select,
+:root[data-appearance="light"] input,
+:root[data-appearance="light"] textarea {
+  color: var(--text);
+  background: var(--control);
+  border-color: var(--line);
+}
+
+:root[data-appearance="light"] button:hover:not(:disabled) {
+  border-color: #aabbd0;
+  background-color: #f1f5f9;
+}
+
+:root[data-appearance="light"] input:hover,
+:root[data-appearance="light"] select:hover,
+:root[data-appearance="light"] textarea:hover {
+  border-color: #b7c6d8;
+}
+
+:root[data-appearance="light"] input:focus,
+:root[data-appearance="light"] select:focus,
+:root[data-appearance="light"] textarea:focus {
+  border-color: rgba(79, 125, 243, .78);
+  box-shadow: 0 0 0 3px rgba(79, 125, 243, .12);
+}
+
+:root[data-appearance="light"] button:focus-visible,
+:root[data-appearance="light"] input:focus-visible,
+:root[data-appearance="light"] select:focus-visible,
+:root[data-appearance="light"] textarea:focus-visible,
+:root[data-appearance="light"] a:focus-visible {
+  outline-color: rgba(79, 125, 243, .9);
+}
+
+:root[data-appearance="light"] .topbar {
+  border-bottom-color: rgba(216, 226, 238, .92);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 7px 24px rgba(31, 42, 55, .06);
+}
+
+:root[data-appearance="light"] .brand-mark {
+  color: #ffffff;
+  background: linear-gradient(145deg, #6f98f7 0%, var(--accent) 56%, #3f6ee8 100%);
+  border-color: rgba(79, 125, 243, .18);
+  box-shadow: 0 9px 24px rgba(79, 125, 243, .18), inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+:root[data-appearance="light"] .eyebrow,
+:root[data-appearance="light"] .record-meta,
+:root[data-appearance="light"] .evaluation-status,
+:root[data-appearance="light"] .page-subtitle,
+:root[data-appearance="light"] .analysis-legend,
+:root[data-appearance="light"] .analysis-card h4,
+:root[data-appearance="light"] .analysis-run-summary small,
+:root[data-appearance="light"] .analysis-result-cell > span,
+:root[data-appearance="light"] .analysis-result-cell > small {
+  color: var(--muted);
+}
+
+:root[data-appearance="light"] .page-navigation {
+  background: #f7f9fc;
+  border-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .page-navigation a:hover {
+  color: var(--text);
+  background: #eef3f8;
+}
+
+:root[data-appearance="light"] .page-navigation a.active {
+  color: #335fd1;
+  background: #eaf1ff;
+  border-color: #c9dcff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+
+:root[data-appearance="light"] .dataset-summary {
+  color: var(--muted);
+  background: #f8fafc;
+  border-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .status-dot::before {
+  box-shadow: 0 0 0 4px rgba(47, 158, 111, .09), 0 0 12px rgba(47, 158, 111, .13);
+}
+
+:root[data-appearance="light"] .queue-panel {
+  background: linear-gradient(180deg, #fbfcfe, #f7f9fc);
+  border-right-color: var(--line);
+  box-shadow: 10px 0 28px rgba(31, 42, 55, .045);
+}
+
+:root[data-appearance="light"] .count-chip,
+:root[data-appearance="light"] .badge,
+:root[data-appearance="light"] .analysis-badge {
+  color: var(--muted);
+  background: #f4f7fb;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+:root[data-appearance="light"] .search-box input,
+:root[data-appearance="light"] .batch-form input,
+:root[data-appearance="light"] .batch-form select,
+:root[data-appearance="light"] .analysis-run-form input,
+:root[data-appearance="light"] .analysis-run-form select,
+:root[data-appearance="light"] .rollout-generation-form input,
+:root[data-appearance="light"] .analysis-filter-grid select {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-appearance="light"] .search-box input::placeholder {
+  color: #96a4b5;
+}
+
+:root[data-appearance="light"] kbd {
+  color: #66778b;
+  background: #f1f5f9;
+  border-color: #d8e2ee;
+  box-shadow: inset 0 -1px 0 rgba(31, 42, 55, .04);
+}
+
+:root[data-appearance="light"] .filter-grid label > span,
+:root[data-appearance="light"] .field > span,
+:root[data-appearance="light"] .batch-form label,
+:root[data-appearance="light"] .analysis-run-form label,
+:root[data-appearance="light"] .rollout-generation-form label,
+:root[data-appearance="light"] .analysis-filter-grid label,
+:root[data-appearance="light"] .settings-color-grid label {
+  color: #65758a;
+}
+
+:root[data-appearance="light"] .partition-key {
+  border-top-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .rollout-card {
+  background: rgba(255, 255, 255, .86);
+  border-color: var(--line-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .78);
+}
+
+:root[data-appearance="light"] .rollout-card:hover {
+  background: #ffffff;
+  border-color: #c5d3e2;
+  box-shadow: var(--shadow-card);
+}
+
+:root[data-appearance="light"] .rollout-card.active {
+  background: linear-gradient(90deg, #eaf1ff, #ffffff 34%);
+  border-color: #b8ccef;
+  box-shadow: 0 8px 22px rgba(79, 125, 243, .09), inset 3px 0 0 var(--accent);
+}
+
+:root[data-appearance="light"] .rollout-card .card-title,
+:root[data-appearance="light"] .task-header h2,
+:root[data-appearance="light"] .analysis-kpi-value,
+:root[data-appearance="light"] .analysis-table td strong,
+:root[data-appearance="light"] .analysis-table .numeric,
+:root[data-appearance="light"] .analysis-result-cell > strong {
+  color: var(--text);
+}
+
+:root[data-appearance="light"] .card-footer {
+  color: #7a899b;
+}
+
+:root[data-appearance="light"] .review-stage {
+  background: linear-gradient(180deg, rgba(79, 125, 243, .018), transparent 14rem);
+}
+
+:root[data-appearance="light"] .empty-state::before {
+  color: #3f6ee8;
+  border-color: #c9dcff;
+  background: #eef4ff;
+}
+
+:root[data-appearance="light"] .annotation-panel {
+  background: rgba(255, 255, 255, .9);
+  border-left-color: var(--line);
+  box-shadow: -10px 0 30px rgba(31, 42, 55, .035);
+}
+
+:root[data-appearance="light"] .instruction-variant-control,
+:root[data-appearance="light"] .transport,
+:root[data-appearance="light"] .timeline-wrap,
+:root[data-appearance="light"] .rynn-parallel-panel,
+:root[data-appearance="light"] .baseline-worker-panel,
+:root[data-appearance="light"] .batch-advanced,
+:root[data-appearance="light"] .analysis-run-advanced,
+:root[data-appearance="light"] .analysis-result-details {
+  background: #f8fafc;
+  border-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .navigation-actions .ghost-button,
+:root[data-appearance="light"] .ghost-button {
+  color: #526378;
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-appearance="light"] .navigation-actions .ghost-button:hover,
+:root[data-appearance="light"] .ghost-button:hover {
+  color: var(--text);
+  background: #f5f8fb;
+}
+
+:root[data-appearance="light"] .transport-main,
+:root[data-appearance="light"] .save-button {
+  color: #ffffff;
+  background: linear-gradient(180deg, #648cf6, var(--accent));
+  border-color: #466fda;
+  box-shadow: 0 8px 18px rgba(79, 125, 243, .15);
+}
+
+:root[data-appearance="light"] .save-button:hover:not(:disabled),
+:root[data-appearance="light"] .transport-main:hover:not(:disabled) {
+  color: #ffffff;
+  background: linear-gradient(180deg, #7699f7, #3f6ee8);
+  border-color: #335fd1;
+}
+
+:root[data-appearance="light"] .known-event {
+  background: linear-gradient(90deg, rgba(47, 158, 111, .07), #ffffff);
+  border-color: #cfe8db;
+}
+
+:root[data-appearance="light"] .known-event.controlled {
+  background: linear-gradient(90deg, rgba(230, 162, 60, .08), #ffffff);
+  border-color: #f0ddbc;
+}
+
+:root[data-appearance="light"] .known-label {
+  color: #425267;
+}
+
+:root[data-appearance="light"] .evaluation-panel,
+:root[data-appearance="light"] .analysis-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfe);
+  border-color: var(--line);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+
+:root[data-appearance="light"] .evaluation-card,
+:root[data-appearance="light"] .analysis-result-cell,
+:root[data-appearance="light"] .analysis-threshold-table tbody td,
+:root[data-appearance="light"] .analysis-chart,
+:root[data-appearance="light"] .analysis-table-wrap {
+  background: #ffffff;
+  border-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .evaluation-card:hover {
+  border-color: #c5d3e2;
+}
+
+:root[data-appearance="light"] .page-heading {
+  border-bottom-color: var(--line);
+}
+
+:root[data-appearance="light"] .analysis-filter-card {
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 8px 24px rgba(31, 42, 55, .05);
+}
+
+:root[data-appearance="light"] .primary-analysis-card {
+  border-color: rgba(79, 125, 243, .34);
+  box-shadow: 0 10px 30px rgba(31, 42, 55, .07), inset 0 1px 0 rgba(79, 125, 243, .04);
+}
+
+:root[data-appearance="light"] .analysis-kpi {
+  background: linear-gradient(145deg, #ffffff, #f7f9fc);
+  border-color: var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+
+:root[data-appearance="light"] .analysis-kpi::after {
+  background: linear-gradient(90deg, rgba(79, 125, 243, .68), transparent 78%);
+}
+
+:root[data-appearance="light"] .analysis-kpi-label {
+  color: #607186;
+}
+
+:root[data-appearance="light"] .analysis-kpi-note {
+  color: #7c8b9d;
+}
+
+:root[data-appearance="light"] .analysis-svg .chart-grid {
+  stroke: #e5ebf2;
+}
+
+:root[data-appearance="light"] .analysis-svg .chart-axis {
+  stroke: #bcc9d8;
+}
+
+:root[data-appearance="light"] .analysis-svg text {
+  fill: #708095;
+}
+
+:root[data-appearance="light"] .analysis-svg .chart-label,
+:root[data-appearance="light"] .analysis-svg .chart-value {
+  fill: #334155;
+}
+
+:root[data-appearance="light"] .analysis-table th {
+  color: #64748b;
+  background: #f7f9fc;
+  border-bottom-color: var(--line);
+}
+
+:root[data-appearance="light"] .analysis-table td {
+  border-bottom-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .analysis-table tbody tr:hover td {
+  background: #f8fbff;
+}
+
+:root[data-appearance="light"] .job-card-log,
+:root[data-appearance="light"] .job-log,
+:root[data-appearance="light"] .cli-help-popover {
+  color: #334155;
+  background: #f8fafc;
+  border-color: var(--line);
+}
+
+:root[data-appearance="light"] .settings-preset {
+  color: #526378;
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-appearance="light"] .settings-preset:hover {
+  color: #335fd1;
+  background: #eef4ff;
+  border-color: #a9c1f2;
+}
+
+:root[data-appearance="light"] .settings-help {
+  background: #f8fafc;
+  border-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .form-error,
+:root[data-appearance="light"] .analysis-status.error {
+  color: #c85454;
+}
+
+:root[data-appearance="light"] .analysis-status.warning {
+  color: #b97818;
+}
+
+:root[data-appearance="light"] .job-status-complete {
+  color: #237d58;
+}
+
+:root[data-appearance="light"] .analysis-run-summary::after {
+  color: #7b8a9c;
+}
+
+:root[data-appearance="light"] .analysis-run-disclosure[open] > .analysis-run-summary,
+:root[data-appearance="light"] .analysis-result-details[open] > summary {
+  border-bottom-color: var(--line-soft);
+}
+
+:root[data-appearance="light"] .analysis-result-details > summary {
+  color: #66778b;
+}
+
+@media (min-width: 901px) {
+  :root[data-appearance="light"] body[data-view="annotate"] .review-queue-toggle,
+  :root[data-appearance="light"] body[data-view="results"] .review-queue-toggle {
+    color: #607186;
+    background: #ffffff;
+    border-color: #c8d5e4;
+    box-shadow: 6px 0 16px rgba(31, 42, 55, .10);
+  }
+
+  :root[data-appearance="light"] body[data-view="annotate"] .review-queue-toggle:hover,
+  :root[data-appearance="light"] body[data-view="results"] .review-queue-toggle:hover {
+    color: #335fd1;
+    border-color: #9fb9ed;
+    background: #eef4ff;
+  }
+}

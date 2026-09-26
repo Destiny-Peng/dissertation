@@ -31,13 +31,13 @@ OUTCOME_LABELS = {"success", "failure", "recovered_success", "uncertain"}
 REVIEW_STATUSES = {"unreviewed", "in_progress", "complete"}
 
 DEFAULT_SETTINGS = {
-    "background_color": "#0b0d10",
-    "surface_color": "#11151a",
-    "surface_raised_color": "#171c22",
-    "control_color": "#0f1318",
-    "text_color": "#f4f6f7",
-    "muted_color": "#98a3ad",
-    "accent_color": "#67d9b5",
+    "background_color": "#f6f8fb",
+    "surface_color": "#ffffff",
+    "surface_raised_color": "#f9fbfd",
+    "control_color": "#ffffff",
+    "text_color": "#1f2a37",
+    "muted_color": "#5b6b7f",
+    "accent_color": "#4f7df3",
     "font_scale": 1.0,
     "review_font_scale": 1.0,
     "analysis_font_scale": 1.0,
@@ -55,6 +55,27 @@ SETTING_COLOR_FIELDS = {
 }
 SETTING_DENSITIES = {"compact", "comfortable", "spacious"}
 SETTING_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+PREVIOUS_DEFAULT_PALETTES = (
+    {
+        "background_color": "#0b0d10",
+        "surface_color": "#11151a",
+        "surface_raised_color": "#171c22",
+        "control_color": "#0f1318",
+        "text_color": "#f4f6f7",
+        "muted_color": "#98a3ad",
+        "accent_color": "#67d9b5",
+    },
+    {
+        "background_color": "#0d1117",
+        "surface_color": "#121820",
+        "surface_raised_color": "#18202a",
+        "control_color": "#0f151c",
+        "text_color": "#e7edf3",
+        "muted_color": "#929eaa",
+        "accent_color": "#79aa9e",
+    },
+)
 
 
 class SettingsStore:
@@ -129,6 +150,17 @@ class SettingsStore:
                 if missing and missing.issubset(optional_font_fields):
                     payload = {**DEFAULT_SETTINGS, **payload}
             settings = self._validate(payload)
+            if any(
+                all(settings[field] == value for field, value in palette.items())
+                for palette in PREVIOUS_DEFAULT_PALETTES
+            ):
+                settings = {
+                    **settings,
+                    **{
+                        field: DEFAULT_SETTINGS[field]
+                        for field in SETTING_COLOR_FIELDS
+                    },
+                }
         except (OSError, json.JSONDecodeError, ValidationError):
             return dict(DEFAULT_SETTINGS), None
         updated_at = dt.datetime.fromtimestamp(
