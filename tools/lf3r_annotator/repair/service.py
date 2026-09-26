@@ -18,11 +18,7 @@ from non_analysis_tools import gpu_status
 from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
 from .alignment import capability_summary, compute_alignment
-from .trajectory import (
-    load_actions,
-    load_states,
-    run_libero_alignment_smoke,
-)
+from .alignment_runner import run_alignment_subprocess
 
 
 RUN_ID_RE = re.compile(r"^repair-suffix-[A-Za-z0-9._-]{1,120}$")
@@ -261,31 +257,32 @@ class RepairService:
         capabilities = plan["capabilities"]
         smoke: dict[str, Any] | None = None
         smoke_error: str | None = None
-        if capabilities["actions_available"] and capabilities["sim_state_available"]:
+        if (
+            capabilities["actions_available"]
+            and capabilities["sim_state_available"]
+            and plan.get("gpu", {}).get("selected") is not None
+        ):
             try:
-                actions = load_actions(self.project_root, rollout)
-                states = load_states(self.project_root, rollout)
-                if actions.ndim != 2 or actions.shape[1] != 7:
-                    raise ValidationError(
-                        f"LIBERO actions must be [T,7], got {actions.shape}"
-                    )
-                smoke = run_libero_alignment_smoke(
+                smoke = run_alignment_subprocess(
                     project_root=self.project_root,
                     rollout=rollout,
-                    states=states,
-                    actions=actions,
                     cut_frame=int(plan["alignment"]["cut_rgb_frame"]),
                     min_psnr=float(payload.get("alignment_min_psnr", 20.0)),
+                    gpu_index=int(plan["gpu"]["selected"]["index"]),
                 )
                 if not smoke["passed"]:
                     smoke_error = (
                         "LIBERO alignment smoke test failed; inspect per-view "
                         "restore/step PSNR before generation"
                     )
-            except (ValidationError, OSError, ImportError, ValueError) as error:
+            except (ValidationError, OSError, ValueError) as error:
                 smoke_error = f"{type(error).__name__}: {error}"
-        else:
+        elif not (
+            capabilities["actions_available"] and capabilities["sim_state_available"]
+        ):
             smoke_error = "Alignment smoke test requires both GT actions and simulator states"
+        else:
+            smoke_error = "Alignment smoke test requires an eligible GPU below 50% utilization"
 
         if smoke_error:
             plan["blockers"].append(smoke_error)
