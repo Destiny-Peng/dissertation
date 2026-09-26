@@ -354,19 +354,19 @@ class RepairService:
         try:
             launched = self.tmux.submit_async(
                 job,
-            [
-                sys.executable,
-                str(worker),
-                "--project-root",
-                str(self.project_root),
-                "--run-dir",
-                str(run_dir),
-            ],
-            log_path,
-            interpreter=sys.executable,
-            environment={
-                "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
-            },
+                [
+                    sys.executable,
+                    str(worker),
+                    "--project-root",
+                    str(self.project_root),
+                    "--run-dir",
+                    str(run_dir),
+                ],
+                log_path,
+                interpreter=sys.executable,
+                environment={
+                    "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+                },
                 on_poll=self._on_job_poll,
                 on_finished=self._on_job_finished,
             )
@@ -379,7 +379,7 @@ class RepairService:
 
     def _on_job_loaded(self, job: dict[str, Any]) -> None:
         job_id = str(job.get("job_id") or "")
-        if job_id:
+        if job_id and job.get("status") in {"queued", "running"}:
             self.coordinator.restore(job_id, "repair")
 
     def _on_job_poll(self, job: dict[str, Any]) -> None:
