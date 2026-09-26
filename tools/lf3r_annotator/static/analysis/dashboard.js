@@ -684,7 +684,13 @@ function workspaceDashboardOutcomeSweepChart(rows, title) {
       var value = Number(row[metric.key]);
       if (!Number.isFinite(threshold) || !Number.isFinite(value)) return;
       html += '<circle class="analysis-sweep-point ' + metric.className + '" cx="'
-        + x(threshold).toFixed(2) + '" cy="' + y(value).toFixed(2) + '" r="3">'
+        + x(threshold).toFixed(2) + '" cy="' + y(value).toFixed(2) + '" r="4" tabindex="0"'
+        + ' data-sweep-threshold="' + escapeHtml(threshold.toFixed(4)) + '"'
+        + ' data-sweep-value="' + escapeHtml(value.toFixed(8)) + '"'
+        + ' data-sweep-metric="' + escapeHtml(metric.label) + '"'
+        + ' aria-label="' + escapeHtml(
+          metric.label + ", threshold " + threshold.toFixed(2) + ", value " + workspacePercent(value)
+        ) + '">'
         + '<title>' + escapeHtml(
           metric.label + " · threshold " + threshold.toFixed(2) + " · " + workspacePercent(value)
         ) + '</title></circle>';
@@ -695,7 +701,89 @@ function workspaceDashboardOutcomeSweepChart(rows, title) {
     html += '<span><i class="analysis-sweep-swatch ' + metric.className + '"></i>'
       + escapeHtml(metric.label) + '</span>';
   });
-  return html + '</div></section>';
+  return html
+    + '</div>'
+    + '<div class="analysis-sweep-tooltip" role="status" aria-live="polite" hidden>'
+    + '<strong data-sweep-tooltip-metric>Metric</strong>'
+    + '<span>x · threshold <b data-sweep-tooltip-threshold>n/a</b></span>'
+    + '<span>y · value <b data-sweep-tooltip-value>n/a</b></span>'
+    + '</div></section>';
+}
+
+function workspaceDashboardInstallOutcomeSweepTooltips(host) {
+  if (!host) return;
+  host.querySelectorAll(".analysis-sweep-card").forEach(function (card) {
+    var tooltip = card.querySelector(".analysis-sweep-tooltip");
+    if (!tooltip) return;
+
+    function hide(point) {
+      if (point) point.classList.remove("is-active");
+      tooltip.hidden = true;
+    }
+
+    function show(point, clientX, clientY) {
+      card.querySelectorAll(".analysis-sweep-point.is-active").forEach(function (active) {
+        if (active !== point) active.classList.remove("is-active");
+      });
+      point.classList.add("is-active");
+
+      var threshold = Number(point.dataset.sweepThreshold);
+      var value = Number(point.dataset.sweepValue);
+      var metric = point.dataset.sweepMetric || "Metric";
+      var thresholdNode = tooltip.querySelector("[data-sweep-tooltip-threshold]");
+      var valueNode = tooltip.querySelector("[data-sweep-tooltip-value]");
+      var metricNode = tooltip.querySelector("[data-sweep-tooltip-metric]");
+      if (thresholdNode) {
+        thresholdNode.textContent = Number.isFinite(threshold)
+          ? threshold.toFixed(2)
+          : "n/a";
+      }
+      if (valueNode) {
+        valueNode.textContent = Number.isFinite(value)
+          ? workspacePercent(value)
+          : "n/a";
+      }
+      if (metricNode) metricNode.textContent = metric;
+
+      tooltip.hidden = false;
+      var cardRect = card.getBoundingClientRect();
+      var pointRect = point.getBoundingClientRect();
+      var left = Number.isFinite(clientX)
+        ? clientX - cardRect.left + 12
+        : pointRect.left - cardRect.left + pointRect.width / 2 + 10;
+      var top = Number.isFinite(clientY)
+        ? clientY - cardRect.top + 12
+        : pointRect.top - cardRect.top - 10;
+
+      tooltip.style.left = left + "px";
+      tooltip.style.top = top + "px";
+
+      var tooltipRect = tooltip.getBoundingClientRect();
+      var padding = 8;
+      var maxLeft = Math.max(padding, card.clientWidth - tooltipRect.width - padding);
+      var maxTop = Math.max(padding, card.clientHeight - tooltipRect.height - padding);
+      tooltip.style.left = Math.max(padding, Math.min(left, maxLeft)) + "px";
+      tooltip.style.top = Math.max(padding, Math.min(top, maxTop)) + "px";
+    }
+
+    card.querySelectorAll(".analysis-sweep-point").forEach(function (point) {
+      point.addEventListener("mouseenter", function (event) {
+        show(point, event.clientX, event.clientY);
+      });
+      point.addEventListener("mousemove", function (event) {
+        show(point, event.clientX, event.clientY);
+      });
+      point.addEventListener("mouseleave", function () {
+        hide(point);
+      });
+      point.addEventListener("focus", function () {
+        show(point, NaN, NaN);
+      });
+      point.addEventListener("blur", function () {
+        hide(point);
+      });
+    });
+  });
 }
 
 function workspaceDashboardRenderOutcomeThresholdSweep(snapshot) {
@@ -749,6 +837,7 @@ function workspaceDashboardRenderOutcomeThresholdSweep(snapshot) {
       + 'Maximum progress uses the highest native progress value observed anywhere in the rollout; final progress uses the last native sample.</p>';
   }
   host.innerHTML = html;
+  workspaceDashboardInstallOutcomeSweepTooltips(host);
 }
 
 
