@@ -135,6 +135,15 @@ class RepairService:
                 ).as_dict()
             except ValidationError as error:
                 plan_error = str(error)
+            eligibility_reasons: list[str] = []
+            if not capabilities["actions_available"]:
+                eligibility_reasons.append("missing GT actions")
+            if not capabilities["sim_state_available"]:
+                eligibility_reasons.append("missing simulator states")
+            if "cam_high" not in capabilities["views"]:
+                eligibility_reasons.append("missing cam_high")
+            if plan is None:
+                eligibility_reasons.append(plan_error or "invalid cut/alignment span")
             rows.append(
                 {
                     "id": rollout["id"],
@@ -144,10 +153,15 @@ class RepairService:
                     "task_id": rollout.get("task_id"),
                     "episode_index": rollout.get("episode_index"),
                     "task_description": rollout.get("task_description"),
+                    "source_kind": rollout.get("source_kind"),
+                    "official_demo": bool(rollout.get("official_demo")),
+                    "trajectory_group": rollout.get("trajectory_group"),
                     "outcome": rollout.get("ground_truth_outcome"),
                     "frames": total_frames,
                     "fps": rollout.get("fps"),
                     **capabilities,
+                    "repair_eligible": not eligibility_reasons,
+                    "eligibility_reasons": eligibility_reasons,
                     "default_alignment": plan,
                     "alignment_error": plan_error,
                     "wm_runs": [
