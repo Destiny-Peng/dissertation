@@ -517,3 +517,63 @@ The dataset sidecar and manifest describe only those physical facts:
 
 Robo-Dopamine's adapter owns the consumer-specific three-slot mapping: `cam_high_path <- cam_high`, while both `cam_left_path` and `cam_right_path` receive `cam_wrist`. When no supported multiview set is present, single-view mode repeats the preferred physical camera for all three Robo-Dopamine inputs. The Review player shows only cameras declared by the manifest and defaults to the first preferred available camera; a specific camera can be served with `/api/videos/<rollout-id>?camera=<camera-key>`.
 
+
+
+## Repair: Synthetic Suffix
+
+The top-level `#/repair` workspace owns LF3R's world-model completion stage. It is intentionally separate from Analysis and Failure Localization. Phase 1 implements only the success-cut benchmark:
+
+```text
+successful rollout
+  -> fixed progress/frame cut
+  -> real prefix + RGB[c] condition
+  -> branch from states[c+1]
+  -> GT future actions[c+1:]
+  -> A2World observation suffix
+  -> synchronized real-vs-generated review
+```
+
+Repair uses the loaded rollout manifests as its only dataset catalog. It never adds consumer-specific camera aliases to a manifest. A2World maps physical `cam_high` / `cam_wrist` to `agentview` / `eye_in_hand` inside the adapter, and any explicit missing-view duplication is recorded in run provenance.
+
+For a rollout to pass Repair validation, the manifest must describe real success data and point to both executable actions and simulator states. Supported trajectory/action fields include `trajectory_path`, `hdf5_path`, `source_hdf5_path`, `state_action_path`, `states_path`, `sim_state_path`, `actions_path`, and the existing `csv_path`. Official LIBERO HDF5 may be selected with `trajectory_group` / `demo_key` when automatic `data/demo_<episode>` lookup is not appropriate.
+
+The alignment smoke test is mandatory. It runs in the project-local `conda_envs/LF3R-openvla` runtime and verifies:
+
+```text
+restore states[c+1] -> render ~= RGB[c]
+step actions[c+1]   -> render ~= RGB[c+1]
+```
+
+The test records the finite RGB storage-orientation transform used for the comparison instead of changing manifest videos. A run is not submitted when the smoke test fails.
+
+A2World is not downloaded by the WebUI. The default adapter expects project-local assets:
+
+```text
+repos/A2World/world_model/
+conda_envs/LF3R-a2world/bin/python
+checkpoints/a2world-libero.pt
+checkpoints/                  # NVIDIA base assets, or an explicit base_checkpoints path
+```
+
+These locations may be overridden by Repair config / `LF3R_A2WORLD_SOURCE` / `LF3R_A2WORLD_PYTHON`, but paths remain confined to `PROJECT_ROOT`. GPU selection requires utilization below 50% both during validation/submission and immediately before A2World generation.
+
+A2World consumes 20-action chunks. LF3R applies the released LIBERO servo preprocessing, pads only the final incomplete chunk when necessary, generates autoregressively, removes the condition frame, and trims every padded output frame before publishing the suffix. The padding count is shown during validation and recorded in provenance.
+
+Run artifacts live under:
+
+```text
+artifacts/repair/synthetic_suffix/runs/<run_id>/
+  config.json
+  status.json
+  input.json
+  alignment.json
+  prepared/
+  generated/
+    a2world_combined.mp4
+    cam_high.mp4
+    cam_wrist.mp4
+  metrics.json
+  provenance.json
+```
+
+`metrics.json` stores PSNR/SSIM when their local dependencies are available. LPIPS is disabled by default to prevent an implicit trunk-weight download; it is only attempted when `LF3R_ENABLE_LPIPS=1` is set after the required weights are installed. Human review records `yes/no/uncertain` training usability and task-aware failure reasons. Dataset building and policy training are deliberately outside Phase 1.
