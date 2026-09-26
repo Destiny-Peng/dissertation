@@ -308,7 +308,14 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         self.assertIn("LF3RDatasetScopes.decorateHelp", app_help)
         self.assertIn("LF3RDatasetScopes.matchesPartition", analysis_live)
         self.assertIn("LF3RDatasetScopes.refresh", workspace_router)
+        self.assertIn("lf3rOutcomeCoverageChanged", workspace_router)
         self.assertIn("/static/runs/scope.js", workspace)
+
+        outcome_ui = (STATIC_ROOT / "analysis-outcome.js").read_text(encoding="utf-8")
+        self.assertIn("labels[row.method]", outcome_ui)
+        self.assertNotIn("labels[row.baseline]", outcome_ui)
+        self.assertIn("available_scope_rollouts", outcome_ui)
+        self.assertIn("scope_population", outcome_ui)
 
         for obsolete in ["runs-semantics.js", "dataset-scope-ui.js"]:
             self.assertFalse((STATIC_ROOT / obsolete).exists(), obsolete)
