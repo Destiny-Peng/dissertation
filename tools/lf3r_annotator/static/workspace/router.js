@@ -97,6 +97,9 @@ function workspaceDataChanged() {
       && typeof window.LF3RDatasetScopes.refresh === "function") {
     window.LF3RDatasetScopes.refresh();
   }
+  if (typeof window.lf3rOutcomeCoverageChanged === "function") {
+    window.lf3rOutcomeCoverageChanged();
+  }
   if (["annotate", "results"].indexOf(workspaceState.view) !== -1) {
     var route = workspaceParseRoute();
     if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
