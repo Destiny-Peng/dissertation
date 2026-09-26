@@ -1,6 +1,7 @@
 """Constants describing LF3R analysis artifacts and detail schemas."""
 
 ANALYSIS_BASELINE_METHODS = ("safe", "procvlm", "rynnvalue", "robo_dopamine")
+OUTCOME_EVALUATION_METHODS = ("procvlm", "rynnvalue", "robo_dopamine")
 
 ANALYSIS_TABLE_FILES = {
     "method_coverage": "method_coverage.csv",
@@ -12,11 +13,13 @@ ANALYSIS_TABLE_FILES = {
 ROLLOUT_OUTCOME_TABLE_FILES = {
     "summary": "rollout_outcome_summary.csv",
     "predictions": "rollout_outcome_predictions.csv",
+    "threshold_sweep": "rollout_outcome_threshold_sweep.csv",
 }
 ROLLOUT_OUTCOME_REQUIRED_FILES = (
     "metadata.json",
     "method_coverage.csv",
-    *ROLLOUT_OUTCOME_TABLE_FILES.values(),
+    ROLLOUT_OUTCOME_TABLE_FILES["summary"],
+    ROLLOUT_OUTCOME_TABLE_FILES["predictions"],
 )
 
 
@@ -136,6 +139,7 @@ ANALYSIS_ARTIFACT_NAMES = {
     "clean_background_summary.csv",
     "rollout_outcome_summary.csv",
     "rollout_outcome_predictions.csv",
+    "rollout_outcome_threshold_sweep.csv",
     "event_metrics.jsonl",
     "localization_summary.csv",
     "localization_thresholds.csv",
