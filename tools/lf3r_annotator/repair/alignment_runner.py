@@ -108,6 +108,6 @@ def run_alignment_subprocess(
         result["runtime"] = {
             "python": str(python.relative_to(project_root)),
             "gpu_index": gpu_index,
-            "mujo_co_gl": "egl",
+            "mujoco_gl": "egl",
         }
         return result
