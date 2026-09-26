@@ -537,6 +537,18 @@ Repair uses the loaded rollout manifests as its only dataset catalog. It never a
 
 For a rollout to pass Repair validation, the manifest must describe real success data and point to both executable actions and simulator states. Supported trajectory/action fields include `trajectory_path`, `hdf5_path`, `source_hdf5_path`, `state_action_path`, `states_path`, `sim_state_path`, `actions_path`, and the existing `csv_path`. Official LIBERO HDF5 may be selected with `trajectory_group` / `demo_key` when automatic `data/demo_<episode>` lookup is not appropriate.
 
+Phase 1 is intended to use the official LIBERO success demonstrations rather than treating the existing OpenVLA rollout manifest as if it contained simulator states. After the official dataset is mounted under the project (the default is `data/libero_official/libero_10/`), index it with the project-local OpenVLA environment:
+
+```bash
+conda_envs/LF3R-openvla/bin/python \
+  tools/lf3r_annotator/repair/prepare_libero_manifest.py \
+  --input-root data/libero_official \
+  --task-suite libero_10 \
+  --resume
+```
+
+The importer reads the official HDF5 `states`, `actions`, `obs/agentview_rgb`, `obs/eye_in_hand_rgb`, and per-demo `model_file` in place. It does not rewrite the trajectory. It materializes only the two physical RGB streams under `datasets/libero_official_success/v1/`, records their real keys as `cam_high` and `cam_wrist`, and writes `datasets/lf3r_failure_rollouts/v1/libero_official_success_manifest.jsonl`. That filename is part of the WebUI's normal default manifest discovery on the next server start. Existing extracted videos are never silently overwritten; `--resume` reuses them only when the source sidecar still exactly matches the HDF5 demo.
+
 The alignment smoke test is mandatory. It runs in the project-local `conda_envs/LF3R-openvla` runtime and verifies:
 
 ```text
