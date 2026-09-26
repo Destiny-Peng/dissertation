@@ -236,6 +236,13 @@
         checkpoint: node("repairCheckpoint").value.trim() || checkpointDefault(),
         base_checkpoints: node("repairBaseCheckpoints").value.trim() || "checkpoints",
         duplicate_missing_views: node("repairDuplicateViews").checked,
+        num_sampling_steps: Math.max(
+          1,
+          Math.round(Number(node("repairSamplingSteps").value || 35))
+        ),
+        guidance: Math.max(0, Number(node("repairGuidance").value || 0)),
+        seed: Math.round(Number(node("repairSeed").value || 0)),
+        history: node("repairHistory").checked,
         camera_mapping: {
           agentview: "cam_high",
           eye_in_hand: "cam_wrist"
@@ -277,6 +284,10 @@
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       "A2World: " + (validation.world_model.available ? "available" : "unavailable"),
+      "A2World config: steps " + String(validation.world_model.num_sampling_steps)
+        + " · guidance " + String(validation.world_model.guidance)
+        + " · seed " + String(validation.world_model.seed)
+        + " · history " + (validation.world_model.history ? "on" : "off"),
       "RGB adapter: derived after alignment (manifest ↔ A2World LIBERO convention)",
       validation.gpu && validation.gpu.selected
         ? ("GPU " + validation.gpu.selected.index + ": "
@@ -638,7 +649,16 @@
       repairState.validation = null;
       renderValidation(null);
     });
-    ["repairCheckpoint", "repairBaseCheckpoints", "repairDuplicateViews", "repairAlignmentPsnr"].forEach(function (id) {
+    [
+      "repairCheckpoint",
+      "repairBaseCheckpoints",
+      "repairDuplicateViews",
+      "repairAlignmentPsnr",
+      "repairSamplingSteps",
+      "repairGuidance",
+      "repairSeed",
+      "repairHistory"
+    ].forEach(function (id) {
       node(id).addEventListener("input", function () {
         repairState.validation = null;
         renderValidation(null);
