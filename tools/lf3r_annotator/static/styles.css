@@ -525,3 +525,133 @@ body[data-view="results"] .evaluation-output.is-stable-height {
     margin-left: 0;
   }
 }
+
+
+/* Outcome progress-threshold sweep: compact small-multiple line charts. */
+.analysis-sweep-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  min-width: 0;
+}
+
+.analysis-sweep-card {
+  min-width: 0;
+  padding: .7rem .75rem .6rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+}
+
+.analysis-sweep-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .65rem;
+  margin-bottom: .45rem;
+}
+
+.analysis-sweep-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: .75rem;
+}
+
+.analysis-sweep-heading span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: .625rem "SFMono-Regular", Consolas, monospace;
+}
+
+.analysis-sweep-svg {
+  min-width: 30rem;
+}
+
+.analysis-sweep-gridline {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+
+.analysis-sweep-axis,
+.analysis-sweep-tick {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.analysis-sweep-axis-label {
+  fill: var(--muted);
+  font: .625rem "SFMono-Regular", Consolas, monospace;
+}
+
+.analysis-sweep-line {
+  fill: none;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.analysis-sweep-point {
+  stroke: var(--surface-raised);
+  stroke-width: 1.25;
+}
+
+.analysis-sweep-line.accuracy,
+.analysis-sweep-point.accuracy,
+.analysis-sweep-swatch.accuracy {
+  stroke: var(--accent);
+  fill: var(--accent);
+  background: var(--accent);
+}
+
+.analysis-sweep-line.success-recall,
+.analysis-sweep-point.success-recall,
+.analysis-sweep-swatch.success-recall {
+  stroke: var(--success);
+  fill: var(--success);
+  background: var(--success);
+}
+
+.analysis-sweep-line.failure-recall,
+.analysis-sweep-point.failure-recall,
+.analysis-sweep-swatch.failure-recall {
+  stroke: var(--terminal);
+  fill: var(--terminal);
+  background: var(--terminal);
+}
+
+.analysis-sweep-line.f1,
+.analysis-sweep-point.f1,
+.analysis-sweep-swatch.f1 {
+  stroke: var(--focus);
+  fill: var(--focus);
+  background: var(--focus);
+}
+
+.analysis-sweep-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .8rem;
+  margin-top: .25rem;
+  color: var(--muted);
+  font-size: .625rem;
+}
+
+.analysis-sweep-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  white-space: nowrap;
+}
+
+.analysis-sweep-swatch {
+  display: inline-block;
+  width: .7rem;
+  height: .18rem;
+  border-radius: 999px;
+}
+
+@media (max-width: 1000px) {
+  .analysis-sweep-grid {
+    grid-template-columns: 1fr;
+  }
+}
