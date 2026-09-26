@@ -214,12 +214,23 @@ def run_libero_alignment_smoke(
     if not physical_views:
         raise ValidationError("Alignment validation requires cam_high or cam_wrist")
     libero_cameras = [CAMERA_TO_LIBERO[view] for view in physical_views]
-    resolution = int(rollout.get("video_width") or rollout.get("record_resolution") or 256)
+    reference_view = physical_views[0]
+    reference_path = project_path(
+        project_root,
+        str(camera_paths[reference_view]),
+    )
+    reference_frame = _video_frame(reference_path, cut_frame)
+    if reference_frame.ndim != 3 or reference_frame.shape[-1] != 3:
+        raise ValidationError(
+            f"Unexpected reference RGB shape: {reference_frame.shape}"
+        )
+    height = int(reference_frame.shape[0])
+    width = int(reference_frame.shape[1])
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
         camera_names=libero_cameras,
-        camera_heights=resolution,
-        camera_widths=resolution,
+        camera_heights=height,
+        camera_widths=width,
     )
     comparisons: dict[str, Any] = {}
     try:
