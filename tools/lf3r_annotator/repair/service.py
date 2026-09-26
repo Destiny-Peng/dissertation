@@ -18,6 +18,11 @@ from non_analysis_tools import gpu_status
 from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
 from .alignment import capability_summary, compute_alignment
+from .trajectory import (
+    load_actions,
+    load_states,
+    run_libero_alignment_smoke,
+)
 
 
 RUN_ID_RE = re.compile(r"^repair-suffix-[A-Za-z0-9._-]{1,120}$")
@@ -245,6 +250,55 @@ class RepairService:
                 "alignment_smoke_test": "will_run_before_generation",
             },
         }
+
+    def validate_with_alignment(
+        self,
+        payload: dict[str, Any],
+        rollout_map: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        plan = self.validate_plan(payload, rollout_map)
+        rollout = rollout_map[plan["rollout_id"]]
+        capabilities = plan["capabilities"]
+        smoke: dict[str, Any] | None = None
+        smoke_error: str | None = None
+        if capabilities["actions_available"] and capabilities["sim_state_available"]:
+            try:
+                actions = load_actions(self.project_root, rollout)
+                states = load_states(self.project_root, rollout)
+                if actions.ndim != 2 or actions.shape[1] != 7:
+                    raise ValidationError(
+                        f"LIBERO actions must be [T,7], got {actions.shape}"
+                    )
+                smoke = run_libero_alignment_smoke(
+                    project_root=self.project_root,
+                    rollout=rollout,
+                    states=states,
+                    actions=actions,
+                    cut_frame=int(plan["alignment"]["cut_rgb_frame"]),
+                    min_psnr=float(payload.get("alignment_min_psnr", 20.0)),
+                )
+                if not smoke["passed"]:
+                    smoke_error = (
+                        "LIBERO alignment smoke test failed; inspect per-view "
+                        "restore/step PSNR before generation"
+                    )
+            except (ValidationError, OSError, ImportError, ValueError) as error:
+                smoke_error = f"{type(error).__name__}: {error}"
+        else:
+            smoke_error = "Alignment smoke test requires both GT actions and simulator states"
+
+        if smoke_error:
+            plan["blockers"].append(smoke_error)
+        plan["ready"] = bool(plan["ready"] and smoke is not None and smoke.get("passed"))
+        plan["validation"]["alignment_smoke_test"] = (
+            smoke
+            if smoke is not None
+            else {
+                "passed": False,
+                "error": smoke_error,
+            }
+        )
+        return plan
 
     def start(
         self,
