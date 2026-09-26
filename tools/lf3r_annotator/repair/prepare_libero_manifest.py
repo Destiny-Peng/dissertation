@@ -35,7 +35,7 @@ CAMERA_DATASETS = {
 }
 
 
-class ImportError(RuntimeError):
+class DemoImportError(RuntimeError):
     """Official-demo indexing error."""
 
 
@@ -44,7 +44,7 @@ def _project_relative(project_root: Path, path: Path, label: str) -> str:
     try:
         return str(resolved.relative_to(project_root.resolve()))
     except ValueError as error:
-        raise ImportError(f"{label} must live under the LF3R project root: {resolved}") from error
+        raise DemoImportError(f"{label} must live under the LF3R project root: {resolved}") from error
 
 
 def _atomic_text(path: Path, content: str) -> None:
@@ -88,7 +88,7 @@ def _demo_index(name: str, fallback: int) -> int:
 def _fps_from_hdf5(data_group: Any, override: float | None) -> float:
     if override is not None:
         if override <= 0:
-            raise ImportError("--fps must be positive")
+            raise DemoImportError("--fps must be positive")
         return float(override)
 
     raw_env_args = data_group.attrs.get("env_args")
@@ -126,7 +126,7 @@ def _find_task_hdf5(input_root: Path, expected_relative: str) -> Path | None:
     if not matches:
         return None
     if len(matches) > 1:
-        raise ImportError(
+        raise DemoImportError(
             f"Multiple HDF5 files match {expected.name}: "
             + ", ".join(str(path) for path in matches)
         )
@@ -136,7 +136,7 @@ def _find_task_hdf5(input_root: Path, expected_relative: str) -> Path | None:
 def _validate_demo_group(group: Any, source: Path, group_name: str) -> int:
     for key in ("states", "actions", *CAMERA_DATASETS.values()):
         if key not in group:
-            raise ImportError(f"{source}:{group_name} is missing {key}")
+            raise DemoImportError(f"{source}:{group_name} is missing {key}")
     count = int(len(group["actions"]))
     lengths = {
         "states": int(len(group["states"])),
@@ -147,12 +147,12 @@ def _validate_demo_group(group: Any, source: Path, group_name: str) -> int:
         },
     }
     if count < 2 or len(set(lengths.values())) != 1:
-        raise ImportError(
+        raise DemoImportError(
             f"{source}:{group_name} has incompatible trajectory lengths: {lengths}"
         )
     action_shape = tuple(int(item) for item in group["actions"].shape)
     if len(action_shape) != 2 or action_shape[1] != 7:
-        raise ImportError(
+        raise DemoImportError(
             f"{source}:{group_name} expected LIBERO [T,7] actions, got {action_shape}"
         )
     return count
@@ -199,7 +199,7 @@ def _write_camera_video(dataset: Any, target: Path, fps: float) -> None:
         import imageio.v2 as imageio
         import numpy as np
     except ImportError as error:
-        raise ImportError(
+        raise DemoImportError(
             "imageio and numpy are required to materialize official LIBERO RGB videos"
         ) from error
 
@@ -222,7 +222,7 @@ def _write_camera_video(dataset: Any, target: Path, fps: float) -> None:
         for index in range(len(dataset)):
             frame = np.asarray(dataset[index])
             if frame.ndim != 3 or frame.shape[-1] != 3:
-                raise ImportError(
+                raise DemoImportError(
                     f"Unexpected RGB frame shape in {target.name} at {index}: {frame.shape}"
                 )
             writer.append_data(np.ascontiguousarray(frame))
@@ -300,13 +300,13 @@ def _load_suite(name: str) -> Any:
     try:
         from libero.libero import benchmark
     except ImportError as error:
-        raise ImportError(
+        raise DemoImportError(
             "LIBERO is required to map official HDF5 files to benchmark task IDs; "
             "run this importer in LF3R-openvla"
         ) from error
     mapping = benchmark.get_benchmark_dict()
     if name not in mapping:
-        raise ImportError(
+        raise DemoImportError(
             f"Unknown LIBERO suite {name!r}; available: {', '.join(sorted(mapping))}"
         )
     return mapping[name]()
@@ -325,7 +325,7 @@ def build_manifest(
     try:
         import h5py
     except ImportError as error:
-        raise ImportError("h5py is required to index official LIBERO demonstrations") from error
+        raise DemoImportError("h5py is required to index official LIBERO demonstrations") from error
 
     project_root = project_root.expanduser().resolve()
     input_root = input_root.expanduser().resolve()
@@ -333,7 +333,7 @@ def build_manifest(
     video_root = video_root.expanduser().resolve()
 
     if not input_root.is_dir():
-        raise ImportError(f"Official LIBERO input root does not exist: {input_root}")
+        raise DemoImportError(f"Official LIBERO input root does not exist: {input_root}")
     _project_relative(project_root, input_root, "Official LIBERO input root")
     _project_relative(project_root, output, "Repair manifest output")
     _project_relative(project_root, video_root, "Repair source-video root")
@@ -353,7 +353,7 @@ def build_manifest(
 
         with h5py.File(hdf5_path, "r") as handle:
             if "data" not in handle:
-                raise ImportError(f"Official LIBERO HDF5 has no data group: {hdf5_path}")
+                raise DemoImportError(f"Official LIBERO HDF5 has no data group: {hdf5_path}")
             data = handle["data"]
             fps = _fps_from_hdf5(data, fps_override)
             demo_names = sorted(
@@ -367,7 +367,7 @@ def build_manifest(
                 key=_demo_sort_key,
             )
             if not demo_names:
-                raise ImportError(f"No demonstrations found in {hdf5_path}")
+                raise DemoImportError(f"No demonstrations found in {hdf5_path}")
 
             for fallback_index, demo_name in enumerate(demo_names):
                 group = data[demo_name]
@@ -428,7 +428,7 @@ def build_manifest(
                 )
 
     if discovered_tasks == 0 or not records:
-        raise ImportError(
+        raise DemoImportError(
             f"No official {task_suite} demonstrations were found under {input_root}"
         )
 
