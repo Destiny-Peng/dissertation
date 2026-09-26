@@ -5,7 +5,6 @@ from __future__ import annotations
 import abc
 import json
 import os
-import sys
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -177,7 +176,9 @@ class A2WorldAdapter(WorldModelAdapter):
         for candidate in candidates:
             if candidate.is_file():
                 return candidate.resolve()
-        return Path(sys.executable).resolve()
+        # Keep A2World reproducible and project-local.  Do not silently use the
+        # WebUI's system interpreter when the dedicated environment is absent.
+        return (self.project_root / "conda_envs" / "LF3R-a2world" / "bin" / "python").resolve()
 
     def validate_rollout(self, rollout: dict[str, Any]) -> dict[str, Any]:
         mapping, duplicated = self._camera_mapping(rollout)
