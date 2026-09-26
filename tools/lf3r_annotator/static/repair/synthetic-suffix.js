@@ -259,6 +259,7 @@
       }
       return view + ": restore PSNR " + fmt(item.restore_psnr)
         + " · step PSNR " + fmt(item.step_psnr)
+        + " · orientation " + String(item.orientation_transform || "—")
         + " · " + (item.passed ? "pass" : "fail");
     });
     host.textContent = [
