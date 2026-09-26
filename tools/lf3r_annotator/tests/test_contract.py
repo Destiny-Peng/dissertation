@@ -331,6 +331,12 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Maximum progress", dashboard)
         self.assertIn("analysis-sweep-gridline-vertical", dashboard)
         self.assertIn("[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]", dashboard)
+        self.assertIn("workspaceDashboardInstallOutcomeSweepTooltips", dashboard)
+        self.assertIn("data-sweep-threshold", dashboard)
+        self.assertIn("data-sweep-value", dashboard)
+        self.assertIn("analysis-sweep-tooltip", dashboard)
+        self.assertIn('point.addEventListener("mouseenter"', dashboard)
+        self.assertIn('point.addEventListener("focus"', dashboard)
         sweep_renderer = dashboard[
             dashboard.index("function workspaceDashboardRenderOutcomeThresholdSweep"):
             dashboard.index("function workspaceDashboardRenderConclusions")
