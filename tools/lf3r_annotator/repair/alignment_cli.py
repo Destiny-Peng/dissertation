@@ -8,7 +8,12 @@ import json
 from pathlib import Path
 
 from backend_core import ValidationError
-from repair.trajectory import load_actions, load_states, run_libero_alignment_smoke
+from repair.trajectory import (
+    load_actions,
+    load_model_xml,
+    load_states,
+    run_libero_alignment_smoke,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +34,7 @@ def main() -> None:
         raise ValidationError("rollout-json must contain one manifest record")
     actions = load_actions(project_root, rollout)
     states = load_states(project_root, rollout)
+    model_xml = load_model_xml(project_root, rollout)
     if actions.ndim != 2 or actions.shape[1] != 7:
         raise ValidationError(f"LIBERO actions must be [T,7], got {actions.shape}")
     result = run_libero_alignment_smoke(
@@ -38,6 +44,7 @@ def main() -> None:
         actions=actions,
         cut_frame=args.cut_frame,
         min_psnr=args.min_psnr,
+        model_xml=model_xml,
     )
     result["action_count"] = int(len(actions))
     result["state_count"] = int(len(states))
