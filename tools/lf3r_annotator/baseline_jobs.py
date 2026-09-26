@@ -313,10 +313,10 @@ class BaselineJobsMixin:
             command.extend(["--partition", "all"])
             for rollout_id in rollout_ids:
                 command.extend(["--rollout-id", str(rollout_id)])
-        elif scope in {"libero_10", "libero_spatial"}:
-            command.extend(["--partition", "natural_observation", "--task-suite", scope])
-        else:
+        elif scope in {"all", "controlled_analysis"}:
             command.extend(["--partition", scope])
+        else:
+            command.extend(["--partition", "natural_observation", "--task-suite", scope])
         if end_index is not None:
             command.extend(["--start-index", str(start_index), "--end-index", str(end_index)])
         else:
