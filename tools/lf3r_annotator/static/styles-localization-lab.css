@@ -3,15 +3,15 @@
 .localization-lab-tabs button {
   border: 0;
   background: transparent;
-  color: var(--muted-color, #8f98a8);
+  color: var(--muted);
   padding: .65rem .9rem;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   font: inherit;
 }
 .localization-lab-tabs button.active {
-  color: var(--text-color, #f5f7fa);
-  border-bottom-color: var(--accent-color, #7aa2ff);
+  color: var(--text);
+  border-bottom-color: var(--accent);
 }
 .localization-section { margin-top: .85rem; }
 .localization-sweep-list, .localization-stage-list, .localization-stage-sweeps {
@@ -435,7 +435,7 @@
   padding: .85rem;
   border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
   border-radius: .7rem;
-  background: color-mix(in srgb, var(--surface-color, #11151a) 94%, transparent);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
 }
 
 .localization-config-group-wide {
@@ -444,7 +444,7 @@
 
 .localization-config-group-title {
   margin: 0 0 .7rem;
-  color: var(--text-color, #f5f7fa);
+  color: var(--text);
   font-size: .72rem;
   font-weight: 700;
   letter-spacing: .025em;
@@ -531,7 +531,7 @@
   position: sticky;
   top: 0;
   z-index: 3;
-  background: var(--surface-color, #11151a);
+  background: var(--surface);
   white-space: nowrap;
 }
 
@@ -542,7 +542,7 @@
   z-index: 2;
   min-width: 17rem;
   max-width: 22rem;
-  background: var(--surface-color, #11151a);
+  background: var(--surface);
   white-space: normal;
 }
 
@@ -551,7 +551,7 @@
 }
 
 .localization-best-row td:first-child {
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface-color, #11151a));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
 .localization-run-result-table td.numeric,
@@ -743,7 +743,7 @@
 
 .localization-repeat-detail-row > td {
   padding: 0 !important;
-  background: color-mix(in srgb, var(--surface-color, #11151a) 97%, transparent);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
 }
 
 .localization-repeat-details {
@@ -762,7 +762,7 @@
 }
 
 .localization-repeat-details[open] > summary {
-  color: var(--text-color, #f5f7fa);
+  color: var(--text);
 }
 
 .localization-repeat-table-wrap {

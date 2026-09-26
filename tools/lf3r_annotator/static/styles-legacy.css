@@ -38,7 +38,7 @@ body {
   min-height: 100vh;
   color: var(--text);
   background:
-    radial-gradient(circle at 75% 0%, rgba(68, 102, 118, 0.14), transparent 34rem),
+    radial-gradient(circle at 75% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34rem),
     var(--bg);
 }
 
@@ -64,7 +64,7 @@ button {
 }
 
 button:hover {
-  border-color: #536171;
+  border-color: color-mix(in srgb, var(--text) 28%, var(--line));
 }
 
 button:focus-visible,
@@ -206,8 +206,8 @@ kbd {
   color: var(--muted);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.625rem;
-  background: #191f26;
-  border: 1px solid #35404b;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: 4px;
 }
 
@@ -281,8 +281,8 @@ kbd {
 }
 
 .rollout-card.active {
-  background: #1b2229;
-  border-color: #4b5a68;
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
 .rollout-card .card-title {
@@ -315,19 +315,19 @@ kbd {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.5625rem;
   letter-spacing: 0.04em;
-  background: #161b21;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 4px;
 }
 
 .badge.natural {
   color: var(--natural);
-  border-color: rgba(103, 217, 181, 0.35);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--line));
 }
 
 .badge.controlled {
   color: var(--controlled);
-  border-color: rgba(216, 166, 87, 0.4);
+  border-color: color-mix(in srgb, var(--controlled) 40%, var(--line));
 }
 
 .badge.recovered_success {
@@ -593,7 +593,7 @@ kbd {
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.5;
-  background: #12171c;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-left: 3px solid var(--natural);
   border-radius: 7px;
@@ -653,7 +653,7 @@ kbd {
 
 .evaluation-card {
   padding: 10px;
-  background: #0b1014;
+  background: var(--surface-raised);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
 }
@@ -695,7 +695,7 @@ kbd {
   gap: 6px 8px;
   margin-top: 8px;
   padding: 7px;
-  background: rgba(17, 21, 26, .72);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
   border: 1px solid var(--line-soft);
   border-radius: 5px;
 }
@@ -749,17 +749,17 @@ kbd {
 
 .evaluation-badge.ok {
   color: var(--natural);
-  border-color: rgba(103, 217, 181, .35);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--line));
 }
 
 .evaluation-badge.warning {
   color: var(--causal);
-  border-color: rgba(231, 193, 92, .4);
+  border-color: color-mix(in srgb, var(--controlled) 40%, var(--line));
 }
 
 .evaluation-badge.missing {
   color: var(--failure);
-  border-color: rgba(240, 120, 105, .4);
+  border-color: color-mix(in srgb, var(--failure) 40%, var(--line));
 }
 
 .evaluation-meta {
@@ -773,7 +773,7 @@ kbd {
   position: relative;
   margin: 8px 0;
   overflow: hidden;
-  background: #080c10;
+  background: var(--surface-raised);
   border: 1px solid var(--line-soft);
   border-radius: 5px;
 }
@@ -945,10 +945,10 @@ kbd {
   margin: 7px 0 0;
   padding: 8px;
   overflow: auto;
-  color: #c9d3dc;
+  color: var(--text);
   white-space: pre-wrap;
   font: 0.625rem/1.45 "SFMono-Regular", Consolas, monospace;
-  background: #080c10;
+  background: var(--surface-raised);
   border: 1px solid var(--line-soft);
   border-radius: 5px;
 }
@@ -1130,15 +1130,15 @@ kbd {
 
 .failure-event-card {
   padding: 12px;
-  background: #0e1217;
+  background: var(--surface-raised);
   border: 1px solid var(--line);
-  border-left: 3px solid #536171;
+  border-left: 3px solid var(--line);
   border-radius: 9px;
 }
 
 .failure-event-card.active {
   border-left-color: var(--focus);
-  box-shadow: 0 0 0 1px rgba(142, 184, 255, 0.18);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 18%, transparent);
 }
 
 .failure-event-title {
@@ -1616,17 +1616,17 @@ body[data-density="spacious"] {
 
 .analysis-badge.ok {
   color: var(--accent);
-  border-color: rgba(103, 217, 181, .4);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--line));
 }
 
 .analysis-badge.warning {
   color: var(--causal);
-  border-color: rgba(231, 193, 92, .45);
+  border-color: color-mix(in srgb, var(--controlled) 45%, var(--line));
 }
 
 .analysis-badge.missing {
   color: var(--failure);
-  border-color: rgba(240, 120, 105, .45);
+  border-color: color-mix(in srgb, var(--failure) 45%, var(--line));
 }
 
 .analysis-card-subsection {
@@ -2199,20 +2199,20 @@ body[data-density="spacious"] {
 
 .job-status-complete {
   color: var(--accent);
-  border-color: rgba(103, 217, 181, .4);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--line));
 }
 
 .job-status-running,
 .job-status-queued {
   color: var(--causal);
-  border-color: rgba(231, 193, 92, .45);
+  border-color: color-mix(in srgb, var(--controlled) 45%, var(--line));
 }
 
 .job-status-failed,
 .job-status-memory_blocked,
 .job-status-complete_with_errors {
   color: var(--failure);
-  border-color: rgba(240, 120, 105, .45);
+  border-color: color-mix(in srgb, var(--failure) 45%, var(--line));
 }
 
 .analysis-run-card {
@@ -2366,10 +2366,10 @@ body[data-view] .analysis-svg {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: .6875rem/1.45 "SFMono-Regular", Consolas, monospace;
-  background: #090d12;
+  background: var(--control);
   border: 1px solid var(--focus);
   border-radius: 7px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .45);
+  box-shadow: var(--shadow-soft);
   pointer-events: none;
 }
 
@@ -2765,12 +2765,12 @@ body[data-view] .cli-help-popover {
 
 .localization-result.hit {
   color: var(--accent);
-  border: 1px solid rgba(103, 217, 181, .45);
+  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--line));
 }
 
 .localization-result.miss {
   color: var(--failure);
-  border: 1px solid rgba(240, 120, 105, .45);
+  border: 1px solid color-mix(in srgb, var(--failure) 45%, var(--line));
 }
 
 @media (max-width: 900px) {
