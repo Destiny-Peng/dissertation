@@ -567,6 +567,8 @@ class A2WorldAdapter(WorldModelAdapter):
         environment["COSMOS_PREDICT2_ARGS"] = (
             "--checkpoints " + str(base_checkpoints.resolve())
         )
+        if self.config.get("gpu_index") is not None:
+            environment["CUDA_VISIBLE_DEVICES"] = str(int(self.config["gpu_index"]))
         preflight = subprocess.run(
             [*command, "--preflight"],
             cwd=str(source_root),
