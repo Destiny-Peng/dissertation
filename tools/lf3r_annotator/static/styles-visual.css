@@ -246,7 +246,7 @@ kbd {
 .rollout-card.active {
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, var(--surface)), var(--surface-raised) 30%);
   border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
-  box-shadow: 0 9px 24px rgba(0, 0, 0, .16), inset 0 0 0 1px rgba(105, 226, 193, .045);
+  box-shadow: var(--shadow-card), inset 0 0 0 1px color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 .rollout-card .card-title {
@@ -418,7 +418,7 @@ kbd {
   border-color: var(--line-soft);
   border-radius: 10px;
 }
-.evaluation-card:hover { border-color: #33414e; }
+.evaluation-card:hover { border-color: color-mix(in srgb, var(--text) 22%, var(--line)); }
 
 .rynn-parallel-panel,
 .baseline-worker-panel,
@@ -560,7 +560,7 @@ kbd {
 .analysis-table th {
   color: var(--muted);
   background: var(--surface-raised);
-  border-bottom-color: #2a3540;
+  border-bottom-color: var(--line);
 }
 .analysis-table th,
 .analysis-table td { padding: 9px 10px; }
@@ -572,7 +572,7 @@ kbd {
 
 .analysis-threshold-table tbody td {
   background: var(--surface-raised);
-  border: 1px solid #202a34;
+  border: 1px solid var(--line-soft);
   border-radius: 7px;
 }
 
@@ -637,12 +637,12 @@ kbd {
     max-height: 32rem;
     border-right: 0;
     border-bottom: 1px solid var(--line);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, .12);
+    box-shadow: var(--shadow-card);
   }
   .annotation-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
-    box-shadow: 0 -10px 30px rgba(0, 0, 0, .08);
+    box-shadow: var(--shadow-card);
   }
   .transport { overflow-x: auto; flex-wrap: nowrap; }
   .transport > * { flex: 0 0 auto; }
@@ -723,7 +723,7 @@ kbd {
   min-width: 0;
   padding: 12px 13px;
   background: var(--surface-raised);
-  border: 1px solid #202a34;
+  border: 1px solid var(--line-soft);
   border-radius: 9px;
 }
 .analysis-result-cell > span { color: var(--muted); font-size: .82rem; }
@@ -731,7 +731,7 @@ kbd {
 .analysis-result-cell > small { color: var(--muted); line-height: 1.35; }
 .analysis-result-details {
   margin-top: 10px;
-  border: 1px solid #202a34;
+  border: 1px solid var(--line-soft);
   border-radius: 9px;
   background: var(--surface);
 }
