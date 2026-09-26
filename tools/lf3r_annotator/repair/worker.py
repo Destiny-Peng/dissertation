@@ -19,7 +19,8 @@ from typing import Any
 
 from backend_core import ValidationError
 from repair.adapters import A2WorldAdapter
-from repair.trajectory import load_actions, load_states, run_libero_alignment_smoke
+from repair.alignment_runner import run_alignment_subprocess
+from repair.trajectory import load_actions
 
 
 def atomic_json(path: Path, payload: Any) -> None:
@@ -276,7 +277,6 @@ def main() -> None:
             progress=0.08,
         )
         actions = load_actions(project_root, rollout)
-        states = load_states(project_root, rollout)
         if actions.ndim != 2 or actions.shape[1] != 7:
             raise ValidationError(
                 f"LIBERO actions must be [T,7], got {actions.shape}"
@@ -293,13 +293,13 @@ def main() -> None:
             phase="alignment_validation",
             progress=0.18,
         )
-        smoke = run_libero_alignment_smoke(
+        gpu_value = (config.get("world_model") or {}).get("gpu_index")
+        smoke = run_alignment_subprocess(
             project_root=project_root,
             rollout=rollout,
-            states=states,
-            actions=actions,
             cut_frame=cut_frame,
             min_psnr=float(config.get("alignment_min_psnr", 20.0)),
+            gpu_index=int(gpu_value) if gpu_value is not None else None,
         )
         atomic_json(run_dir / "alignment.json", smoke)
         if not smoke["passed"]:
