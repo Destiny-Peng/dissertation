@@ -27,52 +27,6 @@ class WorldModelAdapter(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    @staticmethod
-    def _transform_rgb(frame: Any, transform: str) -> Any:
-        try:
-            import numpy as np
-        except ImportError as error:
-            raise ValidationError("numpy is required for A2World RGB adaptation") from error
-        array = np.asarray(frame)
-        if transform == "raw":
-            adapted = array
-        elif transform == "horizontal_flip":
-            adapted = array[:, ::-1]
-        elif transform == "vertical_flip":
-            adapted = array[::-1, :]
-        elif transform == "rotate_180":
-            adapted = array[::-1, ::-1]
-        else:
-            raise ValidationError(f"Unknown A2World RGB transform: {transform}")
-        return np.ascontiguousarray(adapted)
-
-    def configure_alignment_rgb(self, smoke: dict[str, Any]) -> dict[str, Any]:
-        comparisons = smoke.get("comparisons") if isinstance(smoke, dict) else {}
-        if not isinstance(comparisons, dict):
-            comparisons = {}
-        mapping: dict[str, str] = {}
-        provenance: dict[str, Any] = {}
-        for manifest_view in ("cam_high", "cam_wrist"):
-            item = comparisons.get(manifest_view)
-            if not isinstance(item, dict):
-                continue
-            sim_to_manifest = str(item.get("orientation_transform") or "")
-            if sim_to_manifest not in self.MANIFEST_TO_A2WORLD_RGB:
-                raise ValidationError(
-                    f"Alignment did not provide a supported RGB orientation for {manifest_view}"
-                )
-            manifest_to_a2world = self.MANIFEST_TO_A2WORLD_RGB[sim_to_manifest]
-            mapping[manifest_view] = manifest_to_a2world
-            provenance[manifest_view] = {
-                "sim_to_manifest": sim_to_manifest,
-                "sim_to_a2world_training": self.A2WORLD_LIBERO_SIM_TO_TRAINING_RGB,
-                "manifest_to_a2world": manifest_to_a2world,
-                "a2world_to_manifest": manifest_to_a2world,
-            }
-        self.config["_manifest_to_a2world_rgb"] = mapping
-        self.config["_rgb_adapter_provenance"] = provenance
-        return provenance
-
     def prepare_condition(
         self,
         rollout: dict[str, Any],
@@ -316,6 +270,52 @@ class A2WorldAdapter(WorldModelAdapter):
         }
         self._validation = result
         return result
+
+    @staticmethod
+    def _transform_rgb(frame: Any, transform: str) -> Any:
+        try:
+            import numpy as np
+        except ImportError as error:
+            raise ValidationError("numpy is required for A2World RGB adaptation") from error
+        array = np.asarray(frame)
+        if transform == "raw":
+            adapted = array
+        elif transform == "horizontal_flip":
+            adapted = array[:, ::-1]
+        elif transform == "vertical_flip":
+            adapted = array[::-1, :]
+        elif transform == "rotate_180":
+            adapted = array[::-1, ::-1]
+        else:
+            raise ValidationError(f"Unknown A2World RGB transform: {transform}")
+        return np.ascontiguousarray(adapted)
+
+    def configure_alignment_rgb(self, smoke: dict[str, Any]) -> dict[str, Any]:
+        comparisons = smoke.get("comparisons") if isinstance(smoke, dict) else {}
+        if not isinstance(comparisons, dict):
+            comparisons = {}
+        mapping: dict[str, str] = {}
+        provenance: dict[str, Any] = {}
+        for manifest_view in ("cam_high", "cam_wrist"):
+            item = comparisons.get(manifest_view)
+            if not isinstance(item, dict):
+                continue
+            sim_to_manifest = str(item.get("orientation_transform") or "")
+            if sim_to_manifest not in self.MANIFEST_TO_A2WORLD_RGB:
+                raise ValidationError(
+                    f"Alignment did not provide a supported RGB orientation for {manifest_view}"
+                )
+            manifest_to_a2world = self.MANIFEST_TO_A2WORLD_RGB[sim_to_manifest]
+            mapping[manifest_view] = manifest_to_a2world
+            provenance[manifest_view] = {
+                "sim_to_manifest": sim_to_manifest,
+                "sim_to_a2world_training": self.A2WORLD_LIBERO_SIM_TO_TRAINING_RGB,
+                "manifest_to_a2world": manifest_to_a2world,
+                "a2world_to_manifest": manifest_to_a2world,
+            }
+        self.config["_manifest_to_a2world_rgb"] = mapping
+        self.config["_rgb_adapter_provenance"] = provenance
+        return provenance
 
     @staticmethod
     def _read_video_frame(path: Path, frame_index: int) -> Any:
