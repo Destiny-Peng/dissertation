@@ -567,6 +567,17 @@ class A2WorldAdapter(WorldModelAdapter):
         environment["COSMOS_PREDICT2_ARGS"] = (
             "--checkpoints " + str(base_checkpoints.resolve())
         )
+        preflight = subprocess.run(
+            [*command, "--preflight"],
+            cwd=str(source_root),
+            env=environment,
+            text=True,
+            check=False,
+        )
+        if preflight.returncode != 0:
+            raise RuntimeError(
+                f"A2World preflight exited with code {preflight.returncode}"
+            )
         completed = subprocess.run(
             command,
             cwd=str(source_root),
