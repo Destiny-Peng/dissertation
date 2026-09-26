@@ -95,6 +95,24 @@ def load_actions(project_root: Path, rollout: dict[str, Any]) -> Any:
     raise ValidationError(f"Unsupported action source: {source.suffix}")
 
 
+def load_model_xml(project_root: Path, rollout: dict[str, Any]) -> str | None:
+    source = find_trajectory_path(project_root, rollout)
+    if source is None or source.suffix.lower() not in {".hdf5", ".h5"}:
+        return None
+    try:
+        import h5py
+    except ImportError as error:
+        raise ValidationError("h5py is required to read LIBERO HDF5 trajectories") from error
+    with h5py.File(source, "r") as handle:
+        group = _h5_group(handle, rollout)
+        value = group.attrs.get("model_file")
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return str(value)
+
+
 def load_states(project_root: Path, rollout: dict[str, Any]) -> Any:
     import numpy as np
 
@@ -188,6 +206,7 @@ def run_libero_alignment_smoke(
     actions: Any,
     cut_frame: int,
     min_psnr: float = 20.0,
+    model_xml: str | None = None,
 ) -> dict[str, Any]:
     """Restore state[c+1], compare to RGB[c], then step actions[c+1]."""
 
@@ -260,6 +279,9 @@ def run_libero_alignment_smoke(
     try:
         env.seed(0)
         env.reset()
+        if model_xml:
+            env.reset_from_xml_string(model_xml)
+            env.sim.reset()
         obs0 = env.set_init_state(states[branch])
         obs1, _, _, _ = env.step(actions[action_index].tolist())
         for view in physical_views:
@@ -298,5 +320,6 @@ def run_libero_alignment_smoke(
         "cut_rgb_frame": int(cut_frame),
         "branch_state_index": branch,
         "future_action_start": action_index,
+        "model_xml_used": bool(model_xml),
         "comparisons": comparisons,
     }
