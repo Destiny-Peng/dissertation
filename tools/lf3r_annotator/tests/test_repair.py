@@ -46,12 +46,15 @@ class A2WorldAdapterTest(unittest.TestCase):
         checkpoint = root / "checkpoints" / "a2world-libero.pt"
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         checkpoint.write_bytes(b"checkpoint")
+        source = root / "repos" / "A2World" / "world_model" / "a2world"
+        source.mkdir(parents=True, exist_ok=True)
+        (source / "rollout.py").write_text("# test stub\n", encoding="utf-8")
         return {
             "checkpoint_type": "libero_adapted",
             "checkpoint": "checkpoints/a2world-libero.pt",
             "base_checkpoints": "checkpoints",
+            "source_root": "repos/A2World/world_model",
             "duplicate_missing_views": duplicate,
-            "command": "true",
         }
 
     def test_missing_wrist_is_not_silently_fabricated(self) -> None:
@@ -62,6 +65,54 @@ class A2WorldAdapterTest(unittest.TestCase):
                 adapter.validate_rollout(
                     {"camera_video_paths": {"cam_high": "high.mp4"}}
                 )
+
+
+    def test_libero_action_transform_matches_upstream_contract(self) -> None:
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = A2WorldAdapter(root, self._config(root, duplicate=False))
+            raw = np.asarray(
+                [[1.0, -2.0, 3.0, -4.0, 5.0, -6.0, -1.0]],
+                dtype=np.float32,
+            )
+            prepared, adapter_name = adapter._prepare_action_array(raw)
+            np.testing.assert_allclose(
+                prepared[0, :7],
+                np.asarray(
+                    [0.05, -0.10, 0.15, -0.20, 0.25, -0.30, 1.0],
+                    dtype=np.float32,
+                ),
+            )
+            np.testing.assert_allclose(prepared[0, 7:], 0.0)
+            self.assertEqual(
+                adapter_name,
+                "a2world.actions.libero_servo_actions",
+            )
+
+    def test_final_action_chunk_is_padded_and_recorded(self) -> None:
+        import json
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = A2WorldAdapter(root, self._config(root, duplicate=False))
+            output = root / "prepared"
+            output.mkdir()
+            path = adapter.prepare_actions(
+                np.zeros((21, 7), dtype=np.float32),
+                output_dir=output,
+            )
+            with np.load(path) as data:
+                self.assertEqual(data["actions"].shape, (40, 14))
+            metadata = json.loads(
+                (output / "future_actions_a2world.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(metadata["raw_future_action_count"], 21)
+            self.assertEqual(metadata["tail_padding_count"], 19)
 
     def test_explicit_duplication_is_recorded_in_provenance_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
