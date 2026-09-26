@@ -8,7 +8,8 @@
     ["lf3rRunsLogStyles", "/static/styles-runs-log.css"],
     ["lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css"],
     ["lf3rPolishStyles", "/static/styles-polish.css"],
-    ["lf3rToolsStyles", "/static/styles-tools.css"]
+    ["lf3rToolsStyles", "/static/styles-tools.css"],
+    ["lf3rRepairStyles", "/static/repair/styles.css"]
   ];
 
   var guardScript = "/static/frontend-loop-guard.js";
@@ -33,6 +34,7 @@
     "/static/workspace/events.js",
     "/static/results/layout.js",
     "/static/results/run-config.js",
+    "/static/repair/synthetic-suffix.js",
     "/static/runs/tools-layout.js",
     "/static/runs/gpu.js",
     "/static/runs/project-tool-client.js",
