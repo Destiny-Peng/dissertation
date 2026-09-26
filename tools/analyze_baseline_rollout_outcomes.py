@@ -145,8 +145,11 @@ def _progress_score(
     series = (method_data.get("signals") or {}).get(signal)
     if not isinstance(series, dict):
         return None
+    raw_values = series.get("values")
+    if raw_values is None:
+        return None
     finite: list[float] = []
-    for raw in series.get("values") or []:
+    for raw in raw_values:
         try:
             value = float(raw)
         except (TypeError, ValueError):
