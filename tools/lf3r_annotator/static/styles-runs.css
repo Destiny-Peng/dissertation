@@ -360,7 +360,7 @@ body[data-view="runs"] .runs-activity {
 }
 body[data-view="runs"] .runs-activity-heading {
   padding-bottom: .65rem;
-  border-bottom: 1px solid #222c35;
+  border-bottom: 1px solid var(--line-soft);
 }
 body[data-view="runs"] .runs-activity-heading .eyebrow {
   margin-bottom: .25rem;
@@ -410,7 +410,7 @@ body[data-view="runs"] .job-card-log {
   margin: 0;
   padding: .8rem;
   overflow: auto;
-  color: #b9c4cc;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
   font-size: .77rem;
   line-height: 1.55;
   background: color-mix(in srgb, var(--control) 88%, var(--bg));
