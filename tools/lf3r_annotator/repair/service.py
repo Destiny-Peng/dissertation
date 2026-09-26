@@ -6,7 +6,6 @@ import datetime as dt
 import json
 import os
 import re
-import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -164,6 +163,19 @@ class RepairService:
             )
         return rows
 
+    def _worker_python(self) -> Path:
+        configured = str(os.environ.get("LF3R_ENV_OPENVLA") or "").strip()
+        candidates = []
+        if configured:
+            candidates.append(Path(configured) / "bin" / "python")
+        candidates.append(
+            self.project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python"
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate.resolve()
+        return candidates[-1].resolve()
+
     @staticmethod
     def _gpu_plan() -> dict[str, Any]:
         status = gpu_status()
@@ -226,6 +238,12 @@ class RepairService:
         if not capabilities["sim_state_available"]:
             blockers.append("simulator state trajectory is unavailable in the selected manifest record")
         blockers.extend(adapter_status["unavailable_reasons"])
+        worker_python = self._worker_python()
+        if not worker_python.is_file():
+            blockers.append(
+                "Repair worker runtime is unavailable: "
+                + str(worker_python.relative_to(self.project_root))
+            )
         if gpu["selected"] is None:
             if gpu["available"]:
                 blockers.append("No GPU is below the 50% utilization threshold")
@@ -239,6 +257,11 @@ class RepairService:
             "capabilities": capabilities,
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
+            "worker_python": (
+                str(worker_python.relative_to(self.project_root))
+                if worker_python.is_relative_to(self.project_root)
+                else str(worker_python)
+            ),
             "gpu": gpu,
             "blockers": blockers,
             "validation": {
@@ -389,6 +412,7 @@ class RepairService:
         _atomic_json(run_dir / "status.json", status)
 
         worker = Path(__file__).resolve().parent / "worker.py"
+        worker_python = self._worker_python()
         log_path = self.log_root / f"{run_id}.log"
         job_id = "repair-" + uuid.uuid4().hex[:12]
         job = {
@@ -409,7 +433,7 @@ class RepairService:
             launched = self.tmux.submit_async(
                 job,
                 [
-                    sys.executable,
+                    str(worker_python),
                     str(worker),
                     "--project-root",
                     str(self.project_root),
@@ -417,7 +441,7 @@ class RepairService:
                     str(run_dir),
                 ],
                 log_path,
-                interpreter=sys.executable,
+                interpreter=str(worker_python),
                 environment={
                     "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
                 },
