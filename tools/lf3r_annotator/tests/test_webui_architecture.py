@@ -72,6 +72,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "alignment.py",
             "alignment_cli.py",
             "alignment_runner.py",
+            "prepare_libero_manifest.py",
             "trajectory.py",
             "adapters.py",
             "service.py",
