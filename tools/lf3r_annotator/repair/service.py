@@ -350,8 +350,10 @@ class RepairService:
             "phase": "queued",
             "progress": 0.0,
         }
-        launched = self.tmux.submit_async(
-            job,
+        self.coordinator.acquire(job_id, "repair")
+        try:
+            launched = self.tmux.submit_async(
+                job,
             [
                 sys.executable,
                 str(worker),
@@ -365,15 +367,20 @@ class RepairService:
             environment={
                 "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
             },
-            on_poll=self._on_job_poll,
-            on_finished=self._on_job_finished,
-        )
+                on_poll=self._on_job_poll,
+                on_finished=self._on_job_finished,
+            )
+        except Exception:
+            self.coordinator.release(job_id)
+            raise
         status["job_id"] = job_id
         _atomic_json(run_dir / "status.json", status)
         return launched
 
     def _on_job_loaded(self, job: dict[str, Any]) -> None:
-        return None
+        job_id = str(job.get("job_id") or "")
+        if job_id:
+            self.coordinator.restore(job_id, "repair")
 
     def _on_job_poll(self, job: dict[str, Any]) -> None:
         run_id = str(job.get("run_id") or "")
@@ -407,6 +414,9 @@ class RepairService:
                 if isinstance(status, dict)
                 else None
             ) or reason or f"Repair worker exited with code {return_code}"
+        job_id = str(job.get("job_id") or "")
+        if job_id:
+            self.coordinator.release(job_id)
 
     def job(self, job_id: str) -> dict[str, Any]:
         job = self.tmux.get(job_id)
