@@ -184,6 +184,7 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('id="repairView"', html)
         self.assertNotIn('data-analysis-tab="repair"', html)
         self.assertIn('"repair"', router)
+        self.assertIn("LF3RRepairSyntheticSuffix.refresh", router)
         self.assertIn("/api/repair/synthetic-suffix/", repair_js)
 
 
