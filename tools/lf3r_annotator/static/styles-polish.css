@@ -1,25 +1,7 @@
 /* Final visual polish layered after the shared LF3R UI styles. */
 
-:root {
-  --bg: #0d1117;
-  --surface: #121820;
-  --surface-raised: #18202a;
-  --control: #0f151c;
-  --line: #2b3540;
-  --line-soft: #212a34;
-  --text: #e7edf3;
-  --muted: #929eaa;
-  --natural: #72baa9;
-  --controlled: #c39a5b;
-  --success: #72baa9;
-  --failure: #d27b72;
-  --causal: #cdb05f;
-  --observable: #cd8962;
-  --recovery: #78a2c8;
-  --terminal: #c96570;
-  --focus: #81a8ca;
-  --accent: #79aa9e;
-}
+/* Theme tokens are owned by Settings / styles.css. This layer must not
+   reset them, otherwise late-loaded polish overrides the active theme. */
 
 body {
   background:
@@ -28,55 +10,55 @@ body {
 }
 
 .topbar {
-  background: rgba(13, 17, 23, .96);
-  border-bottom-color: #242d37;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .16);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  border-bottom-color: var(--line-soft);
+  box-shadow: var(--shadow-card);
 }
 
 .brand-mark {
-  color: #0b1514;
-  background: linear-gradient(145deg, #9bcfc3, #79aa9e 58%, #648f86);
-  box-shadow: 0 7px 18px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .28);
+  color: #ffffff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 72%, white), var(--accent) 58%, color-mix(in srgb, var(--accent) 82%, black));
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, .28);
 }
 
 .page-navigation,
 .dataset-summary {
-  background: #111820;
-  border-color: #242e38;
+  background: var(--surface);
+  border-color: var(--line-soft);
 }
 
 .page-navigation a.active {
-  color: #dcebe7;
-  background: #1a2928;
-  border-color: #31504b;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
 }
 
 .queue-panel {
-  background: linear-gradient(180deg, #121820, #10161d);
+  background: linear-gradient(180deg, #121820, var(--surface));
   border-right-color: #27313b;
   box-shadow: 8px 0 24px rgba(0, 0, 0, .08);
 }
 
 .rollout-card {
-  background: #111820;
-  border-color: #232d37;
+  background: var(--surface);
+  border-color: var(--line-soft);
 }
 
 .rollout-card:hover {
-  background: #151d26;
-  border-color: #35424f;
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--text) 24%, var(--line));
 }
 
 .rollout-card.active {
-  background: linear-gradient(90deg, rgba(121, 170, 158, .10), #18212a 34%);
-  border-color: #41515d;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface-raised) 34%);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
 .annotation-panel,
 .evaluation-panel,
 .analysis-card {
-  background: #121820;
-  border-color: #29343f;
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 .instruction-variant-control,
@@ -86,37 +68,37 @@ body {
 .failure-events-section,
 .batch-advanced,
 .baseline-worker-panel {
-  background: #111820;
-  border-color: #26313c;
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 button,
 select,
 input,
 textarea {
-  background: #0f151c;
-  border-color: #2b3540;
+  background: var(--control);
+  border-color: var(--line);
 }
 
 button:hover:not(:disabled),
 select:hover,
 input:hover,
 textarea:hover {
-  border-color: #465360;
+  border-color: color-mix(in srgb, var(--text) 26%, var(--line));
 }
 
 .transport-main,
 .save-button {
-  color: #0b1514;
-  background: #83b9ad;
-  border-color: #8fc5b9;
+  color: #ffffff;
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 74%, var(--line));
   box-shadow: none;
 }
 
 .transport-main:hover:not(:disabled),
 .save-button:hover:not(:disabled) {
-  background: #91c4b8;
-  border-color: #9bcfc3;
+  background: color-mix(in srgb, var(--accent) 86%, white);
+  border-color: color-mix(in srgb, var(--accent) 66%, white);
 }
 
 /* Keep the queue handle inside the rail instead of hanging into the content. */
@@ -128,9 +110,9 @@ textarea:hover {
     width: 1.7rem;
     height: 2.8rem;
     border-radius: 8px;
-    background: #151d26;
-    border-color: #34414d;
-    box-shadow: 0 5px 14px rgba(0, 0, 0, .18);
+    background: var(--surface-raised);
+    border-color: var(--line);
+    box-shadow: var(--shadow-card);
   }
 }
 
@@ -190,7 +172,7 @@ body[data-view="runs"] .runs-view > .evaluation-panel {
   margin: 0 0 1.35rem;
   padding: 1.25rem;
   border-radius: 14px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .10);
+  box-shadow: var(--shadow-card);
 }
 
 body[data-view="runs"] .evaluation-heading {
@@ -246,7 +228,7 @@ body[data-view="runs"] .batch-advanced-grid label > span,
 body[data-view="runs"] .rollout-generation-grid label > span {
   display: block;
   margin-bottom: .38rem;
-  color: #aeb8c2;
+  color: var(--muted);
   font-size: .82rem;
   font-weight: 650;
   line-height: 1.3;
@@ -269,7 +251,7 @@ body[data-view="runs"] .baseline-worker-panel,
 body[data-view="runs"] .batch-advanced {
   margin-top: .2rem;
   padding: 1rem;
-  border: 1px solid #29343f;
+  border: 1px solid var(--line);
   border-radius: 11px;
 }
 
