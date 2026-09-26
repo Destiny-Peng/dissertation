@@ -119,6 +119,45 @@ class FrontendSafetyContractTest(unittest.TestCase):
             workspace.index('"/static/runs/layout.js"'),
         )
 
+    def test_late_loaded_styles_do_not_reset_or_bypass_theme_tokens(self) -> None:
+        polish = (STATIC_ROOT / "styles-polish.css").read_text(encoding="utf-8")
+        self.assertNotIn("--bg:", polish)
+        self.assertNotIn("--surface:", polish)
+        self.assertNotIn("--text:", polish)
+        self.assertIn("var(--surface)", polish)
+        self.assertIn("var(--accent)", polish)
+
+        late_styles = [
+            "styles-runs.css",
+            "styles-run-config.css",
+            "styles-runs-log.css",
+            "styles-tools.css",
+            "styles-baseline-jobs.css",
+        ]
+        dark_background = re.compile(
+            r"background(?:-color)?\s*:\s*#(?:0[0-9a-fA-F]{5}|1[0-9a-fA-F]{5})"
+        )
+        for name in late_styles:
+            source = (STATIC_ROOT / name).read_text(encoding="utf-8")
+            self.assertIsNone(
+                dark_background.search(source),
+                f"{name} contains a hard-coded dark background instead of theme tokens",
+            )
+
+        localization = (STATIC_ROOT / "styles-localization-lab.css").read_text(
+            encoding="utf-8"
+        )
+        for stale_token in (
+            "--surface-color",
+            "--text-color",
+            "--muted-color",
+            "--accent-color",
+        ):
+            self.assertNotIn(stale_token, localization)
+        manifest = (STATIC_ROOT / "styles-manifest.css").read_text(encoding="utf-8")
+        self.assertNotIn("var(--border)", manifest)
+        self.assertIn("var(--line)", manifest)
+
     def test_workspace_retries_transient_script_load_failures(self) -> None:
         workspace = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
         self.assertIn("if (retry < 1)", workspace)

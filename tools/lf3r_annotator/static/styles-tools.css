@@ -3,8 +3,8 @@
 body[data-view="runs"] .runs-gpu-strip {
   margin: 0 0 1rem;
   padding: .85rem .95rem;
-  background: #0f151b;
-  border: 1px solid #26313c;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 14px;
 }
 
@@ -31,12 +31,12 @@ body[data-view="runs"] .runs-gpu-heading .eyebrow {
 }
 
 body[data-view="runs"] .runs-gpu-heading strong {
-  color: #e0e6eb;
+  color: var(--text);
   font-size: .92rem;
 }
 
 body[data-view="runs"] .runs-gpu-heading span {
-  color: #7e8b96;
+  color: var(--muted);
   font-size: .74rem;
 }
 
@@ -49,8 +49,8 @@ body[data-view="runs"] .runs-gpu-cards {
 body[data-view="runs"] .runs-gpu-card {
   min-width: 0;
   padding: .72rem .78rem;
-  background: #121920;
-  border: 1px solid #27323d;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: 10px;
 }
 
@@ -64,53 +64,53 @@ body[data-view="runs"] .runs-gpu-meta {
 }
 
 body[data-view="runs"] .runs-gpu-card-top strong {
-  color: #e0e7ec;
+  color: var(--text);
   font-size: .86rem;
 }
 
 body[data-view="runs"] .runs-gpu-card-top span,
 body[data-view="runs"] .runs-gpu-meta,
 body[data-view="runs"] .runs-gpu-memory {
-  color: #8b98a4;
+  color: var(--muted);
   font-size: .72rem;
 }
 
 body[data-view="runs"] .runs-gpu-name {
   margin: .22rem 0 .58rem;
   overflow: hidden;
-  color: #aeb8c1;
+  color: var(--muted);
   font-size: .72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-body[data-view="runs"] .runs-gpu-memory b { color: #dfe8e4; }
+body[data-view="runs"] .runs-gpu-memory b { color: var(--text); }
 
 body[data-view="runs"] .runs-gpu-meter {
   height: 5px;
   margin: .38rem 0 .5rem;
   overflow: hidden;
-  background: #1d252d;
+  background: var(--line-soft);
   border-radius: 999px;
 }
 
 body[data-view="runs"] .runs-gpu-meter i {
   display: block;
   height: 100%;
-  background: #6f9f94;
+  background: var(--accent);
   border-radius: inherit;
 }
 
 body[data-view="runs"] .runs-gpu-empty {
   padding: .6rem .7rem;
-  color: #7f8b96;
+  color: var(--muted);
   font-size: .78rem;
-  background: #111820;
-  border: 1px dashed #2b3640;
+  background: var(--surface);
+  border: 1px dashed var(--line);
   border-radius: 9px;
 }
 
-body[data-view="runs"] .runs-gpu-empty.error { color: #d29a91; }
+body[data-view="runs"] .runs-gpu-empty.error { color: var(--failure); }
 
 body[data-view="runs"] .runs-custom-panel {
   display: block !important;
@@ -118,16 +118,16 @@ body[data-view="runs"] .runs-custom-panel {
   min-width: 0;
   margin: 0;
   padding: 1rem;
-  background: #11171e;
-  border: 1px solid #29343f;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 14px 34px rgba(0,0,0,.12);
+  box-shadow: var(--shadow-card);
 }
 
 body[data-view="runs"] .runs-custom-heading {
   margin: 0 0 .9rem;
   padding: .2rem .25rem .75rem;
-  border-bottom: 1px solid #222c36;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 body[data-view="runs"] .runs-custom-heading h2 {
@@ -152,8 +152,8 @@ body[data-view="runs"] .runs-tool-stack {
 body[data-view="runs"] .runs-tool-card {
   min-width: 0;
   padding: .9rem;
-  background: #0f151c;
-  border: 1px solid #26313c;
+  background: var(--control);
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 
@@ -166,13 +166,13 @@ body[data-view="runs"] .runs-tool-card-heading {
 
 body[data-view="runs"] .runs-tool-card-heading h3 {
   margin: 0;
-  color: #dfe6eb;
+  color: var(--text);
   font-size: .96rem;
 }
 
 body[data-view="runs"] .runs-tool-card-heading p {
   margin: .2rem 0 0;
-  color: #7f8b96;
+  color: var(--muted);
   font-size: .76rem;
   line-height: 1.45;
 }
@@ -183,11 +183,11 @@ body[data-view="runs"] .runs-step {
   height: 1.65rem;
   display: grid;
   place-items: center;
-  color: #dce9e5;
+  color: var(--text);
   font-size: .75rem;
   font-weight: 700;
-  background: #22312f;
-  border: 1px solid #35504b;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
   border-radius: 50%;
 }
 
@@ -200,15 +200,15 @@ body[data-view="runs"] .runs-tool-grid {
 body[data-view="runs"] .runs-tool-grid > label {
   min-width: 0;
   padding: .64rem .68rem;
-  background: #121920;
-  border: 1px solid #242f39;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
   border-radius: 9px;
 }
 
 body[data-view="runs"] .runs-tool-grid > label > span {
   display: block;
   margin-bottom: .35rem;
-  color: #aab5be;
+  color: var(--muted);
   font-size: .73rem;
   font-weight: 650;
 }
@@ -235,7 +235,7 @@ body[data-view="runs"] .runs-tool-grid .runs-check {
   display: flex;
   align-items: center;
   gap: .45rem;
-  color: #a9b4bd;
+  color: var(--muted);
   font-size: .76rem;
 }
 body[data-view="runs"] .runs-tool-grid .runs-check input {
@@ -250,12 +250,12 @@ body[data-view="runs"] .runs-tool-action {
   gap: .75rem;
   margin-top: .75rem;
   padding-top: .7rem;
-  border-top: 1px solid #222d37;
+  border-top: 1px solid var(--line-soft);
 }
 
 body[data-view="runs"] .runs-tool-action > span {
   margin-right: auto;
-  color: #788691;
+  color: var(--muted);
   font-size: .73rem;
   line-height: 1.4;
 }
@@ -277,8 +277,8 @@ body[data-view="runs"] .runs-tool-activity {
   grid-template-rows: auto auto auto minmax(17rem, 1fr);
   gap: .65rem;
   padding: .85rem;
-  background: #0d1319;
-  border: 1px solid #26313c;
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 
@@ -295,15 +295,15 @@ body[data-view="runs"] .runs-tool-job {
   gap: .7rem;
   padding: .55rem .62rem;
   text-align: left;
-  background: #111820;
-  border: 1px solid #26313c;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
 body[data-view="runs"] .runs-tool-job strong {
   min-width: 0;
   overflow: hidden;
-  color: #cbd4da;
+  color: var(--text);
   font-size: .75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -311,20 +311,20 @@ body[data-view="runs"] .runs-tool-job strong {
 
 body[data-view="runs"] .runs-tool-job span {
   flex: 0 0 auto;
-  color: #86939e;
+  color: var(--muted);
   font-size: .68rem;
 }
 
 body[data-view="runs"] .runs-tool-job.active {
-  background: #182321;
-  border-color: #3b564f;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
 }
 
 body[data-view="runs"] .runs-tool-job-empty {
   padding: .65rem;
-  color: #75828d;
+  color: var(--muted);
   font-size: .74rem;
-  border: 1px dashed #29343e;
+  border: 1px dashed var(--line);
   border-radius: 8px;
 }
 
@@ -345,10 +345,10 @@ body[data-view="runs"] .runs-outcome-row label {
   align-items: center;
   gap: .4rem;
   padding: .42rem .58rem;
-  color: #aab5be;
+  color: var(--muted);
   font-size: .73rem;
-  background: #121920;
-  border: 1px solid #25303a;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
 }
 
@@ -370,7 +370,7 @@ body[data-view="runs"] .runs-maintenance-validation {
 body[data-view="runs"] .runs-manifest-rescan {
   margin-top: .8rem;
   padding-top: .8rem;
-  border-top: 1px solid #222d37;
+  border-top: 1px solid var(--line-soft);
 }
 
 body[data-view="runs"] .runs-manifest-rescan-heading {
@@ -380,13 +380,13 @@ body[data-view="runs"] .runs-manifest-rescan-heading {
 }
 
 body[data-view="runs"] .runs-manifest-rescan-heading strong {
-  color: #d4dce1;
+  color: var(--text);
   font-size: .86rem;
 }
 
 body[data-view="runs"] .runs-manifest-rescan-heading span,
 body[data-view="runs"] .runs-manifest-summary {
-  color: #7f8c96;
+  color: var(--muted);
   font-size: .73rem;
   line-height: 1.45;
 }
@@ -399,9 +399,9 @@ body[data-view="runs"] .runs-path-list {
 
 body[data-view="runs"] .runs-path-list code {
   padding: .28rem .42rem;
-  color: #b7c5ce;
-  background: #0d141a;
-  border: 1px solid #28343d;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+  background: var(--control);
+  border: 1px solid var(--line);
   border-radius: 6px;
   font-size: .73rem;
 }
@@ -409,8 +409,8 @@ body[data-view="runs"] .runs-path-list code {
 body[data-view="runs"] .runs-manifest-summary {
   margin-top: .62rem;
   padding: .5rem .6rem;
-  background: #0f171d;
-  border: 1px solid #27343d;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: 7px;
 }
 
@@ -429,12 +429,12 @@ body[data-view="runs"] .runs-manifest-choice-toolbar > div:first-child {
 }
 
 body[data-view="runs"] .runs-manifest-choice-toolbar strong {
-  color: #cfd8de;
+  color: var(--text);
   font-size: .78rem;
 }
 
 body[data-view="runs"] .runs-manifest-choice-toolbar span {
-  color: #7f8c96;
+  color: var(--muted);
   font-size: .7rem;
 }
 
@@ -456,8 +456,8 @@ body[data-view="runs"] .runs-manifest-choice-list {
   max-height: 15rem;
   overflow: auto;
   padding: .45rem;
-  background: #0d141a;
-  border: 1px solid #27343d;
+  background: var(--control);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
@@ -466,14 +466,14 @@ body[data-view="runs"] .runs-manifest-choice {
   align-items: flex-start;
   gap: .55rem;
   padding: .5rem .55rem;
-  background: #121920;
-  border: 1px solid #242f39;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
   border-radius: 7px;
   cursor: pointer;
 }
 
 body[data-view="runs"] .runs-manifest-choice:hover {
-  border-color: #3c4b57;
+  border-color: color-mix(in srgb, var(--text) 24%, var(--line));
 }
 
 body[data-view="runs"] .runs-manifest-choice input {
@@ -488,14 +488,14 @@ body[data-view="runs"] .runs-manifest-choice > span {
 }
 
 body[data-view="runs"] .runs-manifest-choice strong {
-  color: #cbd5dc;
+  color: var(--text);
   font-size: .76rem;
   font-weight: 650;
 }
 
 body[data-view="runs"] .runs-manifest-choice small,
 body[data-view="runs"] .runs-manifest-choice-empty {
-  color: #7f8c96;
+  color: var(--muted);
   font-size: .69rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -506,7 +506,7 @@ body[data-view="runs"] .runs-manifest-choice-empty {
 }
 
 body[data-view="runs"] .runs-manifest-choice-empty.error {
-  color: #d29a91;
+  color: var(--failure);
 }
 
 @media (max-width: 1180px) {

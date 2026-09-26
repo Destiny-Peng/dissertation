@@ -48,15 +48,15 @@ body[data-view="runs"] .persistent-job-actions .persistent-job-id {
 }
 
 body[data-view="runs"] .job-cancel-button {
-  color: #d9a29b;
-  border-color: #5d3735;
-  background: #191213;
+  color: var(--failure);
+  border-color: color-mix(in srgb, var(--failure) 42%, var(--line));
+  background: color-mix(in srgb, var(--failure) 7%, var(--surface));
 }
 
 body[data-view="runs"] .job-cancel-button:hover:not(:disabled) {
-  color: #f0b9b1;
-  border-color: #7a4743;
-  background: #241617;
+  color: color-mix(in srgb, var(--failure) 78%, var(--text));
+  border-color: color-mix(in srgb, var(--failure) 56%, var(--line));
+  background: color-mix(in srgb, var(--failure) 12%, var(--surface));
 }
 
 body[data-view="runs"] .job-cancel-button:disabled {
@@ -65,9 +65,9 @@ body[data-view="runs"] .job-cancel-button:disabled {
 }
 
 body[data-view="runs"] .job-status-cancelled {
-  color: #c5adb0;
-  background: #2a2023;
-  border-color: #514045;
+  color: color-mix(in srgb, var(--failure) 62%, var(--muted));
+  background: color-mix(in srgb, var(--failure) 9%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--failure) 34%, var(--line));
 }
 
 @media (max-width: 760px) {
