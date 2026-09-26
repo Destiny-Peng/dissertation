@@ -346,6 +346,7 @@ def main() -> None:
             raise ValidationError(
                 "; ".join(adapter_status["unavailable_reasons"])
             )
+        rgb_adapter = adapter.configure_alignment_rgb(smoke)
 
         prepared_dir = run_dir / "prepared"
         prepared_dir.mkdir(parents=True, exist_ok=True)
@@ -416,6 +417,7 @@ def main() -> None:
                 "a2world_view_ids": adapter_status["view_ids"],
                 "a2world_source_root": adapter_status["source_root"],
                 "a2world_python": adapter_status["python"],
+                "a2world_rgb_adapter": rgb_adapter,
                 "gpu_recheck_before_generation": {
                     "index": gpu_index,
                     "gpu_utilization_percent": gpu_before_generation.get(
