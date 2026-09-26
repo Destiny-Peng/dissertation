@@ -226,7 +226,7 @@ class WebUIHandler(server.LF3RHandler):
             try:
                 payload = self._read_json_body(maximum=300_000)
                 if path.endswith("/validate"):
-                    plan = self.app.repair.validate_plan(
+                    plan = self.app.repair.validate_with_alignment(
                         payload,
                         self.app.rollout_map(),
                     )
