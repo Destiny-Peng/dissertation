@@ -135,7 +135,14 @@
       kv("Views", (row.views || []).join(", ") || "—"),
       kv("GT actions", row.actions_available ? "Available" : "Unavailable", row.actions_available ? "repair-ok" : "repair-error"),
       kv("Sim state", row.sim_state_available ? "Available" : "Unavailable", row.sim_state_available ? "repair-ok" : "repair-error"),
-      kv("Existing WM runs", String((row.wm_runs || []).length)),
+      kv(
+        "Existing WM runs",
+        (row.wm_runs || []).length
+          ? row.wm_runs.map(function (run) {
+              return String(run.world_model || "WM") + ": " + String(run.status || "unknown");
+            }).join(", ")
+          : "—"
+      ),
       kv("Task", row.task_description || "—")
     ].join("");
     updateCutControls();
@@ -193,6 +200,11 @@
       + (views.indexOf("cam_wrist") === -1
         ? "\ncam_wrist missing: explicit duplication is required to proceed."
         : "");
+    var type = node("repairCheckpointType").value;
+    node("repairActionAdapter").textContent =
+      type === "generic_pretrained"
+        ? "LIBERO 7D → A2World 14D shape normalization"
+        : "LIBERO 7D → A2World LIBERO servo";
   }
 
   function syncCheckpointPlaceholder(force) {
@@ -585,6 +597,7 @@
     });
     node("repairCheckpointType").addEventListener("change", function () {
       syncCheckpointPlaceholder(true);
+      renderAdapterPreview();
       repairState.validation = null;
       renderValidation(null);
     });
