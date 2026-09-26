@@ -203,6 +203,9 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertNotIn('data-analysis-tab="repair"', html)
         self.assertIn('"repair"', router)
         self.assertIn("LF3RRepairSyntheticSuffix.refresh", router)
+        self.assertIn("row.repair_eligible", repair_js)
+        self.assertIn('" disabled"', repair_js)
+        self.assertIn("Official LIBERO demonstration", repair_js)
         self.assertIn("/api/repair/synthetic-suffix/", repair_js)
 
 
