@@ -270,6 +270,7 @@
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       "A2World: " + (validation.world_model.available ? "available" : "unavailable"),
+      "RGB adapter: derived after alignment (manifest ↔ A2World LIBERO convention)",
       validation.gpu && validation.gpu.selected
         ? ("GPU " + validation.gpu.selected.index + ": "
           + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
