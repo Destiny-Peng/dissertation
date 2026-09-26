@@ -1997,6 +1997,14 @@ print('fake label loss ablation complete')
             analysis["rollout_outcome"]["positive_class"],
             "clean_success+recovered_success",
         )
+        self.assertEqual(
+            len(analysis["rollout_outcome_snapshot"]["threshold_sweep"]),
+            1,
+        )
+        self.assertNotIn(
+            "auroc",
+            analysis["rollout_outcome_summary"][0],
+        )
 
     def test_analysis_snapshot_exposes_change_point_artifacts(self) -> None:
         analysis_root = self.root / "outputs" / "baseline_signal_analysis"
