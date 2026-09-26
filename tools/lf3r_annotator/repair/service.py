@@ -232,9 +232,9 @@ class RepairService:
             "cut_progress": plan["alignment"]["cut_progress"],
             "cut_frame": plan["alignment"]["cut_rgb_frame"],
             "alignment_min_psnr": float(payload.get("alignment_min_psnr", 20.0)),
-            "generated_includes_condition": bool(
-                payload.get("generated_includes_condition", False)
-            ),
+            # The adapter strips A2World's condition frame before publishing
+            # generated/<camera>.mp4, so LF3R artifacts are suffix-only.
+            "generated_includes_condition": False,
             "world_model": wm_config,
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         }
@@ -248,6 +248,8 @@ class RepairService:
             "schema_version": 1,
             "source_rollout": rollout["id"],
             "source_manifest": rollout.get("manifest_source"),
+            "source_total_frames": rollout.get("total_frames"),
+            "source_fps": rollout.get("fps"),
             "task": rollout.get("task_id"),
             "suite": rollout.get("task_suite"),
             "cut_type": plan["alignment"]["cut_type"],
@@ -264,9 +266,12 @@ class RepairService:
             "duplicated_camera": adapter_status["duplicated_camera"],
             "action_adapter": adapter_status["action_adapter"],
             "generation_config": {
-                "variant": "libero",
+                "variant": adapter_status["variant"],
                 "rollout_mode": "autoregressive",
-                "generated_includes_condition": config["generated_includes_condition"],
+                "generated_includes_condition": False,
+                "view_ids": adapter_status["view_ids"],
+                "action_chunk_size": adapter_status["action_chunk_size"],
+                "tail_policy": "pad final chunk, then trim generated tail",
             },
             "output_paths": {},
             "created_at": config["created_at"],
@@ -448,6 +453,16 @@ class RepairService:
             if fps and cut_frame is not None and float(fps) > 0
             else None
         )
+        real_suffix_start_time = (
+            float(int(cut_frame) + 1) / float(fps)
+            if fps and cut_frame is not None and float(fps) > 0
+            else None
+        )
+        total_frames = (
+            (input_payload.get("rollout") or {}).get("total_frames")
+            if isinstance(input_payload, dict)
+            else None
+        )
         return {
             "run_id": run_id,
             "status": status,
@@ -459,7 +474,9 @@ class RepairService:
                 "real": real,
                 "generated": generated,
                 "fps": fps,
+                "total_frames": total_frames,
                 "cut_time_seconds": cut_time,
+                "real_suffix_start_time_seconds": real_suffix_start_time,
             },
         }
 
