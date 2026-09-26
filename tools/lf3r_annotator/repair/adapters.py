@@ -5,7 +5,7 @@ from __future__ import annotations
 import abc
 import json
 import os
-import shutil
+import sys
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -51,7 +51,12 @@ class WorldModelAdapter(abc.ABC):
     ) -> dict[str, Path]:
         raise NotImplementedError
 
-    def save_result(self, generated: dict[str, Path], output_dir: Path) -> dict[str, str]:
+    def save_result(
+        self,
+        generated: dict[str, Path],
+        output_dir: Path,
+    ) -> dict[str, str]:
+        del output_dir
         return {
             camera: str(path.resolve().relative_to(self.project_root))
             for camera, path in generated.items()
@@ -59,10 +64,15 @@ class WorldModelAdapter(abc.ABC):
 
 
 class A2WorldAdapter(WorldModelAdapter):
-    """A2World LIBERO adapter.
+    """A2World adapter following the upstream LIBERO inference contract.
 
-    Manifest camera names stay physical.  The consumer-specific A2World names
-    are introduced here and are recorded in provenance.
+    A2World's public LIBERO path uses two input views in this order:
+      agentview (embedding id 2), eye_in_hand (embedding id 0)
+
+    Its public action loader applies libero_servo_actions to raw LIBERO
+    controls. LF3R performs the same transform explicitly and invokes
+    a2world.rollout with --action-format precomputed so the exact action
+    representation is captured in our provenance.
     """
 
     name = "a2world"
@@ -70,18 +80,42 @@ class A2WorldAdapter(WorldModelAdapter):
         "agentview": "cam_high",
         "eye_in_hand": "cam_wrist",
     }
-    ACTION_ADAPTER = "libero_7d_to_a2world_libero"
+    VIEW_IDS = {
+        "agentview": 2,
+        "eye_in_hand": 0,
+    }
+    ACTION_DIM_PER_ARM = 7
+    ACTION_DIM = 14
+    ACTION_CHUNK_SIZE = 20
+    LIBERO_SERVO_SCALE = (
+        0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 1.0,
+        0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 1.0,
+    )
+    ACTION_ADAPTER = "a2world.actions.libero_servo_actions"
+    GENERIC_ACTION_ADAPTER = "a2world.actions.normalize_action_shape"
 
-    def _camera_mapping(self, rollout: dict[str, Any]) -> tuple[dict[str, str], list[dict[str, str]]]:
+    def __init__(self, project_root: Path, config: dict[str, Any]) -> None:
+        super().__init__(project_root, config)
+        self._validation: dict[str, Any] | None = None
+
+    def _camera_mapping(
+        self,
+        rollout: dict[str, Any],
+    ) -> tuple[dict[str, str], list[dict[str, str]]]:
         cameras = rollout.get("camera_video_paths")
         if not isinstance(cameras, dict) or not cameras:
             raise ValidationError("Selected rollout has no camera_video_paths")
         requested = self.config.get("camera_mapping")
         mapping = (
-            {str(k): str(v) for k, v in requested.items()}
+            {str(key): str(value) for key, value in requested.items()}
             if isinstance(requested, dict) and requested
             else dict(self.DEFAULT_CAMERA_MAPPING)
         )
+        expected = set(self.DEFAULT_CAMERA_MAPPING)
+        if set(mapping) != expected:
+            raise ValidationError(
+                "A2World camera_mapping must define exactly agentview and eye_in_hand"
+            )
         duplicated: list[dict[str, str]] = []
         allow_duplicate = bool(self.config.get("duplicate_missing_views", False))
         for consumer_view, manifest_view in list(mapping.items()):
@@ -89,72 +123,152 @@ class A2WorldAdapter(WorldModelAdapter):
                 continue
             if allow_duplicate and "cam_high" in cameras:
                 mapping[consumer_view] = "cam_high"
-                duplicated.append({
-                    "consumer_view": consumer_view,
-                    "requested_manifest_view": manifest_view,
-                    "used_manifest_view": "cam_high",
-                })
+                duplicated.append(
+                    {
+                        "consumer_view": consumer_view,
+                        "requested_manifest_view": manifest_view,
+                        "used_manifest_view": "cam_high",
+                    }
+                )
                 continue
             raise ValidationError(
-                f"A2World view {consumer_view} requires manifest camera {manifest_view}; "
-                "enable duplicate_missing_views explicitly to substitute cam_high"
+                f"A2World view {consumer_view} requires manifest camera "
+                f"{manifest_view}; enable duplicate_missing_views explicitly "
+                "to substitute cam_high inside the adapter"
             )
         return mapping, duplicated
 
-    def validate_rollout(self, rollout: dict[str, Any]) -> dict[str, Any]:
-        mapping, duplicated = self._camera_mapping(rollout)
-        checkpoint_type = str(self.config.get("checkpoint_type") or "libero_adapted")
-        if checkpoint_type not in {"generic_pretrained", "libero_adapted", "custom"}:
-            raise ValidationError(
-                "A2World checkpoint_type must be generic_pretrained, libero_adapted, or custom"
-            )
-        checkpoint = str(self.config.get("checkpoint") or "").strip()
-        if not checkpoint:
-            checkpoint = (
+    def _checkpoint(self, checkpoint_type: str) -> Path:
+        raw = str(self.config.get("checkpoint") or "").strip()
+        if checkpoint_type == "custom" and not raw:
+            raise ValidationError("Custom A2World checkpoint requires a path")
+        if not raw:
+            raw = (
                 "checkpoints/a2world-pretrained.pt"
                 if checkpoint_type == "generic_pretrained"
                 else "checkpoints/a2world-libero.pt"
             )
-        checkpoint_path = project_path(self.project_root, checkpoint)
-        base_value = str(self.config.get("base_checkpoints") or "checkpoints").strip()
-        base_path = project_path(self.project_root, base_value)
-        command = str(self.config.get("command") or os.environ.get("LF3R_A2WORLD_COMMAND") or "a2world-demo")
-        executable = shutil.which(command) if os.sep not in command else command
-        available = bool(executable) and checkpoint_path.is_file() and base_path.exists()
-        reasons: list[str] = []
-        if not executable:
-            reasons.append(f"A2World command not found: {command}")
-        if not checkpoint_path.is_file():
-            reasons.append(
-                "checkpoint is not installed inside PROJECT_ROOT: "
-                + str(checkpoint_path.relative_to(self.project_root))
+        return project_path(self.project_root, raw)
+
+    def _source_root(self) -> Path:
+        raw = str(
+            self.config.get("source_root")
+            or os.environ.get("LF3R_A2WORLD_SOURCE")
+            or "repos/A2World/world_model"
+        ).strip()
+        return project_path(self.project_root, raw)
+
+    def _python(self) -> Path:
+        configured = str(
+            self.config.get("python")
+            or os.environ.get("LF3R_A2WORLD_PYTHON")
+            or ""
+        ).strip()
+        candidates: list[Path] = []
+        if configured:
+            candidates.append(project_path(self.project_root, configured))
+        candidates.extend(
+            [
+                self.project_root / "conda_envs" / "LF3R-a2world" / "bin" / "python",
+                self.project_root / "repos" / "A2World" / ".venv" / "bin" / "python",
+                self.project_root / "conda_envs" / "A2World" / "bin" / "python",
+            ]
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate.resolve()
+        return Path(sys.executable).resolve()
+
+    def validate_rollout(self, rollout: dict[str, Any]) -> dict[str, Any]:
+        mapping, duplicated = self._camera_mapping(rollout)
+        checkpoint_type = str(
+            self.config.get("checkpoint_type") or "libero_adapted"
+        ).strip()
+        if checkpoint_type not in {
+            "generic_pretrained",
+            "libero_adapted",
+            "custom",
+        }:
+            raise ValidationError(
+                "A2World checkpoint_type must be generic_pretrained, "
+                "libero_adapted, or custom"
             )
-        if not base_path.exists():
+        checkpoint = self._checkpoint(checkpoint_type)
+        base_path = project_path(
+            self.project_root,
+            str(self.config.get("base_checkpoints") or "checkpoints").strip(),
+        )
+        source_root = self._source_root()
+        python = self._python()
+        variant = (
+            "pretrained"
+            if checkpoint_type == "generic_pretrained"
+            else str(self.config.get("variant") or "libero").strip()
+        )
+        if variant not in {"libero", "pretrained"}:
+            raise ValidationError("A2World variant must be libero or pretrained")
+        if checkpoint_type == "libero_adapted" and variant != "libero":
+            raise ValidationError("LIBERO-adapted checkpoint requires variant=libero")
+
+        reasons: list[str] = []
+        if not checkpoint.is_file():
             reasons.append(
-                "base checkpoints are not installed inside PROJECT_ROOT: "
+                "A2World checkpoint is not installed inside PROJECT_ROOT: "
+                + str(checkpoint.relative_to(self.project_root))
+            )
+        if not base_path.is_dir():
+            reasons.append(
+                "A2World base checkpoints directory is unavailable: "
                 + str(base_path.relative_to(self.project_root))
             )
-        return {
+        rollout_module = source_root / "a2world" / "rollout.py"
+        if not rollout_module.is_file():
+            reasons.append(
+                "A2World source is unavailable: "
+                + str(source_root.relative_to(self.project_root))
+            )
+        if not python.is_file():
+            reasons.append("A2World Python interpreter is unavailable: " + str(python))
+
+        action_adapter = (
+            self.ACTION_ADAPTER if variant == "libero" else self.GENERIC_ACTION_ADAPTER
+        )
+        result = {
             "adapter": self.name,
-            "available": available,
+            "available": not reasons,
             "unavailable_reasons": reasons,
-            "checkpoint": str(checkpoint_path.relative_to(self.project_root)),
+            "checkpoint": str(checkpoint.relative_to(self.project_root)),
             "checkpoint_type": checkpoint_type,
             "base_checkpoints": str(base_path.relative_to(self.project_root)),
+            "source_root": str(source_root.relative_to(self.project_root)),
+            "python": (
+                str(python.relative_to(self.project_root))
+                if python.is_relative_to(self.project_root)
+                else str(python)
+            ),
             "camera_mapping": mapping,
             "duplicated_camera": duplicated,
-            "action_adapter": self.ACTION_ADAPTER,
-            "command": command,
-            "variant": "libero",
+            "view_ids": [
+                self.VIEW_IDS["agentview"],
+                self.VIEW_IDS["eye_in_hand"],
+            ],
+            "action_adapter": action_adapter,
+            "action_chunk_size": self.ACTION_CHUNK_SIZE,
+            "variant": variant,
             "rollout_mode": "autoregressive",
+            "standardized_output_includes_condition": False,
         }
+        self._validation = result
+        return result
 
     @staticmethod
     def _read_video_frame(path: Path, frame_index: int) -> Any:
         try:
             import imageio.v2 as imageio
         except ImportError as error:
-            raise ValidationError("imageio is required to prepare A2World condition frames") from error
+            raise ValidationError(
+                "imageio is required to prepare A2World condition frames"
+            ) from error
         reader = imageio.get_reader(str(path))
         try:
             return reader.get_data(frame_index)
@@ -171,52 +285,208 @@ class A2WorldAdapter(WorldModelAdapter):
         try:
             import imageio.v2 as imageio
         except ImportError as error:
-            raise ValidationError("imageio is required to prepare A2World inputs") from error
+            raise ValidationError(
+                "imageio is required to prepare A2World inputs"
+            ) from error
 
         mapping, duplicated = self._camera_mapping(rollout)
         camera_paths = rollout["camera_video_paths"]
-        fps = float(rollout.get("fps") or 30.0)
         condition_dir = output_dir / "condition"
         condition_dir.mkdir(parents=True, exist_ok=True)
-        videos: dict[str, Path] = {}
-        for consumer_view, manifest_view in mapping.items():
-            source = project_path(self.project_root, str(camera_paths[manifest_view]))
+        images: dict[str, Path] = {}
+        shape: tuple[int, int] | None = None
+        for consumer_view in ("agentview", "eye_in_hand"):
+            manifest_view = mapping[consumer_view]
+            source = project_path(
+                self.project_root,
+                str(camera_paths[manifest_view]),
+            )
             frame = self._read_video_frame(source, cut_frame)
-            target = condition_dir / f"{consumer_view}.mp4"
-            writer = imageio.get_writer(str(target), fps=fps)
-            try:
-                writer.append_data(frame)
-            finally:
-                writer.close()
-            videos[consumer_view] = target
+            if frame.ndim != 3 or frame.shape[-1] != 3:
+                raise ValidationError(
+                    f"Unexpected condition frame shape for {manifest_view}: "
+                    f"{frame.shape}"
+                )
+            current_shape = (int(frame.shape[0]), int(frame.shape[1]))
+            if shape is None:
+                shape = current_shape
+            elif current_shape != shape:
+                raise ValidationError(
+                    "A2World condition views must have the same image shape"
+                )
+            target = condition_dir / f"{consumer_view}.png"
+            imageio.imwrite(str(target), frame)
+            images[consumer_view] = target
+
+        assert shape is not None
         metadata = {
             "cut_frame": int(cut_frame),
             "camera_mapping": mapping,
             "duplicated_camera": duplicated,
-            "condition_videos": {
+            "condition_images": {
                 key: str(path.relative_to(self.project_root))
-                for key, path in videos.items()
+                for key, path in images.items()
             },
+            "height": shape[0],
+            "width": shape[1],
+            "output_fps": float(rollout.get("fps") or 30.0),
         }
         (condition_dir / "condition.json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        return {"videos": videos, **metadata}
+        return {"images": images, **metadata}
+
+    def _prepare_action_array(self, actions: Any) -> tuple[Any, str]:
+        try:
+            import numpy as np
+        except ImportError as error:
+            raise ValidationError(
+                "numpy is required to prepare A2World actions"
+            ) from error
+
+        array = np.asarray(actions, dtype=np.float32)
+        if array.ndim > 2:
+            array = array.reshape(array.shape[0], -1)
+        if array.ndim != 2 or array.shape[1] not in {7, 14}:
+            raise ValidationError(
+                f"A2World expects LIBERO actions shaped [T,7] or [T,14], "
+                f"got {array.shape}"
+            )
+        if array.shape[1] == 7:
+            array = np.pad(array, ((0, 0), (0, 7)))
+        array = array.astype(np.float32, copy=True)
+
+        variant = (
+            (self._validation or {}).get("variant")
+            or (
+                "pretrained"
+                if self.config.get("checkpoint_type") == "generic_pretrained"
+                else "libero"
+            )
+        )
+        if variant == "libero":
+            array[:, 6] = (1.0 - array[:, 6]) / 2.0
+            scale = np.asarray(self.LIBERO_SERVO_SCALE, dtype=np.float32)
+            array *= scale
+            adapter_name = self.ACTION_ADAPTER
+        else:
+            adapter_name = self.GENERIC_ACTION_ADAPTER
+        return array, adapter_name
 
     def prepare_actions(self, actions: Any, *, output_dir: Path) -> Path:
         try:
             import numpy as np
         except ImportError as error:
-            raise ValidationError("numpy is required to prepare A2World actions") from error
-        array = np.asarray(actions, dtype=np.float32)
-        if array.ndim != 2 or array.shape[1] != 7:
             raise ValidationError(
-                f"A2World LIBERO expects future actions shaped [T,7], got {array.shape}"
+                "numpy is required to prepare A2World actions"
+            ) from error
+
+        prepared, adapter_name = self._prepare_action_array(actions)
+        requested_count = int(len(prepared))
+        if requested_count < 1:
+            raise ValidationError("A2World received no future actions")
+
+        pad_count = (-requested_count) % self.ACTION_CHUNK_SIZE
+        if pad_count:
+            padding = np.zeros(
+                (pad_count, self.ACTION_DIM),
+                dtype=np.float32,
             )
-        path = output_dir / "future_actions.npz"
-        np.savez_compressed(path, actions=array)
+            padding[:, 6] = prepared[-1, 6]
+            prepared = np.concatenate([prepared, padding], axis=0)
+
+        path = output_dir / "future_actions_a2world.npz"
+        np.savez_compressed(path, actions=prepared)
+        metadata = {
+            "adapter": adapter_name,
+            "raw_future_action_count": requested_count,
+            "prepared_action_count": int(len(prepared)),
+            "action_dim": self.ACTION_DIM,
+            "chunk_size": self.ACTION_CHUNK_SIZE,
+            "tail_padding_count": pad_count,
+            "tail_padding_strategy": (
+                "none"
+                if not pad_count
+                else "zero_motion_hold_first_arm_gripper"
+            ),
+            "input_contract": "LIBERO 7D/14D",
+            "output_contract": "A2World precomputed 14D",
+        }
+        (output_dir / "future_actions_a2world.json").write_text(
+            json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         return path
+
+    def _split_standardized_outputs(
+        self,
+        *,
+        combined_path: Path,
+        output_dir: Path,
+        mapping: dict[str, str],
+        requested_frames: int,
+        fps: float,
+    ) -> dict[str, Path]:
+        try:
+            import imageio.v2 as imageio
+        except ImportError as error:
+            raise ValidationError(
+                "imageio is required to split A2World multi-view output"
+            ) from error
+
+        reader = imageio.get_reader(str(combined_path))
+        frames: list[Any] = []
+        try:
+            for frame in reader:
+                frames.append(frame)
+        finally:
+            reader.close()
+        if len(frames) < requested_frames + 1:
+            raise ValidationError(
+                "A2World output is shorter than the requested suffix: "
+                f"frames={len(frames)}, need={requested_frames + 1} "
+                "(including the condition frame)"
+            )
+
+        suffix_frames = frames[1 : requested_frames + 1]
+        first = suffix_frames[0]
+        if first.ndim != 3 or first.shape[-1] != 3 or first.shape[1] % 2:
+            raise ValidationError(
+                f"Unexpected A2World combined frame shape: {first.shape}"
+            )
+        view_width = first.shape[1] // 2
+        slices = {
+            "agentview": (0, view_width),
+            "eye_in_hand": (view_width, view_width * 2),
+        }
+        generated: dict[str, Path] = {}
+        seen_manifest_views: set[str] = set()
+        for consumer_view in ("agentview", "eye_in_hand"):
+            manifest_view = mapping[consumer_view]
+            start, stop = slices[consumer_view]
+            if manifest_view in seen_manifest_views:
+                target = (
+                    output_dir
+                    / f"a2world_{consumer_view}_from_{manifest_view}_duplicate.mp4"
+                )
+                expose = False
+            else:
+                target = output_dir / f"{manifest_view}.mp4"
+                expose = True
+                seen_manifest_views.add(manifest_view)
+            writer = imageio.get_writer(str(target), fps=fps)
+            try:
+                for frame in suffix_frames:
+                    writer.append_data(frame[:, start:stop])
+            finally:
+                writer.close()
+            if expose:
+                generated[manifest_view] = target
+
+        if not generated:
+            raise ValidationError("A2World produced no physical-camera output")
+        return generated
 
     def generate(
         self,
@@ -225,66 +495,98 @@ class A2WorldAdapter(WorldModelAdapter):
         actions_path: Path,
         output_dir: Path,
     ) -> dict[str, Path]:
-        status = self.validate_rollout(self.config["_rollout"])
+        status = self._validation
+        if status is None:
+            raise ValidationError(
+                "A2World adapter must validate the rollout before generation"
+            )
         if not status["available"]:
             raise ValidationError("; ".join(status["unavailable_reasons"]))
+
         output_dir.mkdir(parents=True, exist_ok=True)
         checkpoint = project_path(self.project_root, status["checkpoint"])
-        base_checkpoints = project_path(self.project_root, status["base_checkpoints"])
-        output = output_dir / "a2world_rollout.mp4"
+        base_checkpoints = project_path(
+            self.project_root,
+            status["base_checkpoints"],
+        )
+        source_root = project_path(self.project_root, status["source_root"])
+        python_value = str(status["python"])
+        python = (
+            project_path(self.project_root, python_value)
+            if not Path(python_value).is_absolute()
+            else Path(python_value)
+        )
+        combined = output_dir / "a2world_combined.mp4"
+        images = condition["images"]
         command = [
-            str(status["command"]),
-            "--variant", "libero",
-            "--checkpoint", str(checkpoint),
+            str(python),
+            "-m",
+            "a2world.rollout",
+            "--checkpoint",
+            str(checkpoint),
+            "--variant",
+            str(status["variant"]),
             "--input",
-            str(condition["videos"]["agentview"]),
-            str(condition["videos"]["eye_in_hand"]),
-            "--actions", str(actions_path),
-            "--base-checkpoints", str(base_checkpoints),
-            "--output", str(output),
+            str(images["agentview"]),
+            str(images["eye_in_hand"]),
+            "--actions",
+            str(actions_path),
+            "--action-format",
+            "precomputed",
+            "--view-ids",
+            str(self.VIEW_IDS["agentview"]),
+            str(self.VIEW_IDS["eye_in_hand"]),
+            "--output",
+            str(combined),
+            "--height",
+            str(int(condition["height"])),
+            "--width",
+            str(int(condition["width"])),
+            "--num-sampling-steps",
+            str(int(self.config.get("num_sampling_steps", 35))),
+            "--guidance",
+            str(float(self.config.get("guidance", 0.0))),
+            "--seed",
+            str(int(self.config.get("seed", 0))),
             "--autoregressive",
         ]
+        if (
+            status["variant"] == "libero"
+            and self.config.get("history", True) is False
+        ):
+            command.append("--no-history")
+
+        environment = os.environ.copy()
+        source_value = str(source_root)
+        existing_pythonpath = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = (
+            source_value
+            if not existing_pythonpath
+            else source_value + os.pathsep + existing_pythonpath
+        )
+        environment["COSMOS_PREDICT2_ARGS"] = (
+            "--checkpoints " + str(base_checkpoints.resolve())
+        )
         completed = subprocess.run(
             command,
-            cwd=str(self.project_root / "repos" / "A2World" / "world_model")
-            if (self.project_root / "repos" / "A2World" / "world_model").is_dir()
-            else str(self.project_root),
+            cwd=str(source_root),
+            env=environment,
             text=True,
             check=False,
         )
         if completed.returncode != 0:
-            raise RuntimeError(f"A2World exited with code {completed.returncode}")
+            raise RuntimeError(
+                f"A2World exited with code {completed.returncode}"
+            )
+        if not combined.is_file():
+            raise ValidationError(
+                "A2World completed without writing its combined rollout video"
+            )
 
-        # LF3R's result contract is per physical view.  The upstream CLI may be
-        # wrapped locally to emit these files; common sidecar names are also
-        # accepted.  We never invent a second camera by copying generated video.
-        candidates = {
-            "cam_high": [
-                output_dir / "cam_high.mp4",
-                output_dir / "a2world_rollout.agentview.mp4",
-                output_dir / "a2world_rollout_agentview.mp4",
-            ],
-            "cam_wrist": [
-                output_dir / "cam_wrist.mp4",
-                output_dir / "a2world_rollout.eye_in_hand.mp4",
-                output_dir / "a2world_rollout_eye_in_hand.mp4",
-            ],
-        }
-        generated = {
-            camera: next((path for path in paths if path.is_file()), None)
-            for camera, paths in candidates.items()
-        }
-        if all(path is None for path in generated.values()) and output.is_file():
-            # Preserve the upstream artifact for debugging, but do not pretend
-            # a tiled/combined video is either physical camera.
-            raise ValidationError(
-                "A2World produced only a combined rollout video. LF3R requires "
-                "per-view cam_high/cam_wrist outputs; configure an A2World bridge "
-                "that emits per-view sidecars using the documented names."
-            )
-        missing = [camera for camera, path in generated.items() if path is None]
-        if missing:
-            raise ValidationError(
-                "A2World generation is missing per-view output(s): " + ", ".join(missing)
-            )
-        return {camera: path for camera, path in generated.items() if path is not None}
+        return self._split_standardized_outputs(
+            combined_path=combined,
+            output_dir=output_dir,
+            mapping=status["camera_mapping"],
+            requested_frames=int(condition["future_action_count"]),
+            fps=float(condition["output_fps"]),
+        )
