@@ -307,6 +307,25 @@ class RepairService:
         else:
             smoke_error = "Alignment smoke test requires an eligible GPU below 50% utilization"
 
+        if smoke is not None and smoke.get("action_count") is not None:
+            future_action_count = max(
+                0,
+                int(smoke["action_count"])
+                - int(plan["alignment"]["gt_action_start"]),
+            )
+            tail_padding_count = (-future_action_count) % 20
+            plan["a2world_action_horizon"] = {
+                "gt_future_action_count": future_action_count,
+                "chunk_size": 20,
+                "tail_padding_count": tail_padding_count,
+                "exported_padding_frames": 0,
+                "note": (
+                    "A2World conditions the final partial chunk with padded "
+                    "controls, then LF3R trims all padded output frames."
+                    if tail_padding_count
+                    else "GT future actions exactly fill A2World chunks."
+                ),
+            }
         if smoke_error:
             plan["blockers"].append(smoke_error)
         plan["ready"] = bool(plan["ready"] and smoke is not None and smoke.get("passed"))
