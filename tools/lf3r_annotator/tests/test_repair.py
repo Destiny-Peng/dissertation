@@ -172,6 +172,24 @@ class A2WorldAdapterTest(unittest.TestCase):
             )
 
 
+class OfficialLiberoManifestContractTest(unittest.TestCase):
+    def test_importer_preserves_official_physical_views_and_c_plus_one_alignment(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "repair"
+            / "prepare_libero_manifest.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"cam_high": "obs/agentview_rgb"', source)
+        self.assertIn('"cam_wrist": "obs/eye_in_hand_rgb"', source)
+        self.assertIn('"source_hdf5_path": source_relative', source)
+        self.assertIn('"trajectory_group": group_name', source)
+        self.assertIn('"branch_state": "states[c+1]"', source)
+        self.assertIn('"future_actions": "actions[c+1:]"', source)
+        self.assertIn('"rgb_transform": "none"', source)
+        self.assertNotIn("cam_left_wrist", source)
+        self.assertNotIn("cam_right_wrist", source)
+
+
 class RepairFrontendContractTest(unittest.TestCase):
     def test_repair_is_top_level_and_not_an_analysis_subtab(self) -> None:
         static_root = Path(__file__).resolve().parents[1] / "static"
