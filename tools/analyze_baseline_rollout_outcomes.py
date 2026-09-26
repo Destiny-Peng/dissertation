@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -117,10 +118,48 @@ def _load_rollouts(
 
 
 PROGRESS_SWEEP_METHODS = ("procvlm", "robo_dopamine")
+PROGRESS_SWEEP_AGGREGATIONS = ("final", "maximum")
 PROGRESS_SWEEP_THRESHOLDS = tuple(round(value / 100.0, 2) for value in range(50, 100, 5))
 
 
-def _progress_threshold_sweep(predictions: pd.DataFrame) -> pd.DataFrame:
+def _progress_score(
+    rollouts: dict[str, dict[str, Any]],
+    row: pd.Series,
+    aggregation: str,
+) -> float | None:
+    if aggregation == "final":
+        try:
+            value = float(row["terminal_value"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+    if aggregation != "maximum":
+        raise ValueError(f"Unknown progress aggregation: {aggregation}")
+
+    rollout = rollouts.get(str(row.get("rollout_id") or ""))
+    if not rollout:
+        return None
+    method = str(row.get("method") or "")
+    signal = str(row.get("signal") or "progress")
+    method_data = (rollout.get("methods") or {}).get(method) or {}
+    series = (method_data.get("signals") or {}).get(signal)
+    if not isinstance(series, dict):
+        return None
+    finite: list[float] = []
+    for raw in series.get("values") or []:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            finite.append(value)
+    return max(finite) if finite else None
+
+
+def _progress_threshold_sweep(
+    predictions: pd.DataFrame,
+    rollouts: dict[str, dict[str, Any]],
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     if predictions.empty:
         return pd.DataFrame(rows)
@@ -133,46 +172,66 @@ def _progress_threshold_sweep(predictions: pd.DataFrame) -> pd.DataFrame:
         if method_rows.empty:
             continue
         signal = str(method_rows.iloc[0]["signal"])
-        for threshold in PROGRESS_SWEEP_THRESHOLDS:
-            tp = fn = fp = tn = 0
+        for aggregation in PROGRESS_SWEEP_AGGREGATIONS:
+            scored_rows: list[tuple[pd.Series, float]] = []
             for _, row in method_rows.iterrows():
-                value = float(row["terminal_value"])
-                predicted_success = value > threshold
-                truth = int(row["true_success"])
-                if truth == 1 and predicted_success:
-                    tp += 1
-                elif truth == 1:
-                    fn += 1
-                elif predicted_success:
-                    fp += 1
-                else:
-                    tn += 1
-            success_recall = tp / (tp + fn) if tp + fn else float("nan")
-            failure_recall = tn / (tn + fp) if tn + fp else float("nan")
-            precision = tp / (tp + fp) if tp + fp else float("nan")
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if tp + tn + fp + fn else float("nan")
-            f1 = (
-                2.0 * precision * success_recall / (precision + success_recall)
-                if pd.notna(precision)
-                and pd.notna(success_recall)
-                and precision + success_recall > 0
-                else float("nan")
-            )
-            rows.append({
-                "method": method,
-                "signal": signal,
-                "raw_terminal_threshold": threshold,
-                "n_resolved": int(len(method_rows)),
-                "tp": tp,
-                "fn": fn,
-                "fp": fp,
-                "tn": tn,
-                "accuracy": accuracy,
-                "success_recall": success_recall,
-                "failure_recall": failure_recall,
-                "precision": precision,
-                "f1": f1,
-            })
+                value = _progress_score(rollouts, row, aggregation)
+                if value is not None:
+                    scored_rows.append((row, value))
+            if not scored_rows:
+                continue
+
+            for threshold in PROGRESS_SWEEP_THRESHOLDS:
+                tp = fn = fp = tn = 0
+                for row, value in scored_rows:
+                    predicted_success = value > threshold
+                    truth = int(row["true_success"])
+                    if truth == 1 and predicted_success:
+                        tp += 1
+                    elif truth == 1:
+                        fn += 1
+                    elif predicted_success:
+                        fp += 1
+                    else:
+                        tn += 1
+                success_recall = tp / (tp + fn) if tp + fn else float("nan")
+                failure_recall = tn / (tn + fp) if tn + fp else float("nan")
+                precision = tp / (tp + fp) if tp + fp else float("nan")
+                accuracy = (
+                    (tp + tn) / (tp + tn + fp + fn)
+                    if tp + tn + fp + fn
+                    else float("nan")
+                )
+                f1 = (
+                    2.0 * precision * success_recall / (precision + success_recall)
+                    if pd.notna(precision)
+                    and pd.notna(success_recall)
+                    and precision + success_recall > 0
+                    else float("nan")
+                )
+                rows.append({
+                    "method": method,
+                    "signal": signal,
+                    "score_aggregation": aggregation,
+                    "score_aggregation_label": (
+                        "Final progress"
+                        if aggregation == "final"
+                        else "Maximum progress"
+                    ),
+                    "raw_progress_threshold": threshold,
+                    # Keep the old column so older consumers remain compatible.
+                    "raw_terminal_threshold": threshold,
+                    "n_resolved": int(len(scored_rows)),
+                    "tp": tp,
+                    "fn": fn,
+                    "fp": fp,
+                    "tn": tn,
+                    "accuracy": accuracy,
+                    "success_recall": success_recall,
+                    "failure_recall": failure_recall,
+                    "precision": precision,
+                    "f1": f1,
+                })
     return pd.DataFrame(rows)
 
 
@@ -196,7 +255,7 @@ def main() -> int:
     summary, predictions = compute_rollout_outcome_classification(rollouts)
     summary.to_csv(output_dir / "rollout_outcome_summary.csv", index=False)
     predictions.to_csv(output_dir / "rollout_outcome_predictions.csv", index=False)
-    threshold_sweep = _progress_threshold_sweep(predictions)
+    threshold_sweep = _progress_threshold_sweep(predictions, rollouts)
     threshold_sweep.to_csv(
         output_dir / "rollout_outcome_threshold_sweep.csv",
         index=False,
@@ -261,6 +320,7 @@ def main() -> int:
             "prediction_rows": int(len(predictions)),
             "progress_threshold_sweep": {
                 "methods": list(PROGRESS_SWEEP_METHODS),
+                "aggregations": list(PROGRESS_SWEEP_AGGREGATIONS),
                 "thresholds": list(PROGRESS_SWEEP_THRESHOLDS),
                 "rows": int(len(threshold_sweep)),
             },
