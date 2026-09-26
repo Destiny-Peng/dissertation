@@ -97,18 +97,24 @@
       renderRolloutSummary();
       return;
     }
+    var eligible = rows.filter(function (row) { return Boolean(row.repair_eligible); });
     select.innerHTML = rows.map(function (row) {
       var readyBits = [
         row.actions_available ? "actions✓" : "actions—",
         row.sim_state_available ? "state✓" : "state—",
         (row.views || []).join("+") || "no-view"
       ].join(" · ");
-      return '<option value="' + esc(row.id) + '">' + esc(row.id)
+      var suffix = row.repair_eligible
+        ? ""
+        : " · unavailable: " + ((row.eligibility_reasons || []).join(", ") || "missing required input");
+      return '<option value="' + esc(row.id) + '"'
+        + (row.repair_eligible ? "" : " disabled")
+        + ">" + esc(row.id)
         + " · " + esc(row.task_suite) + "/task" + esc(row.task_id)
-        + " · " + esc(readyBits) + "</option>";
+        + " · " + esc(readyBits + suffix) + "</option>";
     }).join("");
-    if (!rows.some(function (row) { return row.id === repairState.selectedRolloutId; })) {
-      repairState.selectedRolloutId = rows[0].id;
+    if (!eligible.some(function (row) { return row.id === repairState.selectedRolloutId; })) {
+      repairState.selectedRolloutId = eligible.length ? eligible[0].id : "";
     }
     select.value = repairState.selectedRolloutId;
     renderRolloutSummary();
@@ -129,6 +135,7 @@
     }
     host.innerHTML = [
       kv("Manifest", row.manifest_label || row.manifest_source || "—"),
+      kv("Source", row.official_demo ? "Official LIBERO demonstration" : (row.source_kind || "—")),
       kv("Suite / task", String(row.task_suite || "—") + " / " + String(row.task_id)),
       kv("Frames", String(row.frames || "—")),
       kv("Outcome", row.outcome || "—", "repair-ok"),
@@ -388,8 +395,12 @@
       repairState.rollouts = payload.rollouts || [];
       renderFilters();
       renderRolloutSelect();
+      var eligibleCount = repairState.rollouts.filter(function (row) {
+        return Boolean(row.repair_eligible);
+      }).length;
       node("repairPageStatus").textContent =
-        repairState.rollouts.length + " success rollout(s) available to Synthetic Suffix.";
+        repairState.rollouts.length + " success rollout(s) found · "
+        + eligibleCount + " Repair-eligible.";
       repairState.loaded = true;
     } catch (error) {
       node("repairPageStatus").textContent = "Repair catalog error: " + error.message;
