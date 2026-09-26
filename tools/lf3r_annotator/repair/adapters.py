@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import abc
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -218,6 +219,20 @@ class A2WorldAdapter(WorldModelAdapter):
         if checkpoint_type == "libero_adapted" and variant != "libero":
             raise ValidationError("LIBERO-adapted checkpoint requires variant=libero")
 
+        try:
+            num_sampling_steps = int(self.config.get("num_sampling_steps", 35))
+            guidance = float(self.config.get("guidance", 0.0))
+            seed = int(self.config.get("seed", 0))
+        except (TypeError, ValueError) as error:
+            raise ValidationError(
+                "A2World num_sampling_steps, guidance, and seed must be numeric"
+            ) from error
+        if num_sampling_steps < 1:
+            raise ValidationError("A2World num_sampling_steps must be at least 1")
+        if not math.isfinite(guidance) or guidance < 0:
+            raise ValidationError("A2World guidance must be a finite non-negative number")
+        history = bool(self.config.get("history", True))
+
         reasons: list[str] = []
         if not checkpoint.is_file():
             reasons.append(
@@ -265,6 +280,10 @@ class A2WorldAdapter(WorldModelAdapter):
             "action_adapter": action_adapter,
             "action_chunk_size": self.ACTION_CHUNK_SIZE,
             "variant": variant,
+            "num_sampling_steps": num_sampling_steps,
+            "guidance": guidance,
+            "seed": seed,
+            "history": history,
             "rollout_mode": "autoregressive",
             "standardized_output_includes_condition": False,
         }
