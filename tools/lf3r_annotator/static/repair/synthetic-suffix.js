@@ -202,9 +202,7 @@
         : "");
     var type = node("repairCheckpointType").value;
     node("repairActionAdapter").textContent =
-      type === "generic_pretrained"
-        ? "LIBERO 7D → A2World 14D shape normalization"
-        : "LIBERO 7D → A2World LIBERO servo";
+      "LIBERO 7D → A2World LIBERO servo (checkpoint-independent)";
   }
 
   function syncCheckpointPlaceholder(force) {
