@@ -213,18 +213,18 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
       updateBaselineBatchSelection();
     }
 
-    var analysisRunScope = byId("analysisRunScope");
-    var preferredRunScope = null;
-    try { preferredRunScope = workspaceState.analysisRunScope; } catch (_) {}
-    var runResult = replaceScopeSelect(
-      analysisRunScope,
-      rows,
-      preferredRunScope || (analysisRunScope && analysisRunScope.value)
-    );
-    try { workspaceState.analysisRunScope = runResult.value; } catch (_) {}
-    if (analysisRunScope && runResult.changed) {
-      analysisRunScope.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    ["analysisOutcomeRunScope", "analysisHopScope"].forEach(function (id) {
+      var analysisScope = byId(id);
+      if (!analysisScope) return;
+      var result = replaceScopeSelect(
+        analysisScope,
+        rows,
+        analysisScope.value
+      );
+      if (result.changed) {
+        analysisScope.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
 
     var partitionRows = partitionGroups();
     var partitionSelect = byId("analysisPartitionFilter");
