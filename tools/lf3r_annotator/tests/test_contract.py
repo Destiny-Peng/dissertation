@@ -325,6 +325,16 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertNotIn("AUROC", outcome_renderer)
         self.assertNotIn("metrics.auroc", outcome_renderer)
         self.assertIn("Progress threshold sweep", html)
+        self.assertIn("maximum progress over the rollout", html)
+        self.assertIn("workspaceDashboardOutcomeSweepChart", dashboard)
+        self.assertIn("score_aggregation", dashboard)
+        self.assertIn("Maximum progress", dashboard)
+        sweep_renderer = dashboard[
+            dashboard.index("function workspaceDashboardRenderOutcomeThresholdSweep"):
+            dashboard.index("function workspaceDashboardRenderConclusions")
+        ]
+        self.assertNotIn('<table class="analysis-table', sweep_renderer)
+        self.assertIn("analysis-sweep-grid", sweep_renderer)
         self.assertIn('var analysisTabs = ["outcome", "localization"]', router)
 
         for removed in [
