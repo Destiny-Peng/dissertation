@@ -1230,6 +1230,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             self.assertIn(self.rollout["id"], sources["source_maps"][method])
         coverage = {row["method"]: row for row in sources["coverage"]}
         self.assertNotIn("safe", coverage)
+        self.assertEqual(coverage["robo_dopamine"]["available_scope_rollouts"], 1)
+        self.assertEqual(coverage["robo_dopamine"]["scope_population"], 1)
         self.assertEqual(coverage["robo_dopamine"]["available_rollouts"], 1)
 
         with self.request("/api/analysis/outcome-coverage?scope=libero_10") as response:
@@ -1238,7 +1240,40 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertNotIn("source_maps", public_coverage)
         public_rows = {row["method"]: row for row in public_coverage["coverage"]}
         self.assertNotIn("safe", public_rows)
+        self.assertEqual(public_rows["procvlm"]["available_scope_rollouts"], 1)
         self.assertEqual(public_rows["procvlm"]["available_rollouts"], 1)
+
+        self.app.store.write(
+            self.rollout,
+            {
+                "annotator": "test",
+                "review_status": "in_progress",
+                "outcome_label": "success",
+                "failure_type": "none_success",
+                "confidence": 5,
+                "failure_events": [],
+                "notes": "",
+            },
+        )
+        sources_without_complete_label = self.app.baselines.outcome_evaluation_sources(
+            "libero_10"
+        )
+        unlabeled_coverage = {
+            row["method"]: row
+            for row in sources_without_complete_label["coverage"]
+        }
+        self.assertEqual(
+            unlabeled_coverage["robo_dopamine"]["available_scope_rollouts"],
+            1,
+        )
+        self.assertEqual(
+            unlabeled_coverage["robo_dopamine"]["available_rollouts"],
+            0,
+        )
+        self.assertEqual(
+            sources_without_complete_label["evaluation_population"],
+            0,
+        )
 
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()
