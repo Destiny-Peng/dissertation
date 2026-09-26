@@ -252,14 +252,32 @@
     }
     var blockers = validation.blockers || [];
     host.className = "repair-validation " + (validation.ready ? "repair-ok" : "repair-error");
+    var smoke = ((validation.validation || {}).alignment_smoke_test || {});
+    var comparisons = smoke.comparisons || {};
+    var smokeLines = Object.keys(comparisons).map(function (view) {
+      var item = comparisons[view] || {};
+      function fmt(value) {
+        return value == null ? "—" : Number(value).toFixed(2);
+      }
+      return view + ": restore PSNR " + fmt(item.restore_psnr)
+        + " · step PSNR " + fmt(item.step_psnr)
+        + " · " + (item.passed ? "pass" : "fail");
+    });
     host.textContent = [
-      validation.ready ? "Metadata validation passed." : "Blocked.",
+      validation.ready ? "Validation passed." : "Blocked.",
       "condition_rgb = rgb[" + validation.alignment.condition_frame + "]",
       "branch_state = states[" + validation.alignment.branch_state_index + "]",
       "future_actions = actions[" + validation.alignment.gt_action_start + ":]",
+      "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
+      smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       "A2World: " + (validation.world_model.available ? "available" : "unavailable"),
-      blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Next: simulator alignment smoke test → A2World generation."
-    ].join("\n");
+      validation.gpu && validation.gpu.selected
+        ? ("GPU " + validation.gpu.selected.index + ": "
+          + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
+          + "% utilization")
+        : "GPU: no eligible device below 50%",
+      blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
+    ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
   }
 
