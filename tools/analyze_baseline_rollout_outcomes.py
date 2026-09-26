@@ -18,7 +18,7 @@ if str(TOOL_DIR) not in sys.path:
 
 from analyze_baseline_change_points import project_path  # noqa: E402
 from analyze_baseline_temporal_signals import (  # noqa: E402
-    METHODS,
+    ROLLOUT_OUTCOME_METHODS,
     DEFAULT_ANNOTATIONS,
     DEFAULT_MANIFEST,
     ROLLOUT_OUTCOME_PRIMARY_SIGNALS,
@@ -50,7 +50,7 @@ def _load_source_map(path: Path) -> dict[str, dict[str, Path]]:
     if not isinstance(raw_maps, dict):
         raise ValueError("source-map JSON must contain source_maps")
     result: dict[str, dict[str, Path]] = {}
-    for method in METHODS:
+    for method in ROLLOUT_OUTCOME_METHODS:
         raw = raw_maps.get(method) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"source map for {method} must be an object")
@@ -71,7 +71,7 @@ def _load_rollouts(
     _selection_doc, selections = load_selection(selection_path)
     manifest = load_manifest(manifest_path)
     rollouts: dict[str, dict[str, Any]] = {}
-    source_runs: dict[str, set[str]] = {method: set() for method in METHODS}
+    source_runs: dict[str, set[str]] = {method: set() for method in ROLLOUT_OUTCOME_METHODS}
 
     for selection in selections:
         rollout_id = str(selection["id"])
@@ -86,7 +86,7 @@ def _load_rollouts(
             "methods": {},
             "method_errors": {},
         }
-        for method in METHODS:
+        for method in ROLLOUT_OUTCOME_METHODS:
             run_root = source_maps[method].get(rollout_id)
             if run_root is None:
                 rollout["method_errors"][method] = "no saved output for this rollout"
@@ -116,6 +116,66 @@ def _load_rollouts(
     )
 
 
+PROGRESS_SWEEP_METHODS = ("procvlm", "robo_dopamine")
+PROGRESS_SWEEP_THRESHOLDS = tuple(round(value / 100.0, 2) for value in range(50, 100, 5))
+
+
+def _progress_threshold_sweep(predictions: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if predictions.empty:
+        return pd.DataFrame(rows)
+    base = predictions.drop_duplicates(subset=["rollout_id", "method"])
+    for method in PROGRESS_SWEEP_METHODS:
+        method_rows = base[
+            (base["method"] == method)
+            & (base["included_in_metrics"] == True)
+        ]
+        if method_rows.empty:
+            continue
+        signal = str(method_rows.iloc[0]["signal"])
+        for threshold in PROGRESS_SWEEP_THRESHOLDS:
+            tp = fn = fp = tn = 0
+            for _, row in method_rows.iterrows():
+                value = float(row["terminal_value"])
+                predicted_success = value > threshold
+                truth = int(row["true_success"])
+                if truth == 1 and predicted_success:
+                    tp += 1
+                elif truth == 1:
+                    fn += 1
+                elif predicted_success:
+                    fp += 1
+                else:
+                    tn += 1
+            success_recall = tp / (tp + fn) if tp + fn else float("nan")
+            failure_recall = tn / (tn + fp) if tn + fp else float("nan")
+            precision = tp / (tp + fp) if tp + fp else float("nan")
+            accuracy = (tp + tn) / (tp + tn + fp + fn) if tp + tn + fp + fn else float("nan")
+            f1 = (
+                2.0 * precision * success_recall / (precision + success_recall)
+                if pd.notna(precision)
+                and pd.notna(success_recall)
+                and precision + success_recall > 0
+                else float("nan")
+            )
+            rows.append({
+                "method": method,
+                "signal": signal,
+                "raw_terminal_threshold": threshold,
+                "n_resolved": int(len(method_rows)),
+                "tp": tp,
+                "fn": fn,
+                "fp": fp,
+                "tn": tn,
+                "accuracy": accuracy,
+                "success_recall": success_recall,
+                "failure_recall": failure_recall,
+                "precision": precision,
+                "f1": f1,
+            })
+    return pd.DataFrame(rows)
+
+
 def main() -> int:
     args = parse_args()
     selection_path = project_path(args.selection)
@@ -136,9 +196,14 @@ def main() -> int:
     summary, predictions = compute_rollout_outcome_classification(rollouts)
     summary.to_csv(output_dir / "rollout_outcome_summary.csv", index=False)
     predictions.to_csv(output_dir / "rollout_outcome_predictions.csv", index=False)
+    threshold_sweep = _progress_threshold_sweep(predictions)
+    threshold_sweep.to_csv(
+        output_dir / "rollout_outcome_threshold_sweep.csv",
+        index=False,
+    )
 
     coverage_rows = []
-    for method in METHODS:
+    for method in ROLLOUT_OUTCOME_METHODS:
         available = [
             rollout_id
             for rollout_id, rollout in rollouts.items()
@@ -177,7 +242,7 @@ def main() -> int:
         "manifest_sha256": sha256(manifest_path),
         "annotations_dir": str(annotation_dir),
         "rollouts": [row["id"] for row in selections],
-        "methods": list(METHODS),
+        "methods": list(ROLLOUT_OUTCOME_METHODS),
         "source_runs": source_runs,
         "source_resolution": (
             "newest parseable completed output per rollout; "
@@ -194,11 +259,17 @@ def main() -> int:
             "threshold_calibration": "final_success_terminal_score_quantile",
             "summary_rows": int(len(summary)),
             "prediction_rows": int(len(predictions)),
+            "progress_threshold_sweep": {
+                "methods": list(PROGRESS_SWEEP_METHODS),
+                "thresholds": list(PROGRESS_SWEEP_THRESHOLDS),
+                "rows": int(len(threshold_sweep)),
+            },
         },
         "counts": {
             "evaluation_population": len(rollouts),
             "summary_rows": int(len(summary)),
             "prediction_rows": int(len(predictions)),
+            "threshold_sweep_rows": int(len(threshold_sweep)),
         },
     }
     (output_dir / "metadata.json").write_text(
