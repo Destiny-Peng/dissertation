@@ -173,13 +173,26 @@ class BaselineCatalogMixin:
             scope_records,
             condition,
         )
+        evaluation_ids = {str(record["id"]) for record in records}
         source_maps: dict[str, dict[str, str]] = {}
         coverage: list[dict[str, Any]] = []
         for baseline in OUTCOME_EVALUATION_METHODS:
-            mapping = self._result_source_map(baseline, condition, records)
+            scope_mapping = self._result_source_map(
+                baseline,
+                condition,
+                scope_records,
+            )
+            mapping = {
+                rollout_id: run_root
+                for rollout_id, run_root in scope_mapping.items()
+                if rollout_id in evaluation_ids
+            }
             source_maps[baseline] = mapping
             coverage.append({
                 "method": baseline,
+                "scope_population": len(scope_records),
+                "available_scope_rollouts": len(scope_mapping),
+                "missing_scope_rollouts": len(scope_records) - len(scope_mapping),
                 "evaluation_population": len(records),
                 "available_rollouts": len(mapping),
                 "missing_rollouts": len(records) - len(mapping),
