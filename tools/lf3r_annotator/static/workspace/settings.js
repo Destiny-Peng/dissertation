@@ -4,10 +4,16 @@
 
 function workspaceNormalizeLoadedSettings(settings) {
   if (!settings) return Object.assign({}, SETTINGS_DEFAULTS);
-  var usesLegacyDefaults = Object.keys(SETTINGS_LEGACY_DEFAULT_PALETTE).every(function (key) {
-    return String(settings[key] || "").toLowerCase() === SETTINGS_LEGACY_DEFAULT_PALETTE[key];
+  var oldDefaultPalettes = [
+    SETTINGS_LEGACY_DEFAULT_PALETTE,
+    SETTINGS_PREVIOUS_DEFAULT_PALETTE
+  ];
+  var usesOldDefaults = oldDefaultPalettes.some(function (palette) {
+    return Object.keys(palette).every(function (key) {
+      return String(settings[key] || "").toLowerCase() === palette[key].toLowerCase();
+    });
   });
-  return usesLegacyDefaults
+  return usesOldDefaults
     ? Object.assign({}, settings, {
         background_color: SETTINGS_DEFAULTS.background_color,
         surface_color: SETTINGS_DEFAULTS.surface_color,
@@ -18,6 +24,19 @@ function workspaceNormalizeLoadedSettings(settings) {
         accent_color: SETTINGS_DEFAULTS.accent_color
       })
     : settings;
+}
+
+function workspaceColorLuminance(color) {
+  var match = /^#([0-9a-f]{6})$/i.exec(String(color || ""));
+  if (!match) return 0;
+  var hex = match[1];
+  var channels = [0, 2, 4].map(function (offset) {
+    var value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
 function workspaceApplySettings(settings) {
@@ -34,6 +53,11 @@ function workspaceApplySettings(settings) {
   Object.keys(mapping).forEach(function (field) {
     if (settings && settings[field]) root.style.setProperty(mapping[field], settings[field]);
   });
+  var appearance = workspaceColorLuminance(settings && settings.background_color) >= 0.5
+    ? "light"
+    : "dark";
+  root.dataset.appearance = appearance;
+  root.style.colorScheme = appearance;
   root.style.setProperty("--font-scale", String(settings && settings.font_scale || 1));
   root.style.setProperty("--review-font-scale", String(settings && settings.review_font_scale || 1));
   root.style.setProperty("--analysis-font-scale", String(settings && settings.analysis_font_scale || 1));
