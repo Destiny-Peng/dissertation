@@ -59,9 +59,44 @@ class WebUiArchitectureContractTest(unittest.TestCase):
         runtime = (TOOL_ROOT / "webui_runtime.py").read_text(encoding="utf-8")
         self.assertIn("baseline_service_class = WebUIBaselineService", application)
         self.assertIn("project_tool_service_class = NonAnalysisToolService", application)
+        self.assertIn("repair_service_class = RepairService", application)
         self.assertIn("class WebUIHandler(server.LF3RHandler):", handler)
         self.assertIn("WebUIApplication(", runtime)
         self.assertIn("_make_handler(app)", runtime)
+
+    def test_repair_is_top_level_semantic_module(self) -> None:
+        repair_root = TOOL_ROOT / "repair"
+        static_repair = STATIC_ROOT / "repair"
+        for name in [
+            "__init__.py",
+            "alignment.py",
+            "alignment_cli.py",
+            "alignment_runner.py",
+            "prepare_libero_manifest.py",
+            "trajectory.py",
+            "adapters.py",
+            "service.py",
+            "worker.py",
+        ]:
+            self.assertTrue((repair_root / name).is_file(), name)
+        for name in ["styles.css", "page.js", "synthetic-suffix.js"]:
+            self.assertTrue((static_repair / name).is_file(), name)
+
+        html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+        router = (STATIC_ROOT / "workspace" / "router.js").read_text(encoding="utf-8")
+        loader = (STATIC_ROOT / "workspace.js").read_text(encoding="utf-8")
+        handler = (TOOL_ROOT / "webui_handler.py").read_text(encoding="utf-8")
+
+        self.assertIn('href="#/repair" data-route="repair"', html)
+        self.assertIn('id="repairView"', html)
+        self.assertIn('id="repairMount"', html)
+        self.assertNotIn('id="repairRolloutSelect"', html)
+        self.assertIn('"repair"', router)
+        self.assertIn('/static/repair/page.js', loader)
+        self.assertIn('/static/repair/synthetic-suffix.js', loader)
+        self.assertIn('/static/repair/styles.css', loader)
+        self.assertIn('/api/repair/synthetic-suffix/', handler)
+        self.assertNotIn('/api/analysis/repair', handler)
 
     def test_server_is_thin_compatibility_facade(self) -> None:
         server = (TOOL_ROOT / "server.py").read_text(encoding="utf-8")

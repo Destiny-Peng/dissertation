@@ -7,7 +7,7 @@ function workspaceHasUnsavedChanges() {
 }
 
 function workspaceShowView(view) {
-  ["reviewWorkspace", "runsView", "analysisView", "settingsView"].forEach(function (id) {
+  ["reviewWorkspace", "runsView", "analysisView", "repairView", "settingsView"].forEach(function (id) {
     var node = byId(id);
     if (node) node.classList.toggle("hidden", (id === "reviewWorkspace" ? ["annotate", "results"].indexOf(view) === -1 : node.dataset.view !== view));
   });
@@ -22,7 +22,7 @@ function workspaceShowView(view) {
   if (typeof window.lf3rResultsLayoutRefresh === "function") {
     window.lf3rResultsLayoutRefresh();
   }
-  byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "settings" ? "Settings" : view === "results" ? "Results" : view === "runs" ? "Runs" : "Annotate";
+  byId("pageTitle").textContent = view === "analysis" ? "Analysis" : view === "repair" ? "Repair" : view === "settings" ? "Settings" : view === "results" ? "Results" : view === "runs" ? "Runs" : "Annotate";
   document.title = "LF3R " + (view === "review" ? "Failure Review" : labelFor(view));
   window.dispatchEvent(new CustomEvent("lf3r:viewchange", {
     detail: { view: view }
@@ -33,7 +33,7 @@ function workspaceParseRoute() {
   var hash = window.location.hash || "#/annotate";
   var raw = hash.replace(/^#\/?/, "");
   var parts = raw.split("/");
-  var view = ["review", "annotate", "results", "runs", "analysis", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
+  var view = ["review", "annotate", "results", "runs", "analysis", "repair", "settings"].indexOf(parts[0]) === -1 ? "annotate" : parts[0];
   if (view === "review") view = "annotate";
   var analysisTabs = ["outcome", "localization"];
   var analysisTab = view === "analysis" && analysisTabs.indexOf(parts[1]) !== -1 ? parts[1] : "outcome";
@@ -105,6 +105,10 @@ function workspaceDataChanged() {
     if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
       selectRollout(route.id);
     }
+  } else if (workspaceState.view === "repair"
+      && window.LF3RRepairSyntheticSuffix
+      && typeof window.LF3RRepairSyntheticSuffix.refresh === "function") {
+    window.LF3RRepairSyntheticSuffix.refresh();
   } else if (workspaceState.view === "analysis") {
     workspaceDashboardRenderSnapshot();
   }

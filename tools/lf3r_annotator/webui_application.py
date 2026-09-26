@@ -13,6 +13,7 @@ from typing import Any
 
 import server
 from non_analysis_tools import NonAnalysisToolService
+from repair import RepairService
 from webui_baseline import WebUIBaselineService
 
 
@@ -43,6 +44,7 @@ class WebUIApplication(server.LF3RApplication):
 
     baseline_service_class = WebUIBaselineService
     project_tool_service_class = NonAnalysisToolService
+    repair_service_class = RepairService
 
     def __init__(
         self,
