@@ -34,9 +34,9 @@ body {
 }
 
 .queue-panel {
-  background: linear-gradient(180deg, #121820, var(--surface));
-  border-right-color: #27313b;
-  box-shadow: 8px 0 24px rgba(0, 0, 0, .08);
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 92%, var(--bg)));
+  border-right-color: var(--line);
+  box-shadow: var(--shadow-card);
 }
 
 .rollout-card {
