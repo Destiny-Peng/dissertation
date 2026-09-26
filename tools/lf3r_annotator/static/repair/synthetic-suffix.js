@@ -284,10 +284,14 @@
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       "A2World: " + (validation.world_model.available ? "available" : "unavailable"),
-      "A2World config: steps " + String(validation.world_model.num_sampling_steps)
-        + " · guidance " + String(validation.world_model.guidance)
-        + " · seed " + String(validation.world_model.seed)
-        + " · history " + (validation.world_model.history ? "on" : "off"),
+      validation.world_model.num_sampling_steps != null
+        ? (
+          "A2World config: steps " + String(validation.world_model.num_sampling_steps)
+          + " · guidance " + String(validation.world_model.guidance)
+          + " · seed " + String(validation.world_model.seed)
+          + " · history " + (validation.world_model.history ? "on" : "off")
+        )
+        : "",
       "RGB adapter: derived after alignment (manifest ↔ A2World LIBERO convention)",
       validation.gpu && validation.gpu.selected
         ? ("GPU " + validation.gpu.selected.index + ": "
