@@ -27,6 +27,52 @@ class WorldModelAdapter(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    @staticmethod
+    def _transform_rgb(frame: Any, transform: str) -> Any:
+        try:
+            import numpy as np
+        except ImportError as error:
+            raise ValidationError("numpy is required for A2World RGB adaptation") from error
+        array = np.asarray(frame)
+        if transform == "raw":
+            adapted = array
+        elif transform == "horizontal_flip":
+            adapted = array[:, ::-1]
+        elif transform == "vertical_flip":
+            adapted = array[::-1, :]
+        elif transform == "rotate_180":
+            adapted = array[::-1, ::-1]
+        else:
+            raise ValidationError(f"Unknown A2World RGB transform: {transform}")
+        return np.ascontiguousarray(adapted)
+
+    def configure_alignment_rgb(self, smoke: dict[str, Any]) -> dict[str, Any]:
+        comparisons = smoke.get("comparisons") if isinstance(smoke, dict) else {}
+        if not isinstance(comparisons, dict):
+            comparisons = {}
+        mapping: dict[str, str] = {}
+        provenance: dict[str, Any] = {}
+        for manifest_view in ("cam_high", "cam_wrist"):
+            item = comparisons.get(manifest_view)
+            if not isinstance(item, dict):
+                continue
+            sim_to_manifest = str(item.get("orientation_transform") or "")
+            if sim_to_manifest not in self.MANIFEST_TO_A2WORLD_RGB:
+                raise ValidationError(
+                    f"Alignment did not provide a supported RGB orientation for {manifest_view}"
+                )
+            manifest_to_a2world = self.MANIFEST_TO_A2WORLD_RGB[sim_to_manifest]
+            mapping[manifest_view] = manifest_to_a2world
+            provenance[manifest_view] = {
+                "sim_to_manifest": sim_to_manifest,
+                "sim_to_a2world_training": self.A2WORLD_LIBERO_SIM_TO_TRAINING_RGB,
+                "manifest_to_a2world": manifest_to_a2world,
+                "a2world_to_manifest": manifest_to_a2world,
+            }
+        self.config["_manifest_to_a2world_rgb"] = mapping
+        self.config["_rgb_adapter_provenance"] = provenance
+        return provenance
+
     def prepare_condition(
         self,
         rollout: dict[str, Any],
@@ -92,6 +138,13 @@ class A2WorldAdapter(WorldModelAdapter):
     )
     ACTION_ADAPTER = "a2world.actions.libero_servo_actions"
     GENERIC_ACTION_ADAPTER = "a2world.actions.normalize_action_shape"
+    A2WORLD_LIBERO_SIM_TO_TRAINING_RGB = "horizontal_flip"
+    MANIFEST_TO_A2WORLD_RGB = {
+        "raw": "horizontal_flip",
+        "horizontal_flip": "raw",
+        "vertical_flip": "rotate_180",
+        "rotate_180": "vertical_flip",
+    }
 
     def __init__(self, project_root: Path, config: dict[str, Any]) -> None:
         super().__init__(project_root, config)
@@ -305,6 +358,15 @@ class A2WorldAdapter(WorldModelAdapter):
                 str(camera_paths[manifest_view]),
             )
             frame = self._read_video_frame(source, cut_frame)
+            rgb_transform = (
+                self.config.get("_manifest_to_a2world_rgb", {})
+                or {}
+            ).get(manifest_view)
+            if not rgb_transform:
+                raise ValidationError(
+                    "A2World RGB adaptation requires a passed LIBERO alignment smoke test"
+                )
+            frame = self._transform_rgb(frame, str(rgb_transform))
             if frame.ndim != 3 or frame.shape[-1] != 3:
                 raise ValidationError(
                     f"Unexpected condition frame shape for {manifest_view}: "
@@ -326,6 +388,7 @@ class A2WorldAdapter(WorldModelAdapter):
             "cut_frame": int(cut_frame),
             "camera_mapping": mapping,
             "duplicated_camera": duplicated,
+            "rgb_adapter": self.config.get("_rgb_adapter_provenance", {}),
             "condition_images": {
                 key: str(path.relative_to(self.project_root))
                 for key, path in images.items()
@@ -468,8 +531,19 @@ class A2WorldAdapter(WorldModelAdapter):
                 seen_manifest_views.add(manifest_view)
             writer = imageio.get_writer(str(target), fps=fps)
             try:
+                output_transform = (
+                    self.config.get("_manifest_to_a2world_rgb", {})
+                    or {}
+                ).get(manifest_view)
+                if not output_transform:
+                    raise ValidationError(
+                        f"Missing A2World-to-manifest RGB transform for {manifest_view}"
+                    )
                 for frame in suffix_frames:
-                    writer.append_data(frame[:, start:stop])
+                    view_frame = frame[:, start:stop]
+                    writer.append_data(
+                        self._transform_rgb(view_frame, str(output_transform))
+                    )
             finally:
                 writer.close()
             if expose:
