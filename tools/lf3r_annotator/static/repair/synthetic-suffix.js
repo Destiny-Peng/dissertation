@@ -275,6 +275,14 @@
           + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
           + "% utilization")
         : "GPU: no eligible device below 50%",
+      validation.a2world_action_horizon
+        ? (
+          "A2World horizon: " + validation.a2world_action_horizon.gt_future_action_count
+          + " GT future actions · tail padding "
+          + validation.a2world_action_horizon.tail_padding_count
+          + " · exported padded frames 0"
+        )
+        : "",
       blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
     ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
