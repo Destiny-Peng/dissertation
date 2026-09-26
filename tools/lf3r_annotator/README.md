@@ -75,13 +75,13 @@ The current rollout selection, Review queue filters, Analysis filters, and annot
 Settings are stored in `config/lf3r_annotator.json`, not in browser local storage, so every browser connected to this loopback service reads the same project configuration. The initial/default document is:
 
     {
-      "background_color": "#0b0d10",
-      "surface_color": "#11151a",
-      "surface_raised_color": "#171c22",
-      "control_color": "#0f1318",
-      "text_color": "#f4f6f7",
-      "muted_color": "#98a3ad",
-      "accent_color": "#67d9b5",
+      "background_color": "#f6f8fb",
+      "surface_color": "#ffffff",
+      "surface_raised_color": "#f9fbfd",
+      "control_color": "#ffffff",
+      "text_color": "#1f2a37",
+      "muted_color": "#5b6b7f",
+      "accent_color": "#4f7df3",
       "font_scale": 1.0,
       "review_font_scale": 1.0,
       "analysis_font_scale": 1.0,
@@ -89,7 +89,7 @@ Settings are stored in `config/lf3r_annotator.json`, not in browser local storag
       "density": "comfortable"
     }
 
-The color fields are six-digit hexadecimal colors. font_scale accepts 0.75 through 1.60 in 0.05 steps (75%-160%). review_font_scale, analysis_font_scale, and control_font_scale each accept 0.85 through 1.30 (85%-130%) in the same step size. The active page combines the global scale with its category scale; controls and help text additionally use the control scale. density is compact, comfortable, or spacious. Midnight, Slate, and Warm are convenience presets; they only change the configurable appearance fields.
+The color fields are six-digit hexadecimal colors. font_scale accepts 0.75 through 1.60 in 0.05 steps (75%-160%). review_font_scale, analysis_font_scale, and control_font_scale each accept 0.85 through 1.30 (85%-130%) in the same step size. The active page combines the global scale with its category scale; controls and help text additionally use the control scale. density is compact, comfortable, or spacious. Academic Light is the default light preset. Midnight, Slate, and Warm remain available as optional dark presets; presets only change the configurable appearance fields.
 
 Font scale changes the document root font size and all rem-based UI text. It does not use CSS `zoom`, so the video, frame slider, and SVG geometry retain their layout behavior. Density adjusts shared page/panel spacing.
 
