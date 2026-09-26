@@ -78,7 +78,7 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "worker.py",
         ]:
             self.assertTrue((repair_root / name).is_file(), name)
-        for name in ["styles.css", "synthetic-suffix.js"]:
+        for name in ["styles.css", "page.js", "synthetic-suffix.js"]:
             self.assertTrue((static_repair / name).is_file(), name)
 
         html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
@@ -88,7 +88,10 @@ class WebUiArchitectureContractTest(unittest.TestCase):
 
         self.assertIn('href="#/repair" data-route="repair"', html)
         self.assertIn('id="repairView"', html)
+        self.assertIn('id="repairMount"', html)
+        self.assertNotIn('id="repairRolloutSelect"', html)
         self.assertIn('"repair"', router)
+        self.assertIn('/static/repair/page.js', loader)
         self.assertIn('/static/repair/synthetic-suffix.js', loader)
         self.assertIn('/static/repair/styles.css', loader)
         self.assertIn('/api/repair/synthetic-suffix/', handler)
