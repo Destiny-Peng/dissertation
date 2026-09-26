@@ -513,7 +513,7 @@
     var cut = Number((detail.provenance || {}).cut_progress);
     if (!Number.isFinite(cut)) {
       var frame = Number((detail.provenance || {}).cut_rgb_frame || 0);
-      var total = Number((((detail.config || {}).source || {}).total_frames) || 0);
+      var total = Number(((detail.videos || {}).total_frames) || (detail.provenance || {}).source_total_frames || 0);
       cut = total > 1 ? frame / (total - 1) : 0.5;
     }
     cut = Math.max(0, Math.min(1, Number.isFinite(cut) ? cut : 0.5));
