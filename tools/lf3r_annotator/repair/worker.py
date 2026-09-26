@@ -379,6 +379,14 @@ def main() -> None:
                 "camera_mapping": adapter_status["camera_mapping"],
                 "duplicated_camera": adapter_status["duplicated_camera"],
                 "a2world_view_ids": adapter_status["view_ids"],
+                "a2world_source_root": adapter_status["source_root"],
+                "a2world_python": adapter_status["python"],
+                "condition_preparation": {
+                    "condition_images": condition["condition_images"],
+                    "height": condition["height"],
+                    "width": condition["width"],
+                    "artifact_playback_fps": condition["output_fps"],
+                },
                 "action_adapter": adapter_status["action_adapter"],
                 "action_preparation": action_metadata,
                 "prepared_actions_path": str(
