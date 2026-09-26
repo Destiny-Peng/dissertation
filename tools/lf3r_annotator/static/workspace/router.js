@@ -105,6 +105,10 @@ function workspaceDataChanged() {
     if (route.id && route.id !== state.selectedId && (state.rollouts || []).some(function (record) { return record.id === route.id; }) && state.selectedId !== route.id) {
       selectRollout(route.id);
     }
+  } else if (workspaceState.view === "repair"
+      && window.LF3RRepairSyntheticSuffix
+      && typeof window.LF3RRepairSyntheticSuffix.refresh === "function") {
+    window.LF3RRepairSyntheticSuffix.refresh();
   } else if (workspaceState.view === "analysis") {
     workspaceDashboardRenderSnapshot();
   }
