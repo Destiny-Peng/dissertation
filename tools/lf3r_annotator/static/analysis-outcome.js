@@ -2,9 +2,8 @@
 
 (function installOutcomeEvaluationUi() {
   var initialized = false;
-  var methods = ["safe", "procvlm", "rynnvalue", "robo_dopamine"];
+  var methods = ["procvlm", "rynnvalue", "robo_dopamine"];
   var labels = {
-    safe: "SAFE",
     procvlm: "ProcVLM",
     rynnvalue: "RynnValue",
     robo_dopamine: "Robo-Dopamine"
