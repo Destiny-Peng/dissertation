@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from backend_core import ValidationError
+from non_analysis_tools import gpu_status
 from repair.adapters import A2WorldAdapter
 from repair.alignment_runner import run_alignment_subprocess
 from repair.trajectory import load_actions
@@ -241,6 +242,32 @@ def compute_metrics(
     return result
 
 
+def ensure_gpu_below_threshold(gpu_index: int, threshold: float = 50.0) -> dict[str, Any]:
+    status = gpu_status()
+    if not status.get("available"):
+        raise ValidationError(
+            "GPU status is unavailable before A2World generation: "
+            + str(status.get("error") or "unknown error")
+        )
+    selected = next(
+        (
+            gpu
+            for gpu in status.get("gpus", [])
+            if int(gpu.get("index", -1)) == int(gpu_index)
+        ),
+        None,
+    )
+    if selected is None:
+        raise ValidationError(f"Selected GPU {gpu_index} is no longer available")
+    utilization = selected.get("gpu_utilization_percent")
+    if utilization is None or float(utilization) >= threshold:
+        raise ValidationError(
+            f"Selected GPU {gpu_index} utilization is {utilization}%; "
+            f"Repair requires < {threshold:.0f}% before A2World generation"
+        )
+    return selected
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)
@@ -339,6 +366,14 @@ def main() -> None:
 
         update_status(
             run_dir,
+            phase="gpu_recheck",
+            progress=0.40,
+        )
+        gpu_index = int(wm_config["gpu_index"])
+        gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
+
+        update_status(
+            run_dir,
             phase="generate_suffix",
             progress=0.45,
         )
@@ -381,6 +416,15 @@ def main() -> None:
                 "a2world_view_ids": adapter_status["view_ids"],
                 "a2world_source_root": adapter_status["source_root"],
                 "a2world_python": adapter_status["python"],
+                "gpu_recheck_before_generation": {
+                    "index": gpu_index,
+                    "gpu_utilization_percent": gpu_before_generation.get(
+                        "gpu_utilization_percent"
+                    ),
+                    "memory_free_mib": gpu_before_generation.get(
+                        "memory_free_mib"
+                    ),
+                },
                 "condition_preparation": {
                     "condition_images": condition["condition_images"],
                     "height": condition["height"],
