@@ -595,37 +595,20 @@ body[data-view="results"] .evaluation-output.is-stable-height {
   stroke-width: 1.25;
 }
 
-.analysis-sweep-line.accuracy,
-.analysis-sweep-point.accuracy,
-.analysis-sweep-swatch.accuracy {
-  stroke: var(--accent);
-  fill: var(--accent);
-  background: var(--accent);
-}
+.analysis-sweep-line.accuracy { stroke: var(--accent); }
+.analysis-sweep-line.success-recall { stroke: var(--success); }
+.analysis-sweep-line.failure-recall { stroke: var(--terminal); }
+.analysis-sweep-line.f1 { stroke: var(--focus); }
 
-.analysis-sweep-line.success-recall,
-.analysis-sweep-point.success-recall,
-.analysis-sweep-swatch.success-recall {
-  stroke: var(--success);
-  fill: var(--success);
-  background: var(--success);
-}
+.analysis-sweep-point.accuracy { fill: var(--accent); }
+.analysis-sweep-point.success-recall { fill: var(--success); }
+.analysis-sweep-point.failure-recall { fill: var(--terminal); }
+.analysis-sweep-point.f1 { fill: var(--focus); }
 
-.analysis-sweep-line.failure-recall,
-.analysis-sweep-point.failure-recall,
-.analysis-sweep-swatch.failure-recall {
-  stroke: var(--terminal);
-  fill: var(--terminal);
-  background: var(--terminal);
-}
-
-.analysis-sweep-line.f1,
-.analysis-sweep-point.f1,
-.analysis-sweep-swatch.f1 {
-  stroke: var(--focus);
-  fill: var(--focus);
-  background: var(--focus);
-}
+.analysis-sweep-swatch.accuracy { background: var(--accent); }
+.analysis-sweep-swatch.success-recall { background: var(--success); }
+.analysis-sweep-swatch.failure-recall { background: var(--terminal); }
+.analysis-sweep-swatch.f1 { background: var(--focus); }
 
 .analysis-sweep-legend {
   display: flex;
