@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import quote
 
 from backend_core import JobCoordinator, ValidationError
+from non_analysis_tools import gpu_status
 from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
 from .alignment import capability_summary, compute_alignment
@@ -162,6 +163,32 @@ class RepairService:
             )
         return rows
 
+    @staticmethod
+    def _gpu_plan() -> dict[str, Any]:
+        status = gpu_status()
+        gpus = status.get("gpus") if isinstance(status, dict) else []
+        eligible = [
+            gpu
+            for gpu in (gpus or [])
+            if gpu.get("gpu_utilization_percent") is not None
+            and float(gpu["gpu_utilization_percent"]) < 50.0
+        ]
+        eligible.sort(
+            key=lambda gpu: (
+                float(gpu.get("gpu_utilization_percent") or 0.0),
+                -float(gpu.get("memory_free_mib") or 0.0),
+                int(gpu.get("index") or 0),
+            )
+        )
+        return {
+            "available": bool(status.get("available")) if isinstance(status, dict) else False,
+            "error": status.get("error") if isinstance(status, dict) else "GPU status unavailable",
+            "threshold_percent": 50.0,
+            "eligible": eligible,
+            "selected": eligible[0] if eligible else None,
+            "queried_at": status.get("queried_at") if isinstance(status, dict) else None,
+        }
+
     def validate_plan(
         self,
         payload: dict[str, Any],
@@ -191,18 +218,27 @@ class RepairService:
             raise ValidationError("Phase 1 supports A2World only")
         adapter = A2WorldAdapter(self.project_root, wm_config)
         adapter_status = adapter.validate_rollout(rollout)
+        gpu = self._gpu_plan()
         blockers: list[str] = []
         if not capabilities["actions_available"]:
             blockers.append("GT actions are unavailable in the selected manifest record")
         if not capabilities["sim_state_available"]:
             blockers.append("simulator state trajectory is unavailable in the selected manifest record")
         blockers.extend(adapter_status["unavailable_reasons"])
+        if gpu["selected"] is None:
+            if gpu["available"]:
+                blockers.append("No GPU is below the 50% utilization threshold")
+            else:
+                blockers.append(
+                    "GPU status is unavailable: " + str(gpu.get("error") or "unknown error")
+                )
         return {
             "ready": not blockers,
             "rollout_id": rollout_id,
             "capabilities": capabilities,
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
+            "gpu": gpu,
             "blockers": blockers,
             "validation": {
                 "metadata": "complete",
@@ -225,6 +261,7 @@ class RepairService:
 
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = "a2world"
+        wm_config["gpu_index"] = int(plan["gpu"]["selected"]["index"])
         config = {
             "schema_version": 1,
             "experiment": "synthetic_suffix",
@@ -265,6 +302,14 @@ class RepairService:
             "camera_mapping": adapter_status["camera_mapping"],
             "duplicated_camera": adapter_status["duplicated_camera"],
             "action_adapter": adapter_status["action_adapter"],
+            "gpu": {
+                "index": int(plan["gpu"]["selected"]["index"]),
+                "uuid": plan["gpu"]["selected"].get("uuid"),
+                "name": plan["gpu"]["selected"].get("name"),
+                "utilization_percent_at_submit": plan["gpu"]["selected"].get("gpu_utilization_percent"),
+                "memory_free_mib_at_submit": plan["gpu"]["selected"].get("memory_free_mib"),
+                "selection_threshold_percent": plan["gpu"]["threshold_percent"],
+            },
             "generation_config": {
                 "variant": adapter_status["variant"],
                 "rollout_mode": "autoregressive",
