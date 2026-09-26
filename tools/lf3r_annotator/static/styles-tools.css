@@ -90,7 +90,7 @@ body[data-view="runs"] .runs-gpu-meter {
   height: 5px;
   margin: .38rem 0 .5rem;
   overflow: hidden;
-  background: #1d252d;
+  background: var(--line-soft);
   border-radius: 999px;
 }
 
@@ -324,7 +324,7 @@ body[data-view="runs"] .runs-tool-job-empty {
   padding: .65rem;
   color: var(--muted);
   font-size: .74rem;
-  border: 1px dashed #29343e;
+  border: 1px dashed var(--line);
   border-radius: 8px;
 }
 
@@ -401,7 +401,7 @@ body[data-view="runs"] .runs-path-list code {
   padding: .28rem .42rem;
   color: color-mix(in srgb, var(--text) 78%, var(--muted));
   background: var(--control);
-  border: 1px solid #28343d;
+  border: 1px solid var(--line);
   border-radius: 6px;
   font-size: .73rem;
 }
