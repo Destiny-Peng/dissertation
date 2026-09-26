@@ -15,7 +15,13 @@ import analyze_baseline_temporal_signals as analysis  # noqa: E402
 import analyze_baseline_rollout_outcomes as outcome_analysis  # noqa: E402
 
 
-def rollout(outcome: str, progress: float, *, rollout_id: str) -> tuple[str, dict]:
+def rollout(
+    outcome: str,
+    progress: float,
+    *,
+    rollout_id: str,
+    maximum_progress: float | None = None,
+) -> tuple[str, dict]:
     return rollout_id, {
         "record": {
             "id": rollout_id,
@@ -37,8 +43,15 @@ def rollout(outcome: str, progress: float, *, rollout_id: str) -> tuple[str, dic
             "procvlm": {
                 "signals": {
                     "progress": {
-                        "frames": np.asarray([0, 9], dtype=int),
-                        "values": np.asarray([0.0, progress], dtype=float),
+                        "frames": np.asarray([0, 5, 9], dtype=int),
+                        "values": np.asarray(
+                            [
+                                0.0,
+                                progress if maximum_progress is None else maximum_progress,
+                                progress,
+                            ],
+                            dtype=float,
+                        ),
                         "direction": -1.0,
                     }
                 }
@@ -101,15 +114,66 @@ class RolloutOutcomeClassificationTests(unittest.TestCase):
             )
         )
 
-        sweep = outcome_analysis._progress_threshold_sweep(predictions)
+        sweep = outcome_analysis._progress_threshold_sweep(predictions, rows)
         proc_80 = sweep[
             (sweep["method"] == "procvlm")
-            & (sweep["raw_terminal_threshold"] == 0.8)
+            & (sweep["score_aggregation"] == "final")
+            & (sweep["raw_progress_threshold"] == 0.8)
         ].iloc[0]
         self.assertEqual(int(proc_80["n_resolved"]), 4)
         self.assertAlmostEqual(float(proc_80["accuracy"]), 0.75)
         self.assertAlmostEqual(float(proc_80["failure_recall"]), 1.0)
         self.assertNotIn("safe", set(sweep["method"]))
+        self.assertEqual(
+            set(sweep["score_aggregation"]),
+            {"final", "maximum"},
+        )
+
+    def test_maximum_progress_sweep_uses_peak_value(self) -> None:
+        rows = dict([
+            rollout(
+                "success",
+                0.9,
+                maximum_progress=0.95,
+                rollout_id="success-high",
+            ),
+            rollout(
+                "recovered_success",
+                0.8,
+                maximum_progress=0.85,
+                rollout_id="success-recovered",
+            ),
+            rollout(
+                "failure",
+                0.2,
+                maximum_progress=0.6,
+                rollout_id="failure-a",
+            ),
+            rollout(
+                "failure",
+                0.1,
+                maximum_progress=0.4,
+                rollout_id="failure-b",
+            ),
+        ])
+        _summary, predictions = analysis.compute_rollout_outcome_classification(rows)
+        sweep = outcome_analysis._progress_threshold_sweep(predictions, rows)
+
+        final_80 = sweep[
+            (sweep["method"] == "procvlm")
+            & (sweep["score_aggregation"] == "final")
+            & (sweep["raw_progress_threshold"] == 0.8)
+        ].iloc[0]
+        maximum_80 = sweep[
+            (sweep["method"] == "procvlm")
+            & (sweep["score_aggregation"] == "maximum")
+            & (sweep["raw_progress_threshold"] == 0.8)
+        ].iloc[0]
+
+        self.assertAlmostEqual(float(final_80["accuracy"]), 0.75)
+        self.assertAlmostEqual(float(maximum_80["accuracy"]), 1.0)
+        self.assertAlmostEqual(float(maximum_80["success_recall"]), 1.0)
+        self.assertAlmostEqual(float(maximum_80["failure_recall"]), 1.0)
 
 
 if __name__ == "__main__":
