@@ -572,6 +572,19 @@ body[data-view="results"] .evaluation-output.is-stable-height {
   stroke-width: 1;
 }
 
+.analysis-sweep-gridline-horizontal.minor {
+  opacity: .5;
+}
+
+.analysis-sweep-gridline-horizontal.major {
+  opacity: .95;
+}
+
+.analysis-sweep-gridline-vertical {
+  stroke-dasharray: 3 3;
+  opacity: .7;
+}
+
 .analysis-sweep-axis,
 .analysis-sweep-tick {
   stroke: var(--line);
