@@ -31,13 +31,13 @@ OUTCOME_LABELS = {"success", "failure", "recovered_success", "uncertain"}
 REVIEW_STATUSES = {"unreviewed", "in_progress", "complete"}
 
 DEFAULT_SETTINGS = {
-    "background_color": "#0b0d10",
-    "surface_color": "#11151a",
-    "surface_raised_color": "#171c22",
-    "control_color": "#0f1318",
-    "text_color": "#f4f6f7",
-    "muted_color": "#98a3ad",
-    "accent_color": "#67d9b5",
+    "background_color": "#f6f8fb",
+    "surface_color": "#ffffff",
+    "surface_raised_color": "#f9fbfd",
+    "control_color": "#ffffff",
+    "text_color": "#1f2a37",
+    "muted_color": "#5b6b7f",
+    "accent_color": "#4f7df3",
     "font_scale": 1.0,
     "review_font_scale": 1.0,
     "analysis_font_scale": 1.0,
