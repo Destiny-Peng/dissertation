@@ -16,7 +16,7 @@ from backend_core import (
     validate_instruction_condition,
     validate_run_scope,
 )
-from analysis_constants import ANALYSIS_BASELINE_METHODS
+from analysis_constants import ANALYSIS_BASELINE_METHODS, OUTCOME_EVALUATION_METHODS
 from baseline_constants import (
     BASELINE_METHODS,
     BASELINE_RESULT_FILTERS,
@@ -175,7 +175,7 @@ class BaselineCatalogMixin:
         )
         source_maps: dict[str, dict[str, str]] = {}
         coverage: list[dict[str, Any]] = []
-        for baseline in ANALYSIS_BASELINE_METHODS:
+        for baseline in OUTCOME_EVALUATION_METHODS:
             mapping = self._result_source_map(baseline, condition, records)
             source_maps[baseline] = mapping
             coverage.append({

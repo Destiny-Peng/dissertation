@@ -61,18 +61,14 @@ SAFE_PRIMARY_SIGNALS = (
 )
 ROBO_SIGNALS = ("progress", "hop")
 
+ROLLOUT_OUTCOME_METHODS = ("procvlm", "rynnvalue", "robo_dopamine")
 ROLLOUT_OUTCOME_PRIMARY_SIGNALS = {
-    "safe": "max_token_prob",
     "procvlm": "progress",
     "rynnvalue": "value",
     "robo_dopamine": "progress",
 }
 ROLLOUT_OUTCOME_THRESHOLDS = ("q90", "q95", "q99")
 ROLLOUT_OUTCOME_SIGNAL_NOTES = {
-    "safe": (
-        "handcrafted max_token_prob proxy; the baseline run does not contain "
-        "a trained SAFE detector checkpoint"
-    ),
     "procvlm": "native terminal progress",
     "rynnvalue": "native terminal value / remaining-time semantics",
     "robo_dopamine": "native terminal progress",
@@ -202,34 +198,6 @@ def _classification_rate(numerator: int, denominator: int) -> float:
     return float(numerator / denominator) if denominator else math.nan
 
 
-def _classification_auc(scores: list[float], labels: list[int]) -> float:
-    pairs = [
-        (float(score), int(label))
-        for score, label in zip(scores, labels)
-        if math.isfinite(float(score))
-    ]
-    positives = sum(label == 1 for _, label in pairs)
-    negatives = sum(label == 0 for _, label in pairs)
-    if not positives or not negatives:
-        return math.nan
-    ordered = sorted(pairs, key=lambda pair: pair[0])
-    rank_sum = 0.0
-    index = 0
-    while index < len(ordered):
-        end = index + 1
-        while end < len(ordered) and ordered[end][0] == ordered[index][0]:
-            end += 1
-        average_rank = (index + 1 + end) / 2.0
-        rank_sum += average_rank * sum(
-            label == 1 for _, label in ordered[index:end]
-        )
-        index = end
-    return float(
-        (rank_sum - positives * (positives + 1) / 2.0)
-        / (positives * negatives)
-    )
-
-
 def _terminal_signal_point(series: dict[str, Any]) -> tuple[int, float] | None:
     frames = np.asarray(series.get("frames", []), dtype=int)
     values = np.asarray(series.get("values", []), dtype=float)
@@ -250,11 +218,13 @@ def compute_rollout_outcome_classification(
     """Classify final rollout outcome from each method's terminal native score.
 
     Final success (clean_success or recovered_success) is the positive class and
-    terminal_failure is the negative class. Uncertain rollouts are retained in
-    the prediction artifact but excluded from metric denominators. Thresholds
-    are calibrated from final-success scores (Q90/Q95/Q99) after orienting each
-    method so larger values mean more failure-like. A rollout is predicted
-    successful when its failure-oriented terminal score stays below threshold.
+    terminal_failure is the negative class. SAFE is intentionally excluded:
+    its proper outcome decision should come from the trained detector rather
+    than thresholding the handcrafted proxy signal.
+
+    Q90/Q95/Q99 are operating points calibrated from final-success terminal
+    scores after orienting each included method so larger values are more
+    failure-like.
     """
     terminal_rows: list[dict[str, Any]] = []
     for rollout_id, rollout in rollouts.items():
@@ -267,7 +237,7 @@ def compute_rollout_outcome_classification(
             true_success = None
         record = rollout["record"]
         total_frames = int(record.get("total_frames") or 0)
-        for method in METHODS:
+        for method in ROLLOUT_OUTCOME_METHODS:
             signal_name = ROLLOUT_OUTCOME_PRIMARY_SIGNALS[method]
             method_data = rollout["methods"].get(method)
             if not method_data:
@@ -311,7 +281,7 @@ def compute_rollout_outcome_classification(
 
     summary_rows: list[dict[str, Any]] = []
     prediction_rows: list[dict[str, Any]] = []
-    for method in METHODS:
+    for method in ROLLOUT_OUTCOME_METHODS:
         signal_name = ROLLOUT_OUTCOME_PRIMARY_SIGNALS[method]
         method_rows = [
             row for row in terminal_rows
@@ -329,12 +299,6 @@ def compute_rollout_outcome_classification(
             for row in method_rows
             if int(row["true_success"]) == 0
         ]
-        success_oriented_scores = [
-            -float(row["failure_oriented_terminal_score"])
-            for row in method_rows
-        ]
-        all_labels = [int(row["true_success"]) for row in method_rows]
-        auroc = _classification_auc(success_oriented_scores, all_labels)
         if not success_scores:
             continue
         thresholds = {
@@ -421,7 +385,6 @@ def compute_rollout_outcome_classification(
                     else math.nan
                 ),
                 "balanced_accuracy": balanced_accuracy,
-                "auroc": auroc,
             })
 
         for row in terminal_rows:

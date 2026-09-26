@@ -12,6 +12,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
 import analyze_baseline_temporal_signals as analysis  # noqa: E402
+import analyze_baseline_rollout_outcomes as outcome_analysis  # noqa: E402
 
 
 def rollout(outcome: str, progress: float, *, rollout_id: str) -> tuple[str, dict]:
@@ -24,6 +25,15 @@ def rollout(outcome: str, progress: float, *, rollout_id: str) -> tuple[str, dic
         },
         "annotation": {"outcome_label": outcome},
         "methods": {
+            "safe": {
+                "signals": {
+                    "max_token_prob": {
+                        "frames": np.asarray([0, 9], dtype=int),
+                        "values": np.asarray([0.1, 0.9], dtype=float),
+                        "direction": 1.0,
+                    }
+                }
+            },
             "procvlm": {
                 "signals": {
                     "progress": {
@@ -67,11 +77,14 @@ class RolloutOutcomeClassificationTests(unittest.TestCase):
         self.assertAlmostEqual(float(q95["balanced_accuracy"]), 0.75)
         self.assertAlmostEqual(float(q95["precision"]), 1.0)
         self.assertAlmostEqual(float(q95["f1"]), 2.0 / 3.0)
-        self.assertAlmostEqual(float(q95["auroc"]), 1.0)
+        self.assertNotIn("auroc", q95.index)
         self.assertEqual(q95["success_rule"], "progress > 0.805")
         self.assertEqual(q95["failure_rule"], "progress <= 0.805")
         self.assertEqual(q95["positive_class"], "clean_success+recovered_success")
         self.assertEqual(q95["negative_class"], "terminal_failure")
+
+        self.assertNotIn("safe", set(summary["method"]))
+        self.assertNotIn("safe", set(predictions["method"]))
 
         q95_predictions = predictions[
             (predictions["method"] == "procvlm")
@@ -87,6 +100,16 @@ class RolloutOutcomeClassificationTests(unittest.TestCase):
                 and math.isnan(uncertain["prediction_correct"])
             )
         )
+
+        sweep = outcome_analysis._progress_threshold_sweep(predictions)
+        proc_80 = sweep[
+            (sweep["method"] == "procvlm")
+            & (sweep["raw_terminal_threshold"] == 0.8)
+        ].iloc[0]
+        self.assertEqual(int(proc_80["n_resolved"]), 4)
+        self.assertAlmostEqual(float(proc_80["accuracy"]), 0.75)
+        self.assertAlmostEqual(float(proc_80["failure_recall"]), 1.0)
+        self.assertNotIn("safe", set(sweep["method"]))
 
 
 if __name__ == "__main__":

@@ -257,6 +257,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisOutcomeRunScope",
             "analysisOutcomeRunButton",
             "analysisOutcomeCoverage",
+            "analysisOutcomeThresholdSweep",
             "analysisChangePointMethod",
             "analysisChangePointSignal",
             "analysisChangePointFeature",
@@ -302,6 +303,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
         dashboard = (TOOL_ROOT / "static/analysis/dashboard.js").read_text(encoding="utf-8")
+        outcome_analysis = (TOOL_ROOT / "static/analysis-outcome.js").read_text(encoding="utf-8")
         router = (TOOL_ROOT / "static/workspace/router.js").read_text(encoding="utf-8")
 
         self.assertIn("Outcome Evaluation", html)
@@ -314,6 +316,15 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Success recall", dashboard)
         self.assertIn("Failure recall", dashboard)
         self.assertIn("clean + recovered success", dashboard)
+        self.assertIn('var methods = ["procvlm", "rynnvalue", "robo_dopamine"]', outcome_analysis)
+        self.assertNotIn('var methods = ["safe", "procvlm", "rynnvalue", "robo_dopamine"]', outcome_analysis)
+        outcome_renderer = dashboard[
+            dashboard.index("function workspaceDashboardRenderRolloutOutcome"):
+            dashboard.index("function workspaceDashboardRenderOutcomeThresholdSweep")
+        ]
+        self.assertNotIn("AUROC", outcome_renderer)
+        self.assertNotIn("metrics.auroc", outcome_renderer)
+        self.assertIn("Progress threshold sweep", html)
         self.assertIn('var analysisTabs = ["outcome", "localization"]', router)
 
         for removed in [

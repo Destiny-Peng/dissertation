@@ -1185,14 +1185,11 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
 
         self.assertEqual(sources["scope_rollouts"], 1)
         self.assertEqual(sources["evaluation_population"], 1)
-        self.assertEqual(
-            sources["source_maps"]["safe"][self.rollout["id"]],
-            "outputs/baselines/safe_newer",
-        )
+        self.assertNotIn("safe", sources["source_maps"])
         for method in ("procvlm", "rynnvalue", "robo_dopamine"):
             self.assertIn(self.rollout["id"], sources["source_maps"][method])
         coverage = {row["method"]: row for row in sources["coverage"]}
-        self.assertEqual(coverage["safe"]["available_rollouts"], 1)
+        self.assertNotIn("safe", coverage)
         self.assertEqual(coverage["robo_dopamine"]["available_rollouts"], 1)
 
         with self.request("/api/analysis/outcome-coverage?scope=libero_10") as response:
@@ -1200,7 +1197,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(public_coverage["evaluation_population"], 1)
         self.assertNotIn("source_maps", public_coverage)
         public_rows = {row["method"]: row for row in public_coverage["coverage"]}
-        self.assertEqual(public_rows["safe"]["available_rollouts"], 1)
+        self.assertNotIn("safe", public_rows)
+        self.assertEqual(public_rows["procvlm"]["available_rollouts"], 1)
 
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()
@@ -1966,18 +1964,23 @@ print('fake label loss ablation complete')
         }
         (directory / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
         (directory / "method_coverage.csv").write_text(
-            "method,selected_rollouts,available_rollouts,missing_rollouts\n"
-            "safe,1,1,0\n",
+            "method,evaluation_population,available_rollouts,missing_rollouts\n"
+            "procvlm,1,1,0\n",
             encoding="utf-8",
         )
         (directory / "rollout_outcome_summary.csv").write_text(
-            "method,signal,threshold,n_resolved,tp,fn,fp,tn,accuracy,success_recall,failure_recall,precision,f1,auroc,positive_class,negative_class\n"
-            "safe,max_token_prob,q95,1,1,0,0,0,1.0,1.0,,1.0,1.0,,clean_success+recovered_success,terminal_failure\n",
+            "method,signal,threshold,n_resolved,tp,fn,fp,tn,accuracy,success_recall,failure_recall,precision,f1,positive_class,negative_class\n"
+            "procvlm,progress,q95,1,1,0,0,0,1.0,1.0,,1.0,1.0,clean_success+recovered_success,terminal_failure\n",
             encoding="utf-8",
         )
         (directory / "rollout_outcome_predictions.csv").write_text(
             "rollout_id,method,threshold,predicted_success\n"
-            + self.rollout["id"] + ",safe,q95,true\n",
+            + self.rollout["id"] + ",procvlm,q95,true\n",
+            encoding="utf-8",
+        )
+        (directory / "rollout_outcome_threshold_sweep.csv").write_text(
+            "method,signal,raw_terminal_threshold,n_resolved,accuracy,success_recall,failure_recall,f1\n"
+            "procvlm,progress,0.8,1,1.0,1.0,,1.0\n",
             encoding="utf-8",
         )
 
@@ -1993,6 +1996,14 @@ print('fake label loss ablation complete')
         self.assertEqual(
             analysis["rollout_outcome"]["positive_class"],
             "clean_success+recovered_success",
+        )
+        self.assertEqual(
+            len(analysis["rollout_outcome_snapshot"]["threshold_sweep"]),
+            1,
+        )
+        self.assertNotIn(
+            "auroc",
+            analysis["rollout_outcome_summary"][0],
         )
 
     def test_analysis_snapshot_exposes_change_point_artifacts(self) -> None:

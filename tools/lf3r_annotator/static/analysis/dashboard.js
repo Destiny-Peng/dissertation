@@ -476,7 +476,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   var threshold = thresholdSelect ? thresholdSelect.value : "q95";
   var rows = Array.isArray(snapshot && snapshot.rollout_outcome_summary)
     ? snapshot.rollout_outcome_summary.filter(function (row) {
-        return String(row.threshold || "") === threshold;
+        return row.method !== "safe" && String(row.threshold || "") === threshold;
       })
     : [];
   if (!rows.length) {
@@ -525,8 +525,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       successRecall: successRecall == null ? row.recall : successRecall,
       failureRecall: failureRecall == null ? row.specificity : failureRecall,
       precision: precision,
-      f1: f1,
-      auroc: row.auroc
+      f1: f1
     };
   }
 
@@ -539,7 +538,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
   coverageRows.forEach(function (row) { coverageByMethod[row.method] = row; });
   var html = '<table class="analysis-table analysis-summary-table" aria-label="Final rollout outcome classification">'
     + '<thead><tr><th>Method / signal</th><th>N</th><th>Coverage</th><th>Accuracy</th><th>Success recall</th>'
-    + '<th>Failure recall</th><th>Precision</th><th>F1</th><th>AUROC</th></tr></thead><tbody>';
+    + '<th>Failure recall</th><th>Precision</th><th>F1</th></tr></thead><tbody>';
   rows.forEach(function (row) {
     var metrics = successPositiveMetrics(row);
     var method = (ANALYSIS_METHOD_LABELS[row.method] || row.method || "method")
@@ -562,8 +561,7 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.successRecall)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.failureRecall)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.precision)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.f1)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(metrics.auroc)) + '</td></tr>';
+      + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.f1)) + '</td></tr>';
   });
   host.innerHTML = html + '</tbody></table>';
   if (badge) {
@@ -579,10 +577,46 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + (outcomeSource.directory ? ' / <strong>snapshot:</strong> ' + escapeHtml(outcomeSource.directory) : '')
       + ' / <strong>threshold:</strong> ' + escapeHtml(threshold.toUpperCase()) + ' calibrated from same-cohort final-success terminal scores'
       + ' / <strong>uncertain:</strong> excluded from metrics'
-      + ' / <strong>SAFE:</strong> handcrafted max-token-probability proxy, not a trained SAFE detector'
+      + ' / <strong>methods:</strong> ProcVLM, RynnValue, Robo-Dopamine'
       + ' / <strong>interpretation:</strong> descriptive same-cohort calibration, not held-out accuracy'
       + (info.prediction_rows == null ? "" : ' / <strong>prediction rows:</strong> ' + escapeHtml(String(info.prediction_rows)));
   }
+}
+
+
+function workspaceDashboardRenderOutcomeThresholdSweep(snapshot) {
+  var host = byId("analysisOutcomeThresholdSweep");
+  if (!host) return;
+  var outcomeSnapshot = snapshot && snapshot.rollout_outcome_snapshot;
+  var rows = outcomeSnapshot && Array.isArray(outcomeSnapshot.threshold_sweep)
+    ? outcomeSnapshot.threshold_sweep
+    : [];
+  rows = rows.filter(function (row) {
+    return row.method === "procvlm" || row.method === "robo_dopamine";
+  });
+  if (!rows.length) {
+    host.innerHTML = workspaceEmpty(
+      "No progress-threshold sweep is available in this snapshot. Re-run Outcome Evaluation to generate it."
+    );
+    return;
+  }
+  rows.sort(function (left, right) {
+    return ANALYSIS_METHODS.indexOf(left.method) - ANALYSIS_METHODS.indexOf(right.method)
+      || Number(left.raw_terminal_threshold) - Number(right.raw_terminal_threshold);
+  });
+  var html = '<table class="analysis-table analysis-summary-table" aria-label="Progress threshold sweep">'
+    + '<thead><tr><th>Method</th><th>Threshold</th><th>N</th><th>Accuracy</th>'
+    + '<th>Success recall</th><th>Failure recall</th><th>F1</th></tr></thead><tbody>';
+  rows.forEach(function (row) {
+    html += '<tr><th scope="row">' + escapeHtml(ANALYSIS_METHOD_LABELS[row.method] || row.method) + '</th>'
+      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(row.raw_terminal_threshold, 2)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.accuracy)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.success_recall)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.failure_recall)) + '</td>'
+      + '<td class="numeric">' + escapeHtml(workspacePercent(row.f1)) + '</td></tr>';
+  });
+  host.innerHTML = html + '</tbody></table>';
 }
 
 
@@ -662,6 +696,7 @@ function workspaceDashboardRenderSnapshot() {
     }
     if (route.analysisTab === "outcome") {
       workspaceDashboardRenderRolloutOutcome(snapshot);
+      workspaceDashboardRenderOutcomeThresholdSweep(snapshot);
     } else if (route.analysisTab === "localization") {
       workspaceDashboardRenderComparison(snapshot);
       workspaceDashboardRenderFailureTypes(snapshot);
@@ -674,6 +709,7 @@ function workspaceDashboardRenderSnapshot() {
   }
   if (route.analysisTab === "outcome") {
     workspaceDashboardRenderRolloutOutcome(snapshot);
+    workspaceDashboardRenderOutcomeThresholdSweep(snapshot);
     return;
   }
   if (route.analysisTab === "localization") {

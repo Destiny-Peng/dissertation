@@ -524,9 +524,15 @@ class AnalysisSnapshotsMixin:
             stale = True
         summary_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["summary"]
         predictions_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
+        threshold_sweep_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["threshold_sweep"]
         coverage_path = directory / "method_coverage.csv"
         summary = self._read_csv(summary_path)
         coverage = self._read_csv(coverage_path)
+        threshold_sweep = (
+            self._read_csv(threshold_sweep_path)
+            if threshold_sweep_path.is_file()
+            else []
+        )
         return {
             "available": bool(summary),
             "source": {
@@ -548,6 +554,8 @@ class AnalysisSnapshotsMixin:
             },
             "summary": summary,
             "predictions_available": predictions_path.is_file(),
+            "threshold_sweep": threshold_sweep,
+            "threshold_sweep_available": threshold_sweep_path.is_file(),
             "method_coverage": coverage,
             "config": metadata.get("rollout_outcome_classification") or {},
         }
