@@ -113,6 +113,27 @@ class A2WorldAdapterTest(unittest.TestCase):
             self.assertAlmostEqual(float(prepared[0, 0]), 0.01, places=6)
             self.assertAlmostEqual(float(prepared[0, 6]), 0.0, places=6)
 
+    def test_rgb_adapter_is_derived_from_alignment_orientation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = A2WorldAdapter(root, self._config(root, duplicate=False))
+            provenance = adapter.configure_alignment_rgb(
+                {
+                    "comparisons": {
+                        "cam_high": {"orientation_transform": "rotate_180"},
+                        "cam_wrist": {"orientation_transform": "horizontal_flip"},
+                    }
+                }
+            )
+            self.assertEqual(
+                provenance["cam_high"]["manifest_to_a2world"],
+                "vertical_flip",
+            )
+            self.assertEqual(
+                provenance["cam_wrist"]["manifest_to_a2world"],
+                "raw",
+            )
+
     def test_final_action_chunk_is_padded_and_recorded(self) -> None:
         import json
         import numpy as np
