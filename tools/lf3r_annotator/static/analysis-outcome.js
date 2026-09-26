@@ -11,7 +11,9 @@
   var state = {
     scope: "libero_10",
     coverage: [],
+    scopePopulation: 0,
     evaluationPopulation: 0,
+    incompleteAnnotations: 0,
     loading: false,
     job: null,
     polling: false
@@ -53,15 +55,24 @@
       return;
     }
     var html = '<table class="analysis-table analysis-summary-table" aria-label="Outcome evaluation coverage">'
-      + '<thead><tr><th>Method</th><th>Valid outputs</th><th>Evaluation population</th><th>Coverage</th></tr></thead><tbody>';
+      + '<thead><tr><th>Method</th><th>Valid outputs</th><th>Loaded rollouts</th><th>Output coverage</th><th>Eval-ready</th></tr></thead><tbody>';
     state.coverage.forEach(function (row) {
-      var available = Number(row.available_rollouts || 0);
-      var population = Number(row.evaluation_population || state.evaluationPopulation || 0);
-      var fraction = population > 0 ? available / population : 0;
-      html += '<tr><th scope="row">' + escapeText(labels[row.baseline] || row.baseline) + '</th>'
-        + '<td class="numeric">' + escapeText(available) + '</td>'
-        + '<td class="numeric">' + escapeText(population) + '</td>'
-        + '<td class="numeric">' + escapeText((100 * fraction).toFixed(1) + "%") + '</td></tr>';
+      var availableScope = Number(
+        row.available_scope_rollouts == null ? row.available_rollouts || 0 : row.available_scope_rollouts
+      );
+      var scopePopulation = Number(
+        row.scope_population == null ? state.scopePopulation || 0 : row.scope_population
+      );
+      var scopeFraction = scopePopulation > 0 ? availableScope / scopePopulation : 0;
+      var availableEvaluation = Number(row.available_rollouts || 0);
+      var evaluationPopulation = Number(
+        row.evaluation_population == null ? state.evaluationPopulation || 0 : row.evaluation_population
+      );
+      html += '<tr><th scope="row">' + escapeText(labels[row.method] || row.method || "Unknown") + '</th>'
+        + '<td class="numeric">' + escapeText(availableScope) + '</td>'
+        + '<td class="numeric">' + escapeText(scopePopulation) + '</td>'
+        + '<td class="numeric">' + escapeText((100 * scopeFraction).toFixed(1) + "%") + '</td>'
+        + '<td class="numeric">' + escapeText(availableEvaluation + "/" + evaluationPopulation) + '</td></tr>';
     });
     host.innerHTML = html + '</tbody></table>';
   }
@@ -90,27 +101,45 @@
       var payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not read outcome coverage");
       state.coverage = Array.isArray(payload.coverage) ? payload.coverage : [];
+      state.scopePopulation = Number(payload.scope_rollouts || 0);
       state.evaluationPopulation = Number(payload.evaluation_population || 0);
+      state.incompleteAnnotations = Number(payload.incomplete_annotation_rollouts || 0);
       renderCoverage();
       var availableText = state.coverage.map(function (row) {
-        return (labels[row.method] || row.method) + " "
-          + Number(row.available_rollouts || 0) + "/" + state.evaluationPopulation;
+        var scopeAvailable = Number(
+          row.available_scope_rollouts == null ? row.available_rollouts || 0 : row.available_scope_rollouts
+        );
+        return (labels[row.method] || row.method || "Unknown") + " "
+          + scopeAvailable + "/" + state.scopePopulation + " saved"
+          + ", " + Number(row.available_rollouts || 0) + "/" + state.evaluationPopulation + " eval-ready";
       }).join(" · ");
-      if (!state.evaluationPopulation) {
-        setStatus("No review_status=complete rollouts are available in this scope.", "warning");
+      if (!state.scopePopulation) {
+        setStatus("No rollout is loaded in this scope.", "warning");
+      } else if (!state.evaluationPopulation) {
+        setStatus(
+          "Loaded " + state.scopePopulation + " rollout(s); none has review_status=complete yet. "
+            + "Saved-output coverage is still shown above, but outcome evaluation remains disabled.",
+          "warning"
+        );
       } else if (!state.coverage.some(function (row) { return Number(row.available_rollouts || 0) > 0; })) {
-        setStatus("No parseable saved baseline outputs overlap the completed annotations.", "warning");
+        setStatus(
+          "Loaded " + state.scopePopulation + " rollout(s), with " + state.evaluationPopulation
+            + " completed annotation(s), but no parseable saved baseline output overlaps the evaluation population. "
+            + availableText + ".",
+          "warning"
+        );
       } else {
         setStatus(
-          "Evaluation population: " + state.evaluationPopulation
-            + " completed annotation(s). Each method uses its own newest-output union: "
-            + availableText + ".",
+          "Loaded " + state.scopePopulation + " rollout(s); " + state.evaluationPopulation
+            + " completed annotation(s). " + availableText + ".",
           ""
         );
       }
     } catch (error) {
       state.coverage = [];
+      state.scopePopulation = 0;
       state.evaluationPopulation = 0;
+      state.incompleteAnnotations = 0;
       renderCoverage();
       setStatus("Coverage check failed: " + error.message, "error");
     } finally {
@@ -234,8 +263,11 @@
   }
 
   window.lf3rOutcomeEnvironmentChanged = updateButton;
+  window.lf3rOutcomeCoverageChanged = loadCoverage;
   window.addEventListener("lf3r:viewchange", function (event) {
-    if (event.detail && event.detail.view === "analysis") init();
+    if (!(event.detail && event.detail.view === "analysis")) return;
+    if (!initialized) init();
+    else loadCoverage();
   });
   init();
 })();
