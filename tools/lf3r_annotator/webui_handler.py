@@ -208,7 +208,7 @@ class WebUIHandler(server.LF3RHandler):
             self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
             return
         except FileNotFoundError:
-            self.json_error(HTTPStatus.NOT_FOUND, "Repair resource not found")
+            self.json_error(HTTPStatus.NOT_FOUND, "Resource not found")
             return
         except OSError as exc:
             self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
