@@ -18,10 +18,12 @@ from backend_core import ValidationError
 
 TRAJECTORY_PATH_FIELDS = (
     "trajectory_path",
-    "hdf5_path",
-    "demo_path",
-    "state_action_path",
+    "sim_state_path",
     "states_path",
+    "state_action_path",
+    "hdf5_path",
+    "source_hdf5_path",
+    "demo_path",
 )
 
 
@@ -125,7 +127,15 @@ def find_trajectory_path(project_root: Path, rollout: dict[str, Any]) -> Path | 
 
 
 def action_source(project_root: Path, rollout: dict[str, Any]) -> Path | None:
-    for field in ("actions_path", "csv_path", "trajectory_path", "hdf5_path", "demo_path"):
+    for field in (
+        "actions_path",
+        "trajectory_path",
+        "state_action_path",
+        "hdf5_path",
+        "source_hdf5_path",
+        "demo_path",
+        "csv_path",
+    ):
         value = rollout.get(field)
         if isinstance(value, str) and value.strip():
             path = project_path(project_root, value.strip())
