@@ -91,6 +91,28 @@ class A2WorldAdapterTest(unittest.TestCase):
                 "a2world.actions.libero_servo_actions",
             )
 
+    def test_generic_checkpoint_keeps_libero_action_preprocessing(self) -> None:
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._config(root, duplicate=False)
+            config["checkpoint_type"] = "generic_pretrained"
+            config["checkpoint"] = "checkpoints/a2world-pretrained.pt"
+            (root / "checkpoints" / "a2world-pretrained.pt").write_bytes(b"checkpoint")
+            adapter = A2WorldAdapter(root, config)
+            raw = np.asarray(
+                [[0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]],
+                dtype=np.float32,
+            )
+            prepared, adapter_name = adapter._prepare_action_array(raw)
+            self.assertEqual(
+                adapter_name,
+                "a2world.actions.libero_servo_actions",
+            )
+            self.assertAlmostEqual(float(prepared[0, 0]), 0.01, places=6)
+            self.assertAlmostEqual(float(prepared[0, 6]), 0.0, places=6)
+
     def test_final_action_chunk_is_padded_and_recorded(self) -> None:
         import json
         import numpy as np
