@@ -171,6 +171,48 @@ class A2WorldAdapterTest(unittest.TestCase):
                 "cam_wrist",
             )
 
+    def test_generation_parameters_are_resolved_into_validation_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._config(root, duplicate=False)
+            config.update(
+                {
+                    "num_sampling_steps": 41,
+                    "guidance": 0.7,
+                    "seed": 13,
+                    "history": False,
+                }
+            )
+            adapter = A2WorldAdapter(root, config)
+            status = adapter.validate_rollout(
+                {
+                    "camera_video_paths": {
+                        "cam_high": "high.mp4",
+                        "cam_wrist": "wrist.mp4",
+                    }
+                }
+            )
+            self.assertEqual(status["num_sampling_steps"], 41)
+            self.assertAlmostEqual(status["guidance"], 0.7)
+            self.assertEqual(status["seed"], 13)
+            self.assertFalse(status["history"])
+
+    def test_invalid_generation_parameters_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = self._config(root, duplicate=False)
+            config["num_sampling_steps"] = 0
+            adapter = A2WorldAdapter(root, config)
+            with self.assertRaises(ValidationError):
+                adapter.validate_rollout(
+                    {
+                        "camera_video_paths": {
+                            "cam_high": "high.mp4",
+                            "cam_wrist": "wrist.mp4",
+                        }
+                    }
+                )
+
 
 class OfficialLiberoManifestContractTest(unittest.TestCase):
     def test_importer_preserves_official_physical_views_and_c_plus_one_alignment(self) -> None:
@@ -195,6 +237,9 @@ class RepairFrontendContractTest(unittest.TestCase):
         static_root = Path(__file__).resolve().parents[1] / "static"
         html = (static_root / "index.html").read_text(encoding="utf-8")
         router = (static_root / "workspace" / "router.js").read_text(encoding="utf-8")
+        repair_page = (static_root / "repair" / "page.js").read_text(
+            encoding="utf-8"
+        )
         repair_js = (static_root / "repair" / "synthetic-suffix.js").read_text(
             encoding="utf-8"
         )
@@ -206,6 +251,15 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("row.repair_eligible", repair_js)
         self.assertIn('" disabled"', repair_js)
         self.assertIn("Official LIBERO demonstration", repair_js)
+        for control_id in [
+            "repairSamplingSteps",
+            "repairGuidance",
+            "repairSeed",
+            "repairHistory",
+        ]:
+            self.assertIn(control_id, repair_page)
+            self.assertIn(control_id, repair_js)
+        self.assertIn("num_sampling_steps", repair_js)
         self.assertIn("/api/repair/synthetic-suffix/", repair_js)
 
 
