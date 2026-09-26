@@ -1136,6 +1136,46 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             log = json.load(response)["log"]
         self.assertEqual(log["job_id"], job["job_id"])
 
+    def test_baseline_batch_accepts_manifest_defined_task_suite(self) -> None:
+        custom_rollout = {
+            **self.rollout,
+            "task_suite": "realrobot_tube",
+            "dataset_role": "realrobot_tube",
+        }
+        self.app.manifest_path.write_text(
+            json.dumps(custom_rollout) + "\n",
+            encoding="utf-8",
+        )
+        runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# test runner\n", encoding="utf-8")
+
+        with self.request(
+            "/api/baselines/run-batch",
+            {
+                "baseline": "safe",
+                "scope": "realrobot_tube",
+                "gpu": "0",
+                "memory_utilization": 0.65,
+                "start_index": 0,
+                "limit": 1,
+                "options": {"dry_run": True},
+            },
+        ) as response:
+            self.assertEqual(response.status, 202)
+            job = json.load(response)["job"]
+
+        self.assertEqual(job["scope"], "realrobot_tube")
+        partition_index = job["command"].index("--partition")
+        self.assertEqual(
+            job["command"][partition_index + 1],
+            "natural_observation",
+        )
+        suite_index = job["command"].index("--task-suite")
+        self.assertEqual(job["command"][suite_index + 1], "realrobot_tube")
+        final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
+        self.assertEqual(final["status"], "complete")
+
     def test_outcome_sources_use_newest_parseable_output_per_rollout(self) -> None:
         self.seed_baseline_outputs()
         self.app.store.write(
