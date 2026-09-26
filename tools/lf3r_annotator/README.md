@@ -544,7 +544,7 @@ restore states[c+1] -> render ~= RGB[c]
 step actions[c+1]   -> render ~= RGB[c+1]
 ```
 
-The test records the finite RGB storage-orientation transform used for the comparison instead of changing manifest videos. A run is not submitted when the smoke test fails.
+The test records the finite RGB storage-orientation transform used for the comparison instead of changing manifest videos. The A2World adapter then derives the manifest-to-training transform from that result: the released LIBERO converter's horizontal-flip convention is applied only inside the adapter, and generated frames are transformed back into the manifest convention before comparison/export. A run is not submitted when the smoke test fails.
 
 A2World is not downloaded by the WebUI. The default adapter expects project-local assets:
 
