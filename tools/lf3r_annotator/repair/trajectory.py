@@ -134,13 +134,23 @@ def _video_frame(path: Path, index: int) -> Any:
         reader.close()
 
 
-def _orient(image: Any) -> Any:
+def _orient(image: Any, transform: str) -> Any:
     import numpy as np
 
     array = np.asarray(image)
     if array.ndim != 3 or array.shape[-1] != 3:
         raise ValidationError(f"Unexpected LIBERO RGB shape: {array.shape}")
-    return np.ascontiguousarray(array[::-1, ::-1])
+    if transform == "raw":
+        oriented = array
+    elif transform == "horizontal_flip":
+        oriented = array[:, ::-1]
+    elif transform == "vertical_flip":
+        oriented = array[::-1, :]
+    elif transform == "rotate_180":
+        oriented = array[::-1, ::-1]
+    else:
+        raise ValidationError(f"Unknown RGB orientation transform: {transform}")
+    return np.ascontiguousarray(oriented)
 
 
 def _psnr(a: Any, b: Any) -> float:
@@ -154,6 +164,20 @@ def _psnr(a: Any, b: Any) -> float:
     if mse <= 1e-12:
         return float("inf")
     return 20.0 * math.log10(255.0 / math.sqrt(mse))
+
+
+def _best_orientation(reference: Any, rendered: Any) -> tuple[str, float]:
+    candidates = (
+        "raw",
+        "horizontal_flip",
+        "vertical_flip",
+        "rotate_180",
+    )
+    scored = [
+        (transform, _psnr(reference, _orient(rendered, transform)))
+        for transform in candidates
+    ]
+    return max(scored, key=lambda item: item[1])
 
 
 def run_libero_alignment_smoke(
@@ -248,13 +272,16 @@ def run_libero_alignment_smoke(
                 project_path(project_root, str(camera_paths[view])),
                 cut_frame + 1,
             )
-            render0 = _orient(obs0[camera + "_image"])
-            render1 = _orient(obs1[camera + "_image"])
-            p0 = _psnr(real0, render0)
+            transform, p0 = _best_orientation(
+                real0,
+                obs0[camera + "_image"],
+            )
+            render1 = _orient(obs1[camera + "_image"], transform)
             p1 = _psnr(real1, render1)
             comparisons[view] = {
                 "restore_state_index": branch,
                 "reference_rgb_frame": cut_frame,
+                "orientation_transform": transform,
                 "restore_psnr": p0,
                 "step_action_index": action_index,
                 "next_reference_rgb_frame": cut_frame + 1,
