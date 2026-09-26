@@ -665,4 +665,7 @@
     refresh: function () { return Promise.all([loadCatalog(true), loadRuns(true)]); },
     state: repairState
   };
+  if (window.workspaceState && window.workspaceState.view === "repair") {
+    Promise.all([loadCatalog(false), loadRuns(false)]);
+  }
 })();
