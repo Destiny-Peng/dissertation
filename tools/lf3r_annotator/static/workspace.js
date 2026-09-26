@@ -34,7 +34,7 @@
     "/static/workspace/events.js",
     "/static/results/layout.js",
     "/static/results/run-config.js",
-    "/static/repair/synthetic-suffix.js",
+    "/static/repair/page.js",
     "/static/runs/tools-layout.js",
     "/static/runs/gpu.js",
     "/static/runs/project-tool-client.js",
@@ -53,6 +53,7 @@
   // These modules have top-level initialization that expects either
   // workspaceState or the complete Runs controller graph.
   var postCoreScripts = [
+    "/static/repair/synthetic-suffix.js",
     "/static/analysis-outcome.js",
     "/static/analysis-robo-hop.js",
     "/static/runs/layout.js"
