@@ -584,6 +584,114 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
 }
 
 
+function workspaceDashboardOutcomeSweepThreshold(row) {
+  var value = row.raw_progress_threshold;
+  if (value == null) value = row.raw_terminal_threshold;
+  return Number(value);
+}
+
+function workspaceDashboardOutcomeSweepChart(rows, title) {
+  var width = 720;
+  var height = 260;
+  var margin = { top: 18, right: 18, bottom: 38, left: 48 };
+  var plotWidth = width - margin.left - margin.right;
+  var plotHeight = height - margin.top - margin.bottom;
+  var metrics = [
+    { key: "accuracy", label: "Accuracy", className: "accuracy" },
+    { key: "success_recall", label: "Success recall", className: "success-recall" },
+    { key: "failure_recall", label: "Failure recall", className: "failure-recall" },
+    { key: "f1", label: "F1", className: "f1" }
+  ];
+  var ordered = rows.slice().sort(function (left, right) {
+    return workspaceDashboardOutcomeSweepThreshold(left)
+      - workspaceDashboardOutcomeSweepThreshold(right);
+  });
+  var thresholds = ordered.map(workspaceDashboardOutcomeSweepThreshold)
+    .filter(Number.isFinite);
+  if (!thresholds.length) {
+    return '<div class="analysis-sweep-card">' + workspaceEmpty("No usable threshold points.") + '</div>';
+  }
+  var xMin = Math.min.apply(null, thresholds);
+  var xMax = Math.max.apply(null, thresholds);
+
+  function x(value) {
+    if (xMax === xMin) return margin.left + plotWidth / 2;
+    return margin.left + ((value - xMin) / (xMax - xMin)) * plotWidth;
+  }
+
+  function y(value) {
+    return margin.top + (1 - Math.max(0, Math.min(1, value))) * plotHeight;
+  }
+
+  function metricPath(metric) {
+    var points = ordered.map(function (row) {
+      var threshold = workspaceDashboardOutcomeSweepThreshold(row);
+      var value = Number(row[metric]);
+      if (!Number.isFinite(threshold) || !Number.isFinite(value)) return null;
+      return [x(threshold), y(value)];
+    }).filter(Boolean);
+    return points.map(function (point, index) {
+      return (index ? "L" : "M") + point[0].toFixed(2) + "," + point[1].toFixed(2);
+    }).join(" ");
+  }
+
+  var n = ordered.length && ordered[0].n_resolved != null
+    ? String(ordered[0].n_resolved)
+    : "n/a";
+  var html = '<section class="analysis-sweep-card">'
+    + '<div class="analysis-sweep-heading"><strong>' + escapeHtml(title) + '</strong>'
+    + '<span>N=' + escapeHtml(n) + '</span></div>'
+    + '<div class="analysis-chart">'
+    + '<svg class="analysis-svg analysis-sweep-svg" viewBox="0 0 ' + width + ' ' + height
+    + '" role="img" aria-label="' + escapeHtml(title + " threshold sweep") + '">';
+
+  [0, 0.25, 0.5, 0.75, 1].forEach(function (tick) {
+    var py = y(tick);
+    html += '<line class="analysis-sweep-gridline" x1="' + margin.left + '" y1="' + py.toFixed(2)
+      + '" x2="' + (margin.left + plotWidth) + '" y2="' + py.toFixed(2) + '"></line>'
+      + '<text class="analysis-sweep-axis-label" x="' + (margin.left - 8) + '" y="' + (py + 4).toFixed(2)
+      + '" text-anchor="end">' + Math.round(tick * 100) + '%</text>';
+  });
+
+  thresholds.forEach(function (threshold, index) {
+    if (index % 2 !== 0 && index !== thresholds.length - 1) return;
+    var px = x(threshold);
+    html += '<line class="analysis-sweep-tick" x1="' + px.toFixed(2) + '" y1="'
+      + (margin.top + plotHeight) + '" x2="' + px.toFixed(2) + '" y2="'
+      + (margin.top + plotHeight + 4) + '"></line>'
+      + '<text class="analysis-sweep-axis-label" x="' + px.toFixed(2) + '" y="'
+      + (margin.top + plotHeight + 20) + '" text-anchor="middle">'
+      + escapeHtml(threshold.toFixed(2)) + '</text>';
+  });
+
+  html += '<line class="analysis-sweep-axis" x1="' + margin.left + '" y1="' + margin.top
+    + '" x2="' + margin.left + '" y2="' + (margin.top + plotHeight) + '"></line>'
+    + '<line class="analysis-sweep-axis" x1="' + margin.left + '" y1="' + (margin.top + plotHeight)
+    + '" x2="' + (margin.left + plotWidth) + '" y2="' + (margin.top + plotHeight) + '"></line>';
+
+  metrics.forEach(function (metric) {
+    var path = metricPath(metric.key);
+    if (!path) return;
+    html += '<path class="analysis-sweep-line ' + metric.className + '" d="' + path + '"></path>';
+    ordered.forEach(function (row) {
+      var threshold = workspaceDashboardOutcomeSweepThreshold(row);
+      var value = Number(row[metric.key]);
+      if (!Number.isFinite(threshold) || !Number.isFinite(value)) return;
+      html += '<circle class="analysis-sweep-point ' + metric.className + '" cx="'
+        + x(threshold).toFixed(2) + '" cy="' + y(value).toFixed(2) + '" r="3">'
+        + '<title>' + escapeHtml(
+          metric.label + " · threshold " + threshold.toFixed(2) + " · " + workspacePercent(value)
+        ) + '</title></circle>';
+    });
+  });
+  html += '</svg></div><div class="analysis-sweep-legend">';
+  metrics.forEach(function (metric) {
+    html += '<span><i class="analysis-sweep-swatch ' + metric.className + '"></i>'
+      + escapeHtml(metric.label) + '</span>';
+  });
+  return html + '</div></section>';
+}
+
 function workspaceDashboardRenderOutcomeThresholdSweep(snapshot) {
   var host = byId("analysisOutcomeThresholdSweep");
   if (!host) return;
@@ -600,23 +708,41 @@ function workspaceDashboardRenderOutcomeThresholdSweep(snapshot) {
     );
     return;
   }
-  rows.sort(function (left, right) {
-    return ANALYSIS_METHODS.indexOf(left.method) - ANALYSIS_METHODS.indexOf(right.method)
-      || Number(left.raw_terminal_threshold) - Number(right.raw_terminal_threshold);
-  });
-  var html = '<table class="analysis-table analysis-summary-table" aria-label="Progress threshold sweep">'
-    + '<thead><tr><th>Method</th><th>Threshold</th><th>N</th><th>Accuracy</th>'
-    + '<th>Success recall</th><th>Failure recall</th><th>F1</th></tr></thead><tbody>';
+
+  var groups = {};
   rows.forEach(function (row) {
-    html += '<tr><th scope="row">' + escapeHtml(ANALYSIS_METHOD_LABELS[row.method] || row.method) + '</th>'
-      + '<td class="numeric">' + escapeHtml(workspaceFormatNumber(row.raw_terminal_threshold, 2)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(String(row.n_resolved == null ? "n/a" : row.n_resolved)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.accuracy)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.success_recall)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.failure_recall)) + '</td>'
-      + '<td class="numeric">' + escapeHtml(workspacePercent(row.f1)) + '</td></tr>';
+    var aggregation = String(row.score_aggregation || "final");
+    var key = String(row.method) + "::" + aggregation;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(row);
   });
-  host.innerHTML = html + '</tbody></table>';
+
+  var order = [
+    ["procvlm", "final"],
+    ["procvlm", "maximum"],
+    ["robo_dopamine", "final"],
+    ["robo_dopamine", "maximum"]
+  ];
+  var html = '<div class="analysis-sweep-grid">';
+  order.forEach(function (pair) {
+    var key = pair[0] + "::" + pair[1];
+    if (!groups[key] || !groups[key].length) return;
+    var method = ANALYSIS_METHOD_LABELS[pair[0]] || pair[0];
+    var aggregation = pair[1] === "maximum" ? "Maximum progress" : "Final progress";
+    html += workspaceDashboardOutcomeSweepChart(
+      groups[key],
+      method + " · " + aggregation
+    );
+  });
+  html += '</div>';
+  if (!groups["procvlm::maximum"] && !groups["robo_dopamine::maximum"]) {
+    html += '<p class="analysis-chart-caption">This is an older snapshot with final-progress rows only. '
+      + 'Re-run Outcome Evaluation to generate maximum-progress curves.</p>';
+  } else {
+    html += '<p class="analysis-chart-caption">Each panel applies the same raw progress thresholds (0.50–0.95). '
+      + 'Maximum progress uses the highest native progress value observed anywhere in the rollout; final progress uses the last native sample.</p>';
+  }
+  host.innerHTML = html;
 }
 
 
