@@ -38,9 +38,9 @@ body[data-view="runs"] .runs-action-row .save-button {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   color: var(--text);
-  background: #10161d;
-  border-left: 1px solid #303b46;
-  box-shadow: -24px 0 70px rgba(0, 0, 0, .34);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: -24px 0 70px color-mix(in srgb, var(--text) 14%, transparent);
   transform: translateX(100%);
   transition: transform .18s ease;
 }
@@ -53,18 +53,18 @@ body[data-view="runs"] .runs-action-row .save-button {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.15rem 1.2rem 1rem;
-  border-bottom: 1px solid #28333e;
+  border-bottom: 1px solid var(--line);
 }
 
 .single-baseline-header .eyebrow {
   margin-bottom: .28rem;
-  color: #7f8b96;
+  color: var(--muted);
   font-size: .6rem;
 }
 
 .single-baseline-header h2 {
   margin: 0;
-  color: #edf2f5;
+  color: var(--text);
   font-size: 1.25rem;
   line-height: 1.2;
 }
@@ -74,11 +74,11 @@ body[data-view="runs"] .runs-action-row .save-button {
   width: 2.2rem;
   height: 2.2rem;
   padding: 0;
-  color: #98a4ae;
+  color: var(--muted);
   font-size: 1.35rem;
   line-height: 1;
-  background: #151d25;
-  border: 1px solid #2d3944;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
@@ -87,15 +87,15 @@ body[data-view="runs"] .runs-action-row .save-button {
   grid-template-columns: 1fr 1fr;
   gap: .65rem;
   padding: .9rem 1.2rem;
-  background: #0d1319;
-  border-bottom: 1px solid #25303a;
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .single-baseline-context > div {
   min-width: 0;
   padding: .58rem .65rem;
-  background: #121920;
-  border: 1px solid #25313b;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
 }
 
@@ -106,7 +106,7 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-context span {
   display: block;
   margin-bottom: .2rem;
-  color: #76838e;
+  color: var(--muted);
   font-size: .66rem;
   font-weight: 650;
   letter-spacing: .02em;
@@ -116,7 +116,7 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-context strong {
   display: block;
   overflow: hidden;
-  color: #dce3e8;
+  color: var(--text);
   font-size: .8rem;
   font-weight: 650;
   line-height: 1.35;
@@ -135,8 +135,8 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-advanced {
   margin: 0 0 .85rem;
   padding: .85rem;
-  background: #111820;
-  border: 1px solid #29343f;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 11px;
 }
 
@@ -147,7 +147,7 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-section-heading h3,
 .single-baseline-advanced summary strong {
   margin: 0;
-  color: #e1e7eb;
+  color: var(--text);
   font-size: .9rem;
   font-weight: 700;
   line-height: 1.3;
@@ -157,7 +157,7 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-advanced summary small {
   display: block;
   margin: .2rem 0 0;
-  color: #7f8b96;
+  color: var(--muted);
   font-size: .72rem;
   line-height: 1.4;
 }
@@ -175,7 +175,7 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-grid label > span {
   display: block;
   margin-bottom: .35rem;
-  color: #aab5be;
+  color: var(--muted);
   font-size: .74rem;
   font-weight: 650;
   line-height: 1.3;
@@ -207,10 +207,10 @@ body[data-view="runs"] .runs-action-row .save-button {
 }
 
 .single-baseline-advanced summary::-webkit-details-marker { display: none; }
-.single-baseline-advanced summary:hover { background: #141c24; }
+.single-baseline-advanced summary:hover { background: color-mix(in srgb, var(--text) 4%, var(--surface-raised)); }
 .single-baseline-advanced summary i {
   flex: 0 0 auto;
-  color: #8b989f;
+  color: var(--muted);
   font-style: normal;
 }
 .single-baseline-advanced[open] > .single-baseline-grid {
@@ -229,10 +229,10 @@ body[data-view="runs"] .runs-action-row .save-button {
   align-items: center;
   gap: .48rem;
   padding: .45rem .62rem;
-  color: #aeb8c1;
+  color: var(--muted);
   font-size: .76rem;
-  background: #0f161d;
-  border: 1px solid #28343e;
+  background: var(--control);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
@@ -245,28 +245,28 @@ body[data-view="runs"] .runs-action-row .save-button {
 .single-baseline-status {
   margin: .2rem 0 .85rem;
   padding: .68rem .75rem;
-  color: #95a2ad;
+  color: var(--muted);
   font-size: .76rem;
   line-height: 1.45;
-  background: #0d141a;
-  border: 1px solid #26323c;
+  background: var(--control);
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
 .single-baseline-status.running {
-  color: #c5b98a;
-  border-color: #4a4228;
-  background: #181711;
+  color: var(--controlled);
+  border-color: color-mix(in srgb, var(--controlled) 38%, var(--line));
+  background: color-mix(in srgb, var(--controlled) 8%, var(--surface));
 }
 .single-baseline-status.success {
-  color: #a9c7bf;
-  border-color: #304c45;
-  background: #111a18;
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 38%, var(--line));
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
 }
 .single-baseline-status.error {
-  color: #d5a09a;
-  border-color: #513431;
-  background: #1b1212;
+  color: var(--failure);
+  border-color: color-mix(in srgb, var(--failure) 38%, var(--line));
+  background: color-mix(in srgb, var(--failure) 8%, var(--surface));
 }
 
 .single-baseline-actions {
@@ -277,8 +277,8 @@ body[data-view="runs"] .runs-action-row .save-button {
   gap: .55rem;
   margin: 0 -1.2rem -1.25rem;
   padding: .85rem 1.2rem 1rem;
-  background: rgba(16, 22, 29, .96);
-  border-top: 1px solid #29343f;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  border-top: 1px solid var(--line);
   backdrop-filter: blur(12px);
 }
 
