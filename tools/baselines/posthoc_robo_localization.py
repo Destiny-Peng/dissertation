@@ -27,6 +27,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
+from robo_incremental_hop.io import resolve_signal_prediction  # noqa: E402
 from robo_localization_head.core import TinyBiLSTM  # noqa: E402
 from baselines.robo_dopamine_multi_perspective import (  # noqa: E402
     PERSPECTIVE_MODES,
@@ -91,11 +92,23 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
     if np.any(std <= 0):
         raise ValueError("Localization checkpoint normalization std must be positive")
 
+    data_config = config.get("data")
+    signal_mode = (
+        str(data_config.get("signal_mode", "fused"))
+        if isinstance(data_config, dict)
+        else "fused"
+    )
+    if signal_mode not in {"incremental", "forward", "backward", "fused"}:
+        raise ValueError(
+            f"Localization checkpoint has invalid input signal: {signal_mode}"
+        )
+
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "path": path,
         "sha256": digest,
         "model": model,
+        "signal_mode": signal_mode,
         "mean": mean,
         "std": std,
         "hidden": hidden,
@@ -185,7 +198,16 @@ def infer_one(
     worker_result: Path,
     bundle: dict[str, Any],
 ) -> dict[str, Any]:
-    prediction_path = fused_prediction_path(project_root, worker_result)
+    signal_mode = str(bundle.get("signal_mode") or "fused")
+    if signal_mode == "fused":
+        prediction_path = fused_prediction_path(project_root, worker_result)
+    else:
+        run_root = worker_result.parents[2]
+        prediction_path, _worker_payload, _path_source = resolve_signal_prediction(
+            worker_result,
+            run_root,
+            signal_mode,
+        )
     rows = json.loads(prediction_path.read_text(encoding="utf-8"))
     if not isinstance(rows, list) or not rows:
         raise ValueError(f"Fused prediction is empty: {prediction_path}")
@@ -230,7 +252,8 @@ def infer_one(
         "hidden": bundle["hidden"],
         "source_worker_result": str(worker_result),
         "source_prediction": str(prediction_path),
-        "input": "saved_fused_robo_dopamine_progress_hop",
+        "input": f"saved_{signal_mode}_robo_dopamine_progress_hop",
+        "signal_mode": signal_mode,
         "frame_count": len(frames),
         "frames": frames,
         "logits": [float(value) for value in logits.tolist()],
