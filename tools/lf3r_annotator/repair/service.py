@@ -392,9 +392,9 @@ class RepairService:
                 )
             else:
                 frame_step = int(plan["world_model"].get("source_frame_step") or 0)
-                pose_count = int(ctrl_pose.get("count") or 0)
                 cut_frame = int(plan["alignment"]["cut_rgb_frame"])
-                if frame_step <= 0 or cut_frame + frame_step >= pose_count:
+                total_frames = int(rollout.get("total_frames") or 0)
+                if frame_step <= 0 or cut_frame + frame_step >= total_frames:
                     plan["blockers"].append(
                         "Ctrl-World temporal sampling leaves no future pose-conditioned frame"
                     )
