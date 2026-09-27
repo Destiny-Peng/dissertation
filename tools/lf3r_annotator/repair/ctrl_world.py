@@ -220,10 +220,24 @@ class CtrlWorldAdapter(WorldModelAdapter):
             raise ValidationError("Ctrl-World guidance_scale must be finite and non-negative")
 
         reasons: list[str] = []
-        if not source_root.is_dir() or not (source_root / "models" / "ctrl_world.py").is_file():
+        required_source_files = (
+            source_root / "config.py",
+            source_root / "models" / "ctrl_world.py",
+            source_root / "models" / "pipeline_ctrl_world.py",
+        )
+        missing_source_files = [
+            path
+            for path in required_source_files
+            if not path.is_file()
+        ]
+        if not source_root.is_dir() or missing_source_files:
+            detail = (
+                ", ".join(path.name for path in missing_source_files)
+                if missing_source_files
+                else self._relative_or_absolute(self.project_root, source_root)
+            )
             reasons.append(
-                "Ctrl-World source is unavailable: "
-                + self._relative_or_absolute(self.project_root, source_root)
+                "Ctrl-World source is unavailable/incomplete: " + detail
             )
         if not python.is_file():
             reasons.append(
