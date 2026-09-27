@@ -426,6 +426,19 @@ def run_libero_alignment_smoke(
             env.reset_from_xml_string(model_xml)
             env.sim.reset()
         obs0 = env.set_init_state(states[branch])
+        try:
+            ctrl_pose = _ctrl_world_pose_from_observation(obs0)
+            ctrl_pose_status = {
+                "available": True,
+                "dim": int(len(ctrl_pose)),
+                "semantics": "xyz + Euler XYZ + DROID-style gripper closure",
+                "source": "condition observation reconstructed from states[c+1]",
+            }
+        except Exception as error:
+            ctrl_pose_status = {
+                "available": False,
+                "error": f"{type(error).__name__}: {error}",
+            }
         obs1, _, _, _ = env.step(actions[action_index].tolist())
         for view in physical_views:
             camera = CAMERA_TO_LIBERO[view]
@@ -464,5 +477,6 @@ def run_libero_alignment_smoke(
         "branch_state_index": branch,
         "future_action_start": action_index,
         "model_xml_used": bool(model_xml),
+        "ctrl_world_pose": ctrl_pose_status,
         "comparisons": comparisons,
     }
