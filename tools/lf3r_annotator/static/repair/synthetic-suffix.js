@@ -337,11 +337,20 @@
     var modelLines = [];
     if (model === "ctrl_world") {
       modelLines.push("Ctrl-World: " + (wm.available ? "available" : "unavailable"));
+      if (wm.python) modelLines.push("Ctrl Python: " + String(wm.python));
+      if (wm.checkpoint) modelLines.push("Ctrl checkpoint: " + String(wm.checkpoint));
+      if (wm.svd_model_path && wm.clip_model_path) {
+        modelLines.push(
+          "Ctrl bases: SVD " + String(wm.svd_model_path)
+          + " · CLIP " + String(wm.clip_model_path)
+        );
+      }
       if (wm.effective_fps != null) {
         modelLines.push(
           "Ctrl timing: source step " + String(wm.source_frame_step)
           + " · effective " + Number(wm.effective_fps).toFixed(2) + " FPS"
           + " · target " + String(wm.target_fps) + " FPS"
+          + " · SVD condition " + String(wm.svd_microcondition_fps) + " FPS"
         );
       }
       modelLines.push(
