@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend_core import ValidationError
 from repair.adapters import A2WorldAdapter
+from repair.ctrl_world import CtrlWorldAdapter
 from repair.alignment import capability_summary, compute_alignment
 
 
@@ -214,6 +215,104 @@ class A2WorldAdapterTest(unittest.TestCase):
                 )
 
 
+class CtrlWorldAdapterTest(unittest.TestCase):
+    def _config(self, root: Path) -> dict:
+        source = root / "repos" / "Ctrl-World"
+        (source / "models").mkdir(parents=True, exist_ok=True)
+        (source / "models" / "ctrl_world.py").write_text(
+            "# test stub\n",
+            encoding="utf-8",
+        )
+        python = root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python"
+        python.parent.mkdir(parents=True, exist_ok=True)
+        python.write_bytes(b"python")
+        checkpoint = (
+            root
+            / "checkpoints"
+            / "ctrl_world"
+            / "Ctrl-World"
+            / "checkpoint-10000.pt"
+        )
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_bytes(b"checkpoint")
+        (root / "checkpoints" / "stable-video-diffusion-img2vid").mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        (root / "checkpoints" / "clip-vit-base-patch32").mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        stats = source / "dataset_meta_info" / "droid" / "stat.json"
+        stats.parent.mkdir(parents=True, exist_ok=True)
+        stats.write_text(
+            '{"state_01":[0,0,0,0,0,0,0],"state_99":[1,1,1,1,1,1,1]}\n',
+            encoding="utf-8",
+        )
+        trajectory = root / "official.hdf5"
+        trajectory.write_bytes(b"hdf5")
+        return {
+            "source_root": "repos/Ctrl-World",
+            "checkpoint": (
+                "checkpoints/ctrl_world/Ctrl-World/checkpoint-10000.pt"
+            ),
+            "svd_model_path": "checkpoints/stable-video-diffusion-img2vid",
+            "clip_model_path": "checkpoints/clip-vit-base-patch32",
+            "data_stat_path": "repos/Ctrl-World/dataset_meta_info/droid/stat.json",
+        }
+
+    def test_ctrl_world_uses_adapter_local_third_view_duplication(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = CtrlWorldAdapter(root, self._config(root))
+            status = adapter.validate_rollout(
+                {
+                    "camera_video_paths": {
+                        "cam_high": "high.mp4",
+                        "cam_wrist": "wrist.mp4",
+                    },
+                    "source_hdf5_path": "official.hdf5",
+                    "fps": 20.0,
+                }
+            )
+            self.assertTrue(status["available"])
+            self.assertEqual(
+                status["camera_mapping"],
+                {
+                    "exterior_1": "cam_high",
+                    "exterior_2": "cam_high",
+                    "wrist": "cam_wrist",
+                },
+            )
+            self.assertEqual(len(status["duplicated_camera"]), 1)
+            self.assertEqual(status["source_frame_step"], 4)
+            self.assertEqual(status["effective_fps"], 5.0)
+            self.assertIn("absolute Cartesian pose", status["control_semantics"])
+
+    def test_ctrl_world_requires_real_wrist_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            adapter = CtrlWorldAdapter(root, self._config(root))
+            with self.assertRaises(ValidationError):
+                adapter.validate_rollout(
+                    {
+                        "camera_video_paths": {"cam_high": "high.mp4"},
+                        "source_hdf5_path": "official.hdf5",
+                        "fps": 20.0,
+                    }
+                )
+
+    def test_ctrl_pose_adapter_documents_libero_to_droid_conversion(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "repair"
+            / "trajectory.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('Rotation.from_rotvec(rotvec).as_euler("xyz")', source)
+        self.assertIn("gripper_qpos[:, 0] - gripper_qpos[:, 1]", source)
+        self.assertIn("1.0 - opening_width / 0.08", source)
+
+
 class OfficialLiberoManifestContractTest(unittest.TestCase):
     def test_importer_preserves_official_physical_views_and_c_plus_one_alignment(self) -> None:
         source = (
@@ -240,6 +339,12 @@ class RepairFrontendContractTest(unittest.TestCase):
         repair_page = (static_root / "repair" / "page.js").read_text(
             encoding="utf-8"
         )
+        ctrl_adapter = (
+            Path(__file__).resolve().parents[1] / "repair" / "ctrl_world.py"
+        ).read_text(encoding="utf-8")
+        worker = (
+            Path(__file__).resolve().parents[1] / "repair" / "worker.py"
+        ).read_text(encoding="utf-8")
         repair_js = (static_root / "repair" / "synthetic-suffix.js").read_text(
             encoding="utf-8"
         )
@@ -251,11 +356,28 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("row.repair_eligible", repair_js)
         self.assertIn('" disabled"', repair_js)
         self.assertIn("Official LIBERO demonstration", repair_js)
+        self.assertIn('id=\\"repairWorldModel\\"', repair_page)
+        self.assertIn('value=\\"ctrl_world\\"', repair_page)
+        self.assertIn("Ctrl-World", repair_page)
+        self.assertIn('name: "ctrl_world"', repair_js)
+        self.assertIn("CtrlWorldAdapter", ctrl_adapter)
+        self.assertIn('model_name in {"ctrl", "ctrl_world"}', worker)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
             "repairSeed",
             "repairHistory",
+            "repairCtrlCheckpoint",
+            "repairCtrlSourceRoot",
+            "repairCtrlPython",
+            "repairCtrlSvd",
+            "repairCtrlClip",
+            "repairCtrlDataStat",
+            "repairCtrlTargetFps",
+            "repairCtrlInferenceSteps",
+            "repairCtrlGuidance",
+            "repairCtrlSeed",
+            "repairCtrlTextConditioning",
         ]:
             self.assertIn(control_id, repair_page)
             self.assertIn(control_id, repair_js)
