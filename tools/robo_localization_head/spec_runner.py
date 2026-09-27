@@ -136,6 +136,97 @@ def _aligned_signal_records(
             "exclusions": exclusions,
         }
 
+    perspective_modes = ("incremental", "forward", "backward")
+    six_d_signals: dict[str, dict[str, Any]] = {}
+    six_d_exclusions: list[dict[str, str]] = []
+    for rollout_id, fused_signal in fused_signals.items():
+        missing = [
+            mode for mode in perspective_modes
+            if rollout_id not in records_by_mode.get(mode, ({}, [], [], []))[0]
+        ]
+        if missing:
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "missing aligned perspective signal(s): " + ", ".join(missing),
+            })
+            continue
+        perspective_signals = [
+            records_by_mode[mode][0][rollout_id]
+            for mode in perspective_modes
+        ]
+        frames = list(fused_signal["frames"])
+        if any(list(signal["frames"]) != frames for signal in perspective_signals):
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective native frame indices do not match fused anchor",
+            })
+            continue
+        feature_columns: list[np.ndarray] = []
+        valid = True
+        for signal in perspective_signals:
+            progress = np.asarray(signal["progress"], dtype=np.float32)
+            hops = np.asarray(signal["hops"], dtype=np.float32)
+            if (
+                progress.ndim != 1
+                or hops.ndim != 1
+                or len(progress) != len(frames)
+                or len(hops) != len(frames)
+            ):
+                valid = False
+                break
+            feature_columns.extend([progress, hops])
+        if not valid:
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective progress/hop length does not match fused anchor",
+            })
+            continue
+        features = np.stack(feature_columns, axis=1)
+        if not np.all(np.isfinite(features)):
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective_6d features contain non-finite values",
+            })
+            continue
+        six_d_signal = {
+            "rollout_id": rollout_id,
+            "signal_mode": "perspectives_6d",
+            "frames": frames,
+            "features": features,
+            "feature_names": [
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
+        }
+        for field in copied_fields:
+            if field in fused_signal:
+                six_d_signal[field] = fused_signal[field]
+        six_d_signals[rollout_id] = six_d_signal
+
+    records_by_mode["perspectives_6d"] = (
+        six_d_signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
+    mode_provenance["modes"]["perspectives_6d"] = {
+        "available_rollout_n": len(six_d_signals),
+        "excluded_rollout_n": len(six_d_exclusions),
+        "exclusions": six_d_exclusions,
+        "feature_names": [
+            "incremental_progress",
+            "incremental_hop",
+            "forward_progress",
+            "forward_hop",
+            "backward_progress",
+            "backward_hop",
+        ],
+    }
+
     return records_by_mode, mode_provenance
 
 
@@ -290,6 +381,16 @@ def _run_configuration(
     )
     if len(base_failure) < 4:
         raise ValueError(f"configuration {config_id} has fewer than 4 eligible failure rollouts")
+    input_dims = {
+        int(np.asarray(row["sequence"]).shape[1])
+        for row in base_failure.values()
+    }
+    if len(input_dims) != 1:
+        raise ValueError(
+            f"configuration {config_id} has inconsistent localization input dimensions: "
+            f"{sorted(input_dims)}"
+        )
+    input_dim = input_dims.pop()
     failure_dataset = targets.apply_labels(base_failure, target_config)
     success_dataset = data.build_success_dataset(signals, clean_rollouts)
     device = core.resolve_device(str(training.get("device", "auto")))
@@ -352,6 +453,7 @@ def _run_configuration(
             mean=mean,
             std=std,
             hidden=int(config["model"].get("hidden", 16)),
+            input_dim=input_dim,
             pos_weight=pos_weight,
             seed=seed,
             epochs=int(training.get("epochs", 300)),
@@ -381,6 +483,7 @@ def _run_configuration(
                 "failure_train_ids": list(failure_train_ids),
                 "success_train_ids": list(success_ids),
                 "forced_train_ids": list(split.get("forced_train", [])),
+                "input_dim": input_dim,
                 "normalization_mean": torch.from_numpy(np.asarray(mean, dtype=np.float32).copy()),
                 "normalization_std": torch.from_numpy(np.asarray(std, dtype=np.float32).copy()),
                 "model_state_dict": {
