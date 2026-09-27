@@ -357,7 +357,7 @@
         "Ctrl views: exterior_1 ← cam_high · exterior_2 ← cam_high (adapter duplicate) · wrist ← cam_wrist"
       );
       modelLines.push(
-        "Ctrl control: absolute Cartesian pose/gripper state; raw LIBERO delta actions remain smoke-test ground truth"
+        "Ctrl control: states[c+1] + replayed GT actions[c+1:] → absolute Cartesian pose/gripper; no future recorded proprio"
       );
       modelLines.push(
         "Ctrl native geometry: source RGB is resized to 192×320; resize is recorded in provenance"
