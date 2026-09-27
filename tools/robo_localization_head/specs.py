@@ -12,6 +12,7 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 DEFAULT_BASE = {
     "data": {
+        "signal_mode": "fused",
         "population": "failure_only",
         "success_ratio": 0.0,
         "challenge_set_name": "",
@@ -265,6 +266,11 @@ def validate_config(config: Mapping[str, Any]) -> None:
     loss = config.get("loss", {})
     training = config.get("training", {})
 
+    signal_mode = str(data.get("signal_mode", "fused"))
+    if signal_mode not in {"incremental", "forward", "backward", "fused"}:
+        raise ValueError(
+            "data.signal_mode must be incremental, forward, backward, or fused"
+        )
     population = str(data.get("population", "failure_only"))
     if population not in {"failure_only", "failure_success"}:
         raise ValueError("data.population must be failure_only or failure_success")
