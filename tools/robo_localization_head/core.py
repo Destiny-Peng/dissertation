@@ -304,7 +304,6 @@ def train_bilstm(
     mean: np.ndarray,
     std: np.ndarray,
     hidden: int,
-    input_dim: int,
     pos_weight: float,
     seed: int,
     epochs: int,
@@ -317,18 +316,24 @@ def train_bilstm(
     row_loss_fn: RowLossFn,
     progress_label: str,
     logger: Callable[[str], None],
+    input_dim: int | None = None,
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     if not train_ids:
         raise ValueError("training split is empty")
     if not val_ids:
         raise ValueError("validation split is empty")
+    resolved_input_dim = int(
+        input_dim if input_dim is not None else np.asarray(mean).shape[-1]
+    )
+    if resolved_input_dim < 1:
+        raise ValueError("localization input_dim must be >= 1")
 
     prepared = prepare_tensor_dataset(dataset, mean, std)
     # Model initialization uses global RNG state. Keep it deterministic when
     # several independent configurations train concurrently in worker threads.
     with _SEED_LOCK:
         set_seed(seed)
-        model = TinyBiLSTM(hidden=hidden, input_dim=input_dim).to(device)
+        model = TinyBiLSTM(hidden=hidden, input_dim=resolved_input_dim).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters() if "bias" not in name
     ]
@@ -441,7 +446,7 @@ def train_bilstm(
         "best_epoch": best_epoch,
         "pos_weight": pos_weight,
         "hidden": hidden,
-        "input_dim": input_dim,
+        "input_dim": resolved_input_dim,
         "device": str(device),
         "batch_size": batch_size,
         "effective_train_batch_size": effective_train_batch,
