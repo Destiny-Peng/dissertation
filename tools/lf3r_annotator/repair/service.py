@@ -383,7 +383,26 @@ class RepairService:
                 }
         if smoke_error:
             plan["blockers"].append(smoke_error)
-        plan["ready"] = bool(plan["ready"] and smoke is not None and smoke.get("passed"))
+        if smoke is not None and plan["model_name"] == "ctrl_world":
+            ctrl_pose = smoke.get("ctrl_world_pose") or {}
+            if not ctrl_pose.get("available"):
+                plan["blockers"].append(
+                    "Ctrl-World pose preflight failed: "
+                    + str(ctrl_pose.get("error") or "required LIBERO proprio is unavailable")
+                )
+            else:
+                frame_step = int(plan["world_model"].get("source_frame_step") or 0)
+                pose_count = int(ctrl_pose.get("count") or 0)
+                cut_frame = int(plan["alignment"]["cut_rgb_frame"])
+                if frame_step <= 0 or cut_frame + frame_step >= pose_count:
+                    plan["blockers"].append(
+                        "Ctrl-World temporal sampling leaves no future pose-conditioned frame"
+                    )
+        plan["ready"] = bool(
+            not plan["blockers"]
+            and smoke is not None
+            and smoke.get("passed")
+        )
         plan["validation"]["alignment_smoke_test"] = (
             smoke
             if smoke is not None
@@ -417,8 +436,8 @@ class RepairService:
             "cut_progress": plan["alignment"]["cut_progress"],
             "cut_frame": plan["alignment"]["cut_rgb_frame"],
             "alignment_min_psnr": float(payload.get("alignment_min_psnr", 20.0)),
-            # The adapter strips A2World's condition frame before publishing
-            # generated/<camera>.mp4, so LF3R artifacts are suffix-only.
+            # Every adapter publishes standardized generated/<camera>.mp4
+            # artifacts without the condition-aligned frame.
             "generated_includes_condition": False,
             "world_model": wm_config,
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
