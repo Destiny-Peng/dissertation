@@ -252,14 +252,18 @@ function installEvents() {
     }
   });
   document.addEventListener("keydown", function (event) {
-    if (["annotate", "results"].indexOf(document.body.dataset.view) === -1) return;
+    var view = document.body.dataset.view;
+    if (["annotate", "results"].indexOf(view) === -1) return;
     if (event.key === "/" && !isTypingTarget(event.target)) {
       event.preventDefault();
       byId("searchInput").focus();
       return;
     }
     if (isTypingTarget(event.target)) return;
-    if (document.body.dataset.view === "results" && ["1", "2", "3", "s", "S"].indexOf(event.key) !== -1) return;
+
+    var isAnnotate = view === "annotate";
+    var lowerKey = String(event.key || "").toLowerCase();
+
     if (event.code === "Space") {
       event.preventDefault();
       togglePlayback();
@@ -269,19 +273,39 @@ function installEvents() {
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
       stepFrames(event.shiftKey ? 10 : 1);
-    } else if (event.key === "1") {
-      setActiveEventFrame("causal_onset_frame", currentFrame());
-    } else if (event.key === "2") {
-      setActiveEventFrame("observable_onset_frame", currentFrame());
-    } else if (event.key === "3") {
-      setActiveEventFrame("terminal_failure_frame", currentFrame());
-    } else if (event.key.toLowerCase() === "s") {
+    } else if (isAnnotate && failureTypeHotkeys[event.key]) {
       event.preventDefault();
-      saveAnnotation();
-    } else if (event.key.toLowerCase() === "n") {
-      navigate(1);
-    } else if (event.key.toLowerCase() === "p") {
-      navigate(-1);
+      if (!event.repeat) setActiveFailureType(failureTypeHotkeys[event.key]);
+    } else if (isAnnotate && lowerKey === "q") {
+      event.preventDefault();
+      if (!event.repeat) setActiveEventFrame("causal_onset_frame", currentFrame());
+    } else if (isAnnotate && lowerKey === "w") {
+      event.preventDefault();
+      if (!event.repeat) setActiveEventFrame("observable_onset_frame", currentFrame());
+    } else if (isAnnotate && lowerKey === "e") {
+      event.preventDefault();
+      if (!event.repeat) setActiveEventFrame("terminal_failure_frame", currentFrame());
+    } else if (isAnnotate && lowerKey === "r") {
+      event.preventDefault();
+      if (!event.repeat) setActiveEventFrame("recovery_frame", currentFrame());
+    } else if (isAnnotate && lowerKey === "a") {
+      event.preventDefault();
+      if (!event.repeat) addFailureEvent();
+    } else if (isAnnotate && event.code === "BracketLeft") {
+      event.preventDefault();
+      if (!event.repeat) cycleActiveFailureEvent(-1);
+    } else if (isAnnotate && event.code === "BracketRight") {
+      event.preventDefault();
+      if (!event.repeat) cycleActiveFailureEvent(1);
+    } else if (isAnnotate && lowerKey === "s") {
+      event.preventDefault();
+      if (!event.repeat) saveAnnotation();
+    } else if (lowerKey === "n") {
+      event.preventDefault();
+      if (!event.repeat) navigate(1);
+    } else if (lowerKey === "p") {
+      event.preventDefault();
+      if (!event.repeat) navigate(-1);
     }
   });
 }
