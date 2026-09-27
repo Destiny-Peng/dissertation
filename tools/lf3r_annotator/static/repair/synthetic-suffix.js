@@ -644,12 +644,21 @@
             : "")
       };
     });
+    var diagnosticHtml = "";
+    var controlPreparation = ((detail.provenance || {}).control_preparation || {});
+    var normalization = controlPreparation.normalization_diagnostics || {};
+    if (normalization.droid_p01_p99_clip_fraction != null) {
+      diagnosticHtml += kv(
+        "Ctrl control outside DROID p01–p99",
+        (Number(normalization.droid_p01_p99_clip_fraction) * 100).toFixed(1) + "%"
+      );
+    }
     node("repairMetrics").innerHTML = values.map(function (item) {
       return kv(item.view, item.text);
     }).join("") + kv(
       "LPIPS backend",
       metrics.lpips && metrics.lpips.available ? "available" : "unavailable"
-    );
+    ) + diagnosticHtml;
     var evaluation = metrics.human_evaluation || {};
     document.querySelectorAll('input[name="repairUsability"]').forEach(function (input) {
       input.checked = input.value === evaluation.usable_for_policy_training;
