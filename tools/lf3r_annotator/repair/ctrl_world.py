@@ -224,6 +224,8 @@ class CtrlWorldAdapter(WorldModelAdapter):
             source_root / "config.py",
             source_root / "models" / "ctrl_world.py",
             source_root / "models" / "pipeline_ctrl_world.py",
+            source_root / "models" / "pipeline_stable_video_diffusion.py",
+            source_root / "models" / "unet_spatio_temporal_condition.py",
         )
         missing_source_files = [
             path
