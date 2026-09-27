@@ -15,9 +15,11 @@ import numpy as np
 import torch
 
 from robo_incremental_hop.io import (
+    SIGNAL_MODES,
     build_base_records,
     ensure_within_project,
     load_manifest,
+    load_signal,
     project_relative,
     resolve_project_path,
 )
@@ -28,6 +30,126 @@ from . import core, data, losses, metrics, specs, targets
 def log(message: str) -> None:
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
+
+
+def _aligned_signal_records(
+    source_root: Path,
+    manifest_rows: Mapping[str, Mapping[str, Any]],
+    annotations: Path,
+) -> tuple[
+    dict[
+        str,
+        tuple[
+            dict[str, dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+    ],
+    dict[str, Any],
+]:
+    """Load localization inputs from one fused-anchored result per rollout."""
+    fused_signals, events, no_event_failures, clean_rollouts, fused_provenance = (
+        build_base_records(
+            source_root,
+            manifest_rows,
+            annotations,
+            allowed_rollout_ids=None,
+            signal_mode="fused",
+            latest_per_rollout=True,
+        )
+    )
+    if not fused_signals:
+        raise ValueError("no usable fused Robo-Dopamine signals were found")
+
+    records_by_mode = {
+        "fused": (
+            fused_signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+    }
+    mode_provenance: dict[str, Any] = {
+        "anchor": "fused",
+        "alignment": "same_run_same_native_frame_indices",
+        "fused": fused_provenance,
+        "modes": {
+            "fused": {
+                "available_rollout_n": len(fused_signals),
+                "excluded_rollout_n": 0,
+                "exclusions": [],
+            }
+        },
+    }
+    copied_fields = (
+        "source_run_root",
+        "task_key",
+        "task_suite",
+        "task_id",
+        "task_description",
+        "outcome",
+    )
+
+    for signal_mode in SIGNAL_MODES:
+        if signal_mode == "fused":
+            continue
+        mode_signals: dict[str, dict[str, Any]] = {}
+        exclusions: list[dict[str, str]] = []
+        for rollout_id, fused_signal in fused_signals.items():
+            source_run_root = Path(fused_signal["source_run_root"])
+            try:
+                signal = load_signal(
+                    source_run_root,
+                    rollout_id,
+                    signal_mode,
+                )
+            except (FileNotFoundError, OSError, ValueError, KeyError) as exc:
+                exclusions.append({
+                    "rollout_id": rollout_id,
+                    "reason": str(exc),
+                })
+                continue
+            if list(signal["frames"]) != list(fused_signal["frames"]):
+                exclusions.append({
+                    "rollout_id": rollout_id,
+                    "reason": (
+                        f"{signal_mode} native frame indices do not match "
+                        "the fused anchor"
+                    ),
+                })
+                continue
+            for field in copied_fields:
+                if field in fused_signal:
+                    signal[field] = fused_signal[field]
+            mode_signals[rollout_id] = signal
+
+        records_by_mode[signal_mode] = (
+            mode_signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+        mode_provenance["modes"][signal_mode] = {
+            "available_rollout_n": len(mode_signals),
+            "excluded_rollout_n": len(exclusions),
+            "exclusions": exclusions,
+        }
+
+    return records_by_mode, mode_provenance
+
+
+def _records_for_config(
+    config: Mapping[str, Any],
+    records_by_mode: Mapping[str, tuple[Any, Any, Any, Any]],
+) -> tuple[Any, Any, Any, Any]:
+    signal_mode = str(config.get("data", {}).get("signal_mode", "fused"))
+    records = records_by_mode.get(signal_mode)
+    if records is None or not records[0]:
+        raise ValueError(
+            f"no usable aligned Robo-Dopamine {signal_mode} signals were found"
+        )
+    return records
 
 
 def _positive_weight(dataset: Mapping[str, Mapping[str, Any]], rollout_ids: Sequence[str]) -> float:
@@ -446,16 +568,11 @@ def run_spec(
         raise FileExistsError(f"Output directory is not empty: {out}")
     out.mkdir(parents=True, exist_ok=True)
 
-    signals, events, no_event_failures, clean_rollouts, provenance = build_base_records(
+    records_by_mode, provenance = _aligned_signal_records(
         source_root,
         load_manifest(manifest),
         annotations,
-        allowed_rollout_ids=None,
-        signal_mode="fused",
-        latest_per_rollout=True,
     )
-    if not signals:
-        raise ValueError("no usable fused Robo-Dopamine signals were found")
 
     all_summary: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
@@ -516,6 +633,9 @@ def run_spec(
         if effective_workers == 1:
             for config_index, config_id, config in jobs:
                 log(f"stage={stage_name} start={config_id}")
+                signals, events, no_event_failures, clean_rollouts = (
+                    _records_for_config(config, records_by_mode)
+                )
                 completed[config_index] = _run_configuration_concurrent(
                     config=config,
                     config_id=config_id,
@@ -534,8 +654,12 @@ def run_spec(
                 max_workers=effective_workers,
                 thread_name_prefix=f"localization-{stage_index + 1}",
             ) as executor:
-                futures = {
-                    executor.submit(
+                futures = {}
+                for config_index, config_id, config in jobs:
+                    signals, events, no_event_failures, clean_rollouts = (
+                        _records_for_config(config, records_by_mode)
+                    )
+                    future = executor.submit(
                         _run_configuration_concurrent,
                         config=config,
                         config_id=config_id,
@@ -547,9 +671,8 @@ def run_spec(
                         clean_rollouts=clean_rollouts,
                         checkpoint_root=out / "checkpoints" / stage_name,
                         use_cuda_stream=True,
-                    ): (config_index, config_id)
-                    for config_index, config_id, config in jobs
-                }
+                    )
+                    futures[future] = (config_index, config_id)
                 for future in as_completed(futures):
                     config_index, config_id = futures[future]
                     completed[config_index] = future.result()
@@ -602,7 +725,7 @@ def run_spec(
         "name": normalized["name"],
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_root": project_relative(source_root),
-        "selection_mode": "latest_usable_fused_per_rollout",
+        "selection_mode": "latest_usable_fused_anchor_aligned_input_signal",
         "configuration_count": len(all_summary),
         "training_run_count": len(all_records),
         "all_failure_prediction_count": len(all_failure_predictions),
