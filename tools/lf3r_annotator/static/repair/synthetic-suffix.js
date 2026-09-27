@@ -192,6 +192,23 @@
     renderValidation(null);
   }
 
+  function selectedWorldModel() {
+    var select = node("repairWorldModel");
+    return select ? String(select.value || "a2world") : "a2world";
+  }
+
+  function renderModelPanel() {
+    var model = selectedWorldModel();
+    document.querySelectorAll("[data-repair-model-panel]").forEach(function (panel) {
+      panel.classList.toggle("hidden", panel.dataset.repairModelPanel !== model);
+    });
+    var runButton = node("repairRunButton");
+    if (runButton) {
+      runButton.textContent = model === "ctrl_world" ? "Run Ctrl-World" : "Run A2World";
+    }
+    renderAdapterPreview();
+  }
+
   function checkpointDefault() {
     var type = node("repairCheckpointType").value;
     if (type === "generic_pretrained") return "checkpoints/a2world-pretrained.pt";
@@ -202,14 +219,15 @@
   function renderAdapterPreview() {
     var row = selectedRollout();
     var views = row ? (row.views || []) : [];
-    node("repairCameraMapping").textContent =
-      "agentview ← cam_high\neye_in_hand ← cam_wrist"
-      + (views.indexOf("cam_wrist") === -1
-        ? "\ncam_wrist missing: explicit duplication is required to proceed."
-        : "");
-    var type = node("repairCheckpointType").value;
-    node("repairActionAdapter").textContent =
-      "LIBERO 7D → A2World LIBERO servo (checkpoint-independent)";
+    if (selectedWorldModel() === "a2world") {
+      node("repairCameraMapping").textContent =
+        "agentview ← cam_high\neye_in_hand ← cam_wrist"
+        + (views.indexOf("cam_wrist") === -1
+          ? "\ncam_wrist missing: explicit duplication is required to proceed."
+          : "");
+      node("repairActionAdapter").textContent =
+        "LIBERO 7D → A2World LIBERO servo (checkpoint-independent)";
+    }
   }
 
   function syncCheckpointPlaceholder(force) {
@@ -219,18 +237,46 @@
     if (force || !input.value.trim()) input.value = defaultValue;
   }
 
+  function optionalText(id) {
+    var value = node(id).value.trim();
+    return value || null;
+  }
+
   function buildPayload() {
     var row = selectedRollout();
     if (!row) throw new Error("Select a success rollout first");
     var cut = currentCut();
-    var payload = {
-      rollout_id: row.id,
-      cut_type: cut.type,
-      cut_progress: cut.progress,
-      cut_frame: cut.frame,
-      alignment_min_psnr: Number(node("repairAlignmentPsnr").value || 20),
-      generated_includes_condition: false,
-      world_model: {
+    var model = selectedWorldModel();
+    var worldModel;
+    if (model === "ctrl_world") {
+      worldModel = {
+        name: "ctrl_world",
+        checkpoint_type: "droid_pretrained",
+        checkpoint: optionalText("repairCtrlCheckpoint"),
+        source_root: optionalText("repairCtrlSourceRoot"),
+        python: optionalText("repairCtrlPython"),
+        svd_model_path: optionalText("repairCtrlSvd"),
+        clip_model_path: optionalText("repairCtrlClip"),
+        data_stat_path: optionalText("repairCtrlDataStat"),
+        target_fps: Math.max(0.1, Number(node("repairCtrlTargetFps").value || 5)),
+        num_inference_steps: Math.max(
+          1,
+          Math.round(Number(node("repairCtrlInferenceSteps").value || 50))
+        ),
+        guidance_scale: Math.max(0, Number(node("repairCtrlGuidance").value || 1)),
+        seed: Math.round(Number(node("repairCtrlSeed").value || 0)),
+        text_conditioning: node("repairCtrlTextConditioning").checked,
+        camera_mapping: {
+          exterior_1: "cam_high",
+          exterior_2: "cam_high",
+          wrist: "cam_wrist"
+        }
+      };
+      Object.keys(worldModel).forEach(function (key) {
+        if (worldModel[key] == null) delete worldModel[key];
+      });
+    } else {
+      worldModel = {
         name: "a2world",
         checkpoint_type: node("repairCheckpointType").value,
         checkpoint: node("repairCheckpoint").value.trim() || checkpointDefault(),
@@ -247,7 +293,16 @@
           agentview: "cam_high",
           eye_in_hand: "cam_wrist"
         }
-      }
+      };
+    }
+    var payload = {
+      rollout_id: row.id,
+      cut_type: cut.type,
+      cut_progress: cut.progress,
+      cut_frame: cut.frame,
+      alignment_min_psnr: Number(node("repairAlignmentPsnr").value || 20),
+      generated_includes_condition: false,
+      world_model: worldModel
     };
     if (cut.type !== "progress") delete payload.cut_progress;
     if (cut.type !== "frame") delete payload.cut_frame;
@@ -258,11 +313,14 @@
     var host = node("repairValidation");
     if (!validation) {
       host.className = "repair-validation";
-      host.textContent = "Run validation to check manifest inputs, exact LIBERO indices, and A2World availability. The simulator smoke test always runs again inside the job before generation.";
+      host.textContent =
+        "Run validation to check manifest inputs, exact LIBERO indices, selected world-model assets, and the mandatory simulator smoke test.";
       node("repairRunButton").disabled = true;
       return;
     }
     var blockers = validation.blockers || [];
+    var wm = validation.world_model || {};
+    var model = String(validation.model_name || wm.adapter || selectedWorldModel());
     host.className = "repair-validation " + (validation.ready ? "repair-ok" : "repair-error");
     var smoke = ((validation.validation || {}).alignment_smoke_test || {});
     var comparisons = smoke.comparisons || {};
@@ -276,36 +334,69 @@
         + " · orientation " + String(item.orientation_transform || "—")
         + " · " + (item.passed ? "pass" : "fail");
     });
+    var modelLines = [];
+    if (model === "ctrl_world") {
+      modelLines.push("Ctrl-World: " + (wm.available ? "available" : "unavailable"));
+      if (wm.effective_fps != null) {
+        modelLines.push(
+          "Ctrl timing: source step " + String(wm.source_frame_step)
+          + " · effective " + Number(wm.effective_fps).toFixed(2) + " FPS"
+          + " · target " + String(wm.target_fps) + " FPS"
+        );
+      }
+      modelLines.push(
+        "Ctrl views: exterior_1 ← cam_high · exterior_2 ← cam_high (adapter duplicate) · wrist ← cam_wrist"
+      );
+      modelLines.push(
+        "Ctrl control: absolute Cartesian pose/gripper state; raw LIBERO delta actions remain smoke-test ground truth"
+      );
+      modelLines.push(
+        "Ctrl native geometry: source RGB is resized to 192×320; resize is recorded in provenance"
+      );
+      if (validation.ctrl_world_horizon) {
+        modelLines.push(
+          "Ctrl horizon: " + validation.ctrl_world_horizon.control_points_including_condition
+          + " sampled control points including condition · "
+          + validation.ctrl_world_horizon.generated_suffix_frames
+          + " generated suffix frames"
+        );
+      }
+    } else {
+      modelLines.push("A2World: " + (wm.available ? "available" : "unavailable"));
+      if (wm.num_sampling_steps != null) {
+        modelLines.push(
+          "A2World config: steps " + String(wm.num_sampling_steps)
+          + " · guidance " + String(wm.guidance)
+          + " · seed " + String(wm.seed)
+          + " · history " + (wm.history ? "on" : "off")
+        );
+      }
+      modelLines.push(
+        "RGB adapter: derived after alignment (manifest ↔ A2World LIBERO convention)"
+      );
+      if (validation.a2world_action_horizon) {
+        modelLines.push(
+          "A2World horizon: " + validation.a2world_action_horizon.gt_future_action_count
+          + " GT future actions · tail padding "
+          + validation.a2world_action_horizon.tail_padding_count
+          + " · exported padded frames 0"
+        );
+      }
+    }
     host.textContent = [
       validation.ready ? "Validation passed." : "Blocked.",
+      "model = " + model,
       "condition_rgb = rgb[" + validation.alignment.condition_frame + "]",
       "branch_state = states[" + validation.alignment.branch_state_index + "]",
       "future_actions = actions[" + validation.alignment.gt_action_start + ":]",
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
-      "A2World: " + (validation.world_model.available ? "available" : "unavailable"),
-      validation.world_model.num_sampling_steps != null
-        ? (
-          "A2World config: steps " + String(validation.world_model.num_sampling_steps)
-          + " · guidance " + String(validation.world_model.guidance)
-          + " · seed " + String(validation.world_model.seed)
-          + " · history " + (validation.world_model.history ? "on" : "off")
-        )
-        : "",
-      "RGB adapter: derived after alignment (manifest ↔ A2World LIBERO convention)",
+      modelLines.join("\n"),
       validation.gpu && validation.gpu.selected
         ? ("GPU " + validation.gpu.selected.index + ": "
           + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
           + "% utilization")
         : "GPU: no eligible device below 50%",
-      validation.a2world_action_horizon
-        ? (
-          "A2World horizon: " + validation.a2world_action_horizon.gt_future_action_count
-          + " GT future actions · tail padding "
-          + validation.a2world_action_horizon.tail_padding_count
-          + " · exported padded frames 0"
-        )
-        : "",
       blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
     ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
@@ -647,6 +738,11 @@
       node(id).addEventListener("input", updateCutControls);
       node(id).addEventListener("change", updateCutControls);
     });
+    node("repairWorldModel").addEventListener("change", function () {
+      renderModelPanel();
+      repairState.validation = null;
+      renderValidation(null);
+    });
     node("repairCheckpointType").addEventListener("change", function () {
       syncCheckpointPlaceholder(true);
       renderAdapterPreview();
@@ -661,7 +757,18 @@
       "repairSamplingSteps",
       "repairGuidance",
       "repairSeed",
-      "repairHistory"
+      "repairHistory",
+      "repairCtrlCheckpoint",
+      "repairCtrlSourceRoot",
+      "repairCtrlPython",
+      "repairCtrlSvd",
+      "repairCtrlClip",
+      "repairCtrlDataStat",
+      "repairCtrlTargetFps",
+      "repairCtrlInferenceSteps",
+      "repairCtrlGuidance",
+      "repairCtrlSeed",
+      "repairCtrlTextConditioning"
     ].forEach(function (id) {
       node(id).addEventListener("input", function () {
         repairState.validation = null;
@@ -683,6 +790,7 @@
     });
     node("repairSaveHuman").addEventListener("click", saveHumanEvaluation);
     syncCheckpointPlaceholder(false);
+    renderModelPanel();
     renderValidation(null);
   }
 
