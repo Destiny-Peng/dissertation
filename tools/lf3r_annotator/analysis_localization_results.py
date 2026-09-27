@@ -17,6 +17,7 @@ class AnalysisLocalizationResultsMixin:
     def _localization_builtin_presets() -> dict[str, dict[str, Any]]:
         base = {
             "data": {
+                "signal_mode": "fused",
                 "population": "failure_only", "success_ratio": 0.0,
                 "challenge_set_name": "", "force_train_rollout_ids": [],
             },
@@ -33,6 +34,14 @@ class AnalysisLocalizationResultsMixin:
             "bilstm_default": {
                 "schema_version": 1, "name": "bilstm_default", "base": base,
                 "sweep": [], "variants": [], "stages": [], "repeats": 5, "builtin": True,
+            },
+            "input_signal_default": {
+                "schema_version": 1, "name": "input_signal_default", "base": base,
+                "sweep": [{
+                    "path": "data.signal_mode",
+                    "values": ["incremental", "forward", "backward", "fused"],
+                }],
+                "variants": [], "stages": [], "repeats": 5, "builtin": True,
             },
             "label_loss_default": {
                 "schema_version": 1, "name": "label_loss_default", "base": base,
