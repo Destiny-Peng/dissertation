@@ -309,8 +309,10 @@ class CtrlWorldAdapterTest(unittest.TestCase):
             / "trajectory.py"
         ).read_text(encoding="utf-8")
         self.assertIn('Rotation.from_rotvec(rotvec).as_euler("xyz")', source)
-        self.assertIn("gripper_qpos[:, 0] - gripper_qpos[:, 1]", source)
+        self.assertIn("gripper_qpos[0] - gripper_qpos[1]", source)
         self.assertIn("1.0 - opening_width / 0.08", source)
+        self.assertIn("def replay_ctrl_world_pose_controls(", source)
+        self.assertIn("replay GT actions[c+1:]", source)
 
 
 class OfficialLiberoManifestContractTest(unittest.TestCase):
@@ -361,7 +363,10 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("Ctrl-World", repair_page)
         self.assertIn('name: "ctrl_world"', repair_js)
         self.assertIn("CtrlWorldAdapter", ctrl_adapter)
+        self.assertIn("future_recorded_proprio_used", ctrl_adapter)
         self.assertIn('model_name in {"ctrl", "ctrl_world"}', worker)
+        self.assertIn("replay_ctrl_world_pose_controls", worker)
+        self.assertIn('"future_recorded_proprio_used": False', worker)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
