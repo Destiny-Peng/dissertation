@@ -115,5 +115,10 @@ function navigate(delta) {
 }
 
 function isTypingTarget(target) {
-  return target && ["INPUT", "TEXTAREA", "SELECT"].indexOf(target.tagName) !== -1;
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  if (target.tagName === "TEXTAREA" || target.tagName === "SELECT") return true;
+  if (target.tagName !== "INPUT") return false;
+  var type = String(target.type || "text").toLowerCase();
+  return ["range", "checkbox", "radio", "button", "submit", "reset"].indexOf(type) === -1;
 }
