@@ -285,6 +285,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "target_fps": target_fps,
             "source_frame_step": frame_step,
             "effective_fps": effective_fps,
+            "svd_microcondition_fps": 7,
             "num_frames": self.NUM_FRAMES,
             "num_history": self.NUM_HISTORY,
             "num_inference_steps": inference_steps,
