@@ -64,7 +64,7 @@ BUILTIN_PRESETS = {
         "base": copy.deepcopy(DEFAULT_BASE),
         "sweep": [{
             "path": "data.signal_mode",
-            "values": ["incremental", "forward", "backward", "fused"],
+            "values": ["incremental", "forward", "backward", "fused", "perspectives_6d"],
         }],
         "variants": [],
         "repeats": 5,
@@ -279,9 +279,12 @@ def validate_config(config: Mapping[str, Any]) -> None:
     training = config.get("training", {})
 
     signal_mode = str(data.get("signal_mode", "fused"))
-    if signal_mode not in {"incremental", "forward", "backward", "fused"}:
+    if signal_mode not in {
+        "incremental", "forward", "backward", "fused", "perspectives_6d"
+    }:
         raise ValueError(
-            "data.signal_mode must be incremental, forward, backward, or fused"
+            "data.signal_mode must be incremental, forward, backward, fused, "
+            "or perspectives_6d"
         )
     population = str(data.get("population", "failure_only"))
     if population not in {"failure_only", "failure_success"}:
