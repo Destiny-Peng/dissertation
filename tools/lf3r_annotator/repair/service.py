@@ -713,6 +713,30 @@ class RepairService:
             if fps and generated_real_start_frame is not None and float(fps) > 0
             else None
         )
+        generated_source_offset = (
+            float(int(generated_real_start_frame) - int(cut_frame)) / float(fps)
+            if (
+                fps
+                and generated_real_start_frame is not None
+                and cut_frame is not None
+                and float(fps) > 0
+            )
+            else None
+        )
+        generation_config = provenance.get("generation_config") or {}
+        generated_fps = (
+            provenance.get("artifact_playback_fps")
+            or (
+                generation_config.get("artifact_playback_fps")
+                if isinstance(generation_config, dict)
+                else None
+            )
+            or (
+                generation_config.get("effective_fps")
+                if isinstance(generation_config, dict)
+                else None
+            )
+        )
         total_frames = (
             (input_payload.get("rollout") or {}).get("total_frames")
             if isinstance(input_payload, dict)
@@ -732,6 +756,9 @@ class RepairService:
                 "total_frames": total_frames,
                 "cut_time_seconds": cut_time,
                 "real_suffix_start_time_seconds": real_suffix_start_time,
+                "generated_source_offset_seconds": generated_source_offset,
+                "generated_fps": generated_fps,
+                "generated_real_start_frame": generated_real_start_frame,
             },
         }
 
