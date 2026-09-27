@@ -15,6 +15,12 @@
 
   var PARAMS = [
     {
+      path: "data.signal_mode", label: "Input signal", type: "enum",
+      allowed: ["incremental", "forward", "backward", "fused"],
+      defaults: ["incremental", "forward", "backward", "fused"],
+      help: "Allowed: incremental, forward, backward, fused. Each mode uses progress + hop from the same fused-anchored Robo-Dopamine run and native frame grid."
+    },
+    {
       path: "data.success_ratio", label: "Success ratio", type: "number", min: 0,
       defaults: [0, 0.5, 1, 2],
       help: "Numbers >= 0. Used only with population=failure_success. Example: [0,0.5,1,2]"
@@ -116,6 +122,7 @@
     var forceChallenge = node("localizationForceChallengeTrain").checked && challengeSet;
     return {
       data: {
+        signal_mode: node("localizationSignalMode").value,
         population: population,
         success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio"),
         challenge_set_name: forceChallenge ? challengeName : "",
@@ -153,6 +160,7 @@
   function setBase(base) {
     var data = base.data || {}, target = base.target || {}, model = base.model || {};
     var loss = base.loss || {}, training = base.training || {};
+    node("localizationSignalMode").value = data.signal_mode || "fused";
     node("localizationPopulation").value = data.population || "failure_only";
     node("localizationSuccessRatio").value = data.success_ratio == null ? 0 : data.success_ratio;
     node("localizationChallengeTrainSet").value = data.challenge_set_name || "";
