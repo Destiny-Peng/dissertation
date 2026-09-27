@@ -16,9 +16,9 @@
   var PARAMS = [
     {
       path: "data.signal_mode", label: "Input signal", type: "enum",
-      allowed: ["incremental", "forward", "backward", "fused"],
-      defaults: ["incremental", "forward", "backward", "fused"],
-      help: "Allowed: incremental, forward, backward, fused. Each mode uses progress + hop from the same fused-anchored Robo-Dopamine run and native frame grid."
+      allowed: ["incremental", "forward", "backward", "fused", "perspectives_6d"],
+      defaults: ["incremental", "forward", "backward", "fused", "perspectives_6d"],
+      help: "2D modes use one [progress, hop] pair. perspectives_6d concatenates [incremental, forward, backward] progress + hop into six features on the same fused-anchored native frame grid."
     },
     {
       path: "data.success_ratio", label: "Success ratio", type: "number", min: 0,
