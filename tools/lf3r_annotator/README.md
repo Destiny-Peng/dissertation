@@ -147,7 +147,7 @@ Choose a rollout, play or step through it, and label:
 - either a recovery frame or terminal-failure frame for each event;
 - confidence and notes.
 
-Use **Add failure event** as many times as needed; there is no fixed event-count limit. Click or focus an event card to make it active. The keyboard-first workflow keeps working after timeline scrubbing: arrow keys step frames, Shift+arrows step ten frames, Q/W/E/R set causal/observable/terminal/recovery on the active event, A adds an event, [ and ] switch the active event, 1-9 select grasp/placement/dropped-object/wrong-object/collision/timeout-no-progress/control/observation/other failure types, and S saves. The header readout shows both video frame and corresponding environment timestep.
+Use **Add failure event** as many times as needed; there is no fixed event-count limit. Click or focus an event card to make it active. The keyboard-first workflow keeps working after timeline scrubbing: arrow keys step frames, Shift+arrows step ten frames, Q/W/E/R set causal/observable/terminal/recovery on the active event, A adds an event, Up/Down switch the active event, 1-9 select grasp/placement/dropped-object/wrong-object/collision/timeout-no-progress/control/observation/other failure types, comma/period move to the previous/next rollout, and S saves. The header readout shows both video frame and corresponding environment timestep.
 
 `recovered_success` requires at least one event and does not allow a terminal-failure frame, because terminal means recovery is no longer plausible. Setting a recovery frame clears terminal for that event and vice versa.
 
