@@ -11,6 +11,7 @@ from backend_core import ValidationError
 from repair.adapters import A2WorldAdapter
 from repair.ctrl_world import CtrlWorldAdapter
 from repair.alignment import capability_summary, compute_alignment
+from repair.prepare_libero_manifest import _ensure_project_libero_on_sys_path
 
 
 class RepairAlignmentTest(unittest.TestCase):
@@ -326,6 +327,19 @@ class CtrlWorldAdapterTest(unittest.TestCase):
 
 
 class OfficialLiberoManifestContractTest(unittest.TestCase):
+    def test_importer_auto_exposes_project_local_libero_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            libero_root = root / "repos" / "LIBERO"
+            libero_root.mkdir(parents=True)
+            original = list(sys.path)
+            try:
+                resolved = _ensure_project_libero_on_sys_path(root)
+                self.assertEqual(resolved, libero_root.resolve())
+                self.assertEqual(sys.path[0], str(libero_root.resolve()))
+            finally:
+                sys.path[:] = original
+
     def test_importer_preserves_official_physical_views_and_c_plus_one_alignment(self) -> None:
         source = (
             Path(__file__).resolve().parents[1]
