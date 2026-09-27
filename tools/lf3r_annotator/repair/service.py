@@ -505,6 +505,7 @@ class RepairService:
                     "target_fps": adapter_status["target_fps"],
                     "source_frame_step": adapter_status["source_frame_step"],
                     "effective_fps": adapter_status["effective_fps"],
+                    "svd_microcondition_fps": adapter_status["svd_microcondition_fps"],
                     "num_frames": adapter_status["num_frames"],
                     "num_history": adapter_status["num_history"],
                     "num_inference_steps": adapter_status["num_inference_steps"],
