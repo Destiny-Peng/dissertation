@@ -73,11 +73,42 @@ def read_frames(path: Path) -> list[Any]:
         reader.close()
 
 
+def metric_aligned_frames(real: Any, generated: Any) -> tuple[Any, Any, bool]:
+    """Align only image resolution for diagnostics, never time or camera semantics."""
+
+    import numpy as np
+
+    a = np.asarray(real, dtype=np.uint8)
+    b = np.asarray(generated, dtype=np.uint8)
+    if a.shape == b.shape:
+        return a, b, False
+    if (
+        a.ndim != 3
+        or b.ndim != 3
+        or a.shape[-1] != 3
+        or b.shape[-1] != 3
+    ):
+        return a, b, False
+    try:
+        from PIL import Image
+    except ImportError:
+        return a, b, False
+    resized = np.asarray(
+        Image.fromarray(b).resize(
+            (int(a.shape[1]), int(a.shape[0])),
+            Image.Resampling.BILINEAR,
+        ),
+        dtype=np.uint8,
+    )
+    return a, resized, True
+
+
 def image_metrics(real: Any, generated: Any) -> dict[str, float | None]:
     import numpy as np
 
-    a = np.asarray(real, dtype=np.float32)
-    b = np.asarray(generated, dtype=np.float32)
+    a, b, _ = metric_aligned_frames(real, generated)
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
     if a.shape != b.shape:
         return {"psnr": None, "ssim": None}
     mse = float(np.mean((a - b) ** 2))
@@ -220,10 +251,22 @@ def compute_metrics(
         psnr_values: list[float] = []
         ssim_values: list[float] = []
         lpips_values: list[float] = []
+        resolution_resized_frames = 0
+        generated_shape = None
+        real_shape = None
         for index in range(count):
             real_frame = real_frames[indices[index]]
             generated_frame = generated_frames[index]
-            per_frame = image_metrics(real_frame, generated_frame)
+            aligned_real, aligned_generated, resized = metric_aligned_frames(
+                real_frame,
+                generated_frame,
+            )
+            if resized:
+                resolution_resized_frames += 1
+            if real_shape is None:
+                real_shape = list(getattr(real_frame, "shape", ()))
+                generated_shape = list(getattr(generated_frame, "shape", ()))
+            per_frame = image_metrics(aligned_real, aligned_generated)
             if (
                 per_frame["psnr"] is not None
                 and math.isfinite(float(per_frame["psnr"]))
@@ -232,8 +275,8 @@ def compute_metrics(
             if per_frame["ssim"] is not None:
                 ssim_values.append(float(per_frame["ssim"]))
             if lpips_model is not None and torch is not None:
-                a = np.asarray(real_frame, dtype=np.float32)
-                b = np.asarray(generated_frame, dtype=np.float32)
+                a = np.asarray(aligned_real, dtype=np.float32)
+                b = np.asarray(aligned_generated, dtype=np.float32)
                 if a.shape == b.shape:
                     aa = (
                         torch.from_numpy(a)
@@ -259,6 +302,14 @@ def compute_metrics(
             "real_available_frames": len(indices),
             "generated_frames": len(generated_frames),
             "real_frame_indices": indices[:count],
+            "real_frame_shape": real_shape,
+            "generated_frame_shape": generated_shape,
+            "resolution_resized_frames": resolution_resized_frames,
+            "resolution_alignment": (
+                "generated resized to real frame size with bilinear interpolation for diagnostics"
+                if resolution_resized_frames
+                else "native shapes matched"
+            ),
             "psnr_mean": (
                 sum(psnr_values) / len(psnr_values)
                 if psnr_values
