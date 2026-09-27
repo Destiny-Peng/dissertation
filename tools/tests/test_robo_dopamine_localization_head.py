@@ -213,6 +213,12 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         logits = model(x)
         self.assertEqual(tuple(logits.shape), (1, 11))
 
+        model_6d = spec_runner.core.TinyBiLSTM(hidden=16, input_dim=6)
+        x_6d = torch.randn(1, 11, 6)
+        logits_6d = model_6d(x_6d)
+        self.assertEqual(tuple(logits_6d.shape), (1, 11))
+        self.assertEqual(model_6d.input_dim, 6)
+
     def test_shared_normalization_and_pos_weight_ignore_success(self) -> None:
         failures = self.failure_dataset(8)
         successes = self.success_dataset(6)
@@ -363,12 +369,14 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             frames = [0, 5, 10]
             if rollout_id == "r2" and signal_mode == "backward":
                 frames = [0, 6, 10]
+            offsets = {"incremental": 0.0, "forward": 10.0, "backward": 20.0}
+            offset = offsets[signal_mode]
             return {
                 "rollout_id": rollout_id,
                 "signal_mode": signal_mode,
                 "frames": frames,
-                "progress": [0.0, 0.5, 1.0],
-                "hops": [0.0, 0.5, 0.5],
+                "progress": [offset + 0.0, offset + 0.5, offset + 1.0],
+                "hops": [offset + 0.0, offset + 0.25, offset + 0.5],
             }
 
         with mock.patch.object(
@@ -392,7 +400,10 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 Path("/tmp/annotations"),
             )
 
-        self.assertEqual(set(records), {"incremental", "forward", "backward", "fused"})
+        self.assertEqual(
+            set(records),
+            {"incremental", "forward", "backward", "fused", "perspectives_6d"},
+        )
         self.assertEqual(set(records["forward"][0]), {"r1", "r2"})
         self.assertEqual(set(records["backward"][0]), {"r1"})
         self.assertEqual(
@@ -408,6 +419,23 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertEqual(
             provenance["modes"]["backward"]["excluded_rollout_n"],
             1,
+        )
+        six_d = records["perspectives_6d"][0]["r1"]
+        self.assertEqual(np.asarray(six_d["features"]).shape, (3, 6))
+        np.testing.assert_allclose(
+            np.asarray(six_d["features"])[1],
+            [0.5, 0.25, 10.5, 10.25, 20.5, 20.25],
+        )
+        self.assertEqual(
+            six_d["feature_names"],
+            [
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
         )
         forward_records = spec_runner._records_for_config(
             {"data": {"signal_mode": "forward"}},
