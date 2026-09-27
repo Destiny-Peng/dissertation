@@ -72,9 +72,18 @@ class CtrlWorldAdapter(WorldModelAdapter):
             or os.environ.get("LF3R_CTRL_WORLD_PYTHON")
             or ""
         ).strip()
+        configured_env = str(
+            self.config.get("environment")
+            or os.environ.get("LF3R_ENV_CTRL_WORLD")
+            or ""
+        ).strip()
         candidates: list[Path] = []
         if configured:
             candidates.append(project_path(self.project_root, configured))
+        if configured_env:
+            candidates.append(
+                project_path(self.project_root, configured_env) / "bin" / "python"
+            )
         candidates.extend(
             [
                 self.project_root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python",
