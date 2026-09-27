@@ -16,6 +16,7 @@ from backend_core import JobCoordinator, ValidationError
 from non_analysis_tools import gpu_status
 from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
+from .ctrl_world import CtrlWorldAdapter
 from .alignment import capability_summary, compute_alignment
 from .alignment_runner import run_alignment_subprocess
 
@@ -190,6 +191,20 @@ class RepairService:
                 return candidate.resolve()
         return candidates[-1].resolve()
 
+    def _world_model_adapter(
+        self,
+        model_name: str,
+        wm_config: dict[str, Any],
+    ) -> tuple[str, Any]:
+        normalized = str(model_name or "a2world").strip().lower().replace("-", "_")
+        if normalized == "a2world":
+            return "a2world", A2WorldAdapter(self.project_root, wm_config)
+        if normalized in {"ctrl", "ctrl_world"}:
+            return "ctrl_world", CtrlWorldAdapter(self.project_root, wm_config)
+        raise ValidationError(
+            "Synthetic Suffix supports world_model.name a2world or ctrl_world"
+        )
+
     @staticmethod
     def _gpu_plan() -> dict[str, Any]:
         status = gpu_status()
@@ -240,10 +255,10 @@ class RepairService:
         wm_config = payload.get("world_model") or {}
         if not isinstance(wm_config, dict):
             raise ValidationError("world_model must be an object")
-        model_name = str(wm_config.get("name") or "a2world").lower()
-        if model_name != "a2world":
-            raise ValidationError("Phase 1 supports A2World only")
-        adapter = A2WorldAdapter(self.project_root, wm_config)
+        model_name, adapter = self._world_model_adapter(
+            str(wm_config.get("name") or "a2world"),
+            wm_config,
+        )
         adapter_status = adapter.validate_rollout(rollout)
         gpu = self._gpu_plan()
         blockers: list[str] = []
@@ -268,6 +283,7 @@ class RepairService:
         return {
             "ready": not blockers,
             "rollout_id": rollout_id,
+            "model_name": model_name,
             "capabilities": capabilities,
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
@@ -327,19 +343,44 @@ class RepairService:
                 int(smoke["action_count"])
                 - int(plan["alignment"]["gt_action_start"]),
             )
-            tail_padding_count = (-future_action_count) % 20
-            plan["a2world_action_horizon"] = {
-                "gt_future_action_count": future_action_count,
-                "chunk_size": 20,
-                "tail_padding_count": tail_padding_count,
-                "exported_padding_frames": 0,
-                "note": (
-                    "A2World conditions the final partial chunk with padded "
-                    "controls, then LF3R trims all padded output frames."
-                    if tail_padding_count
-                    else "GT future actions exactly fill A2World chunks."
-                ),
-            }
+            if plan["model_name"] == "a2world":
+                tail_padding_count = (-future_action_count) % 20
+                plan["a2world_action_horizon"] = {
+                    "gt_future_action_count": future_action_count,
+                    "chunk_size": 20,
+                    "tail_padding_count": tail_padding_count,
+                    "exported_padding_frames": 0,
+                    "note": (
+                        "A2World conditions the final partial chunk with padded "
+                        "controls, then LF3R trims all padded output frames."
+                        if tail_padding_count
+                        else "GT future actions exactly fill A2World chunks."
+                    ),
+                }
+            elif plan["model_name"] == "ctrl_world":
+                source_fps = float(rollout.get("fps") or 0.0)
+                frame_step = int(plan["world_model"].get("source_frame_step") or 0)
+                cut_frame = int(plan["alignment"]["cut_rgb_frame"])
+                total_frames = int(rollout.get("total_frames") or 0)
+                sample_count = (
+                    len(range(cut_frame, total_frames, frame_step))
+                    if frame_step > 0
+                    else 0
+                )
+                plan["ctrl_world_horizon"] = {
+                    "gt_future_action_count": future_action_count,
+                    "conditioning": "absolute Cartesian pose/gripper trajectory",
+                    "source_fps": source_fps,
+                    "source_frame_step": frame_step,
+                    "effective_fps": plan["world_model"].get("effective_fps"),
+                    "control_points_including_condition": sample_count,
+                    "generated_suffix_frames": max(0, sample_count - 1),
+                    "note": (
+                        "Ctrl-World uses DROID-style future pose/state conditioning "
+                        "sampled at its target temporal rate; raw LIBERO delta actions "
+                        "remain the alignment/smoke-test ground truth."
+                    ),
+                }
         if smoke_error:
             plan["blockers"].append(smoke_error)
         plan["ready"] = bool(plan["ready"] and smoke is not None and smoke.get("passed"))
@@ -367,7 +408,7 @@ class RepairService:
         run_dir.mkdir(parents=True, exist_ok=False)
 
         wm_config = dict(payload.get("world_model") or {})
-        wm_config["name"] = "a2world"
+        wm_config["name"] = plan["model_name"]
         wm_config["gpu_index"] = int(plan["gpu"]["selected"]["index"])
         config = {
             "schema_version": 1,
@@ -404,13 +445,15 @@ class RepairService:
             "gt_action_start": plan["alignment"]["gt_action_start"],
             "gt_action_end": plan["alignment"]["gt_action_end"],
             "gt_action_range_semantics": "[start,end)",
-            "world_model": "a2world",
+            "world_model": plan["model_name"],
             "checkpoint": adapter_status["checkpoint"],
             "checkpoint_type": adapter_status["checkpoint_type"],
             "repair_worker_python": plan["worker_python"],
             "camera_mapping": adapter_status["camera_mapping"],
             "duplicated_camera": adapter_status["duplicated_camera"],
-            "action_adapter": adapter_status["action_adapter"],
+            "action_adapter": adapter_status.get("action_adapter"),
+            "control_adapter": adapter_status.get("control_adapter"),
+            "control_semantics": adapter_status.get("control_semantics"),
             "gpu": {
                 "index": int(plan["gpu"]["selected"]["index"]),
                 "uuid": plan["gpu"]["selected"].get("uuid"),
@@ -419,21 +462,39 @@ class RepairService:
                 "memory_free_mib_at_submit": plan["gpu"]["selected"].get("memory_free_mib"),
                 "selection_threshold_percent": plan["gpu"]["threshold_percent"],
             },
-            "generation_config": {
-                "variant": adapter_status["variant"],
-                "rollout_mode": "autoregressive",
-                "generated_includes_condition": False,
-                "view_ids": adapter_status["view_ids"],
-                "action_chunk_size": adapter_status["action_chunk_size"],
-                "num_sampling_steps": adapter_status["num_sampling_steps"],
-                "guidance": adapter_status["guidance"],
-                "seed": adapter_status["seed"],
-                "history": adapter_status["history"],
-                "a2world_native_fps": 10,
-                "artifact_playback_fps": rollout.get("fps"),
-                "artifact_timing_basis": "source action/frame index",
-                "tail_policy": "pad final chunk, then trim generated tail",
-            },
+            "generation_config": (
+                {
+                    "variant": adapter_status["variant"],
+                    "rollout_mode": "autoregressive",
+                    "generated_includes_condition": False,
+                    "view_ids": adapter_status["view_ids"],
+                    "action_chunk_size": adapter_status["action_chunk_size"],
+                    "num_sampling_steps": adapter_status["num_sampling_steps"],
+                    "guidance": adapter_status["guidance"],
+                    "seed": adapter_status["seed"],
+                    "history": adapter_status["history"],
+                    "a2world_native_fps": 10,
+                    "artifact_playback_fps": rollout.get("fps"),
+                    "artifact_timing_basis": "source action/frame index",
+                    "tail_policy": "pad final chunk, then trim generated tail",
+                }
+                if plan["model_name"] == "a2world"
+                else {
+                    "rollout_mode": "autoregressive",
+                    "generated_includes_condition": False,
+                    "view_order": adapter_status["view_order"],
+                    "target_fps": adapter_status["target_fps"],
+                    "source_frame_step": adapter_status["source_frame_step"],
+                    "effective_fps": adapter_status["effective_fps"],
+                    "num_frames": adapter_status["num_frames"],
+                    "num_history": adapter_status["num_history"],
+                    "num_inference_steps": adapter_status["num_inference_steps"],
+                    "guidance_scale": adapter_status["guidance_scale"],
+                    "seed": adapter_status["seed"],
+                    "text_conditioning": adapter_status["text_conditioning"],
+                    "artifact_timing_basis": "source time sampled at Ctrl-World effective FPS",
+                }
+            ),
             "output_paths": {},
             "created_at": config["created_at"],
         }
@@ -460,7 +521,7 @@ class RepairService:
             "status": "queued",
             "run_id": run_id,
             "source_rollout": rollout["id"],
-            "world_model": "a2world",
+            "world_model": plan["model_name"],
             "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "run_dir": self._relative(run_dir),
             "log_path": self._relative(log_path),
@@ -625,9 +686,12 @@ class RepairService:
             if fps and cut_frame is not None and float(fps) > 0
             else None
         )
+        generated_real_start_frame = provenance.get("generated_real_start_frame")
+        if generated_real_start_frame is None and cut_frame is not None:
+            generated_real_start_frame = int(cut_frame) + 1
         real_suffix_start_time = (
-            float(int(cut_frame) + 1) / float(fps)
-            if fps and cut_frame is not None and float(fps) > 0
+            float(generated_real_start_frame) / float(fps)
+            if fps and generated_real_start_frame is not None and float(fps) > 0
             else None
         )
         total_frames = (
