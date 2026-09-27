@@ -291,21 +291,21 @@ function installEvents() {
     } else if (isAnnotate && lowerKey === "a") {
       event.preventDefault();
       if (!event.repeat) addFailureEvent();
-    } else if (isAnnotate && event.code === "BracketLeft") {
+    } else if (isAnnotate && event.key === "ArrowUp") {
       event.preventDefault();
       if (!event.repeat) cycleActiveFailureEvent(-1);
-    } else if (isAnnotate && event.code === "BracketRight") {
+    } else if (isAnnotate && event.key === "ArrowDown") {
       event.preventDefault();
       if (!event.repeat) cycleActiveFailureEvent(1);
     } else if (isAnnotate && lowerKey === "s") {
       event.preventDefault();
       if (!event.repeat) saveAnnotation();
-    } else if (lowerKey === "n") {
-      event.preventDefault();
-      if (!event.repeat) navigate(1);
-    } else if (lowerKey === "p") {
+    } else if (event.key === ",") {
       event.preventDefault();
       if (!event.repeat) navigate(-1);
+    } else if (event.key === ".") {
+      event.preventDefault();
+      if (!event.repeat) navigate(1);
     }
   });
 }
