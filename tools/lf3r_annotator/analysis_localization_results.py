@@ -411,12 +411,15 @@ class AnalysisLocalizationResultsMixin:
 
                 stage = str(row.get("stage") or "main")
                 config_id = str(row.get("config_id") or "")
+                signal_mode = str(row.get("data.signal_mode") or "fused")
                 target_kind = str(row.get("target.kind") or "")
                 loss_name = str(row.get("loss.name") or "")
                 hidden = row.get("model.hidden")
                 sigma_pre = row.get("target.sigma_pre")
                 sigma_post = row.get("target.sigma_post")
                 label_parts = [config_id]
+                if signal_mode:
+                    label_parts.append(signal_mode)
                 if target_kind:
                     target_label = target_kind
                     if target_kind == "gaussian" and sigma_pre is not None and sigma_post is not None:
