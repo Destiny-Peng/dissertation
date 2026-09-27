@@ -56,10 +56,10 @@ def normalize_bound(
 
 
 def load_rgb(path: Path) -> Any:
-    import imageio.v2 as imageio
     import numpy as np
+    from PIL import Image
 
-    frame = np.asarray(imageio.imread(str(path)), dtype=np.uint8)
+    frame = np.asarray(Image.open(path).convert("RGB"), dtype=np.uint8)
     if frame.ndim != 3 or frame.shape[-1] != 3:
         raise ValueError(f"Unexpected Ctrl-World condition image shape: {frame.shape}")
     return frame
@@ -161,7 +161,7 @@ def main() -> None:
         raise SystemExit(f"Ctrl-World source root does not exist: {source_root}")
     sys.path.insert(0, str(source_root))
 
-    import imageio.v2 as imageio
+    import mediapy
     import numpy as np
     import torch
 
@@ -320,17 +320,14 @@ def main() -> None:
 
         if start + config.num_frames - 1 >= len(controls) - 1:
             break
+        last_views = split_latents[:, config.num_frames - 1]
         history_latents.append(
-            split_view_latents(predicted_latents)[
-                :,
-                config.num_frames - 1,
-            ]
-            .permute(1, 0, 2, 3)
+            last_views.permute(1, 0, 2, 3)
             .reshape(
                 1,
-                4,
-                3 * split_view_latents(predicted_latents).shape[-2],
-                split_view_latents(predicted_latents).shape[-1],
+                last_views.shape[1],
+                last_views.shape[0] * last_views.shape[2],
+                last_views.shape[3],
             )
             .contiguous()
         )
@@ -362,12 +359,14 @@ def main() -> None:
         "cam_wrist": (args.output_dir / "cam_wrist.mp4", suffix_views[2]),
     }
     for _, (path, frames) in outputs.items():
-        writer = imageio.get_writer(str(path), fps=float(args.output_fps))
-        try:
-            for frame in frames:
-                writer.append_data(np.asarray(frame, dtype=np.uint8))
-        finally:
-            writer.close()
+        mediapy.write_video(
+            str(path),
+            np.stack(
+                [np.asarray(frame, dtype=np.uint8) for frame in frames],
+                axis=0,
+            ),
+            fps=float(args.output_fps),
+        )
 
     metadata = {
         "model": "ctrl_world",
