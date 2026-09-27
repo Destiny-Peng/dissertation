@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,23 @@ CAMERA_DATASETS = {
 
 class DemoImportError(RuntimeError):
     """Official-demo indexing error."""
+
+
+def _ensure_project_libero_on_sys_path(project_root: Path) -> Path:
+    """Expose the project-local LIBERO checkout to this standalone importer.
+
+    Repair's alignment subprocess already injects <PROJECT_ROOT>/repos/LIBERO
+    through PYTHONPATH.  The importer is also a standalone entry point, so it
+    must provide the same project-local import behavior without requiring the
+    caller to export PYTHONPATH manually.
+    """
+
+    libero_root = (project_root.expanduser().resolve() / "repos" / "LIBERO").resolve()
+    if libero_root.is_dir():
+        value = str(libero_root)
+        if value not in sys.path:
+            sys.path.insert(0, value)
+    return libero_root
 
 
 def _project_relative(project_root: Path, path: Path, label: str) -> str:
@@ -296,13 +314,15 @@ def _materialize_demo_videos(
     return camera_paths
 
 
-def _load_suite(name: str) -> Any:
+def _load_suite(name: str, project_root: Path) -> Any:
+    libero_root = _ensure_project_libero_on_sys_path(project_root)
     try:
         from libero.libero import benchmark
     except ImportError as error:
         raise DemoImportError(
-            "LIBERO is required to map official HDF5 files to benchmark task IDs; "
-            "run this importer in LF3R-openvla"
+            "LIBERO is required to map official HDF5 files to benchmark task IDs. "
+            "The importer automatically checks the project-local checkout at "
+            f"{libero_root}; run it with LF3R-openvla and ensure repos/LIBERO exists."
         ) from error
     mapping = benchmark.get_benchmark_dict()
     if name not in mapping:
@@ -338,7 +358,7 @@ def build_manifest(
     _project_relative(project_root, output, "Repair manifest output")
     _project_relative(project_root, video_root, "Repair source-video root")
 
-    suite = _load_suite(task_suite)
+    suite = _load_suite(task_suite, project_root)
     records: list[dict[str, Any]] = []
     discovered_tasks = 0
 
