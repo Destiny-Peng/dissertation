@@ -12,7 +12,6 @@ from typing import Any
 from backend_core import ValidationError
 from .adapters import WorldModelAdapter
 from .alignment import find_trajectory_path, project_path
-from .trajectory import load_ctrl_world_pose_states
 
 
 class CtrlWorldAdapter(WorldModelAdapter):
@@ -293,12 +292,12 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "seed": seed,
             "text_conditioning": bool(self.config.get("text_conditioning", True)),
             "control_adapter": (
-                "official LIBERO obs ee_pos + ee_ori(axis-angle->Euler XYZ) + "
-                "Panda gripper qpos->DROID closure scalar"
+                "restore states[c+1] + replay GT actions[c+1:] in LIBERO; "
+                "resulting EE quaternion->Euler XYZ and Panda gripper qpos->DROID closure"
             ),
             "control_semantics": (
-                "future absolute Cartesian pose/gripper state trajectory; "
-                "not raw LIBERO delta actions"
+                "absolute Cartesian pose/gripper trajectory derived from the same "
+                "GT LIBERO future actions; no future recorded proprio is consumed"
             ),
             "rollout_mode": "autoregressive",
         }
@@ -410,6 +409,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
         *,
         cut_frame: int,
         output_dir: Path,
+        replay: dict[str, Any],
     ) -> dict[str, Any]:
         try:
             import numpy as np
@@ -420,19 +420,36 @@ class CtrlWorldAdapter(WorldModelAdapter):
 
         status = self._validation or self.validate_rollout(rollout)
         source_fps = float(rollout.get("fps") or 0.0)
-        frame_step = status.get("source_frame_step")
-        if source_fps <= 0 or not frame_step:
+        frame_step = int(status.get("source_frame_step") or 0)
+        if source_fps <= 0 or frame_step < 1:
             raise ValidationError("Ctrl-World requires a positive source rollout FPS")
-        poses = load_ctrl_world_pose_states(self.project_root, rollout)
-        total = min(int(rollout.get("total_frames") or len(poses)), len(poses))
-        if cut_frame < 0 or cut_frame >= total - 1:
-            raise ValidationError("Ctrl-World cut leaves no future pose samples")
-        indices = np.arange(cut_frame, total, int(frame_step), dtype=np.int64)
-        if len(indices) < 2:
+        if not isinstance(replay, dict):
+            raise ValidationError("Ctrl-World requires GT-action replay controls")
+
+        controls = np.asarray(replay.get("controls"), dtype=np.float32)
+        indices = np.asarray(
+            replay.get("source_frame_indices"),
+            dtype=np.int64,
+        )
+        if controls.ndim != 2 or controls.shape[1] != 7:
             raise ValidationError(
-                "Ctrl-World temporal sampling leaves no generated suffix frame"
+                f"Ctrl-World replay controls must be [T,7], got {controls.shape}"
             )
-        controls = np.asarray(poses[indices], dtype=np.float32)
+        if indices.ndim != 1 or len(indices) != len(controls):
+            raise ValidationError(
+                "Ctrl-World replay control/source index lengths do not match"
+            )
+        if len(indices) < 2 or int(indices[0]) != int(cut_frame):
+            raise ValidationError(
+                "Ctrl-World replay must begin with the condition-aligned cut frame"
+            )
+        if any(
+            int(indices[index] - indices[index - 1]) != frame_step
+            for index in range(1, len(indices))
+        ):
+            raise ValidationError(
+                "Ctrl-World replay source indices do not match the configured frame step"
+            )
 
         path = output_dir / "ctrl_world_controls.npz"
         np.savez_compressed(
@@ -440,12 +457,44 @@ class CtrlWorldAdapter(WorldModelAdapter):
             controls=controls,
             source_frame_indices=indices,
         )
+
+        normalization_diagnostics: dict[str, Any] = {}
+        try:
+            stat_path = project_path(
+                self.project_root,
+                str(status["data_stat_path"]),
+            )
+            stats = json.loads(stat_path.read_text(encoding="utf-8"))
+            low = np.asarray(stats["state_01"], dtype=np.float32)
+            high = np.asarray(stats["state_99"], dtype=np.float32)
+            if low.shape == (7,) and high.shape == (7,):
+                outside = (controls < low[None, :]) | (controls > high[None, :])
+                normalization_diagnostics = {
+                    "droid_p01_p99_clip_fraction": float(np.mean(outside)),
+                    "per_dimension_clip_fraction": [
+                        float(value)
+                        for value in np.mean(outside, axis=0).tolist()
+                    ],
+                    "control_min": [
+                        float(value)
+                        for value in np.min(controls, axis=0).tolist()
+                    ],
+                    "control_max": [
+                        float(value)
+                        for value in np.max(controls, axis=0).tolist()
+                    ],
+                }
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            normalization_diagnostics = {
+                "error": "could not compute DROID normalization-range diagnostics"
+            }
+
         metadata = {
             "path": str(path.relative_to(self.project_root)),
             "source_fps": source_fps,
             "requested_target_fps": status["target_fps"],
-            "source_frame_step": int(frame_step),
-            "effective_fps": float(source_fps / int(frame_step)),
+            "source_frame_step": frame_step,
+            "effective_fps": float(source_fps / frame_step),
             "control_points": int(len(controls)),
             "control_dim": 7,
             "source_frame_indices": [int(x) for x in indices.tolist()],
@@ -453,14 +502,22 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 int(x) for x in indices[1:].tolist()
             ],
             "generated_real_start_frame": int(indices[1]),
+            "branch_state_index": replay.get("branch_state_index"),
+            "gt_action_start": replay.get("action_start"),
+            "control_derivation": replay.get("derivation"),
+            "future_recorded_proprio_used": bool(
+                replay.get("future_recorded_proprio_used", False)
+            ),
             "control_semantics": status["control_semantics"],
             "control_adapter": status["control_adapter"],
+            "normalization_diagnostics": normalization_diagnostics,
         }
         (output_dir / "ctrl_world_controls.json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
         return {"path": path, **metadata}
+
 
     def generate(
         self,
