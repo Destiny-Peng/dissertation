@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Execute one LF3R Synthetic Suffix run.
 
-The worker validates LIBERO indexing before invoking the world model. A failed
-alignment smoke test is terminal and no generated suffix is accepted.
+Every world-model run shares the same official LIBERO cut/alignment smoke test.
+Model-specific adapters then prepare their own conditioning without changing the
+manifest or the underlying demonstration.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from backend_core import ValidationError
 from non_analysis_tools import gpu_status
 from repair.adapters import A2WorldAdapter
 from repair.alignment_runner import run_alignment_subprocess
+from repair.ctrl_world import CtrlWorldAdapter
 from repair.trajectory import load_actions
 
 
@@ -104,8 +106,7 @@ def _optional_lpips() -> tuple[Any, Any, dict[str, Any]]:
     """Return LPIPS only when explicitly enabled.
 
     LPIPS / torchvision may download trunk weights when first constructed.
-    Repair jobs must never trigger an implicit checkpoint download, so the
-    metric is opt-in through LF3R_ENABLE_LPIPS=1 after weights are installed.
+    Repair jobs never trigger an implicit checkpoint download.
     """
 
     if os.environ.get("LF3R_ENABLE_LPIPS", "").strip() != "1":
@@ -144,14 +145,36 @@ def compute_metrics(
     rollout: dict[str, Any],
     generated: dict[str, Path],
     cut_frame: int,
+    real_frame_indices: list[int] | None = None,
 ) -> dict[str, Any]:
+    """Compare generated frames with their actual source-time counterparts.
+
+    A2World predicts every post-cut step, so its default mapping is c+1+i.
+    Ctrl-World runs at its own sampled temporal rate and supplies explicit source
+    frame indices (for example c+4, c+8, ... for a 20 Hz LIBERO source -> 5 Hz).
+    """
+
     camera_paths = rollout.get("camera_video_paths") or {}
     lpips_model, torch, lpips_status = _optional_lpips()
+    explicit_indices = (
+        [int(index) for index in real_frame_indices]
+        if real_frame_indices is not None
+        else None
+    )
     result: dict[str, Any] = {
         "alignment": {
-            "real_suffix_start_frame": cut_frame + 1,
+            "real_suffix_start_frame": (
+                explicit_indices[0]
+                if explicit_indices
+                else cut_frame + 1
+            ),
             "generated_includes_condition": False,
-            "comparison_basis": "frame/action index",
+            "comparison_basis": (
+                "explicit source frame indices"
+                if explicit_indices is not None
+                else "frame/action index"
+            ),
+            "real_frame_indices": explicit_indices,
         },
         "views": {},
         "lpips": lpips_status,
@@ -175,16 +198,30 @@ def compute_metrics(
         real_path = (project_root / source_value).resolve()
         real_frames = read_frames(real_path)
         generated_frames = read_frames(generated_path)
-        real_start = cut_frame + 1
-        count = min(
-            len(generated_frames),
-            max(0, len(real_frames) - real_start),
-        )
+
+        if explicit_indices is None:
+            indices = list(
+                range(
+                    cut_frame + 1,
+                    min(
+                        len(real_frames),
+                        cut_frame + 1 + len(generated_frames),
+                    ),
+                )
+            )
+        else:
+            indices = [
+                index
+                for index in explicit_indices[: len(generated_frames)]
+                if 0 <= index < len(real_frames)
+            ]
+        count = min(len(generated_frames), len(indices))
+
         psnr_values: list[float] = []
         ssim_values: list[float] = []
         lpips_values: list[float] = []
         for index in range(count):
-            real_frame = real_frames[real_start + index]
+            real_frame = real_frames[indices[index]]
             generated_frame = generated_frames[index]
             per_frame = image_metrics(real_frame, generated_frame)
             if (
@@ -216,13 +253,12 @@ def compute_metrics(
                         lpips_values.append(
                             float(lpips_model(aa, bb).item())
                         )
+
         result["views"][view] = {
             "compared_frames": count,
-            "real_available_frames": max(
-                0,
-                len(real_frames) - real_start,
-            ),
+            "real_available_frames": len(indices),
             "generated_frames": len(generated_frames),
+            "real_frame_indices": indices[:count],
             "psnr_mean": (
                 sum(psnr_values) / len(psnr_values)
                 if psnr_values
@@ -242,11 +278,14 @@ def compute_metrics(
     return result
 
 
-def ensure_gpu_below_threshold(gpu_index: int, threshold: float = 50.0) -> dict[str, Any]:
+def ensure_gpu_below_threshold(
+    gpu_index: int,
+    threshold: float = 50.0,
+) -> dict[str, Any]:
     status = gpu_status()
     if not status.get("available"):
         raise ValidationError(
-            "GPU status is unavailable before A2World generation: "
+            "GPU status is unavailable before world-model generation: "
             + str(status.get("error") or "unknown error")
         )
     selected = next(
@@ -263,7 +302,7 @@ def ensure_gpu_below_threshold(gpu_index: int, threshold: float = 50.0) -> dict[
     if utilization is None or float(utilization) >= threshold:
         raise ValidationError(
             f"Selected GPU {gpu_index} utilization is {utilization}%; "
-            f"Repair requires < {threshold:.0f}% before A2World generation"
+            f"Repair requires < {threshold:.0f}% before world-model generation"
         )
     return selected
 
@@ -295,6 +334,8 @@ def main() -> None:
     rollout = input_payload["rollout"]
     alignment = input_payload["alignment"]
     cut_frame = int(alignment["cut_rgb_frame"])
+    wm_config = dict(config.get("world_model") or {})
+    model_name = str(wm_config.get("name") or "a2world").strip().lower().replace("-", "_")
 
     try:
         update_status(
@@ -320,7 +361,7 @@ def main() -> None:
             phase="alignment_validation",
             progress=0.18,
         )
-        gpu_value = (config.get("world_model") or {}).get("gpu_index")
+        gpu_value = wm_config.get("gpu_index")
         smoke = run_alignment_subprocess(
             project_root=project_root,
             rollout=rollout,
@@ -334,99 +375,68 @@ def main() -> None:
                 "LIBERO alignment smoke test failed; generation was not started"
             )
 
-        update_status(
-            run_dir,
-            phase="prepare_a2world",
-            progress=0.30,
-        )
-        wm_config = dict(config["world_model"])
-        adapter = A2WorldAdapter(project_root, wm_config)
-        adapter_status = adapter.validate_rollout(rollout)
-        if not adapter_status["available"]:
-            raise ValidationError(
-                "; ".join(adapter_status["unavailable_reasons"])
-            )
-        rgb_adapter = adapter.configure_alignment_rgb(smoke)
-
         prepared_dir = run_dir / "prepared"
         prepared_dir.mkdir(parents=True, exist_ok=True)
-        condition = adapter.prepare_condition(
-            rollout,
-            cut_frame=cut_frame,
-            output_dir=prepared_dir,
-        )
-        condition["future_action_count"] = int(len(future_actions))
-        actions_path = adapter.prepare_actions(
-            future_actions,
-            output_dir=prepared_dir,
-        )
-        action_metadata = read_json(
-            prepared_dir / "future_actions_a2world.json",
-            {},
-        )
+        generated_dir = run_dir / "generated"
 
-        update_status(
-            run_dir,
-            phase="gpu_recheck",
-            progress=0.40,
-        )
-        gpu_index = int(wm_config["gpu_index"])
-        gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
+        model_provenance: dict[str, Any]
+        real_frame_indices: list[int] | None
 
-        update_status(
-            run_dir,
-            phase="generate_suffix",
-            progress=0.45,
-        )
-        generated = adapter.generate(
-            condition=condition,
-            actions_path=actions_path,
-            output_dir=run_dir / "generated",
-        )
-        generated_paths = adapter.save_result(
-            generated,
-            run_dir / "generated",
-        )
+        if model_name == "a2world":
+            update_status(
+                run_dir,
+                phase="prepare_a2world",
+                progress=0.30,
+            )
+            adapter = A2WorldAdapter(project_root, wm_config)
+            adapter_status = adapter.validate_rollout(rollout)
+            if not adapter_status["available"]:
+                raise ValidationError(
+                    "; ".join(adapter_status["unavailable_reasons"])
+                )
+            rgb_adapter = adapter.configure_alignment_rgb(smoke)
+            condition = adapter.prepare_condition(
+                rollout,
+                cut_frame=cut_frame,
+                output_dir=prepared_dir,
+            )
+            condition["future_action_count"] = int(len(future_actions))
+            actions_path = adapter.prepare_actions(
+                future_actions,
+                output_dir=prepared_dir,
+            )
+            action_metadata = read_json(
+                prepared_dir / "future_actions_a2world.json",
+                {},
+            )
 
-        update_status(
-            run_dir,
-            phase="metrics",
-            progress=0.88,
-        )
-        metrics = compute_metrics(
-            project_root=project_root,
-            rollout=rollout,
-            generated=generated,
-            cut_frame=cut_frame,
-        )
-        atomic_json(run_dir / "metrics.json", metrics)
+            update_status(
+                run_dir,
+                phase="gpu_recheck",
+                progress=0.40,
+            )
+            gpu_index = int(wm_config["gpu_index"])
+            gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
 
-        provenance = read_json(
-            run_dir / "provenance.json",
-            {},
-        )
-        if not isinstance(provenance, dict):
-            provenance = {}
-        provenance.update(
-            {
-                "gt_action_end": int(len(actions)),
-                "gt_future_action_count": int(len(future_actions)),
-                "alignment_validation": smoke,
+            update_status(
+                run_dir,
+                phase="generate_suffix",
+                progress=0.45,
+            )
+            generated = adapter.generate(
+                condition=condition,
+                actions_path=actions_path,
+                output_dir=generated_dir,
+            )
+            generated_paths = adapter.save_result(generated, generated_dir)
+            real_frame_indices = None
+            model_provenance = {
                 "camera_mapping": adapter_status["camera_mapping"],
                 "duplicated_camera": adapter_status["duplicated_camera"],
                 "a2world_view_ids": adapter_status["view_ids"],
                 "a2world_source_root": adapter_status["source_root"],
                 "a2world_python": adapter_status["python"],
                 "a2world_rgb_adapter": rgb_adapter,
-                "gpu_recheck_before_generation": {
-                    "index": gpu_index,
-                    "gpu_utilization_percent": gpu_before_generation.get(
-                        "gpu_utilization_percent"
-                    ),
-                    "memory_free_mib": gpu_before_generation.get(
-                        "memory_free_mib"
-                    ),
-                },
                 "condition_preparation": {
                     "condition_images": condition["condition_images"],
                     "height": condition["height"],
@@ -439,12 +449,154 @@ def main() -> None:
                     actions_path.relative_to(project_root)
                 ),
                 "a2world_combined_output": str(
-                    (
-                        run_dir
-                        / "generated"
-                        / "a2world_combined.mp4"
-                    ).relative_to(project_root)
+                    (generated_dir / "a2world_combined.mp4").relative_to(project_root)
                 ),
+            }
+
+        elif model_name in {"ctrl", "ctrl_world"}:
+            model_name = "ctrl_world"
+            update_status(
+                run_dir,
+                phase="prepare_ctrl_world",
+                progress=0.30,
+            )
+            adapter = CtrlWorldAdapter(project_root, wm_config)
+            adapter_status = adapter.validate_rollout(rollout)
+            if not adapter_status["available"]:
+                raise ValidationError(
+                    "; ".join(adapter_status["unavailable_reasons"])
+                )
+            condition = adapter.prepare_condition(
+                rollout,
+                cut_frame=cut_frame,
+                output_dir=prepared_dir,
+            )
+            controls = adapter.prepare_controls(
+                rollout,
+                cut_frame=cut_frame,
+                output_dir=prepared_dir,
+            )
+
+            update_status(
+                run_dir,
+                phase="gpu_recheck",
+                progress=0.40,
+            )
+            gpu_index = int(wm_config["gpu_index"])
+            gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
+
+            update_status(
+                run_dir,
+                phase="generate_suffix",
+                progress=0.45,
+            )
+            generated = adapter.generate(
+                rollout=rollout,
+                condition=condition,
+                controls=controls,
+                output_dir=generated_dir,
+            )
+            generated_paths = adapter.save_result(generated, generated_dir)
+            ctrl_generation = read_json(
+                generated_dir / "ctrl_world_generation.json",
+                {},
+            )
+            raw_indices = (
+                ctrl_generation.get("generated_real_frame_indices")
+                if isinstance(ctrl_generation, dict)
+                else None
+            )
+            if not isinstance(raw_indices, list):
+                raw_indices = controls.get("generated_real_frame_indices")
+            real_frame_indices = (
+                [int(index) for index in raw_indices]
+                if isinstance(raw_indices, list)
+                else None
+            )
+            if not real_frame_indices:
+                raise ValidationError(
+                    "Ctrl-World generation did not provide source-frame alignment"
+                )
+
+            model_provenance = {
+                "camera_mapping": adapter_status["camera_mapping"],
+                "duplicated_camera": adapter_status["duplicated_camera"],
+                "ctrl_world_source_root": adapter_status["source_root"],
+                "ctrl_world_python": adapter_status["python"],
+                "ctrl_world_svd_model_path": adapter_status["svd_model_path"],
+                "ctrl_world_clip_model_path": adapter_status["clip_model_path"],
+                "ctrl_world_data_stat_path": adapter_status["data_stat_path"],
+                "condition_preparation": {
+                    "condition_images": condition["condition_images"],
+                    "height": condition["height"],
+                    "width": condition["width"],
+                },
+                "control_adapter": adapter_status["control_adapter"],
+                "control_semantics": adapter_status["control_semantics"],
+                "control_preparation": {
+                    key: value
+                    for key, value in controls.items()
+                    if key != "path"
+                },
+                "prepared_controls_path": str(
+                    Path(controls["path"]).relative_to(project_root)
+                ),
+                "ctrl_world_generation": ctrl_generation,
+                "generated_real_frame_indices": real_frame_indices,
+                "generated_real_start_frame": int(real_frame_indices[0]),
+                "artifact_playback_fps": controls["effective_fps"],
+                "ctrl_world_exterior_2_debug_output": (
+                    str(
+                        (
+                            generated_dir
+                            / "ctrl_world_exterior_2_duplicate.mp4"
+                        ).relative_to(project_root)
+                    )
+                    if (
+                        generated_dir
+                        / "ctrl_world_exterior_2_duplicate.mp4"
+                    ).is_file()
+                    else None
+                ),
+            }
+        else:
+            raise ValidationError(
+                f"Unsupported Repair world model in worker: {model_name}"
+            )
+
+        update_status(
+            run_dir,
+            phase="metrics",
+            progress=0.88,
+        )
+        metrics = compute_metrics(
+            project_root=project_root,
+            rollout=rollout,
+            generated=generated,
+            cut_frame=cut_frame,
+            real_frame_indices=real_frame_indices,
+        )
+        atomic_json(run_dir / "metrics.json", metrics)
+
+        provenance = read_json(run_dir / "provenance.json", {})
+        if not isinstance(provenance, dict):
+            provenance = {}
+        provenance.update(
+            {
+                "world_model": model_name,
+                "gt_action_end": int(len(actions)),
+                "gt_future_action_count": int(len(future_actions)),
+                "alignment_validation": smoke,
+                "gpu_recheck_before_generation": {
+                    "index": gpu_index,
+                    "gpu_utilization_percent": gpu_before_generation.get(
+                        "gpu_utilization_percent"
+                    ),
+                    "memory_free_mib": gpu_before_generation.get(
+                        "memory_free_mib"
+                    ),
+                },
+                **model_provenance,
                 "standardized_generated_includes_condition": False,
                 "output_paths": generated_paths,
                 "completed_at": dt.datetime.now(
