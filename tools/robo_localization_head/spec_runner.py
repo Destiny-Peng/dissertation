@@ -149,6 +149,14 @@ def _records_for_config(
         raise ValueError(
             f"no usable aligned Robo-Dopamine {signal_mode} signals were found"
         )
+    fused_records = records_by_mode.get("fused")
+    fused_count = len(fused_records[0]) if fused_records is not None else 0
+    if signal_mode != "fused" and len(records[0]) != fused_count:
+        raise ValueError(
+            f"aligned Robo-Dopamine {signal_mode} coverage is incomplete: "
+            f"{len(records[0])}/{fused_count} fused-anchor rollouts. "
+            "Input-signal comparisons require the same rollout/run/frame set."
+        )
     return records
 
 
