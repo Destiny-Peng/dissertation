@@ -23,7 +23,12 @@ from non_analysis_tools import gpu_status
 from repair.adapters import A2WorldAdapter
 from repair.alignment_runner import run_alignment_subprocess
 from repair.ctrl_world import CtrlWorldAdapter
-from repair.trajectory import load_actions
+from repair.trajectory import (
+    load_actions,
+    load_model_xml,
+    load_states,
+    replay_ctrl_world_pose_controls,
+)
 
 
 def atomic_json(path: Path, payload: Any) -> None:
@@ -522,10 +527,33 @@ def main() -> None:
                 cut_frame=cut_frame,
                 output_dir=prepared_dir,
             )
+
+            # Ctrl-World needs absolute Cartesian pose/gripper controls, but the
+            # experiment supplies only the same GT future LIBERO actions used by
+            # A2World. Derive Ctrl's interface by deterministic simulator replay
+            # from states[c+1]; never read future recorded proprio.
+            os.environ["MUJOCO_GL"] = "egl"
+            os.environ["PYOPENGL_PLATFORM"] = "egl"
+            os.environ["LIBERO_CONFIG_PATH"] = str(
+                project_root / "cache" / "libero"
+            )
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(int(wm_config["gpu_index"]))
+            states = load_states(project_root, rollout)
+            model_xml = load_model_xml(project_root, rollout)
+            replay = replay_ctrl_world_pose_controls(
+                project_root=project_root,
+                rollout=rollout,
+                states=states,
+                actions=actions,
+                cut_frame=cut_frame,
+                frame_step=int(adapter_status["source_frame_step"]),
+                model_xml=model_xml,
+            )
             controls = adapter.prepare_controls(
                 rollout,
                 cut_frame=cut_frame,
                 output_dir=prepared_dir,
+                replay=replay,
             )
 
             update_status(
@@ -589,6 +617,7 @@ def main() -> None:
                     for key, value in controls.items()
                     if key != "path"
                 },
+                "future_recorded_proprio_used": False,
                 "prepared_controls_path": str(
                     Path(controls["path"]).relative_to(project_root)
                 ),
