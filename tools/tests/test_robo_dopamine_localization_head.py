@@ -19,6 +19,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from robo_incremental_hop import io as hop_io
+from robo_localization_head import spec_runner
 
 SCRIPT = TOOLS_DIR / "train_robo_dopamine_localization_head.py"
 SPEC = importlib.util.spec_from_file_location("robo_localization_head_probe", SCRIPT)
@@ -327,6 +328,87 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 "latest_usable_signal_per_rollout",
             )
             self.assertEqual(len(provenance["rejected_newer_candidates"]), 1)
+
+    def test_input_signal_records_are_paired_to_fused_run_and_frames(self) -> None:
+        run_a = Path("/tmp/run-a")
+        run_b = Path("/tmp/run-b")
+        fused_signals = {
+            "r1": {
+                "rollout_id": "r1",
+                "source_run_root": run_a,
+                "frames": [0, 5, 10],
+                "task_key": "suite:task0",
+                "task_suite": "suite",
+                "task_id": "0",
+                "task_description": "task zero",
+                "outcome": "terminal_failure",
+            },
+            "r2": {
+                "rollout_id": "r2",
+                "source_run_root": run_b,
+                "frames": [0, 5, 10],
+                "task_key": "suite:task1",
+                "task_suite": "suite",
+                "task_id": "1",
+                "task_description": "task one",
+                "outcome": "clean_success",
+            },
+        }
+        events = [{"rollout_id": "r1"}]
+        clean = [{"rollout_id": "r2"}]
+        calls = []
+
+        def load_signal(run_root, rollout_id, signal_mode):
+            calls.append((run_root, rollout_id, signal_mode))
+            frames = [0, 5, 10]
+            if rollout_id == "r2" and signal_mode == "backward":
+                frames = [0, 6, 10]
+            return {
+                "rollout_id": rollout_id,
+                "signal_mode": signal_mode,
+                "frames": frames,
+                "progress": [0.0, 0.5, 1.0],
+                "hops": [0.0, 0.5, 0.5],
+            }
+
+        with mock.patch.object(
+            spec_runner,
+            "build_base_records",
+            return_value=(
+                fused_signals,
+                events,
+                [],
+                clean,
+                {"selection_mode": "latest_usable_signal_per_rollout"},
+            ),
+        ), mock.patch.object(
+            spec_runner,
+            "load_signal",
+            side_effect=load_signal,
+        ):
+            records, provenance = spec_runner._aligned_signal_records(
+                Path("/tmp/pool"),
+                {},
+                Path("/tmp/annotations"),
+            )
+
+        self.assertEqual(set(records), {"incremental", "forward", "backward", "fused"})
+        self.assertEqual(set(records["forward"][0]), {"r1", "r2"})
+        self.assertEqual(set(records["backward"][0]), {"r1"})
+        self.assertEqual(
+            provenance["alignment"],
+            "same_run_same_native_frame_indices",
+        )
+        self.assertIn((run_a, "r1", "incremental"), calls)
+        self.assertIn((run_b, "r2", "forward"), calls)
+        self.assertEqual(
+            records["forward"][0]["r1"]["source_run_root"],
+            run_a,
+        )
+        self.assertEqual(
+            provenance["modes"]["backward"]["excluded_rollout_n"],
+            1,
+        )
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
