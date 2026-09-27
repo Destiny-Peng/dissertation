@@ -15,6 +15,32 @@ var failureTypeChoices = [
   ["other", "Other"]
 ];
 
+var failureTypeHotkeys = {
+  "1": "grasp_failure",
+  "2": "placement_failure",
+  "3": "dropped_object",
+  "4": "wrong_object",
+  "5": "collision",
+  "6": "timeout_no_progress",
+  "7": "control_error",
+  "8": "observation_error",
+  "9": "other"
+};
+
+var failurePointHotkeys = {
+  causal_onset_frame: "Q",
+  observable_onset_frame: "W",
+  terminal_failure_frame: "E",
+  recovery_frame: "R"
+};
+
+function failureTypeHotkey(value) {
+  var key = Object.keys(failureTypeHotkeys).find(function (candidate) {
+    return failureTypeHotkeys[candidate] === value;
+  });
+  return key || "";
+}
+
 function emptyFailureEvent(defaultType, knownCausal) {
   return {
     failure_type: defaultType || "other",
@@ -59,8 +85,10 @@ function normalizeFailureEvents(annotation, defaultType, knownCausal) {
 
 function failureTypeOptions(selected) {
   return failureTypeChoices.map(function (choice) {
+    var hotkey = failureTypeHotkey(choice[0]);
+    var label = hotkey ? hotkey + " · " + choice[1] : choice[1];
     return '<option value="' + choice[0] + '"' + (choice[0] === selected ? " selected" : "") + ">"
-      + escapeHtml(choice[1]) + "</option>";
+      + escapeHtml(label) + "</option>";
   }).join("");
 }
 
@@ -69,11 +97,12 @@ function eventFrameControl(index, field, title, help, cssClass) {
   var value = event[field] == null ? "" : String(event[field]);
   var record = selectedRollout();
   var maxFrame = record ? Math.max(0, Number(record.total_frames) - 1) : 0;
+  var hotkey = failurePointHotkeys[field] || "";
   return '<div class="onset-field ' + cssClass + '-field">'
-    + '<div><span>' + escapeHtml(title) + '</span><small>' + escapeHtml(help) + '</small></div>'
+    + '<div><span>' + escapeHtml(title) + (hotkey ? ' <kbd>' + hotkey + '</kbd>' : '') + '</span><small>' + escapeHtml(help) + '</small></div>'
     + '<div class="frame-entry">'
     + '<input type="number" min="0" max="' + maxFrame + '" placeholder="—" value="' + escapeHtml(value) + '" data-event-field="' + field + '">'
-    + '<button data-event-set="' + field + '" type="button">Use current</button>'
+    + '<button data-event-set="' + field + '" type="button">Use current' + (hotkey ? ' · ' + hotkey : '') + '</button>'
     + '<button data-event-clear="' + field + '" class="clear-button" type="button">×</button>'
     + "</div></div></div>";
 }
@@ -112,6 +141,35 @@ function setActiveFailureEvent(index) {
   byId("failureEvents").querySelectorAll(".failure-event-card").forEach(function (card) {
     card.classList.toggle("active", Number(card.dataset.eventIndex) === index);
   });
+}
+
+function cycleActiveFailureEvent(delta) {
+  if (!state.failureEvents.length) return;
+  var current = state.activeFailureEvent == null ? 0 : Number(state.activeFailureEvent);
+  var next = (current + Number(delta) + state.failureEvents.length) % state.failureEvents.length;
+  setActiveFailureEvent(next);
+  var card = byId("failureEvents").querySelector('[data-event-index="' + next + '"]');
+  if (card && typeof card.scrollIntoView === "function") {
+    card.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function setActiveFailureType(value) {
+  if (!failureTypeChoices.some(function (choice) { return choice[0] === value; })) return;
+  if (state.activeFailureEvent == null || !state.failureEvents[state.activeFailureEvent]) {
+    addFailureEvent(emptyFailureEvent(value, null));
+  } else {
+    state.failureEvents[state.activeFailureEvent].failure_type = value;
+    var card = byId("failureEvents").querySelector(
+      '[data-event-index="' + state.activeFailureEvent + '"]'
+    );
+    var select = card ? card.querySelector('[data-event-field="failure_type"]') : null;
+    if (select) select.value = value;
+    markDirty();
+  }
+  if (state.activeFailureEvent === 0) {
+    byId("failureType").value = value;
+  }
 }
 
 function addFailureEvent(seed) {
