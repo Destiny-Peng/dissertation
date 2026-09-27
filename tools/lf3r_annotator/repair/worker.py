@@ -418,6 +418,11 @@ def main() -> None:
             progress=0.18,
         )
         gpu_value = wm_config.get("gpu_index")
+        gpu_before_alignment = (
+            ensure_gpu_below_threshold(int(gpu_value))
+            if gpu_value is not None
+            else None
+        )
         smoke = run_alignment_subprocess(
             project_root=project_root,
             rollout=rollout,
@@ -683,6 +688,19 @@ def main() -> None:
                 "gt_action_end": int(len(actions)),
                 "gt_future_action_count": int(len(future_actions)),
                 "alignment_validation": smoke,
+                "gpu_recheck_before_alignment": (
+                    {
+                        "index": int(gpu_value),
+                        "gpu_utilization_percent": gpu_before_alignment.get(
+                            "gpu_utilization_percent"
+                        ),
+                        "memory_free_mib": gpu_before_alignment.get(
+                            "memory_free_mib"
+                        ),
+                    }
+                    if gpu_before_alignment is not None
+                    else None
+                ),
                 "gpu_recheck_before_generation": {
                     "index": gpu_index,
                     "gpu_utilization_percent": gpu_before_generation.get(
