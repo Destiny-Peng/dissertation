@@ -409,6 +409,16 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             provenance["modes"]["backward"]["excluded_rollout_n"],
             1,
         )
+        forward_records = spec_runner._records_for_config(
+            {"data": {"signal_mode": "forward"}},
+            records,
+        )
+        self.assertEqual(set(forward_records[0]), {"r1", "r2"})
+        with self.assertRaises(ValueError):
+            spec_runner._records_for_config(
+                {"data": {"signal_mode": "backward"}},
+                records,
+            )
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
