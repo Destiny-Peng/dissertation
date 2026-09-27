@@ -312,10 +312,15 @@ def main() -> None:
         split_latents = split_view_latents(predicted_latents)
         decoded = decode_view_latents(model, split_latents)
 
-        take_start = 0 if chunk_index == 0 else 1
-        take_stop = valid_count
+        # Match the released replay script exactly: adjacent 5-frame
+        # chunks overlap by one source-time sample. Keep the newer prediction
+        # for that overlap by removing the prior chunk's final frame.
+        if chunk_index > 0:
+            for view_index in range(3):
+                if per_view_frames[view_index]:
+                    per_view_frames[view_index].pop()
         for view_index in range(3):
-            for frame in decoded[view_index, take_start:take_stop]:
+            for frame in decoded[view_index, :valid_count]:
                 per_view_frames[view_index].append(frame)
 
         if start + config.num_frames - 1 >= len(controls) - 1:
