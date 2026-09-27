@@ -15,6 +15,40 @@ from robo_localization_head import specs
 
 
 class LocalizationSpecTests(unittest.TestCase):
+    def test_input_signal_default_and_sweep(self) -> None:
+        normalized = specs.normalize_spec({
+            "name": "signal_default",
+            "base": {},
+            "repeats": 1,
+            "sweep": [],
+            "stages": [],
+        })
+        self.assertEqual(normalized["base"]["data"]["signal_mode"], "fused")
+
+        spec = {
+            "name": "signal_sweep",
+            "base": {},
+            "repeats": 1,
+            "sweep": [{
+                "path": "data.signal_mode",
+                "values": ["incremental", "forward", "backward", "fused"],
+            }],
+            "stages": [],
+        }
+        normalized = specs.normalize_spec(spec)
+        configs = specs.expand(normalized["base"], normalized["sweep"])
+        self.assertEqual(
+            [config["data"]["signal_mode"] for config in configs],
+            ["incremental", "forward", "backward", "fused"],
+        )
+
+        invalid = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"data": {"signal_mode": "unknown"}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(invalid)
+
     def test_cartesian_sweep_estimate(self) -> None:
         spec = {
             "name": "matrix",
