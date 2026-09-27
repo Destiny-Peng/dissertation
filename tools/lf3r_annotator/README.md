@@ -528,12 +528,13 @@ successful rollout
   -> fixed progress/frame cut
   -> real prefix + RGB[c] condition
   -> branch from states[c+1]
-  -> GT future actions[c+1:]
-  -> A2World observation suffix
+  -> GT continuation information
+  -> selected world-model adapter (A2World or Ctrl-World)
+  -> generated observation suffix
   -> synchronized real-vs-generated review
 ```
 
-Repair uses the loaded rollout manifests as its only dataset catalog. It never adds consumer-specific camera aliases to a manifest. A2World maps physical `cam_high` / `cam_wrist` to `agentview` / `eye_in_hand` inside the adapter, and any explicit missing-view duplication is recorded in run provenance.
+Repair uses the loaded rollout manifests as its only dataset catalog. It never adds consumer-specific camera aliases to a manifest. A2World maps physical `cam_high` / `cam_wrist` to `agentview` / `eye_in_hand` inside the adapter. Ctrl-World keeps the same two physical manifest views but maps them internally to `exterior_1 <- cam_high`, `exterior_2 <- cam_high`, and `wrist <- cam_wrist`; the second exterior stream is therefore an explicit adapter-local duplicate and is recorded in run provenance.
 
 For a rollout to pass Repair validation, the manifest must describe real success data and point to both executable actions and simulator states. Supported trajectory/action fields include `trajectory_path`, `hdf5_path`, `source_hdf5_path`, `state_action_path`, `states_path`, `sim_state_path`, `actions_path`, and the existing `csv_path`. Official LIBERO HDF5 may be selected with `trajectory_group` / `demo_key` when automatic `data/demo_<episode>` lookup is not appropriate.
 
@@ -571,6 +572,36 @@ These locations may be overridden by Repair config / `LF3R_A2WORLD_SOURCE` / `LF
 
 A2World consumes 20-action chunks. LF3R applies the released LIBERO servo preprocessing, pads only the final incomplete chunk when necessary, generates autoregressively, removes the condition frame, and trims every padded output frame before publishing the suffix. The padding count is shown during validation and recorded in provenance.
 
+### Ctrl-World adapter
+
+Ctrl-World is a separate Repair adapter; it does not reuse A2World's action preprocessing. The released Ctrl-World replay path is DROID-based and conditions on a seven-dimensional absolute Cartesian pose/gripper sequence. For an official LIBERO HDF5 demonstration LF3R therefore derives:
+
+```text
+obs/ee_pos
++ obs/ee_ori      (axis-angle -> Euler XYZ)
++ obs/gripper_states (Panda finger opening -> DROID-style 0=open, 1=closed)
+= Ctrl-World 7D pose/state conditioning
+```
+
+The original LIBERO `actions[c+1:]` are still used by the mandatory alignment smoke test and retained in provenance, but they are not presented to Ctrl-World as if they had the same semantics as DROID Cartesian states.
+
+The released Ctrl-World setup uses three camera streams and 192x320 frames. LF3R does not add a fake third camera to the manifest: `cam_high` is duplicated only inside the Ctrl adapter for `exterior_2`. Source LIBERO RGB is resized to Ctrl-World's native 192x320 geometry and that resize is recorded. Visual PSNR/SSIM/LPIPS therefore remain diagnostics; when source/generated resolutions differ, generated frames are resized back to the real frame size only for metric computation.
+
+Ctrl-World's DROID preprocessing is approximately 5 Hz while the SVD pipeline keeps its released FPS micro-condition of 7. LF3R samples the source trajectory at the nearest integer source-frame step for a requested target of 5 Hz (for a 20 Hz LIBERO source this is `c, c+4, c+8, ...`). The condition-aligned sample at `c` is removed from the published suffix, so the first Ctrl generated frame is compared with real frame `c+4`, not `c+1`. Explicit source-frame indices and effective FPS are saved in provenance and drive synchronized playback.
+
+Repair never downloads Ctrl-World assets. The adapter auto-detects common project-local layouts and every path is editable in the WebUI. The following environment overrides are also supported:
+
+```text
+LF3R_CTRL_WORLD_SOURCE
+LF3R_CTRL_WORLD_PYTHON
+LF3R_ENV_CTRL_WORLD
+LF3R_CTRL_WORLD_SVD
+LF3R_CTRL_WORLD_CLIP
+LF3R_CTRL_WORLD_DATA_STAT
+```
+
+Typical project-local layouts include `repos/Ctrl-World/`, a Ctrl environment under `conda_envs/` or `repos/Ctrl-World/.venv/`, the DROID `dataset_meta_info/droid/stat.json` shipped with the Ctrl source, and locally installed Ctrl/SVD/CLIP checkpoints. Validation reports the resolved paths and refuses generation if any required asset is missing. The same <50% GPU-utilization rule is checked again immediately before Ctrl generation.
+
 Run artifacts live under:
 
 ```text
@@ -581,7 +612,8 @@ artifacts/repair/synthetic_suffix/runs/<run_id>/
   alignment.json
   prepared/
   generated/
-    a2world_combined.mp4
+    a2world_combined.mp4                 # A2World runs
+    ctrl_world_exterior_2_duplicate.mp4 # Ctrl debug/provenance view
     cam_high.mp4
     cam_wrist.mp4
   metrics.json
