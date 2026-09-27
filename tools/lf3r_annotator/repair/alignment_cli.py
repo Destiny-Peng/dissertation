@@ -10,7 +10,6 @@ from pathlib import Path
 from backend_core import ValidationError
 from repair.trajectory import (
     load_actions,
-    load_ctrl_world_pose_states,
     load_model_xml,
     load_states,
     run_libero_alignment_smoke,
@@ -49,19 +48,6 @@ def main() -> None:
     )
     result["action_count"] = int(len(actions))
     result["state_count"] = int(len(states))
-    try:
-        ctrl_pose = load_ctrl_world_pose_states(project_root, rollout)
-        result["ctrl_world_pose"] = {
-            "available": True,
-            "count": int(len(ctrl_pose)),
-            "dim": int(ctrl_pose.shape[1]) if ctrl_pose.ndim == 2 else None,
-            "semantics": "xyz + Euler XYZ + DROID-style gripper closure",
-        }
-    except Exception as error:
-        result["ctrl_world_pose"] = {
-            "available": False,
-            "error": f"{type(error).__name__}: {error}",
-        }
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n",
