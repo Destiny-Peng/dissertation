@@ -44,13 +44,27 @@ class CtrlWorldAdapter(WorldModelAdapter):
         self.config = dict(config)
         self._validation: dict[str, Any] | None = None
 
-    def _path(self, key: str, env_key: str, default: str) -> Path:
-        raw = str(
+    def _path_candidates(
+        self,
+        key: str,
+        env_key: str,
+        defaults: tuple[str, ...],
+    ) -> Path:
+        configured = str(
             self.config.get(key)
             or os.environ.get(env_key)
-            or default
+            or ""
         ).strip()
-        return project_path(self.project_root, raw)
+        if configured:
+            return project_path(self.project_root, configured)
+        candidates = [
+            project_path(self.project_root, value)
+            for value in defaults
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate.resolve()
+        return candidates[0].resolve()
 
     def _python(self) -> Path:
         configured = str(
@@ -64,7 +78,10 @@ class CtrlWorldAdapter(WorldModelAdapter):
         candidates.extend(
             [
                 self.project_root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python",
+                self.project_root / "conda_envs" / "LF3R-Ctrl-World" / "bin" / "python",
+                self.project_root / "conda_envs" / "Ctrl-World" / "bin" / "python",
                 self.project_root / "conda_envs" / "ctrl-world" / "bin" / "python",
+                self.project_root / "conda_envs" / "LF3R-ctrl" / "bin" / "python",
                 self.project_root / "repos" / "Ctrl-World" / ".venv" / "bin" / "python",
             ]
         )
@@ -84,6 +101,8 @@ class CtrlWorldAdapter(WorldModelAdapter):
             / "Ctrl-World"
             / "checkpoint-10000.pt",
             self.project_root / "checkpoints" / "Ctrl-World" / "checkpoint-10000.pt",
+            self.project_root / "checkpoints" / "ctrl-world" / "checkpoint-10000.pt",
+            self.project_root / "repos" / "Ctrl-World" / "checkpoint-10000.pt",
             self.project_root / "checkpoints" / "ctrl-world.pt",
         ]
         for candidate in candidates:
@@ -141,26 +160,37 @@ class CtrlWorldAdapter(WorldModelAdapter):
 
     def validate_rollout(self, rollout: dict[str, Any]) -> dict[str, Any]:
         mapping, duplicated = self._camera_mapping(rollout)
-        source_root = self._path(
+        source_root = self._path_candidates(
             "source_root",
             "LF3R_CTRL_WORLD_SOURCE",
-            "repos/Ctrl-World",
+            ("repos/Ctrl-World", "repos/ctrl-world", "repos/ctrl_world"),
         )
         checkpoint = self._checkpoint()
-        svd_path = self._path(
+        svd_path = self._path_candidates(
             "svd_model_path",
             "LF3R_CTRL_WORLD_SVD",
-            "checkpoints/stabilityai/stable-video-diffusion-img2vid",
+            (
+                "checkpoints/stable-video-diffusion-img2vid",
+                "checkpoints/stabilityai/stable-video-diffusion-img2vid",
+                "repos/Ctrl-World/checkpoints/stable-video-diffusion-img2vid",
+            ),
         )
-        clip_path = self._path(
+        clip_path = self._path_candidates(
             "clip_model_path",
             "LF3R_CTRL_WORLD_CLIP",
-            "checkpoints/openai/clip-vit-base-patch32",
+            (
+                "checkpoints/clip-vit-base-patch32",
+                "checkpoints/openai/clip-vit-base-patch32",
+                "repos/Ctrl-World/checkpoints/clip-vit-base-patch32",
+            ),
         )
-        data_stat_path = self._path(
+        data_stat_path = self._path_candidates(
             "data_stat_path",
             "LF3R_CTRL_WORLD_DATA_STAT",
-            "repos/Ctrl-World/dataset_meta_info/droid/stat.json",
+            (
+                "repos/Ctrl-World/dataset_meta_info/droid/stat.json",
+                "repos/ctrl-world/dataset_meta_info/droid/stat.json",
+            ),
         )
         python = self._python()
         trajectory = find_trajectory_path(self.project_root, rollout)
@@ -326,6 +356,19 @@ class CtrlWorldAdapter(WorldModelAdapter):
             imageio.imwrite(str(target), frame)
             images[consumer_view] = target
 
+        source_shapes: dict[str, list[int]] = {}
+        for consumer_view in self.VIEW_ORDER:
+            manifest_view = mapping[consumer_view]
+            source = project_path(
+                self.project_root,
+                str(camera_paths[manifest_view]),
+            )
+            raw_frame = self._read_frame(source, cut_frame)
+            source_shapes[consumer_view] = [
+                int(raw_frame.shape[0]),
+                int(raw_frame.shape[1]),
+            ]
+
         metadata = {
             "cut_frame": int(cut_frame),
             "camera_mapping": mapping,
@@ -336,6 +379,8 @@ class CtrlWorldAdapter(WorldModelAdapter):
             },
             "width": self.WIDTH,
             "height": self.HEIGHT,
+            "source_view_shapes": source_shapes,
+            "resize_policy": "source RGB -> Ctrl-World native 192x320 bilinear",
         }
         (condition_dir / "condition.json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
