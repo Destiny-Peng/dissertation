@@ -223,6 +223,11 @@ class CtrlWorldAdapterTest(unittest.TestCase):
             "# test stub\n",
             encoding="utf-8",
         )
+        (source / "models" / "pipeline_ctrl_world.py").write_text(
+            "# test stub\n",
+            encoding="utf-8",
+        )
+        (source / "config.py").write_text("# test stub\n", encoding="utf-8")
         python = root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python"
         python.parent.mkdir(parents=True, exist_ok=True)
         python.write_bytes(b"python")
