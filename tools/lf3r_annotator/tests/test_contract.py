@@ -405,7 +405,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('"frames"', robo_worker)
         self.assertIn('"logits"', robo_worker)
         self.assertIn('"sigmoid_scores"', robo_worker)
-        self.assertIn('"signal_mode": signal_mode', robo_worker)
+        self.assertIn('"signal_mode": bundle["signal_mode"]', robo_worker)
         self.assertIn("localization_signal_mode", robo_worker)
         self.assertIn("resolve_signal_prediction", robo_posthoc)
         self.assertIn('"signal_mode": signal_mode', robo_posthoc)
