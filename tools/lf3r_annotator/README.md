@@ -574,16 +574,18 @@ A2World consumes 20-action chunks. LF3R applies the released LIBERO servo prepro
 
 ### Ctrl-World adapter
 
-Ctrl-World is a separate Repair adapter; it does not reuse A2World's action preprocessing. The released Ctrl-World replay path is DROID-based and conditions on a seven-dimensional absolute Cartesian pose/gripper sequence. For an official LIBERO HDF5 demonstration LF3R therefore derives:
+Ctrl-World is a separate Repair adapter; it does not reuse A2World's action preprocessing. The released Ctrl-World replay path is DROID-based and conditions on a seven-dimensional absolute Cartesian pose/gripper sequence. LF3R does **not** read future recorded LIBERO proprio to obtain that sequence. Starting from the same verified branch state, it instead derives the interface from the experiment's GT future actions:
 
 ```text
-obs/ee_pos
-+ obs/ee_ori      (axis-angle -> Euler XYZ)
-+ obs/gripper_states (Panda finger opening -> DROID-style 0=open, 1=closed)
+restore states[c+1]
++ replay actions[c+1:] in LIBERO
++ resulting robot0_eef_pos
++ resulting robot0_eef_quat -> axis-angle -> Euler XYZ
++ resulting Panda finger qpos -> DROID-style 0=open, 1=closed
 = Ctrl-World 7D pose/state conditioning
 ```
 
-The original LIBERO `actions[c+1:]` are still used by the mandatory alignment smoke test and retained in provenance, but they are not presented to Ctrl-World as if they had the same semantics as DROID Cartesian states.
+Thus A2World receives the released LIBERO action representation directly, while Ctrl-World receives a model-specific Cartesian representation deterministically derived from the **same GT action continuation**. Run provenance records the transformation and `future_recorded_proprio_used=false`; the two models still have different conditioning interfaces and should not be described as identical action-conditioning models.
 
 The released Ctrl-World setup uses three camera streams and 192x320 frames. LF3R does not add a fake third camera to the manifest: `cam_high` is duplicated only inside the Ctrl adapter for `exterior_2`. Source LIBERO RGB is resized to Ctrl-World's native 192x320 geometry and that resize is recorded. Visual PSNR/SSIM/LPIPS therefore remain diagnostics; when source/generated resolutions differ, generated frames are resized back to the real frame size only for metric computation.
 
