@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from backend_core import ValidationError
+from .adapters import WorldModelAdapter
 from .alignment import find_trajectory_path, project_path
 from .trajectory import load_ctrl_world_pose_states
 
 
-class CtrlWorldAdapter:
+class CtrlWorldAdapter(WorldModelAdapter):
     """Adapt LF3R LIBERO demonstrations to the released Ctrl-World interface.
 
     Ctrl-World's released replay path is trained on DROID and conditions on
@@ -341,6 +342,12 @@ class CtrlWorldAdapter:
             encoding="utf-8",
         )
         return {"images": images, **metadata}
+
+    def prepare_actions(self, actions: Any, *, output_dir: Path) -> Path:
+        del actions, output_dir
+        raise ValidationError(
+            "Ctrl-World uses model-specific absolute pose controls; call prepare_controls"
+        )
 
     def prepare_controls(
         self,
