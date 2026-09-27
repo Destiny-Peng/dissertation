@@ -267,11 +267,23 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
     if np.any(std <= 0):
         raise ValueError("Localization checkpoint normalization std must be positive")
 
+    data_config = config.get("data")
+    signal_mode = (
+        str(data_config.get("signal_mode", "fused"))
+        if isinstance(data_config, dict)
+        else "fused"
+    )
+    if signal_mode not in {"incremental", "forward", "backward", "fused"}:
+        raise ValueError(
+            f"Localization checkpoint has invalid input signal: {signal_mode}"
+        )
+
     bundle = {
         "path": resolved,
         "model": model,
         "mean": mean,
         "std": std,
+        "signal_mode": signal_mode,
         "config": config,
         "stage": payload.get("stage"),
         "config_id": payload.get("config_id"),
@@ -287,7 +299,7 @@ def run_localization_checkpoint(
     checkpoint_path: Path,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Infer one localization point from a fused Robo-Dopamine progress/hop curve."""
+    """Infer one localization point from the checkpoint's Robo-Dopamine input curve."""
     import numpy as np
     import torch
 
@@ -325,7 +337,8 @@ def run_localization_checkpoint(
         "checkpoint_config_id": bundle.get("config_id"),
         "checkpoint_repeat": bundle.get("repeat"),
         "checkpoint_seed": bundle.get("seed"),
-        "input": "fused_robo_dopamine_progress_hop",
+        "input": f"{bundle['signal_mode']}_robo_dopamine_progress_hop",
+        "signal_mode": bundle["signal_mode"],
         "source_prediction": str(prediction_path),
         "frame_count": len(frames),
         "frames": frames,
@@ -705,13 +718,22 @@ def infer_rollout(
 
     localization_prediction: dict[str, Any] | None = None
     if args.localization_checkpoint is not None:
-        if fused_path is None:
+        localization_bundle = _load_localization_checkpoint(
+            args.localization_checkpoint
+        )
+        localization_signal_mode = localization_bundle["signal_mode"]
+        localization_input = (
+            fused_path
+            if localization_signal_mode == "fused"
+            else mode_predictions.get(localization_signal_mode)
+        )
+        if localization_input is None:
             raise ValueError(
-                "Localization checkpoint inference requires fused Robo-Dopamine "
-                "(incremental + forward + backward)"
+                "Localization checkpoint requires saved Robo-Dopamine "
+                f"{localization_signal_mode} input, but this run did not produce it"
             )
         localization_prediction = run_localization_checkpoint(
-            fused_path,
+            localization_input,
             args.localization_checkpoint,
             output_dir,
         )
