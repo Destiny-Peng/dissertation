@@ -31,7 +31,7 @@ class LocalizationSpecTests(unittest.TestCase):
             "repeats": 1,
             "sweep": [{
                 "path": "data.signal_mode",
-                "values": ["incremental", "forward", "backward", "fused"],
+                "values": ["incremental", "forward", "backward", "fused", "perspectives_6d"],
             }],
             "stages": [],
         }
@@ -39,7 +39,7 @@ class LocalizationSpecTests(unittest.TestCase):
         configs = specs.expand(normalized["base"], normalized["sweep"])
         self.assertEqual(
             [config["data"]["signal_mode"] for config in configs],
-            ["incremental", "forward", "backward", "fused"],
+            ["incremental", "forward", "backward", "fused", "perspectives_6d"],
         )
 
         invalid = specs.deep_merge(
