@@ -471,7 +471,6 @@ def main() -> None:
                 phase="gpu_recheck",
                 progress=0.40,
             )
-            gpu_index = int(wm_config["gpu_index"])
             gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
 
             update_status(
@@ -527,6 +526,14 @@ def main() -> None:
                 cut_frame=cut_frame,
                 output_dir=prepared_dir,
             )
+
+            update_status(
+                run_dir,
+                phase="gpu_recheck_before_ctrl_replay",
+                progress=0.34,
+            )
+            gpu_index = int(wm_config["gpu_index"])
+            gpu_before_ctrl_replay = ensure_gpu_below_threshold(gpu_index)
 
             # Ctrl-World needs absolute Cartesian pose/gripper controls, but the
             # experiment supplies only the same GT future LIBERO actions used by
@@ -618,6 +625,15 @@ def main() -> None:
                     if key != "path"
                 },
                 "future_recorded_proprio_used": False,
+                "gpu_recheck_before_control_replay": {
+                    "index": gpu_index,
+                    "gpu_utilization_percent": gpu_before_ctrl_replay.get(
+                        "gpu_utilization_percent"
+                    ),
+                    "memory_free_mib": gpu_before_ctrl_replay.get(
+                        "memory_free_mib"
+                    ),
+                },
                 "prepared_controls_path": str(
                     Path(controls["path"]).relative_to(project_root)
                 ),
