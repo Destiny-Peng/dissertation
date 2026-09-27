@@ -1031,13 +1031,14 @@
         + (stage.best_config_id ? '<span class="analysis-badge">Best ' + esc(stage.best_config_id) + '</span>' : '')
         + '</div>'
         + '<div class="analysis-table-wrap"><table class="analysis-table localization-run-result-table"><thead><tr>'
-        + '<th>Config</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
+        + '<th>Config</th><th>Input</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
         + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
         + '<th>Batch</th><th>Best config</th>'
         + '</tr></thead><tbody>'
         + rows.map(function (row) {
           return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
             + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
+            + '<td>' + esc(row["data.signal_mode"] || "fused") + '</td>'
             + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "in_interval_rate_mean", "in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance", true) + '</td>'
@@ -1050,7 +1051,7 @@
             + '<td class="numeric">' + esc(row["training.batch_size"] == null ? "—" : row["training.batch_size"]) + '</td>'
             + '<td>' + (row.best ? '<strong>Selected</strong>' : '') + '</td>'
             + '</tr>'
-            + '<tr class="localization-repeat-detail-row"><td colspan="12">'
+            + '<tr class="localization-repeat-detail-row"><td colspan="13">'
             + renderRepeatDetails(row)
             + '</td></tr>';
         }).join("")
