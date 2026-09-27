@@ -141,79 +141,146 @@ def load_states(project_root: Path, rollout: dict[str, Any]) -> Any:
 
 
 
-def load_ctrl_world_pose_states(project_root: Path, rollout: dict[str, Any]) -> Any:
-    """Return Ctrl-World's 7D DROID-style pose conditioning from LIBERO obs.
+def _ctrl_world_pose_from_observation(obs: dict[str, Any]) -> Any:
+    """Convert one LIBERO observation to Ctrl-World's DROID-style 7D pose."""
 
-    Ctrl-World replay conditions on observation Cartesian pose
-    [x, y, z, roll, pitch, yaw] plus a scalar gripper position where
-    0=open and 1=closed. Official processed LIBERO HDF5 stores ee_ori as
-    an axis-angle vector and Panda finger qpos as two opposing slide joints.
+    import numpy as np
+    try:
+        from scipy.spatial.transform import Rotation
+        import robosuite.utils.transform_utils as transform_utils
+    except ImportError as error:
+        raise ValidationError(
+            "scipy and robosuite are required for Ctrl-World pose conversion"
+        ) from error
+
+    try:
+        position = np.asarray(obs["robot0_eef_pos"], dtype=np.float64)
+        quaternion = np.asarray(obs["robot0_eef_quat"], dtype=np.float64)
+        gripper_qpos = np.asarray(obs["robot0_gripper_qpos"], dtype=np.float64)
+    except KeyError as error:
+        raise ValidationError(
+            f"LIBERO observation is missing Ctrl-World proprio field: {error}"
+        ) from error
+
+    if position.shape != (3,) or quaternion.shape != (4,) or gripper_qpos.size < 2:
+        raise ValidationError(
+            "Unexpected LIBERO proprio shapes for Ctrl-World: "
+            f"eef_pos={position.shape}, eef_quat={quaternion.shape}, "
+            f"gripper={gripper_qpos.shape}"
+        )
+    rotvec = np.asarray(
+        transform_utils.quat2axisangle(quaternion),
+        dtype=np.float64,
+    )
+    euler_xyz = Rotation.from_rotvec(rotvec).as_euler("xyz")
+    opening_width = float(
+        np.clip(gripper_qpos[0] - gripper_qpos[1], 0.0, 0.08)
+    )
+    gripper_closed = 1.0 - opening_width / 0.08
+    pose = np.concatenate(
+        [position, euler_xyz, np.asarray([gripper_closed])],
+        axis=0,
+    )
+    if pose.shape != (7,) or not np.isfinite(pose).all():
+        raise ValidationError(f"Invalid Ctrl-World pose from LIBERO obs: {pose}")
+    return pose.astype(np.float32)
+
+
+def replay_ctrl_world_pose_controls(
+    *,
+    project_root: Path,
+    rollout: dict[str, Any],
+    states: Any,
+    actions: Any,
+    cut_frame: int,
+    frame_step: int,
+    model_xml: str | None = None,
+) -> dict[str, Any]:
+    """Derive Ctrl controls only by replaying GT LIBERO actions from the cut.
+
+    The first control point corresponds to RGB[c] / states[c+1]. Subsequent
+    points are simulator observations reached by actions[c+1:], sampled at the
+    requested source-frame stride. No future recorded proprio is read.
     """
 
     import numpy as np
 
-    source = find_trajectory_path(project_root, rollout)
-    if source is None or source.suffix.lower() not in {".hdf5", ".h5"}:
+    if frame_step < 1:
+        raise ValidationError("Ctrl-World source frame step must be at least 1")
+    branch = int(cut_frame) + 1
+    action_start = int(cut_frame) + 1
+    total_frames = int(rollout.get("total_frames") or len(actions))
+    last_frame = min(total_frames - 1, len(actions) - 1)
+    if branch >= len(states) or action_start >= len(actions):
         raise ValidationError(
-            "Ctrl-World requires an official LIBERO HDF5 trajectory with obs pose fields"
+            "Ctrl-World replay cut leaves no valid branch state/future action"
         )
+
     try:
-        import h5py
+        import os
+        from libero.libero import benchmark, get_libero_path
+        from libero.libero.envs import OffScreenRenderEnv
     except ImportError as error:
         raise ValidationError(
-            "h5py is required to read Ctrl-World LIBERO pose conditioning"
+            "LIBERO is required to derive Ctrl-World controls from GT actions"
         ) from error
+
+    suite_name = str(rollout.get("task_suite") or "")
+    benchmark_dict = benchmark.get_benchmark_dict()
+    if suite_name not in benchmark_dict:
+        raise ValidationError(f"LIBERO benchmark is unavailable: {suite_name}")
+    suite = benchmark_dict[suite_name]()
+    task_id = int(rollout.get("task_id") or 0)
+    task = suite.get_task(task_id)
+    bddl_file = os.path.join(
+        get_libero_path("bddl_files"),
+        task.problem_folder,
+        task.bddl_file,
+    )
+    env = OffScreenRenderEnv(
+        bddl_file_name=bddl_file,
+        camera_names=["agentview"],
+        camera_heights=64,
+        camera_widths=64,
+    )
+    controls: list[Any] = []
+    source_indices: list[int] = []
     try:
-        from scipy.spatial.transform import Rotation
-    except ImportError as error:
-        raise ValidationError(
-            "scipy is required to convert LIBERO axis-angle EE orientation to DROID Euler XYZ"
-        ) from error
+        env.seed(0)
+        env.reset()
+        if model_xml:
+            env.reset_from_xml_string(model_xml)
+            env.sim.reset()
+        obs = env.set_init_state(states[branch])
+        controls.append(_ctrl_world_pose_from_observation(obs))
+        source_indices.append(int(cut_frame))
 
-    with h5py.File(source, "r") as handle:
-        group = _h5_group(handle, rollout)
-        required = ("obs/ee_pos", "obs/ee_ori", "obs/gripper_states")
-        missing = [key for key in required if key not in group]
-        if missing:
-            raise ValidationError(
-                "Ctrl-World requires official LIBERO proprio fields: "
-                + ", ".join(missing)
-            )
-        position = np.asarray(group["obs/ee_pos"][...], dtype=np.float64)
-        rotvec = np.asarray(group["obs/ee_ori"][...], dtype=np.float64)
-        gripper_qpos = np.asarray(group["obs/gripper_states"][...], dtype=np.float64)
+        for action_index in range(action_start, last_frame + 1):
+            obs, _, _, _ = env.step(actions[action_index].tolist())
+            source_frame = int(action_index)
+            if (source_frame - int(cut_frame)) % int(frame_step) != 0:
+                continue
+            controls.append(_ctrl_world_pose_from_observation(obs))
+            source_indices.append(source_frame)
+    finally:
+        env.close()
 
-    if position.ndim != 2 or position.shape[1] != 3:
-        raise ValidationError(f"Unexpected LIBERO ee_pos shape: {position.shape}")
-    if rotvec.ndim != 2 or rotvec.shape[1] != 3:
-        raise ValidationError(f"Unexpected LIBERO ee_ori shape: {rotvec.shape}")
-    if gripper_qpos.ndim != 2 or gripper_qpos.shape[1] < 2:
+    if len(controls) < 2:
         raise ValidationError(
-            f"Unexpected LIBERO gripper_states shape: {gripper_qpos.shape}"
+            "Ctrl-World GT-action replay produced no future sampled control point"
         )
-    if not (len(position) == len(rotvec) == len(gripper_qpos)):
-        raise ValidationError(
-            "Ctrl-World LIBERO proprio arrays have mismatched lengths"
-        )
+    return {
+        "controls": np.stack(controls, axis=0).astype(np.float32),
+        "source_frame_indices": np.asarray(source_indices, dtype=np.int64),
+        "branch_state_index": branch,
+        "action_start": action_start,
+        "derivation": (
+            "restore states[c+1], replay GT actions[c+1:], convert resulting "
+            "LIBERO observations to DROID-style Cartesian pose/gripper"
+        ),
+        "future_recorded_proprio_used": False,
+    }
 
-    euler_xyz = Rotation.from_rotvec(rotvec).as_euler("xyz")
-    # robosuite Panda finger joints range [0, 0.04] and [-0.04, 0].
-    # Convert their separation to DROID's scalar convention 0=open, 1=closed.
-    opening_width = np.clip(
-        gripper_qpos[:, 0] - gripper_qpos[:, 1],
-        0.0,
-        0.08,
-    )
-    gripper_closed = 1.0 - opening_width / 0.08
-    result = np.concatenate(
-        [position, euler_xyz, gripper_closed[:, None]],
-        axis=1,
-    )
-    if result.shape[1] != 7 or not np.isfinite(result).all():
-        raise ValidationError(
-            f"Invalid Ctrl-World pose conditioning array: {result.shape}"
-        )
-    return result.astype(np.float32)
 
 
 def _video_frame(path: Path, index: int) -> Any:
