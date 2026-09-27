@@ -387,6 +387,7 @@ def main() -> None:
         ],
         "generated_real_start_frame": int(source_indices[1]),
         "output_fps": float(args.output_fps),
+        "svd_microcondition_fps": int(config.fps),
         "num_frames_per_chunk": int(config.num_frames),
         "num_history": int(config.num_history),
         "num_inference_steps": int(config.num_inference_steps),
