@@ -75,6 +75,8 @@ class WebUiArchitectureContractTest(unittest.TestCase):
             "prepare_libero_manifest.py",
             "trajectory.py",
             "adapters.py",
+            "ctrl_world.py",
+            "ctrl_world_runner.py",
             "service.py",
             "worker.py",
         ]:
