@@ -186,10 +186,10 @@
               <span><kbd>Space</kbd> play/pause</span>
               <span><kbd>←</kbd><kbd>→</kbd> one frame</span>
               <span><kbd>Shift</kbd> + arrows ten frames</span>
-              <span><kbd>1</kbd> active event causal</span>
-              <span><kbd>2</kbd> active event observable</span>
-              <span><kbd>3</kbd> active event terminal</span>
-              <span><kbd>S</kbd> save</span>
+              <span><kbd>Q</kbd> causal · <kbd>W</kbd> observable · <kbd>E</kbd> terminal · <kbd>R</kbd> recovery</span>
+              <span><kbd>1</kbd>–<kbd>9</kbd> set active event failure type</span>
+              <span><kbd>A</kbd> add event · <kbd>[</kbd><kbd>]</kbd> switch active event</span>
+              <span><kbd>S</kbd> save · <kbd>N</kbd>/<kbd>P</kbd> next/previous rollout</span>
             </div>
           </details>
         </section>
@@ -233,15 +233,15 @@
               <span>Primary / default failure type</span>
               <select id="failureType" name="failure_type">
                 <option value="none_success">No failure / success</option>
-                <option value="grasp_failure">Grasp failure</option>
-                <option value="placement_failure">Placement failure</option>
-                <option value="dropped_object">Dropped object</option>
-                <option value="wrong_object">Wrong object</option>
-                <option value="collision">Collision</option>
-                <option value="timeout_no_progress">Timeout / no progress</option>
-                <option value="control_error">Control error</option>
-                <option value="observation_error">Observation error</option>
-                <option value="other">Other</option>
+                <option value="grasp_failure">1 · Grasp failure</option>
+                <option value="placement_failure">2 · Placement failure</option>
+                <option value="dropped_object">3 · Dropped object</option>
+                <option value="wrong_object">4 · Wrong object</option>
+                <option value="collision">5 · Collision</option>
+                <option value="timeout_no_progress">6 · Timeout / no progress</option>
+                <option value="control_error">7 · Control error</option>
+                <option value="observation_error">8 · Observation error</option>
+                <option value="other">9 · Other</option>
               </select>
             </label>
 
@@ -255,7 +255,7 @@
               </div>
               <div id="failureEvents" class="failure-events"></div>
               <button id="addFailureEvent" class="ghost-button add-event-button" type="button">+ Add failure
-                event</button>
+                event <kbd>A</kbd></button>
             </section>
 
             <label class="field">
