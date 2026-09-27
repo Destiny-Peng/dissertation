@@ -58,6 +58,18 @@ BUILTIN_PRESETS = {
         "repeats": 5,
         "stages": [],
     },
+    "input_signal_default": {
+        "schema_version": 1,
+        "name": "input_signal_default",
+        "base": copy.deepcopy(DEFAULT_BASE),
+        "sweep": [{
+            "path": "data.signal_mode",
+            "values": ["incremental", "forward", "backward", "fused"],
+        }],
+        "variants": [],
+        "repeats": 5,
+        "stages": [],
+    },
     "label_loss_default": {
         "schema_version": 1,
         "name": "label_loss_default",
