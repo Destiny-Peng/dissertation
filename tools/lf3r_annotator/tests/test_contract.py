@@ -270,6 +270,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisHopArtifacts",
             "localizationRunExperiment",
             "localizationRunsList",
+            "localizationSignalMode",
             "settingsView",
             "settingsForm",
         ]:
@@ -313,6 +314,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Rule-based performance by failure type", html)
         self.assertIn("Learned localization model", html)
         self.assertIn("Fused-hop rule tuning", html)
+        self.assertIn('id="localizationSignalMode"', html)
+        self.assertIn('path: "data.signal_mode"', (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8"))
+        self.assertIn('defaults: ["incremental", "forward", "backward", "fused"]', (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8"))
         self.assertIn("Success recall", dashboard)
         self.assertIn("Failure recall", dashboard)
         self.assertIn("clean + recovered success", dashboard)
