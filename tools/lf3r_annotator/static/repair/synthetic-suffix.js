@@ -525,6 +525,7 @@
     }
     select.innerHTML = repairState.runs.map(function (run) {
       return '<option value="' + esc(run.run_id) + '">' + esc(run.run_id)
+        + " · " + esc(run.world_model || "WM")
         + " · " + esc(run.status) + " · " + esc(run.source_rollout || "") + "</option>";
     }).join("");
     if (!repairState.runs.some(function (run) { return run.run_id === repairState.selectedRunId; })) {
@@ -561,6 +562,9 @@
       || (detail.videos || {}).cut_time_seconds
       || 0
     );
+    var sourceOffset = Number(
+      (detail.videos || {}).generated_source_offset_seconds || 0
+    );
     function targetTime(video, generatedTime) {
       return video.dataset.repairVideo === "real" ? realStart + generatedTime : generatedTime;
     }
@@ -576,7 +580,8 @@
       });
       var slider = node("repairSeek");
       if (slider && !slider.matches(":active")) slider.value = String(generatedTime);
-      node("repairTimeReadout").textContent = generatedTime.toFixed(2) + " s after cut";
+      node("repairTimeReadout").textContent =
+        (sourceOffset + generatedTime).toFixed(2) + " source s after cut";
       repairState.syncing = false;
     }
     generatedMaster.addEventListener("loadedmetadata", function () {
@@ -625,6 +630,9 @@
         text: "PSNR " + fmt(item.psnr_mean)
           + " · SSIM " + fmt(item.ssim_mean)
           + " · LPIPS " + fmt(item.lpips_mean)
+          + (Number(item.resolution_resized_frames || 0) > 0
+            ? " · metric resize " + String(item.resolution_resized_frames) + "f"
+            : "")
       };
     });
     node("repairMetrics").innerHTML = values.map(function (item) {
@@ -652,8 +660,12 @@
       return;
     }
     var status = detail.status || {};
+    var provenance = detail.provenance || {};
+    var generatedFps = (detail.videos || {}).generated_fps;
     node("repairResultStatus").textContent =
       String(status.status || "unknown") + " · " + String(status.phase || "")
+      + " · " + String(provenance.world_model || "world model")
+      + (generatedFps ? " · generated " + Number(generatedFps).toFixed(2) + " FPS" : "")
       + (status.error ? " · " + status.error : "");
     var real = (detail.videos || {}).real || {};
     var generated = (detail.videos || {}).generated || {};
