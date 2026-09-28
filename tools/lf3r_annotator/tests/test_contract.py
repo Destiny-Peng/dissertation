@@ -381,8 +381,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         ])
         self.assertIn("persistentJobLogOpen", javascript)
         self.assertIn("persistentJobLogText", javascript)
-        self.assertIn('aria-expanded=\"false\"', localization_js)
-        self.assertIn('button.textContent = \"Hide log\"', localization_js)
+        self.assertIn('aria-expanded=\"false\"', javascript)
+        self.assertIn('button.textContent = \"Hide log\"', javascript)
         self.assertNotIn("output.hidden = false;\n      window.setTimeout", javascript)
 
 
