@@ -303,6 +303,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
 
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
+        localization_js = (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8")
         dashboard = (TOOL_ROOT / "static/analysis/dashboard.js").read_text(encoding="utf-8")
         outcome_analysis = (TOOL_ROOT / "static/analysis-outcome.js").read_text(encoding="utf-8")
         router = (TOOL_ROOT / "static/workspace/router.js").read_text(encoding="utf-8")
@@ -323,9 +324,9 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn('id="localizationSplitSeed"', html)
         self.assertIn('id="localizationVaryModelSeed"', html)
         self.assertIn('id="localizationVarySplitSeed"', html)
-        self.assertIn('path: "model.num_layers"', javascript)
-        self.assertIn('vary_model_seed: node("localizationVaryModelSeed").checked', javascript)
-        self.assertIn('vary_split_seed: node("localizationVarySplitSeed").checked', javascript)
+        self.assertIn('path: "model.num_layers"', localization_js)
+        self.assertIn('vary_model_seed: node("localizationVaryModelSeed").checked', localization_js)
+        self.assertIn('vary_split_seed: node("localizationVarySplitSeed").checked', localization_js)
         self.assertIn("Success recall", dashboard)
         self.assertIn("Failure recall", dashboard)
         self.assertIn("clean + recovered success", dashboard)
@@ -380,8 +381,8 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         ])
         self.assertIn("persistentJobLogOpen", javascript)
         self.assertIn("persistentJobLogText", javascript)
-        self.assertIn('aria-expanded=\"false\"', javascript)
-        self.assertIn('button.textContent = \"Hide log\"', javascript)
+        self.assertIn('aria-expanded=\"false\"', localization_js)
+        self.assertIn('button.textContent = \"Hide log\"', localization_js)
         self.assertNotIn("output.hidden = false;\n      window.setTimeout", javascript)
 
 
