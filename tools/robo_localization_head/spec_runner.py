@@ -467,12 +467,21 @@ def _run_configuration(
     predictions: list[dict[str, Any]] = []
     all_failure_predictions: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
-    seed0 = int(training.get("seed", 17))
+    model_seed0 = int(training.get("seed", 17))
+    configured_split_seed = training.get("split_seed")
+    split_seed0 = (
+        model_seed0
+        if configured_split_seed is None
+        else int(configured_split_seed)
+    )
+    vary_model_seed = bool(training.get("vary_model_seed", True))
+    vary_split_seed = bool(training.get("vary_split_seed", True))
     for repeat in range(repeats):
-        seed = seed0 + repeat
+        model_seed = model_seed0 + repeat if vary_model_seed else model_seed0
+        split_seed = split_seed0 + repeat if vary_split_seed else split_seed0
         split = core.rollout_split(
             base_failure,
-            seed=seed,
+            seed=split_seed,
             train_fraction=float(training.get("train_fraction", 0.70)),
             val_fraction=float(training.get("val_fraction", 0.15)),
         )
@@ -493,7 +502,7 @@ def _run_configuration(
                 base_failure,
                 failure_train_ids,
                 ratio=float(data_config.get("success_ratio", 0.0)),
-                seed=seed * 100 + 31,
+                seed=split_seed * 100 + 31,
             )
         combined = {**failure_dataset}
         for rollout_id in success_ids:
@@ -522,8 +531,9 @@ def _run_configuration(
             std=std,
             hidden=int(config["model"].get("hidden", 16)),
             input_dim=input_dim,
+            num_layers=int(config["model"].get("num_layers", 1)),
             pos_weight=pos_weight,
-            seed=seed,
+            seed=model_seed,
             epochs=int(training.get("epochs", 300)),
             patience=int(training.get("patience", 35)),
             learning_rate=float(training.get("learning_rate", 0.003)),
@@ -545,7 +555,9 @@ def _run_configuration(
                 "stage": stage_name,
                 "config_id": config_id,
                 "repeat": repeat,
-                "seed": seed,
+                "seed": model_seed,
+                "model_seed": model_seed,
+                "split_seed": split_seed,
                 "config": copy.deepcopy(dict(config)),
                 "split": copy.deepcopy(split),
                 "failure_train_ids": list(failure_train_ids),
@@ -620,7 +632,9 @@ def _run_configuration(
             "best_val_loss": train_meta["best_val_loss"],
             "effective_train_batch_size": train_meta["effective_train_batch_size"],
             "optimizer_steps_per_epoch": train_meta["optimizer_steps_per_epoch"],
-            "seed": seed,
+            "seed": model_seed,
+            "model_seed": model_seed,
+            "split_seed": split_seed,
             "checkpoint": checkpoint_rel,
         })
         per_repeat.append(metric_row)
@@ -630,7 +644,9 @@ def _run_configuration(
             "stage": stage_name,
             "config_id": config_id,
             "repeat": repeat,
-            "seed": seed,
+            "seed": model_seed,
+            "model_seed": model_seed,
+            "split_seed": split_seed,
             "split": split,
             "failure_train_ids": failure_train_ids,
             "success_train_ids": success_ids,
@@ -648,6 +664,8 @@ def _run_configuration(
         summary.update({
             "best_repeat": int(best_repeat["repeat"]),
             "best_repeat_seed": int(best_repeat["seed"]),
+            "best_repeat_model_seed": int(best_repeat.get("model_seed", best_repeat["seed"])),
+            "best_repeat_split_seed": int(best_repeat.get("split_seed", best_repeat["seed"])),
             "best_repeat_checkpoint": best_repeat["checkpoint"],
             "best_repeat_test_n": int(best_repeat.get("n") or 0),
             "best_repeat_in_interval_rate": best_repeat.get("in_interval_rate"),
