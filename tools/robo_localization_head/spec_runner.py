@@ -420,6 +420,36 @@ def _selector_key(row: Mapping[str, Any], selector: Mapping[str, Any]) -> tuple[
     return tuple(key)
 
 
+def _repeat_seed_pair(
+    training: Mapping[str, Any],
+    repeat: int,
+) -> tuple[int, int]:
+    """Return (model_seed, split_seed) for one repeat.
+
+    training.seed remains the model-seed base for compatibility. When
+    training.split_seed is null or absent it inherits that same base, so old
+    specs preserve the historical both-vary behavior.
+    """
+    model_seed0 = int(training.get("seed", 17))
+    configured_split_seed = training.get("split_seed")
+    split_seed0 = (
+        model_seed0
+        if configured_split_seed is None
+        else int(configured_split_seed)
+    )
+    model_seed = (
+        model_seed0 + repeat
+        if bool(training.get("vary_model_seed", True))
+        else model_seed0
+    )
+    split_seed = (
+        split_seed0 + repeat
+        if bool(training.get("vary_split_seed", True))
+        else split_seed0
+    )
+    return model_seed, split_seed
+
+
 def _run_configuration(
     *,
     config: Mapping[str, Any],
@@ -467,18 +497,8 @@ def _run_configuration(
     predictions: list[dict[str, Any]] = []
     all_failure_predictions: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
-    model_seed0 = int(training.get("seed", 17))
-    configured_split_seed = training.get("split_seed")
-    split_seed0 = (
-        model_seed0
-        if configured_split_seed is None
-        else int(configured_split_seed)
-    )
-    vary_model_seed = bool(training.get("vary_model_seed", True))
-    vary_split_seed = bool(training.get("vary_split_seed", True))
     for repeat in range(repeats):
-        model_seed = model_seed0 + repeat if vary_model_seed else model_seed0
-        split_seed = split_seed0 + repeat if vary_split_seed else split_seed0
+        model_seed, split_seed = _repeat_seed_pair(training, repeat)
         split = core.rollout_split(
             base_failure,
             seed=split_seed,
@@ -610,6 +630,8 @@ def _run_configuration(
                 "stage": stage_name,
                 "config_id": config_id,
                 "repeat": repeat,
+                "model_seed": model_seed,
+                "split_seed": split_seed,
                 "split_role": split_role,
                 "seen_in_train": split_role == "train",
                 "forced_into_train": rollout_id in set(split.get("forced_train", [])),
