@@ -26,6 +26,7 @@ DEFAULT_BASE = {
     },
     "model": {
         "hidden": 16,
+        "num_layers": 1,
     },
     "loss": {
         "name": "bce",
@@ -43,6 +44,9 @@ DEFAULT_BASE = {
         "weight_decay": 0.0001,
         "grad_clip": 5.0,
         "seed": 17,
+        "split_seed": None,
+        "vary_model_seed": True,
+        "vary_split_seed": True,
         "train_fraction": 0.70,
         "val_fraction": 0.15,
     },
@@ -310,6 +314,9 @@ def validate_config(config: Mapping[str, Any]) -> None:
     hidden = int(model.get("hidden", 16))
     if hidden < 1 or hidden > 512:
         raise ValueError("model.hidden must be between 1 and 512")
+    num_layers = int(model.get("num_layers", 1))
+    if num_layers < 1 or num_layers > 8:
+        raise ValueError("model.num_layers must be between 1 and 8")
 
     loss_name = str(loss.get("name", "bce"))
     allowed_losses = {
@@ -342,6 +349,19 @@ def validate_config(config: Mapping[str, Any]) -> None:
     _finite(training.get("learning_rate", 0.003), "training.learning_rate", positive=True)
     _finite(training.get("weight_decay", 0.0001), "training.weight_decay", minimum=0.0)
     _finite(training.get("grad_clip", 5.0), "training.grad_clip", positive=True)
+    try:
+        int(training.get("seed", 17))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("training.seed must be an integer") from exc
+    split_seed = training.get("split_seed")
+    if split_seed is not None:
+        try:
+            int(split_seed)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("training.split_seed must be an integer or null") from exc
+    for key in ("vary_model_seed", "vary_split_seed"):
+        if not isinstance(training.get(key, True), bool):
+            raise ValueError(f"training.{key} must be boolean")
     train_fraction = _finite(training.get("train_fraction", 0.70), "training.train_fraction", positive=True)
     val_fraction = _finite(training.get("val_fraction", 0.15), "training.val_fraction", positive=True)
     if train_fraction >= 1 or val_fraction >= 1 or train_fraction + val_fraction >= 1:
