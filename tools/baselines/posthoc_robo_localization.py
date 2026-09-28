@@ -95,7 +95,12 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
         )
     )
     hidden = int(model_config.get("hidden", 16))
-    model = TinyBiLSTM(hidden=hidden, input_dim=input_dim)
+    num_layers = int(model_config.get("num_layers", 1))
+    model = TinyBiLSTM(
+        hidden=hidden,
+        input_dim=input_dim,
+        num_layers=num_layers,
+    )
     model.load_state_dict(state)
     model.eval()
 
@@ -122,6 +127,7 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
         "mean": mean,
         "std": std,
         "hidden": hidden,
+        "num_layers": num_layers,
         "stage": payload.get("stage"),
         "config_id": payload.get("config_id"),
         "repeat": payload.get("repeat"),
