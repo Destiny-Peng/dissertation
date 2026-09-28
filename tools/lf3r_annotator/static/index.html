@@ -757,6 +757,16 @@
                 <input id="localizationRepeats" type="number" min="1" max="50" value="5" step="1">
               </label>
               <div class="analysis-run-field">
+                <span>Repeat varies</span>
+                <label class="localization-checkbox-field">
+                  <span><input id="localizationVaryModelSeed" type="checkbox" checked> Model seed</span>
+                </label>
+                <label class="localization-checkbox-field">
+                  <span><input id="localizationVarySplitSeed" type="checkbox" checked> Split seed</span>
+                </label>
+                <small class="analysis-run-field-help">Choose independently what changes from repeat to repeat.</small>
+              </div>
+              <div class="analysis-run-field">
                 <span>Estimated work</span>
                 <strong id="localizationEstimate">1 configuration × 5 repeats</strong>
                 <small id="localizationEstimateWarning" class="analysis-run-field-help"></small>
@@ -888,12 +898,6 @@
                   </label>
                   <label><span>Split seed</span><input id="localizationSplitSeed" type="number" min="0" step="1" value="17">
                     <small class="analysis-run-field-help">Controls train/validation/test split and success subset selection.</small>
-                  </label>
-                  <label class="localization-checkbox-field"><span>Repeat variation</span>
-                    <span><input id="localizationVaryModelSeed" type="checkbox" checked> Vary model seed across repeats</span>
-                  </label>
-                  <label class="localization-checkbox-field"><span>Repeat variation</span>
-                    <span><input id="localizationVarySplitSeed" type="checkbox" checked> Vary split seed across repeats</span>
                   </label>
                   <label><span>Train fraction</span><input id="localizationTrainFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.70"></label>
                   <label><span>Validation fraction</span><input id="localizationValFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.15"></label>
