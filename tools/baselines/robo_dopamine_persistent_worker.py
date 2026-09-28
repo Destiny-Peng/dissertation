@@ -270,7 +270,12 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         )
     )
     hidden = int(model_config.get("hidden", 16))
-    model = TinyBiLSTM(hidden=hidden, input_dim=input_dim)
+    num_layers = int(model_config.get("num_layers", 1))
+    model = TinyBiLSTM(
+        hidden=hidden,
+        input_dim=input_dim,
+        num_layers=num_layers,
+    )
     model.load_state_dict(state)
     model.eval()
 
@@ -294,6 +299,7 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         "std": std,
         "signal_mode": signal_mode,
         "input_dim": input_dim,
+        "num_layers": num_layers,
         "config": config,
         "stage": payload.get("stage"),
         "config_id": payload.get("config_id"),
