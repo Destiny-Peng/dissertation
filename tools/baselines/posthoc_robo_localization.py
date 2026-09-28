@@ -306,6 +306,7 @@ def infer_one(
         "checkpoint_seed": bundle.get("seed"),
         "hidden": bundle["hidden"],
         "input_dim": int(bundle["input_dim"]),
+        "num_layers": int(bundle.get("num_layers", 1)),
         "source_worker_result": str(worker_result),
         "source_prediction": source_prediction,
         "input": f"saved_{signal_mode}_robo_dopamine_progress_hop",
