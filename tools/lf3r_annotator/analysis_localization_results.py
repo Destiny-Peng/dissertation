@@ -271,6 +271,8 @@ class AnalysisLocalizationResultsMixin:
             summary = {
                 "repeat": repeat,
                 "seed": meta.get("seed"),
+                "model_seed": meta.get("model_seed", meta.get("seed")),
+                "split_seed": meta.get("split_seed"),
                 "checkpoint": bucket["checkpoint"] or meta.get("checkpoint"),
                 "test_n": count,
                 "train_n": len(split.get("train") or []),
@@ -482,10 +484,27 @@ class AnalysisLocalizationResultsMixin:
                     row["best_repeat"] = best_repeats.get((stage, config_id))
                 row["repeats"] = repeat_metrics.get((stage, config_id), [])
                 base_seed = row.get("training.seed")
+                base_split_seed = row.get("training.split_seed")
+                vary_model_seed = str(row.get("training.vary_model_seed", "True")).lower() not in {"false", "0", "no"}
+                vary_split_seed = str(row.get("training.vary_split_seed", "True")).lower() not in {"false", "0", "no"}
                 if base_seed is not None:
                     for repeat_row in row["repeats"]:
+                        repeat_index = int(repeat_row["repeat"])
+                        if repeat_row.get("model_seed") is None:
+                            repeat_row["model_seed"] = int(base_seed) + (
+                                repeat_index if vary_model_seed else 0
+                            )
                         if repeat_row.get("seed") is None:
-                            repeat_row["seed"] = int(base_seed) + int(repeat_row["repeat"])
+                            repeat_row["seed"] = repeat_row["model_seed"]
+                        if repeat_row.get("split_seed") is None:
+                            split_base = (
+                                int(base_split_seed)
+                                if base_split_seed is not None
+                                else int(base_seed)
+                            )
+                            repeat_row["split_seed"] = split_base + (
+                                repeat_index if vary_split_seed else 0
+                            )
                 rows.append(row)
 
         stage_order: list[str] = []
