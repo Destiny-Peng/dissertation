@@ -22,12 +22,14 @@ class AnalysisLocalizationResultsMixin:
                 "challenge_set_name": "", "force_train_rollout_ids": [],
             },
             "target": {"kind": "hard", "sigma_pre": 3.0, "sigma_post": 3.0, "tau_event": 20.0},
-            "model": {"hidden": 16},
+            "model": {"hidden": 16, "num_layers": 1},
             "loss": {"name": "bce", "distance_weight": 1.0, "ranking_weight": 1.0, "ranking_margin": 1.0},
             "training": {
                 "device": "auto", "batch_size": 32, "parallel_workers": 4, "epochs": 300, "patience": 35,
                 "learning_rate": 0.003, "weight_decay": 0.0001, "grad_clip": 5.0,
-                "seed": 17, "train_fraction": 0.70, "val_fraction": 0.15,
+                "seed": 17, "split_seed": 17,
+                "vary_model_seed": True, "vary_split_seed": True,
+                "train_fraction": 0.70, "val_fraction": 0.15,
             },
         }
         return {
@@ -389,12 +391,13 @@ class AnalysisLocalizationResultsMixin:
             "mae_samples_mean", "mae_samples_variance",
             "mse_samples_mean", "mse_samples_variance",
             "target.sigma_pre", "target.sigma_post", "target.tau_event",
-            "model.hidden", "loss.distance_weight", "loss.ranking_weight",
+            "model.hidden", "model.num_layers", "loss.distance_weight", "loss.ranking_weight",
             "loss.ranking_margin", "training.batch_size",
             "training.parallel_workers", "training.learning_rate",
             "training.weight_decay", "training.grad_clip", "training.seed",
-            "training.epochs", "training.patience",
-            "best_repeat", "best_repeat_seed", "best_repeat_test_n",
+            "training.split_seed", "training.epochs", "training.patience",
+            "best_repeat", "best_repeat_seed", "best_repeat_model_seed",
+            "best_repeat_split_seed", "best_repeat_test_n",
             "best_repeat_in_interval_rate",
             "best_repeat_first_event_in_interval_rate",
             "best_repeat_within_3",
@@ -424,6 +427,7 @@ class AnalysisLocalizationResultsMixin:
                 target_kind = str(row.get("target.kind") or "")
                 loss_name = str(row.get("loss.name") or "")
                 hidden = row.get("model.hidden")
+                num_layers = row.get("model.num_layers")
                 sigma_pre = row.get("target.sigma_pre")
                 sigma_post = row.get("target.sigma_post")
                 label_parts = [config_id]
@@ -438,6 +442,8 @@ class AnalysisLocalizationResultsMixin:
                     label_parts.append(loss_name)
                 if hidden is not None:
                     label_parts.append(f"h{hidden}")
+                if num_layers is not None:
+                    label_parts.append(f"L{num_layers}")
                 row["label"] = " · ".join(part for part in label_parts if part)
                 row["best"] = best_by_stage.get(stage) == config_id
 
@@ -446,6 +452,8 @@ class AnalysisLocalizationResultsMixin:
                     row["best_repeat"] = {
                         "repeat": int(stored_repeat),
                         "seed": row.get("best_repeat_seed"),
+                        "model_seed": row.get("best_repeat_model_seed"),
+                        "split_seed": row.get("best_repeat_split_seed"),
                         "checkpoint": row.get("best_repeat_checkpoint") or None,
                         "test_n": row.get("best_repeat_test_n"),
                         "in_interval_rate": row.get("best_repeat_in_interval_rate"),
