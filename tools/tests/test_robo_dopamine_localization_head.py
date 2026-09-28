@@ -219,6 +219,12 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertEqual(tuple(logits_6d.shape), (1, 11))
         self.assertEqual(model_6d.input_dim, 6)
 
+        model_8d = spec_runner.core.TinyBiLSTM(hidden=16, input_dim=8)
+        x_8d = torch.randn(1, 11, 8)
+        logits_8d = model_8d(x_8d)
+        self.assertEqual(tuple(logits_8d.shape), (1, 11))
+        self.assertEqual(model_8d.input_dim, 8)
+
     def test_shared_normalization_and_pos_weight_ignore_success(self) -> None:
         failures = self.failure_dataset(8)
         successes = self.success_dataset(6)
