@@ -207,6 +207,31 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             )
         )
 
+    def test_repeat_seed_pair_can_isolate_split_and_model_variance(self) -> None:
+        both = {"seed": 17, "split_seed": 101, "vary_model_seed": True, "vary_split_seed": True}
+        self.assertEqual(spec_runner._repeat_seed_pair(both, 3), (20, 104))
+
+        model_only = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": True, "vary_split_seed": False,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(model_only, 3), (20, 101))
+
+        split_only = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": False, "vary_split_seed": True,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(split_only, 3), (17, 104))
+
+        fixed = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": False, "vary_split_seed": False,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(fixed, 3), (17, 101))
+
+        legacy = {"seed": 17}
+        self.assertEqual(spec_runner._repeat_seed_pair(legacy, 3), (20, 20))
+
     def test_bilstm_forward_shape(self) -> None:
         model = probe.TinyBiLSTM(hidden=16)
         x = torch.randn(1, 11, 2)
@@ -224,6 +249,16 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         logits_8d = model_8d(x_8d)
         self.assertEqual(tuple(logits_8d.shape), (1, 11))
         self.assertEqual(model_8d.input_dim, 8)
+
+        model_stacked = spec_runner.core.TinyBiLSTM(
+            hidden=16,
+            input_dim=8,
+            num_layers=3,
+        )
+        logits_stacked = model_stacked(x_8d)
+        self.assertEqual(tuple(logits_stacked.shape), (1, 11))
+        self.assertEqual(model_stacked.num_layers, 3)
+        self.assertEqual(model_stacked.lstm.num_layers, 3)
 
     def test_shared_normalization_and_pos_weight_ignore_success(self) -> None:
         failures = self.failure_dataset(8)
