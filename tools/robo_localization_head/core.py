@@ -184,16 +184,24 @@ def standardization_stats(
 
 
 class TinyBiLSTM(nn.Module):
-    def __init__(self, hidden: int = 16, input_dim: int = 2) -> None:
+    def __init__(
+        self,
+        hidden: int = 16,
+        input_dim: int = 2,
+        num_layers: int = 1,
+    ) -> None:
         super().__init__()
         if input_dim < 1:
             raise ValueError("input_dim must be >= 1")
+        if num_layers < 1:
+            raise ValueError("num_layers must be >= 1")
         self.hidden = hidden
         self.input_dim = input_dim
+        self.num_layers = num_layers
         self.lstm = nn.LSTM(
             input_size=input_dim,
             hidden_size=hidden,
-            num_layers=1,
+            num_layers=num_layers,
             batch_first=True,
             bidirectional=True,
         )
@@ -317,6 +325,7 @@ def train_bilstm(
     progress_label: str,
     logger: Callable[[str], None],
     input_dim: int | None = None,
+    num_layers: int = 1,
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     if not train_ids:
         raise ValueError("training split is empty")
@@ -333,7 +342,11 @@ def train_bilstm(
     # several independent configurations train concurrently in worker threads.
     with _SEED_LOCK:
         set_seed(seed)
-        model = TinyBiLSTM(hidden=hidden, input_dim=resolved_input_dim).to(device)
+        model = TinyBiLSTM(
+            hidden=hidden,
+            input_dim=resolved_input_dim,
+            num_layers=num_layers,
+        ).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters() if "bias" not in name
     ]
@@ -447,6 +460,7 @@ def train_bilstm(
         "pos_weight": pos_weight,
         "hidden": hidden,
         "input_dim": resolved_input_dim,
+        "num_layers": num_layers,
         "device": str(device),
         "batch_size": batch_size,
         "effective_train_batch_size": effective_train_batch,
