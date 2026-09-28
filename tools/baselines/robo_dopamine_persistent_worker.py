@@ -406,6 +406,7 @@ def run_localization_checkpoint(
         "input": f"{signal_mode}_robo_dopamine_progress_hop",
         "signal_mode": signal_mode,
         "input_dim": int(bundle["input_dim"]),
+        "num_layers": int(bundle.get("num_layers", 1)),
         "source_prediction": source_prediction,
         "frame_count": len(frames),
         "frames": frames,
