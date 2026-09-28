@@ -256,14 +256,18 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         else "fused"
     )
     if signal_mode not in {
-        "incremental", "forward", "backward", "fused", "perspectives_6d"
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
     }:
         raise ValueError(
             f"Localization checkpoint has invalid input signal: {signal_mode}"
         )
     input_dim = int(
         payload.get("input_dim")
-        or (6 if signal_mode == "perspectives_6d" else 2)
+        or (
+            8 if signal_mode == "fused_perspectives_8d"
+            else 6 if signal_mode == "perspectives_6d"
+            else 2
+        )
     )
     hidden = int(model_config.get("hidden", 16))
     model = TinyBiLSTM(hidden=hidden, input_dim=input_dim)
@@ -331,26 +335,30 @@ def run_localization_checkpoint(
             features.append([progress, hop])
         return frames, np.asarray(features, dtype=np.float32)
 
-    if signal_mode == "perspectives_6d":
+    if signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
         if not isinstance(prediction_source, dict):
             raise ValueError(
-                "perspectives_6d localization requires incremental, forward, "
-                "and backward prediction paths"
+                f"{signal_mode} localization requires aligned perspective inputs"
             )
-        ordered_modes = ("incremental", "forward", "backward")
+        ordered_modes = (
+            ("fused", "incremental", "forward", "backward")
+            if signal_mode == "fused_perspectives_8d"
+            else ("incremental", "forward", "backward")
+        )
         mode_data = []
         for mode in ordered_modes:
             path = prediction_source.get(mode)
             if path is None:
                 raise ValueError(
-                    f"perspectives_6d localization is missing {mode} input"
+                    f"{signal_mode} localization is missing {mode} input"
                 )
             mode_data.append((mode, path, *read_two_dim(path)))
         frames = mode_data[0][2]
         for mode, _path, mode_frames, _features in mode_data[1:]:
             if mode_frames != frames:
                 raise ValueError(
-                    f"perspectives_6d {mode} frame indices do not match incremental"
+                    f"{signal_mode} {mode} frame indices do not match "
+                    f"{ordered_modes[0]}"
                 )
         sequence = np.concatenate(
             [mode_features for _mode, _path, _frames, mode_features in mode_data],
@@ -775,15 +783,24 @@ def infer_rollout(
             args.localization_checkpoint
         )
         localization_signal_mode = localization_bundle["signal_mode"]
-        localization_input = (
-            {mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES}
-            if localization_signal_mode == "perspectives_6d"
-            else (
+        if localization_signal_mode == "fused_perspectives_8d":
+            localization_input = (
+                {"fused": fused_path, **{
+                    mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES
+                }}
+                if fused_path is not None
+                else None
+            )
+        elif localization_signal_mode == "perspectives_6d":
+            localization_input = {
+                mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES
+            }
+        else:
+            localization_input = (
                 fused_path
                 if localization_signal_mode == "fused"
                 else mode_predictions.get(localization_signal_mode)
             )
-        )
         if localization_input is None:
             raise ValueError(
                 "Localization checkpoint requires saved Robo-Dopamine "

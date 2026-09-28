@@ -219,6 +219,12 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         self.assertEqual(tuple(logits_6d.shape), (1, 11))
         self.assertEqual(model_6d.input_dim, 6)
 
+        model_8d = spec_runner.core.TinyBiLSTM(hidden=16, input_dim=8)
+        x_8d = torch.randn(1, 11, 8)
+        logits_8d = model_8d(x_8d)
+        self.assertEqual(tuple(logits_8d.shape), (1, 11))
+        self.assertEqual(model_8d.input_dim, 8)
+
     def test_shared_normalization_and_pos_weight_ignore_success(self) -> None:
         failures = self.failure_dataset(8)
         successes = self.success_dataset(6)
@@ -343,6 +349,8 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 "rollout_id": "r1",
                 "source_run_root": run_a,
                 "frames": [0, 5, 10],
+                "progress": [100.0, 100.5, 101.0],
+                "hops": [100.0, 100.25, 100.5],
                 "task_key": "suite:task0",
                 "task_suite": "suite",
                 "task_id": "0",
@@ -353,6 +361,8 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 "rollout_id": "r2",
                 "source_run_root": run_b,
                 "frames": [0, 5, 10],
+                "progress": [100.0, 100.5, 101.0],
+                "hops": [100.0, 100.25, 100.5],
                 "task_key": "suite:task1",
                 "task_suite": "suite",
                 "task_id": "1",
@@ -402,7 +412,10 @@ class RoboLocalizationHeadTests(unittest.TestCase):
 
         self.assertEqual(
             set(records),
-            {"incremental", "forward", "backward", "fused", "perspectives_6d"},
+            {
+                "incremental", "forward", "backward", "fused",
+                "perspectives_6d", "fused_perspectives_8d",
+            },
         )
         self.assertEqual(set(records["forward"][0]), {"r1", "r2"})
         self.assertEqual(set(records["backward"][0]), {"r1"})
@@ -437,6 +450,25 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 "backward_hop",
             ],
         )
+        eight_d = records["fused_perspectives_8d"][0]["r1"]
+        self.assertEqual(np.asarray(eight_d["features"]).shape, (3, 8))
+        np.testing.assert_allclose(
+            np.asarray(eight_d["features"])[1],
+            [100.5, 100.25, 0.5, 0.25, 10.5, 10.25, 20.5, 20.25],
+        )
+        self.assertEqual(
+            eight_d["feature_names"],
+            [
+                "fused_progress",
+                "fused_hop",
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
+        )
         forward_records = spec_runner._records_for_config(
             {"data": {"signal_mode": "forward"}},
             records,
@@ -445,6 +477,11 @@ class RoboLocalizationHeadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             spec_runner._records_for_config(
                 {"data": {"signal_mode": "backward"}},
+                records,
+            )
+        with self.assertRaises(ValueError):
+            spec_runner._records_for_config(
+                {"data": {"signal_mode": "fused_perspectives_8d"}},
                 records,
             )
 

@@ -227,6 +227,74 @@ def _aligned_signal_records(
         ],
     }
 
+    eight_d_signals: dict[str, dict[str, Any]] = {}
+    eight_d_exclusions: list[dict[str, str]] = []
+    eight_d_feature_names = [
+        "fused_progress",
+        "fused_hop",
+        "incremental_progress",
+        "incremental_hop",
+        "forward_progress",
+        "forward_hop",
+        "backward_progress",
+        "backward_hop",
+    ]
+    for rollout_id, fused_signal in fused_signals.items():
+        six_d_signal = six_d_signals.get(rollout_id)
+        if six_d_signal is None:
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "aligned perspectives_6d input is unavailable",
+            })
+            continue
+        frames = list(fused_signal["frames"])
+        fused_progress = np.asarray(fused_signal["progress"], dtype=np.float32)
+        fused_hops = np.asarray(fused_signal["hops"], dtype=np.float32)
+        if (
+            fused_progress.ndim != 1
+            or fused_hops.ndim != 1
+            or len(fused_progress) != len(frames)
+            or len(fused_hops) != len(frames)
+        ):
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "fused progress/hop length does not match fused anchor",
+            })
+            continue
+        fused_features = np.stack([fused_progress, fused_hops], axis=1)
+        raw_features = np.asarray(six_d_signal["features"], dtype=np.float32)
+        features = np.concatenate([fused_features, raw_features], axis=1)
+        if features.shape != (len(frames), 8) or not np.all(np.isfinite(features)):
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "fused_perspectives_8d features are invalid",
+            })
+            continue
+        eight_d_signal = {
+            "rollout_id": rollout_id,
+            "signal_mode": "fused_perspectives_8d",
+            "frames": frames,
+            "features": features,
+            "feature_names": list(eight_d_feature_names),
+        }
+        for field in copied_fields:
+            if field in fused_signal:
+                eight_d_signal[field] = fused_signal[field]
+        eight_d_signals[rollout_id] = eight_d_signal
+
+    records_by_mode["fused_perspectives_8d"] = (
+        eight_d_signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
+    mode_provenance["modes"]["fused_perspectives_8d"] = {
+        "available_rollout_n": len(eight_d_signals),
+        "excluded_rollout_n": len(eight_d_exclusions),
+        "exclusions": eight_d_exclusions,
+        "feature_names": list(eight_d_feature_names),
+    }
+
     return records_by_mode, mode_provenance
 
 

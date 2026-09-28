@@ -39,7 +39,7 @@ class AnalysisLocalizationResultsMixin:
                 "schema_version": 1, "name": "input_signal_default", "base": base,
                 "sweep": [{
                     "path": "data.signal_mode",
-                    "values": ["incremental", "forward", "backward", "fused", "perspectives_6d"],
+                    "values": ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"],
                 }],
                 "variants": [], "stages": [], "repeats": 5, "builtin": True,
             },
