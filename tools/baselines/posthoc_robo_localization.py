@@ -81,14 +81,18 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
         else "fused"
     )
     if signal_mode not in {
-        "incremental", "forward", "backward", "fused", "perspectives_6d"
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
     }:
         raise ValueError(
             f"Localization checkpoint has invalid input signal: {signal_mode}"
         )
     input_dim = int(
         payload.get("input_dim")
-        or (6 if signal_mode == "perspectives_6d" else 2)
+        or (
+            8 if signal_mode == "fused_perspectives_8d"
+            else 6 if signal_mode == "perspectives_6d"
+            else 2
+        )
     )
     hidden = int(model_config.get("hidden", 16))
     model = TinyBiLSTM(hidden=hidden, input_dim=input_dim)
@@ -226,8 +230,11 @@ def infer_one(
             features.append([progress, hop])
         return frames, np.asarray(features, dtype=np.float32)
 
-    if signal_mode == "perspectives_6d":
+    if signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
         mode_data = []
+        if signal_mode == "fused_perspectives_8d":
+            fused_path = fused_prediction_path(project_root, worker_result)
+            mode_data.append(("fused", fused_path, *read_two_dim(fused_path)))
         for mode in PERSPECTIVE_MODES:
             path, _payload, _source = resolve_signal_prediction(
                 worker_result,
@@ -239,7 +246,8 @@ def infer_one(
         for mode, _path, mode_frames, _features in mode_data[1:]:
             if mode_frames != frames:
                 raise ValueError(
-                    f"perspectives_6d {mode} frame indices do not match incremental"
+                    f"{signal_mode} {mode} frame indices do not match "
+                    f"{mode_data[0][0]}"
                 )
         sequence = np.concatenate(
             [features for _mode, _path, _frames, features in mode_data],
