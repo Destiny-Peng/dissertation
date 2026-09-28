@@ -76,6 +76,47 @@ class LocalizationSpecTests(unittest.TestCase):
         self.assertEqual(configs[0]["loss"]["name"], "bce")
         self.assertEqual(configs[1]["loss"]["name"], "temporal_softmax_ce")
 
+    def test_repeat_seed_controls_and_model_depth_defaults(self) -> None:
+        normalized = specs.normalize_spec({
+            "name": "repeat_controls",
+            "base": {},
+            "repeats": 3,
+            "sweep": [],
+            "stages": [],
+        })
+        base = normalized["base"]
+        self.assertEqual(base["model"]["num_layers"], 1)
+        self.assertIsNone(base["training"]["split_seed"])
+        self.assertTrue(base["training"]["vary_model_seed"])
+        self.assertTrue(base["training"]["vary_split_seed"])
+
+        valid = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {
+                "model": {"num_layers": 3},
+                "training": {
+                    "split_seed": 101,
+                    "vary_model_seed": True,
+                    "vary_split_seed": False,
+                },
+            },
+        )
+        specs.validate_config(valid)
+
+        invalid_layers = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"model": {"num_layers": 0}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(invalid_layers)
+
+        invalid_repeat_flag = specs.deep_merge(
+            specs.DEFAULT_BASE,
+            {"training": {"vary_split_seed": "false"}},
+        )
+        with self.assertRaises(ValueError):
+            specs.validate_config(invalid_repeat_flag)
+
     def test_parallel_workers_default_and_validation(self) -> None:
         normalized = specs.normalize_spec({
             "name": "workers",
