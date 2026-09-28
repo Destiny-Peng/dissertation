@@ -53,6 +53,10 @@
       defaults: [16, 32], help: "Integer 1-512. Example: [16,32]"
     },
     {
+      path: "model.num_layers", label: "BiLSTM layers", type: "integer", min: 1, max: 8,
+      defaults: [1, 2, 3], help: "Stacked bidirectional LSTM layers. Integer 1-8. Example: [1,2,3]"
+    },
+    {
       path: "loss.name", label: "Loss", type: "enum",
       allowed: [
         "bce",
@@ -134,7 +138,10 @@
         sigma_post: n("localizationSigmaPost"),
         tau_event: n("localizationTauEvent")
       },
-      model: { hidden: Math.round(n("localizationHidden")) },
+      model: {
+        hidden: Math.round(n("localizationHidden")),
+        num_layers: Math.round(n("localizationNumLayers"))
+      },
       loss: {
         name: node("localizationLoss").value,
         distance_weight: n("localizationDistanceWeight"),
@@ -151,6 +158,9 @@
         weight_decay: n("localizationWeightDecay"),
         grad_clip: n("localizationGradClip"),
         seed: Math.round(n("localizationSeed")),
+        split_seed: Math.round(n("localizationSplitSeed")),
+        vary_model_seed: node("localizationVaryModelSeed").checked,
+        vary_split_seed: node("localizationVarySplitSeed").checked,
         train_fraction: n("localizationTrainFraction"),
         val_fraction: n("localizationValFraction")
       }
@@ -170,6 +180,7 @@
     node("localizationSigmaPost").value = target.sigma_post == null ? 3 : target.sigma_post;
     node("localizationTauEvent").value = target.tau_event == null ? 20 : target.tau_event;
     node("localizationHidden").value = model.hidden == null ? 16 : model.hidden;
+    node("localizationNumLayers").value = model.num_layers == null ? 1 : model.num_layers;
     node("localizationLoss").value = loss.name || "bce";
     node("localizationDistanceWeight").value = loss.distance_weight == null ? 1 : loss.distance_weight;
     node("localizationRankingWeight").value = loss.ranking_weight == null ? 1 : loss.ranking_weight;
@@ -183,6 +194,13 @@
     node("localizationWeightDecay").value = training.weight_decay == null ? 0.0001 : training.weight_decay;
     node("localizationGradClip").value = training.grad_clip == null ? 5 : training.grad_clip;
     node("localizationSeed").value = training.seed == null ? 17 : training.seed;
+    node("localizationSplitSeed").value = training.split_seed == null
+      ? (training.seed == null ? 17 : training.seed)
+      : training.split_seed;
+    node("localizationVaryModelSeed").checked = training.vary_model_seed == null
+      ? true : Boolean(training.vary_model_seed);
+    node("localizationVarySplitSeed").checked = training.vary_split_seed == null
+      ? true : Boolean(training.vary_split_seed);
     node("localizationTrainFraction").value = training.train_fraction == null ? 0.70 : training.train_fraction;
     node("localizationValFraction").value = training.val_fraction == null ? 0.15 : training.val_fraction;
     updateConditionalFields();
