@@ -972,7 +972,7 @@
       + '<summary>Show all ' + esc(repeats.length) + ' repeat(s)</summary>'
       + '<div class="analysis-table-wrap localization-repeat-table-wrap">'
       + '<table class="analysis-table localization-repeat-table"><thead><tr>'
-      + '<th>Repeat</th><th>Seed</th><th>Test N</th>'
+      + '<th>Repeat</th><th>Model seed</th><th>Split seed</th><th>Test N</th>'
       + '<th>In interval</th><th>First event</th><th>±1</th><th>±3</th><th>±5</th>'
       + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
       + '<th>Best epoch</th><th>Val loss</th><th>Checkpoint</th>'
@@ -984,7 +984,8 @@
           : "—";
         return '<tr>'
           + '<td><strong>repeat ' + esc(repeat.repeat) + '</strong></td>'
-          + '<td class="numeric">' + esc(repeat.seed == null ? "—" : repeat.seed) + '</td>'
+          + '<td class="numeric">' + esc(repeat.model_seed == null ? (repeat.seed == null ? "—" : repeat.seed) : repeat.model_seed) + '</td>'
+          + '<td class="numeric">' + esc(repeat.split_seed == null ? "—" : repeat.split_seed) + '</td>'
           + '<td class="numeric">' + esc(repeat.test_n == null ? "—" : repeat.test_n) + '</td>'
           + '<td class="numeric">' + formatMetric(repeat.in_interval_rate, true) + '</td>'
           + '<td class="numeric">' + formatMetric(repeat.first_event_in_interval_rate, true) + '</td>'
