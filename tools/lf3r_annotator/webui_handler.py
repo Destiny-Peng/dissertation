@@ -56,6 +56,21 @@ class WebUIHandler(server.LF3RHandler):
                                 {"tactile": self.app.tactile.series(rollout_id, camera)},
                             )
                             return
+                        if parts[3] == "sprite":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            frame = int(query.get("frame", ["0"])[0])
+                            kind = str(query.get("kind", ["deform"])[0] or "deform")
+                            body = self.app.tactile.sprite(
+                                rollout_id, camera, frame, kind
+                            )
+                            self.send_response(HTTPStatus.OK)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Content-Length", str(len(body)))
+                            self.send_header("Cache-Control", "private, max-age=3600")
+                            self.send_header("Connection", "close")
+                            if self._safe_end_headers():
+                                self._safe_write(body)
+                            return
                         if parts[3] == "image":
                             finger = str(query.get("finger", [""])[0] or "")
                             event_id = str(query.get("event_id", [""])[0] or "")
