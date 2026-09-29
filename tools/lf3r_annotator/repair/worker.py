@@ -334,16 +334,18 @@ def compute_metrics(
     return result
 
 
-def ensure_gpu_below_threshold(
-    gpu_index: int,
-    threshold: float = 50.0,
-) -> dict[str, Any]:
+def gpu_snapshot(gpu_index: int | None) -> dict[str, Any]:
+    """Capture GPU state for provenance without blocking the run."""
+
     status = gpu_status()
-    if not status.get("available"):
-        raise ValidationError(
-            "GPU status is unavailable before world-model generation: "
-            + str(status.get("error") or "unknown error")
-        )
+    if gpu_index is None:
+        return {
+            "index": None,
+            "status_available": bool(status.get("available")),
+            "status_error": status.get("error"),
+            "gpu_utilization_percent": None,
+            "memory_free_mib": None,
+        }
     selected = next(
         (
             gpu
@@ -353,14 +355,17 @@ def ensure_gpu_below_threshold(
         None,
     )
     if selected is None:
-        raise ValidationError(f"Selected GPU {gpu_index} is no longer available")
-    utilization = selected.get("gpu_utilization_percent")
-    if utilization is None or float(utilization) >= threshold:
-        raise ValidationError(
-            f"Selected GPU {gpu_index} utilization is {utilization}%; "
-            f"Repair requires < {threshold:.0f}% before world-model generation"
-        )
-    return selected
+        return {
+            "index": int(gpu_index),
+            "status_available": bool(status.get("available")),
+            "status_error": (
+                status.get("error")
+                or f"GPU {gpu_index} was not present in the latest status snapshot"
+            ),
+            "gpu_utilization_percent": None,
+            "memory_free_mib": None,
+        }
+    return dict(selected)
 
 
 def parse_args() -> argparse.Namespace:
@@ -418,17 +423,14 @@ def main() -> None:
             progress=0.18,
         )
         gpu_value = wm_config.get("gpu_index")
-        gpu_before_alignment = (
-            ensure_gpu_below_threshold(int(gpu_value))
-            if gpu_value is not None
-            else None
-        )
+        gpu_index = int(gpu_value) if gpu_value is not None else None
+        gpu_before_alignment = gpu_snapshot(gpu_index)
         smoke = run_alignment_subprocess(
             project_root=project_root,
             rollout=rollout,
             cut_frame=cut_frame,
             min_psnr=float(config.get("alignment_min_psnr", 20.0)),
-            gpu_index=int(gpu_value) if gpu_value is not None else None,
+            gpu_index=gpu_index,
         )
         atomic_json(run_dir / "alignment.json", smoke)
         if not smoke["passed"]:
@@ -476,7 +478,7 @@ def main() -> None:
                 phase="gpu_recheck",
                 progress=0.40,
             )
-            gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
+            gpu_before_generation = gpu_snapshot(gpu_index)
 
             update_status(
                 run_dir,
@@ -537,8 +539,7 @@ def main() -> None:
                 phase="gpu_recheck_before_ctrl_replay",
                 progress=0.34,
             )
-            gpu_index = int(wm_config["gpu_index"])
-            gpu_before_ctrl_replay = ensure_gpu_below_threshold(gpu_index)
+            gpu_before_ctrl_replay = gpu_snapshot(gpu_index)
 
             # Ctrl-World needs absolute Cartesian pose/gripper controls, but the
             # experiment supplies only the same GT future LIBERO actions used by
@@ -549,7 +550,8 @@ def main() -> None:
             os.environ["LIBERO_CONFIG_PATH"] = str(
                 project_root / "cache" / "libero"
             )
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(int(wm_config["gpu_index"]))
+            if gpu_index is not None:
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
             states = load_states(project_root, rollout)
             model_xml = load_model_xml(project_root, rollout)
             replay = replay_ctrl_world_pose_controls(
@@ -573,8 +575,7 @@ def main() -> None:
                 phase="gpu_recheck",
                 progress=0.40,
             )
-            gpu_index = int(wm_config["gpu_index"])
-            gpu_before_generation = ensure_gpu_below_threshold(gpu_index)
+            gpu_before_generation = gpu_snapshot(gpu_index)
 
             update_status(
                 run_dir,
@@ -688,19 +689,20 @@ def main() -> None:
                 "gt_action_end": int(len(actions)),
                 "gt_future_action_count": int(len(future_actions)),
                 "alignment_validation": smoke,
-                "gpu_recheck_before_alignment": (
-                    {
-                        "index": int(gpu_value),
-                        "gpu_utilization_percent": gpu_before_alignment.get(
-                            "gpu_utilization_percent"
-                        ),
-                        "memory_free_mib": gpu_before_alignment.get(
-                            "memory_free_mib"
-                        ),
-                    }
-                    if gpu_before_alignment is not None
-                    else None
-                ),
+                "gpu_recheck_before_alignment": {
+                    "index": gpu_index,
+                    "gpu_utilization_percent": gpu_before_alignment.get(
+                        "gpu_utilization_percent"
+                    ),
+                    "memory_free_mib": gpu_before_alignment.get(
+                        "memory_free_mib"
+                    ),
+                    "status_available": gpu_before_alignment.get(
+                        "status_available", True
+                    ),
+                    "status_error": gpu_before_alignment.get("status_error"),
+                    "utilization_gate": False,
+                },
                 "gpu_recheck_before_generation": {
                     "index": gpu_index,
                     "gpu_utilization_percent": gpu_before_generation.get(
@@ -709,6 +711,11 @@ def main() -> None:
                     "memory_free_mib": gpu_before_generation.get(
                         "memory_free_mib"
                     ),
+                    "status_available": gpu_before_generation.get(
+                        "status_available", True
+                    ),
+                    "status_error": gpu_before_generation.get("status_error"),
+                    "utilization_gate": False,
                 },
                 **model_provenance,
                 "standardized_generated_includes_condition": False,
