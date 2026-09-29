@@ -1,4 +1,4 @@
-"""Launch LIBERO alignment validation in the project-local OpenVLA environment."""
+"""Launch LIBERO alignment validation in a project-local Repair/LIBERO runtime."""
 
 from __future__ import annotations
 
@@ -52,13 +52,27 @@ def repair_python_candidates(project_root: Path) -> list[Path]:
         configured = str(os.environ.get(key) or "").strip()
         if configured:
             raw_candidates.append(_configured_python(configured))
-    raw_candidates.extend(
-        [
-            project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python",
-            project_root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python",
-            project_root / "conda_envs" / "LF3R-Ctrl-World" / "bin" / "python",
-        ]
+    raw_candidates.append(
+        project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python"
     )
+    conda_root = project_root / "conda_envs"
+    if conda_root.is_dir():
+        raw_candidates.extend(
+            sorted(
+                (
+                    env_dir / "bin" / "python"
+                    for env_dir in conda_root.iterdir()
+                    if env_dir.is_dir()
+                    and (
+                        "libero" in env_dir.name.lower()
+                        or "openvla" in env_dir.name.lower()
+                        or "repair" in env_dir.name.lower()
+                    )
+                    and "ctrl" not in env_dir.name.lower()
+                ),
+                key=lambda path: str(path).lower(),
+            )
+        )
     current = Path(sys.executable).resolve()
     try:
         current.relative_to(project_root)
