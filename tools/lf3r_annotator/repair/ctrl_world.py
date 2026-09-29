@@ -11,7 +11,7 @@ from typing import Any
 
 from backend_core import ValidationError
 from .adapters import WorldModelAdapter
-from .alignment import find_trajectory_path, project_path
+from .alignment import project_path
 
 
 class CtrlWorldAdapter(WorldModelAdapter):
@@ -239,7 +239,21 @@ class CtrlWorldAdapter(WorldModelAdapter):
             ),
         )
         python = self._python()
-        trajectory = find_trajectory_path(self.project_root, rollout)
+        controls_raw = str(rollout.get("ctrl_controls_path") or "").strip()
+        controls_path = (
+            project_path(
+                self.project_root,
+                controls_raw,
+                label="prepared Ctrl controls",
+            )
+            if controls_raw
+            else None
+        )
+        alignment_meta = rollout.get("rgb_alignment")
+        alignment_validated = bool(
+            isinstance(alignment_meta, dict)
+            and alignment_meta.get("validated")
+        )
 
         try:
             target_fps = float(self.config.get("target_fps", self.TARGET_FPS))
@@ -304,9 +318,20 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 "Ctrl-World DROID normalization stats are unavailable: "
                 + self._relative_or_absolute(self.project_root, data_stat_path)
             )
-        if trajectory is None or trajectory.suffix.lower() not in {".hdf5", ".h5"}:
+        if not bool(rollout.get("ctrl_prepared")):
             reasons.append(
-                "Ctrl-World requires the official LIBERO HDF5 trajectory/proprio source"
+                "Ctrl-World requires offline prepared controls; rerun "
+                "prepare_libero_manifest.py --resume"
+            )
+        if controls_path is None or not controls_path.is_file():
+            reasons.append(
+                "Prepared Ctrl controls are unavailable: "
+                + (controls_raw or "<missing ctrl_controls_path>")
+            )
+        if not alignment_validated:
+            reasons.append(
+                "Offline LIBERO alignment validation is unavailable; rerun "
+                "prepare_libero_manifest.py --resume"
             )
 
         source_fps = float(rollout.get("fps") or 0.0)
@@ -329,6 +354,12 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "checkpoint_type": self.CHECKPOINT_TYPE,
             "source_root": self._relative_or_absolute(self.project_root, source_root),
             "python": self._relative_or_absolute(self.project_root, python),
+            "prepared_controls_path": (
+                self._relative_or_absolute(self.project_root, controls_path)
+                if controls_path is not None
+                else None
+            ),
+            "offline_alignment_validated": alignment_validated,
             "svd_model_path": self._relative_or_absolute(self.project_root, svd_path),
             "clip_model_path": self._relative_or_absolute(self.project_root, clip_path),
             "data_stat_path": self._relative_or_absolute(self.project_root, data_stat_path),
@@ -346,12 +377,12 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "seed": seed,
             "text_conditioning": bool(self.config.get("text_conditioning", True)),
             "control_adapter": (
-                "restore states[c+1] + replay GT actions[c+1:] in LIBERO; "
-                "resulting EE quaternion->Euler XYZ and Panda gripper qpos->DROID closure"
+                "offline prepared LIBERO replay controls; runtime slices "
+                "frame-aligned absolute pose/gripper controls without simulator replay"
             ),
             "control_semantics": (
-                "absolute Cartesian pose/gripper trajectory derived from the same "
-                "GT LIBERO future actions; no future recorded proprio is consumed"
+                "absolute Cartesian pose/gripper trajectory prepared offline from "
+                "GT LIBERO replay; runtime consumes no simulator state or HDF5"
             ),
             "rollout_mode": "autoregressive",
         }
@@ -361,16 +392,18 @@ class CtrlWorldAdapter(WorldModelAdapter):
     @staticmethod
     def _read_frame(path: Path, index: int) -> Any:
         try:
-            import imageio.v2 as imageio
+            import decord
+            import numpy as np
         except ImportError as error:
             raise ValidationError(
-                "imageio is required to prepare Ctrl-World condition frames"
+                "decord and numpy are required to read Ctrl-World condition video"
             ) from error
-        reader = imageio.get_reader(str(path))
-        try:
-            return reader.get_data(index)
-        finally:
-            reader.close()
+        reader = decord.VideoReader(str(path))
+        if index < 0 or index >= len(reader):
+            raise ValidationError(
+                f"Ctrl-World condition frame {index} is outside video length {len(reader)}"
+            )
+        return np.asarray(reader[index].asnumpy())
 
     @staticmethod
     def _resize_frame(frame: Any, width: int, height: int) -> Any:
@@ -395,10 +428,10 @@ class CtrlWorldAdapter(WorldModelAdapter):
         output_dir: Path,
     ) -> dict[str, Any]:
         try:
-            import imageio.v2 as imageio
+            from PIL import Image
         except ImportError as error:
             raise ValidationError(
-                "imageio is required to prepare Ctrl-World condition frames"
+                "Pillow is required to write Ctrl-World condition frames"
             ) from error
 
         status = self._validation or self.validate_rollout(rollout)
@@ -416,7 +449,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             frame = self._read_frame(source, cut_frame)
             frame = self._resize_frame(frame, self.WIDTH, self.HEIGHT)
             target = condition_dir / f"{consumer_view}.png"
-            imageio.imwrite(str(target), frame)
+            Image.fromarray(frame).save(target)
             images[consumer_view] = target
 
         source_shapes: dict[str, list[int]] = {}
