@@ -178,7 +178,26 @@ class RepairService:
             )
         return rows
 
-    def _worker_python(self) -> Path:
+    def _worker_python(
+        self,
+        model_name: str,
+        adapter_status: dict[str, Any],
+    ) -> Path:
+        if model_name == "ctrl_world":
+            raw = str(adapter_status.get("python") or "").strip()
+            if not raw:
+                raise ValidationError("Ctrl-World runtime path is unavailable")
+            candidate = Path(raw).expanduser()
+            python = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (self.project_root / candidate).resolve()
+            )
+            return resolve_repair_python(
+                self.project_root,
+                preferred_python=python,
+                runtime_label="Ctrl-World",
+            )
         return resolve_repair_python(self.project_root)
 
     def _world_model_adapter(
@@ -269,7 +288,7 @@ class RepairService:
         blockers.extend(adapter_status["unavailable_reasons"])
         worker_python: Path | None = None
         try:
-            worker_python = self._worker_python()
+            worker_python = self._worker_python(model_name, adapter_status)
         except ValidationError as error:
             blockers.append(str(error))
         # GPU utilization/status is informational only.  Do not block Repair:
@@ -320,6 +339,21 @@ class RepairService:
                     cut_frame=int(plan["alignment"]["cut_rgb_frame"]),
                     min_psnr=float(payload.get("alignment_min_psnr", 20.0)),
                     gpu_index=int(plan["gpu"]["requested_index"]),
+                    python_override=(
+                        (self.project_root / plan["worker_python"]).resolve()
+                        if plan.get("worker_python")
+                        and not Path(str(plan["worker_python"])).is_absolute()
+                        else (
+                            Path(str(plan["worker_python"])).resolve()
+                            if plan.get("worker_python")
+                            else None
+                        )
+                    ),
+                    runtime_label=(
+                        "Ctrl-World"
+                        if plan["model_name"] == "ctrl_world"
+                        else "Repair/LIBERO"
+                    ),
                 )
                 if not smoke["passed"]:
                     smoke_error = (
@@ -545,7 +579,13 @@ class RepairService:
         _atomic_json(run_dir / "status.json", status)
 
         worker = Path(__file__).resolve().parent / "worker.py"
-        worker_python = self._worker_python()
+        worker_python_value = str(plan["worker_python"])
+        worker_python_path = Path(worker_python_value).expanduser()
+        worker_python = (
+            worker_python_path.resolve()
+            if worker_python_path.is_absolute()
+            else (self.project_root / worker_python_path).resolve()
+        )
         log_path = self.log_root / f"{run_id}.log"
         job_id = "repair-" + uuid.uuid4().hex[:12]
         job = {
