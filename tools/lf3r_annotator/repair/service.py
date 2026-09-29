@@ -364,6 +364,7 @@ class RepairService:
                     "validation_path": alignment_meta.get("validation_path"),
                     "minimum_psnr": alignment_meta.get("minimum_psnr"),
                     "sampled_cut_frames": alignment_meta.get("sampled_cut_frames"),
+                    "action_count": int(rollout.get("total_frames") or 0),
                 }
             else:
                 smoke_error = (
