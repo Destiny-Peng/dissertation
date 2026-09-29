@@ -26,10 +26,22 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
                 self.assertEqual(record["dataset_role"], "controlled_analysis")
                 self.assertIsInstance(record["injection"], dict)
                 self.assertIn("causal_onset_frame", record["injection"])
-            else:
+            elif record["source_kind"] == "natural_policy":
                 self.assertEqual(record["source_kind"], "natural_policy")
                 self.assertEqual(record["analysis_partition"], "natural_observation")
                 self.assertIsNone(record["injection"])
+            else:
+                self.assertEqual(record["source_kind"], "external_dataset")
+                self.assertEqual(record["analysis_partition"], "real_robot_analysis")
+                self.assertIsNone(record["injection"])
+                self.assertTrue(record["camera_video_paths"])
+
+        external = [record for record in records if record["source_kind"] == "external_dataset"]
+        self.assertEqual(len(external), 55)
+        self.assertEqual(
+            {suite: sum(record["task_suite"] == suite for record in external) for suite in ("droid", "robovad", "reboot")},
+            {"droid": 20, "robovad": 20, "reboot": 15},
+        )
 
     def test_frontend_exposes_required_annotation_controls(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")

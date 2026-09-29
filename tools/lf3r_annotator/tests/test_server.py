@@ -1170,6 +1170,8 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             **self.rollout,
             "task_suite": "realrobot_tube",
             "dataset_role": "realrobot_tube",
+            "source_kind": "external_dataset",
+            "analysis_partition": "real_robot_analysis",
         }
         self.app.manifest_path.write_text(
             json.dumps(custom_rollout) + "\n",
@@ -1196,12 +1198,10 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
 
         self.assertEqual(job["scope"], "realrobot_tube")
         partition_index = job["command"].index("--partition")
-        self.assertEqual(
-            job["command"][partition_index + 1],
-            "natural_observation",
-        )
-        suite_index = job["command"].index("--task-suite")
-        self.assertEqual(job["command"][suite_index + 1], "realrobot_tube")
+        self.assertEqual(job["command"][partition_index + 1], "all")
+        self.assertNotIn("--task-suite", job["command"])
+        rollout_id_index = job["command"].index("--rollout-id")
+        self.assertEqual(job["command"][rollout_id_index + 1], custom_rollout["id"])
         final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
 

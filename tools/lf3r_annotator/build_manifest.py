@@ -268,6 +268,26 @@ def atomic_write(path: Path, content: str) -> None:
             os.unlink(temp_name)
 
 
+def load_preserved_external_records(path: Path) -> list[dict[str, Any]]:
+    """Keep curated external data when rebuilding the generated LIBERO rows."""
+    if not path.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise RuntimeError(
+                    f"Invalid JSON in existing manifest at {path}:{line_number}"
+                ) from error
+            if record.get("source_kind") == "external_dataset":
+                records.append(record)
+    return records
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build LF3R rollout manifest")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
@@ -319,21 +339,31 @@ def main() -> None:
             record = build_record(video, project_root, task_metadata)
             if record:
                 records.append(record)
-    records.sort(
-        key=lambda item: (
-            item["dataset_role"],
-            item["task_suite"],
-            item["task_id"],
-            item["episode_index"],
-            item["id"],
-        )
-    )
     if not records:
         roots_text = ", ".join(str(path) for path in scan_roots)
         raise RuntimeError(
             "No rollout records discovered; refusing to overwrite the manifest. "
             "Check the scan roots and rollout provenance. Scan roots: " + roots_text
         )
+    preserved_external = load_preserved_external_records(args.output)
+    generated_ids = {record["id"] for record in records}
+    for record in preserved_external:
+        if record.get("id") in generated_ids:
+            raise RuntimeError(
+                "External dataset rollout id collides with a generated rollout: "
+                + str(record.get("id"))
+            )
+        generated_ids.add(record.get("id"))
+    records.extend(preserved_external)
+    records.sort(
+        key=lambda item: (
+            item["dataset_role"],
+            item["task_suite"],
+            item["task_id"],
+            item["episode_index"] if item["episode_index"] is not None else -1,
+            item["id"],
+        )
+    )
     manifest_text = "".join(
         json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records
     )
@@ -352,6 +382,7 @@ def main() -> None:
         "strict_partitioning": {
             "natural_observation": "No action or environment intervention; use for natural success/failure analysis.",
             "controlled_analysis": "Known injected intervention; exclude from natural failure rates.",
+            "real_robot_analysis": "Curated external robot videos; verify final outcomes through annotation.",
         },
     }
     atomic_write(
