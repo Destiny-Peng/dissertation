@@ -401,14 +401,14 @@
       "condition_rgb = rgb[" + validation.alignment.condition_frame + "]",
       "branch_state = states[" + validation.alignment.branch_state_index + "]",
       "future_actions = actions[" + validation.alignment.gt_action_start + ":]",
-      "Repair runtime candidate: " + String(
-        validation.runtime_candidate || validation.worker_python || "unresolved"
+      "Ctrl-World runtime: " + String(
+        validation.model_runtime || "unresolved"
       ),
-      "Repair runtime: " + String(
-        validation.worker_python || "preflight failed"
+      "Repair/LIBERO runtime: " + String(
+        validation.repair_runtime || "preflight failed"
       ),
-      validation.runtime_error
-        ? ("Runtime preflight error: " + String(validation.runtime_error))
+      validation.repair_runtime_error
+        ? ("Repair/LIBERO preflight error: " + String(validation.repair_runtime_error))
         : "",
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
