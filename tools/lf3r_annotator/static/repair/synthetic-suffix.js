@@ -360,7 +360,7 @@
         "Ctrl views: exterior_1 ← cam_high · exterior_2 ← cam_high (adapter duplicate) · wrist ← cam_wrist"
       );
       modelLines.push(
-        "Ctrl control: states[c+1] + replayed GT actions[c+1:] → absolute Cartesian pose/gripper; no future recorded proprio"
+        "Ctrl control: prepared offline once from LIBERO GT replay; runtime slices ctrl_controls[c::step] · no LIBERO/HDF5 replay"
       );
       modelLines.push(
         "Ctrl native geometry: source RGB is resized to 192×320; resize is recorded in provenance"
