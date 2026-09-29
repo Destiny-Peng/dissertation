@@ -4,9 +4,11 @@
 The official processed LIBERO HDF5 dataset has the alignment used by LF3R:
 RGB[k] is captured after action[k] and therefore corresponds to the simulator
 state reached from states[k] by action[k], i.e. approximately states[k + 1].
-This importer does not rewrite states/actions.  It only materializes the two
-physical RGB streams as MP4 files and writes a manifest that points back to the
-original HDF5 demo group.
+The importer materializes the two physical RGB streams and performs the
+LIBERO-only preparation needed by Ctrl-World: it replays each successful demo
+once, exports a frame-aligned absolute Cartesian pose/gripper trajectory, and
+stores alignment validation metadata. Runtime Ctrl-World generation therefore
+does not need LIBERO, robosuite, h5py, or simulator replay.
 """
 
 from __future__ import annotations
@@ -314,6 +316,238 @@ def _materialize_demo_videos(
     return camera_paths
 
 
+
+def _repair_trajectory_api(project_root: Path) -> tuple[Any, Any]:
+    """Import Repair trajectory helpers for one-time offline LIBERO preparation."""
+
+    package_root = (project_root / "tools" / "lf3r_annotator").resolve()
+    value = str(package_root)
+    if value not in sys.path:
+        sys.path.insert(0, value)
+    try:
+        from repair.trajectory import (
+            replay_ctrl_world_pose_controls,
+            run_libero_alignment_smoke,
+        )
+    except ImportError as error:
+        raise DemoImportError(
+            "Repair trajectory helpers are unavailable; run this script from the "
+            "LF3R checkout with its LIBERO preparation environment."
+        ) from error
+    return replay_ctrl_world_pose_controls, run_libero_alignment_smoke
+
+
+def _prepared_ctrl_paths(
+    camera_paths: dict[str, Path],
+    suite_name: str,
+    task_id: int,
+    demo_index: int,
+) -> tuple[Path, Path]:
+    directory = next(iter(camera_paths.values())).parent
+    stem = f"{suite_name}-task{task_id:02d}-demo{demo_index:03d}"
+    return (
+        directory / f"{stem}.ctrl_controls.npz",
+        directory / f"{stem}.alignment.json",
+    )
+
+
+def _resume_prepared_ctrl(
+    *,
+    controls_path: Path,
+    validation_path: Path,
+    frame_count: int,
+) -> dict[str, Any] | None:
+    if not controls_path.is_file() or not validation_path.is_file():
+        return None
+    try:
+        import numpy as np
+
+        with np.load(controls_path, allow_pickle=False) as payload:
+            controls = np.asarray(payload["controls"])
+            indices = np.asarray(payload["source_frame_indices"])
+        validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    except (ImportError, OSError, KeyError, ValueError, json.JSONDecodeError):
+        return None
+    if controls.shape != (frame_count, 7):
+        return None
+    if indices.shape != (frame_count,):
+        return None
+    if not np.array_equal(indices, np.arange(frame_count, dtype=np.int64)):
+        return None
+    if not isinstance(validation, dict) or not validation.get("passed"):
+        return None
+    if int(validation.get("frame_count") or -1) != int(frame_count):
+        return None
+    return validation
+
+
+def _materialize_ctrl_preparation(
+    *,
+    project_root: Path,
+    group: Any,
+    camera_paths: dict[str, Path],
+    suite_name: str,
+    task_id: int,
+    demo_index: int,
+    frame_count: int,
+    fps: float,
+    alignment_min_psnr: float,
+    resume: bool,
+) -> tuple[Path, Path, dict[str, Any]]:
+    """Create Ctrl controls and validate RGB/state/action alignment offline."""
+
+    import numpy as np
+
+    controls_path, validation_path = _prepared_ctrl_paths(
+        camera_paths,
+        suite_name,
+        task_id,
+        demo_index,
+    )
+    if resume:
+        cached = _resume_prepared_ctrl(
+            controls_path=controls_path,
+            validation_path=validation_path,
+            frame_count=frame_count,
+        )
+        if cached is not None:
+            return controls_path, validation_path, cached
+
+    occupied = [
+        path
+        for path in (controls_path, validation_path)
+        if path.exists()
+    ]
+    if occupied:
+        raise FileExistsError(
+            "Prepared Ctrl artifacts already exist; use --resume to validate/reuse "
+            "them or remove them before rebuilding: "
+            + ", ".join(str(path) for path in occupied)
+        )
+
+    replay_ctrl_world_pose_controls, run_libero_alignment_smoke = (
+        _repair_trajectory_api(project_root)
+    )
+    states = np.asarray(group["states"][...])
+    actions = np.asarray(group["actions"][...], dtype=np.float64)
+    model_xml_raw = group.attrs.get("model_file")
+    model_xml = (
+        model_xml_raw.decode("utf-8")
+        if isinstance(model_xml_raw, bytes)
+        else (str(model_xml_raw) if model_xml_raw is not None else None)
+    )
+    rollout = {
+        "task_suite": suite_name,
+        "task_id": int(task_id),
+        "total_frames": int(frame_count),
+        "fps": float(fps),
+        "camera_video_paths": {
+            camera: _project_relative(
+                project_root,
+                path,
+                f"{camera} video",
+            )
+            for camera, path in camera_paths.items()
+        },
+    }
+
+    replay = replay_ctrl_world_pose_controls(
+        project_root=project_root,
+        rollout=rollout,
+        states=states,
+        actions=actions,
+        cut_frame=0,
+        frame_step=1,
+        model_xml=model_xml,
+    )
+    controls = np.asarray(replay["controls"], dtype=np.float32)
+    indices = np.asarray(replay["source_frame_indices"], dtype=np.int64)
+    expected_indices = np.arange(frame_count, dtype=np.int64)
+    if controls.shape != (frame_count, 7) or not np.array_equal(
+        indices,
+        expected_indices,
+    ):
+        raise DemoImportError(
+            "Full Ctrl preparation did not produce one [7] control per source RGB "
+            f"frame: controls={controls.shape}, indices={indices.shape}, "
+            f"expected=({frame_count}, 7)"
+        )
+
+    sample_cuts = sorted(
+        {
+            0,
+            min(frame_count - 2, frame_count // 2),
+            frame_count - 2,
+        }
+    )
+    smoke_results: list[dict[str, Any]] = []
+    for cut_frame in sample_cuts:
+        smoke = run_libero_alignment_smoke(
+            project_root=project_root,
+            rollout=rollout,
+            states=states,
+            actions=actions,
+            cut_frame=int(cut_frame),
+            min_psnr=float(alignment_min_psnr),
+            model_xml=model_xml,
+        )
+        smoke_results.append(smoke)
+    passed = bool(smoke_results) and all(
+        bool(item.get("passed")) for item in smoke_results
+    )
+    validation = {
+        "schema_version": 1,
+        "passed": passed,
+        "method": "offline_libero_replay_sampled_cuts",
+        "frame_count": int(frame_count),
+        "fps": float(fps),
+        "minimum_psnr": float(alignment_min_psnr),
+        "sampled_cut_frames": sample_cuts,
+        "samples": smoke_results,
+        "index_contract": {
+            "condition_frame": "rgb[c]",
+            "branch_state": "states[c+1]",
+            "future_actions": "actions[c+1:]",
+            "ctrl_control": "ctrl_controls[c]",
+        },
+        "control_semantics": "xyz + Euler XYZ + DROID-style gripper closure",
+        "control_derivation": replay.get("derivation"),
+        "future_recorded_proprio_used": False,
+    }
+    if not passed:
+        raise DemoImportError(
+            "Offline LIBERO alignment validation failed; prepared Ctrl artifacts "
+            "were not published"
+        )
+
+    controls_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_controls = controls_path.with_name(
+        f".{controls_path.name}.tmp.npz"
+    )
+    try:
+        np.savez_compressed(
+            temporary_controls,
+            controls=controls,
+            source_frame_indices=indices,
+            source_fps=np.asarray([float(fps)], dtype=np.float32),
+        )
+        os.replace(temporary_controls, controls_path)
+        _atomic_text(
+            validation_path,
+            json.dumps(validation, indent=2, ensure_ascii=False) + "\n",
+        )
+    except Exception:
+        if temporary_controls.exists():
+            temporary_controls.unlink()
+        if controls_path.exists():
+            controls_path.unlink()
+        if validation_path.exists():
+            validation_path.unlink()
+        raise
+
+    return controls_path, validation_path, validation
+
+
 def _load_suite(name: str, project_root: Path) -> Any:
     libero_root = _ensure_project_libero_on_sys_path(project_root)
     try:
@@ -340,6 +574,7 @@ def build_manifest(
     output: Path,
     video_root: Path,
     fps_override: float | None = None,
+    alignment_min_psnr: float = 20.0,
     resume: bool = False,
 ) -> list[dict[str, Any]]:
     try:
@@ -406,6 +641,20 @@ def build_manifest(
                     fps=fps,
                     resume=resume,
                 )
+                ctrl_controls_path, alignment_path, alignment_validation = (
+                    _materialize_ctrl_preparation(
+                        project_root=project_root,
+                        group=group,
+                        camera_paths=camera_paths,
+                        suite_name=task_suite,
+                        task_id=task_id,
+                        demo_index=demo_index,
+                        frame_count=frame_count,
+                        fps=fps,
+                        alignment_min_psnr=alignment_min_psnr,
+                        resume=resume,
+                    )
+                )
                 records.append(
                     {
                         "schema_version": 1,
@@ -443,7 +692,30 @@ def build_manifest(
                             "condition_frame": "rgb[c]",
                             "branch_state": "states[c+1]",
                             "future_actions": "actions[c+1:]",
+                            "ctrl_control": "ctrl_controls[c]",
+                            "validated": True,
+                            "validation_method": alignment_validation["method"],
+                            "validation_path": _project_relative(
+                                project_root,
+                                alignment_path,
+                                "offline alignment validation",
+                            ),
+                            "minimum_psnr": alignment_validation["minimum_psnr"],
+                            "sampled_cut_frames": alignment_validation[
+                                "sampled_cut_frames"
+                            ],
                         },
+                        "ctrl_prepared": True,
+                        "ctrl_controls_path": _project_relative(
+                            project_root,
+                            ctrl_controls_path,
+                            "prepared Ctrl controls",
+                        ),
+                        "ctrl_controls_format": "lf3r_ctrl_absolute_pose_v1",
+                        "ctrl_control_semantics": (
+                            "xyz + Euler XYZ + DROID-style gripper closure; "
+                            "one control aligned to every source RGB frame"
+                        ),
                     }
                 )
 
@@ -476,6 +748,9 @@ def build_manifest(
             "rgb[c] ~= observation(states[c+1]); continue with actions[c+1:]"
         ),
         "camera_views": list(CAMERA_DATASETS),
+        "ctrl_prepared": True,
+        "ctrl_controls": "one frame-aligned absolute pose/gripper control per RGB frame",
+        "alignment_validation": "offline before manifest publication",
     }
     _atomic_text(
         output.with_name(output.stem.replace("manifest", "summary") + ".json"),
@@ -502,6 +777,12 @@ def parse_args() -> argparse.Namespace:
         help="Override source playback FPS; default reads LIBERO control_freq, then 20.",
     )
     parser.add_argument(
+        "--alignment-min-psnr",
+        type=float,
+        default=20.0,
+        help="Minimum PSNR for offline RGB/state/action alignment validation.",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Reuse only videos whose source sidecar exactly matches the HDF5 demo.",
@@ -518,6 +799,7 @@ def main() -> None:
         output=args.output,
         video_root=args.video_root,
         fps_override=args.fps,
+        alignment_min_psnr=float(args.alignment_min_psnr),
         resume=bool(args.resume),
     )
     print(
