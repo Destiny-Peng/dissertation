@@ -106,13 +106,22 @@ def compute_alignment(
     )
 
 
-def project_path(project_root: Path, value: str) -> Path:
+def project_path(
+    project_root: Path,
+    value: str,
+    *,
+    label: str = "Repair input",
+) -> Path:
+    root = project_root.expanduser().resolve()
     candidate = Path(value).expanduser()
-    path = candidate.resolve() if candidate.is_absolute() else (project_root / candidate).resolve()
+    path = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
     try:
-        path.relative_to(project_root.resolve())
+        path.relative_to(root)
     except ValueError as error:
-        raise ValidationError("Repair input path escapes project root") from error
+        raise ValidationError(
+            f"{label} path escapes project root: value={value!r}, "
+            f"resolved={path}, project_root={root}"
+        ) from error
     return path
 
 
@@ -120,7 +129,11 @@ def find_trajectory_path(project_root: Path, rollout: dict[str, Any]) -> Path | 
     for field in TRAJECTORY_PATH_FIELDS:
         value = rollout.get(field)
         if isinstance(value, str) and value.strip():
-            path = project_path(project_root, value.strip())
+            path = project_path(
+                project_root,
+                value.strip(),
+                label=f"trajectory field {field}",
+            )
             if path.is_file():
                 return path
     return None
@@ -138,7 +151,11 @@ def action_source(project_root: Path, rollout: dict[str, Any]) -> Path | None:
     ):
         value = rollout.get(field)
         if isinstance(value, str) and value.strip():
-            path = project_path(project_root, value.strip())
+            path = project_path(
+                project_root,
+                value.strip(),
+                label=f"action field {field}",
+            )
             if path.is_file():
                 return path
     return None
