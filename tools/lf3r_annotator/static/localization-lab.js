@@ -15,6 +15,12 @@
 
   var PARAMS = [
     {
+      path: "data.signal_mode", label: "Input signal", type: "enum",
+      allowed: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"],
+      defaults: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"],
+      help: "2D modes use one [progress, hop] pair. perspectives_6d concatenates the three raw perspectives. fused_perspectives_8d prepends fused [progress, hop] to the same six raw features."
+    },
+    {
       path: "data.success_ratio", label: "Success ratio", type: "number", min: 0,
       defaults: [0, 0.5, 1, 2],
       help: "Numbers >= 0. Used only with population=failure_success. Example: [0,0.5,1,2]"
@@ -45,6 +51,10 @@
     {
       path: "model.hidden", label: "Hidden size", type: "integer", min: 1, max: 512,
       defaults: [16, 32], help: "Integer 1-512. Example: [16,32]"
+    },
+    {
+      path: "model.num_layers", label: "BiLSTM layers", type: "integer", min: 1, max: 8,
+      defaults: [1, 2, 3], help: "Stacked bidirectional LSTM layers. Integer 1-8. Example: [1,2,3]"
     },
     {
       path: "loss.name", label: "Loss", type: "enum",
@@ -116,6 +126,7 @@
     var forceChallenge = node("localizationForceChallengeTrain").checked && challengeSet;
     return {
       data: {
+        signal_mode: node("localizationSignalMode").value,
         population: population,
         success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio"),
         challenge_set_name: forceChallenge ? challengeName : "",
@@ -127,7 +138,10 @@
         sigma_post: n("localizationSigmaPost"),
         tau_event: n("localizationTauEvent")
       },
-      model: { hidden: Math.round(n("localizationHidden")) },
+      model: {
+        hidden: Math.round(n("localizationHidden")),
+        num_layers: Math.round(n("localizationNumLayers"))
+      },
       loss: {
         name: node("localizationLoss").value,
         distance_weight: n("localizationDistanceWeight"),
@@ -144,6 +158,9 @@
         weight_decay: n("localizationWeightDecay"),
         grad_clip: n("localizationGradClip"),
         seed: Math.round(n("localizationSeed")),
+        split_seed: Math.round(n("localizationSplitSeed")),
+        vary_model_seed: node("localizationVaryModelSeed").checked,
+        vary_split_seed: node("localizationVarySplitSeed").checked,
         train_fraction: n("localizationTrainFraction"),
         val_fraction: n("localizationValFraction")
       }
@@ -153,6 +170,7 @@
   function setBase(base) {
     var data = base.data || {}, target = base.target || {}, model = base.model || {};
     var loss = base.loss || {}, training = base.training || {};
+    node("localizationSignalMode").value = data.signal_mode || "fused";
     node("localizationPopulation").value = data.population || "failure_only";
     node("localizationSuccessRatio").value = data.success_ratio == null ? 0 : data.success_ratio;
     node("localizationChallengeTrainSet").value = data.challenge_set_name || "";
@@ -162,6 +180,7 @@
     node("localizationSigmaPost").value = target.sigma_post == null ? 3 : target.sigma_post;
     node("localizationTauEvent").value = target.tau_event == null ? 20 : target.tau_event;
     node("localizationHidden").value = model.hidden == null ? 16 : model.hidden;
+    node("localizationNumLayers").value = model.num_layers == null ? 1 : model.num_layers;
     node("localizationLoss").value = loss.name || "bce";
     node("localizationDistanceWeight").value = loss.distance_weight == null ? 1 : loss.distance_weight;
     node("localizationRankingWeight").value = loss.ranking_weight == null ? 1 : loss.ranking_weight;
@@ -175,6 +194,13 @@
     node("localizationWeightDecay").value = training.weight_decay == null ? 0.0001 : training.weight_decay;
     node("localizationGradClip").value = training.grad_clip == null ? 5 : training.grad_clip;
     node("localizationSeed").value = training.seed == null ? 17 : training.seed;
+    node("localizationSplitSeed").value = training.split_seed == null
+      ? (training.seed == null ? 17 : training.seed)
+      : training.split_seed;
+    node("localizationVaryModelSeed").checked = training.vary_model_seed == null
+      ? true : Boolean(training.vary_model_seed);
+    node("localizationVarySplitSeed").checked = training.vary_split_seed == null
+      ? true : Boolean(training.vary_split_seed);
     node("localizationTrainFraction").value = training.train_fraction == null ? 0.70 : training.train_fraction;
     node("localizationValFraction").value = training.val_fraction == null ? 0.15 : training.val_fraction;
     updateConditionalFields();
@@ -946,7 +972,7 @@
       + '<summary>Show all ' + esc(repeats.length) + ' repeat(s)</summary>'
       + '<div class="analysis-table-wrap localization-repeat-table-wrap">'
       + '<table class="analysis-table localization-repeat-table"><thead><tr>'
-      + '<th>Repeat</th><th>Seed</th><th>Test N</th>'
+      + '<th>Repeat</th><th>Model seed</th><th>Split seed</th><th>Test N</th>'
       + '<th>In interval</th><th>First event</th><th>±1</th><th>±3</th><th>±5</th>'
       + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
       + '<th>Best epoch</th><th>Val loss</th><th>Checkpoint</th>'
@@ -958,7 +984,8 @@
           : "—";
         return '<tr>'
           + '<td><strong>repeat ' + esc(repeat.repeat) + '</strong></td>'
-          + '<td class="numeric">' + esc(repeat.seed == null ? "—" : repeat.seed) + '</td>'
+          + '<td class="numeric">' + esc(repeat.model_seed == null ? (repeat.seed == null ? "—" : repeat.seed) : repeat.model_seed) + '</td>'
+          + '<td class="numeric">' + esc(repeat.split_seed == null ? "—" : repeat.split_seed) + '</td>'
           + '<td class="numeric">' + esc(repeat.test_n == null ? "—" : repeat.test_n) + '</td>'
           + '<td class="numeric">' + formatMetric(repeat.in_interval_rate, true) + '</td>'
           + '<td class="numeric">' + formatMetric(repeat.first_event_in_interval_rate, true) + '</td>'
@@ -1023,13 +1050,14 @@
         + (stage.best_config_id ? '<span class="analysis-badge">Best ' + esc(stage.best_config_id) + '</span>' : '')
         + '</div>'
         + '<div class="analysis-table-wrap"><table class="analysis-table localization-run-result-table"><thead><tr>'
-        + '<th>Config</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
+        + '<th>Config</th><th>Input</th><th>Repeats</th><th>In interval</th><th>First event</th><th>±3</th>'
         + '<th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
         + '<th>Batch</th><th>Best config</th>'
         + '</tr></thead><tbody>'
         + rows.map(function (row) {
           return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
             + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
+            + '<td>' + esc(row["data.signal_mode"] || "fused") + '</td>'
             + '<td class="numeric">' + esc(row.repeat_n == null ? "—" : row.repeat_n) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "in_interval_rate_mean", "in_interval_rate_variance", true) + '</td>'
             + '<td class="numeric">' + formatMetricCell(row, "first_event_in_interval_rate_mean", "first_event_in_interval_rate_variance", true) + '</td>'
@@ -1042,7 +1070,7 @@
             + '<td class="numeric">' + esc(row["training.batch_size"] == null ? "—" : row["training.batch_size"]) + '</td>'
             + '<td>' + (row.best ? '<strong>Selected</strong>' : '') + '</td>'
             + '</tr>'
-            + '<tr class="localization-repeat-detail-row"><td colspan="12">'
+            + '<tr class="localization-repeat-detail-row"><td colspan="13">'
             + renderRepeatDetails(row)
             + '</td></tr>';
         }).join("")

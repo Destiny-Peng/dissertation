@@ -15,9 +15,11 @@ import numpy as np
 import torch
 
 from robo_incremental_hop.io import (
+    SIGNAL_MODES,
     build_base_records,
     ensure_within_project,
     load_manifest,
+    load_signal,
     project_relative,
     resolve_project_path,
 )
@@ -28,6 +30,293 @@ from . import core, data, losses, metrics, specs, targets
 def log(message: str) -> None:
     timestamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
+
+
+def _aligned_signal_records(
+    source_root: Path,
+    manifest_rows: Mapping[str, Mapping[str, Any]],
+    annotations: Path,
+) -> tuple[
+    dict[
+        str,
+        tuple[
+            dict[str, dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+    ],
+    dict[str, Any],
+]:
+    """Load localization inputs from one fused-anchored result per rollout."""
+    fused_signals, events, no_event_failures, clean_rollouts, fused_provenance = (
+        build_base_records(
+            source_root,
+            manifest_rows,
+            annotations,
+            allowed_rollout_ids=None,
+            signal_mode="fused",
+            latest_per_rollout=True,
+        )
+    )
+    if not fused_signals:
+        raise ValueError("no usable fused Robo-Dopamine signals were found")
+
+    records_by_mode = {
+        "fused": (
+            fused_signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+    }
+    mode_provenance: dict[str, Any] = {
+        "anchor": "fused",
+        "alignment": "same_run_same_native_frame_indices",
+        "fused": fused_provenance,
+        "modes": {
+            "fused": {
+                "available_rollout_n": len(fused_signals),
+                "excluded_rollout_n": 0,
+                "exclusions": [],
+            }
+        },
+    }
+    copied_fields = (
+        "source_run_root",
+        "task_key",
+        "task_suite",
+        "task_id",
+        "task_description",
+        "outcome",
+    )
+
+    for signal_mode in SIGNAL_MODES:
+        if signal_mode == "fused":
+            continue
+        mode_signals: dict[str, dict[str, Any]] = {}
+        exclusions: list[dict[str, str]] = []
+        for rollout_id, fused_signal in fused_signals.items():
+            source_run_root = Path(fused_signal["source_run_root"])
+            try:
+                signal = load_signal(
+                    source_run_root,
+                    rollout_id,
+                    signal_mode,
+                )
+            except (FileNotFoundError, OSError, ValueError, KeyError) as exc:
+                exclusions.append({
+                    "rollout_id": rollout_id,
+                    "reason": str(exc),
+                })
+                continue
+            if list(signal["frames"]) != list(fused_signal["frames"]):
+                exclusions.append({
+                    "rollout_id": rollout_id,
+                    "reason": (
+                        f"{signal_mode} native frame indices do not match "
+                        "the fused anchor"
+                    ),
+                })
+                continue
+            for field in copied_fields:
+                if field in fused_signal:
+                    signal[field] = fused_signal[field]
+            mode_signals[rollout_id] = signal
+
+        records_by_mode[signal_mode] = (
+            mode_signals,
+            events,
+            no_event_failures,
+            clean_rollouts,
+        )
+        mode_provenance["modes"][signal_mode] = {
+            "available_rollout_n": len(mode_signals),
+            "excluded_rollout_n": len(exclusions),
+            "exclusions": exclusions,
+        }
+
+    perspective_modes = ("incremental", "forward", "backward")
+    six_d_signals: dict[str, dict[str, Any]] = {}
+    six_d_exclusions: list[dict[str, str]] = []
+    for rollout_id, fused_signal in fused_signals.items():
+        missing = [
+            mode for mode in perspective_modes
+            if rollout_id not in records_by_mode.get(mode, ({}, [], [], []))[0]
+        ]
+        if missing:
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "missing aligned perspective signal(s): " + ", ".join(missing),
+            })
+            continue
+        perspective_signals = [
+            records_by_mode[mode][0][rollout_id]
+            for mode in perspective_modes
+        ]
+        frames = list(fused_signal["frames"])
+        if any(list(signal["frames"]) != frames for signal in perspective_signals):
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective native frame indices do not match fused anchor",
+            })
+            continue
+        feature_columns: list[np.ndarray] = []
+        valid = True
+        for signal in perspective_signals:
+            progress = np.asarray(signal["progress"], dtype=np.float32)
+            hops = np.asarray(signal["hops"], dtype=np.float32)
+            if (
+                progress.ndim != 1
+                or hops.ndim != 1
+                or len(progress) != len(frames)
+                or len(hops) != len(frames)
+            ):
+                valid = False
+                break
+            feature_columns.extend([progress, hops])
+        if not valid:
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective progress/hop length does not match fused anchor",
+            })
+            continue
+        features = np.stack(feature_columns, axis=1)
+        if not np.all(np.isfinite(features)):
+            six_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "perspective_6d features contain non-finite values",
+            })
+            continue
+        six_d_signal = {
+            "rollout_id": rollout_id,
+            "signal_mode": "perspectives_6d",
+            "frames": frames,
+            "features": features,
+            "feature_names": [
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
+        }
+        for field in copied_fields:
+            if field in fused_signal:
+                six_d_signal[field] = fused_signal[field]
+        six_d_signals[rollout_id] = six_d_signal
+
+    records_by_mode["perspectives_6d"] = (
+        six_d_signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
+    mode_provenance["modes"]["perspectives_6d"] = {
+        "available_rollout_n": len(six_d_signals),
+        "excluded_rollout_n": len(six_d_exclusions),
+        "exclusions": six_d_exclusions,
+        "feature_names": [
+            "incremental_progress",
+            "incremental_hop",
+            "forward_progress",
+            "forward_hop",
+            "backward_progress",
+            "backward_hop",
+        ],
+    }
+
+    eight_d_signals: dict[str, dict[str, Any]] = {}
+    eight_d_exclusions: list[dict[str, str]] = []
+    eight_d_feature_names = [
+        "fused_progress",
+        "fused_hop",
+        "incremental_progress",
+        "incremental_hop",
+        "forward_progress",
+        "forward_hop",
+        "backward_progress",
+        "backward_hop",
+    ]
+    for rollout_id, fused_signal in fused_signals.items():
+        six_d_signal = six_d_signals.get(rollout_id)
+        if six_d_signal is None:
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "aligned perspectives_6d input is unavailable",
+            })
+            continue
+        frames = list(fused_signal["frames"])
+        fused_progress = np.asarray(fused_signal["progress"], dtype=np.float32)
+        fused_hops = np.asarray(fused_signal["hops"], dtype=np.float32)
+        if (
+            fused_progress.ndim != 1
+            or fused_hops.ndim != 1
+            or len(fused_progress) != len(frames)
+            or len(fused_hops) != len(frames)
+        ):
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "fused progress/hop length does not match fused anchor",
+            })
+            continue
+        fused_features = np.stack([fused_progress, fused_hops], axis=1)
+        raw_features = np.asarray(six_d_signal["features"], dtype=np.float32)
+        features = np.concatenate([fused_features, raw_features], axis=1)
+        if features.shape != (len(frames), 8) or not np.all(np.isfinite(features)):
+            eight_d_exclusions.append({
+                "rollout_id": rollout_id,
+                "reason": "fused_perspectives_8d features are invalid",
+            })
+            continue
+        eight_d_signal = {
+            "rollout_id": rollout_id,
+            "signal_mode": "fused_perspectives_8d",
+            "frames": frames,
+            "features": features,
+            "feature_names": list(eight_d_feature_names),
+        }
+        for field in copied_fields:
+            if field in fused_signal:
+                eight_d_signal[field] = fused_signal[field]
+        eight_d_signals[rollout_id] = eight_d_signal
+
+    records_by_mode["fused_perspectives_8d"] = (
+        eight_d_signals,
+        events,
+        no_event_failures,
+        clean_rollouts,
+    )
+    mode_provenance["modes"]["fused_perspectives_8d"] = {
+        "available_rollout_n": len(eight_d_signals),
+        "excluded_rollout_n": len(eight_d_exclusions),
+        "exclusions": eight_d_exclusions,
+        "feature_names": list(eight_d_feature_names),
+    }
+
+    return records_by_mode, mode_provenance
+
+
+def _records_for_config(
+    config: Mapping[str, Any],
+    records_by_mode: Mapping[str, tuple[Any, Any, Any, Any]],
+) -> tuple[Any, Any, Any, Any]:
+    signal_mode = str(config.get("data", {}).get("signal_mode", "fused"))
+    records = records_by_mode.get(signal_mode)
+    if records is None or not records[0]:
+        raise ValueError(
+            f"no usable aligned Robo-Dopamine {signal_mode} signals were found"
+        )
+    fused_records = records_by_mode.get("fused")
+    fused_count = len(fused_records[0]) if fused_records is not None else 0
+    if signal_mode != "fused" and len(records[0]) != fused_count:
+        raise ValueError(
+            f"aligned Robo-Dopamine {signal_mode} coverage is incomplete: "
+            f"{len(records[0])}/{fused_count} fused-anchor rollouts. "
+            "Input-signal comparisons require the same rollout/run/frame set."
+        )
+    return records
 
 
 def _positive_weight(dataset: Mapping[str, Mapping[str, Any]], rollout_ids: Sequence[str]) -> float:
@@ -131,6 +420,36 @@ def _selector_key(row: Mapping[str, Any], selector: Mapping[str, Any]) -> tuple[
     return tuple(key)
 
 
+def _repeat_seed_pair(
+    training: Mapping[str, Any],
+    repeat: int,
+) -> tuple[int, int]:
+    """Return (model_seed, split_seed) for one repeat.
+
+    training.seed remains the model-seed base for compatibility. When
+    training.split_seed is null or absent it inherits that same base, so old
+    specs preserve the historical both-vary behavior.
+    """
+    model_seed0 = int(training.get("seed", 17))
+    configured_split_seed = training.get("split_seed")
+    split_seed0 = (
+        model_seed0
+        if configured_split_seed is None
+        else int(configured_split_seed)
+    )
+    model_seed = (
+        model_seed0 + repeat
+        if bool(training.get("vary_model_seed", True))
+        else model_seed0
+    )
+    split_seed = (
+        split_seed0 + repeat
+        if bool(training.get("vary_split_seed", True))
+        else split_seed0
+    )
+    return model_seed, split_seed
+
+
 def _run_configuration(
     *,
     config: Mapping[str, Any],
@@ -160,6 +479,16 @@ def _run_configuration(
     )
     if len(base_failure) < 4:
         raise ValueError(f"configuration {config_id} has fewer than 4 eligible failure rollouts")
+    input_dims = {
+        int(np.asarray(row["sequence"]).shape[1])
+        for row in base_failure.values()
+    }
+    if len(input_dims) != 1:
+        raise ValueError(
+            f"configuration {config_id} has inconsistent localization input dimensions: "
+            f"{sorted(input_dims)}"
+        )
+    input_dim = input_dims.pop()
     failure_dataset = targets.apply_labels(base_failure, target_config)
     success_dataset = data.build_success_dataset(signals, clean_rollouts)
     device = core.resolve_device(str(training.get("device", "auto")))
@@ -168,12 +497,11 @@ def _run_configuration(
     predictions: list[dict[str, Any]] = []
     all_failure_predictions: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
-    seed0 = int(training.get("seed", 17))
     for repeat in range(repeats):
-        seed = seed0 + repeat
+        model_seed, split_seed = _repeat_seed_pair(training, repeat)
         split = core.rollout_split(
             base_failure,
-            seed=seed,
+            seed=split_seed,
             train_fraction=float(training.get("train_fraction", 0.70)),
             val_fraction=float(training.get("val_fraction", 0.15)),
         )
@@ -194,7 +522,7 @@ def _run_configuration(
                 base_failure,
                 failure_train_ids,
                 ratio=float(data_config.get("success_ratio", 0.0)),
-                seed=seed * 100 + 31,
+                seed=split_seed * 100 + 31,
             )
         combined = {**failure_dataset}
         for rollout_id in success_ids:
@@ -222,8 +550,10 @@ def _run_configuration(
             mean=mean,
             std=std,
             hidden=int(config["model"].get("hidden", 16)),
+            input_dim=input_dim,
+            num_layers=int(config["model"].get("num_layers", 1)),
             pos_weight=pos_weight,
-            seed=seed,
+            seed=model_seed,
             epochs=int(training.get("epochs", 300)),
             patience=int(training.get("patience", 35)),
             learning_rate=float(training.get("learning_rate", 0.003)),
@@ -245,12 +575,15 @@ def _run_configuration(
                 "stage": stage_name,
                 "config_id": config_id,
                 "repeat": repeat,
-                "seed": seed,
+                "seed": model_seed,
+                "model_seed": model_seed,
+                "split_seed": split_seed,
                 "config": copy.deepcopy(dict(config)),
                 "split": copy.deepcopy(split),
                 "failure_train_ids": list(failure_train_ids),
                 "success_train_ids": list(success_ids),
                 "forced_train_ids": list(split.get("forced_train", [])),
+                "input_dim": input_dim,
                 "normalization_mean": torch.from_numpy(np.asarray(mean, dtype=np.float32).copy()),
                 "normalization_std": torch.from_numpy(np.asarray(std, dtype=np.float32).copy()),
                 "model_state_dict": {
@@ -297,6 +630,8 @@ def _run_configuration(
                 "stage": stage_name,
                 "config_id": config_id,
                 "repeat": repeat,
+                "model_seed": model_seed,
+                "split_seed": split_seed,
                 "split_role": split_role,
                 "seen_in_train": split_role == "train",
                 "forced_into_train": rollout_id in set(split.get("forced_train", [])),
@@ -319,7 +654,9 @@ def _run_configuration(
             "best_val_loss": train_meta["best_val_loss"],
             "effective_train_batch_size": train_meta["effective_train_batch_size"],
             "optimizer_steps_per_epoch": train_meta["optimizer_steps_per_epoch"],
-            "seed": seed,
+            "seed": model_seed,
+            "model_seed": model_seed,
+            "split_seed": split_seed,
             "checkpoint": checkpoint_rel,
         })
         per_repeat.append(metric_row)
@@ -329,7 +666,9 @@ def _run_configuration(
             "stage": stage_name,
             "config_id": config_id,
             "repeat": repeat,
-            "seed": seed,
+            "seed": model_seed,
+            "model_seed": model_seed,
+            "split_seed": split_seed,
             "split": split,
             "failure_train_ids": failure_train_ids,
             "success_train_ids": success_ids,
@@ -347,6 +686,8 @@ def _run_configuration(
         summary.update({
             "best_repeat": int(best_repeat["repeat"]),
             "best_repeat_seed": int(best_repeat["seed"]),
+            "best_repeat_model_seed": int(best_repeat.get("model_seed", best_repeat["seed"])),
+            "best_repeat_split_seed": int(best_repeat.get("split_seed", best_repeat["seed"])),
             "best_repeat_checkpoint": best_repeat["checkpoint"],
             "best_repeat_test_n": int(best_repeat.get("n") or 0),
             "best_repeat_in_interval_rate": best_repeat.get("in_interval_rate"),
@@ -446,16 +787,11 @@ def run_spec(
         raise FileExistsError(f"Output directory is not empty: {out}")
     out.mkdir(parents=True, exist_ok=True)
 
-    signals, events, no_event_failures, clean_rollouts, provenance = build_base_records(
+    records_by_mode, provenance = _aligned_signal_records(
         source_root,
         load_manifest(manifest),
         annotations,
-        allowed_rollout_ids=None,
-        signal_mode="fused",
-        latest_per_rollout=True,
     )
-    if not signals:
-        raise ValueError("no usable fused Robo-Dopamine signals were found")
 
     all_summary: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
@@ -516,6 +852,9 @@ def run_spec(
         if effective_workers == 1:
             for config_index, config_id, config in jobs:
                 log(f"stage={stage_name} start={config_id}")
+                signals, events, no_event_failures, clean_rollouts = (
+                    _records_for_config(config, records_by_mode)
+                )
                 completed[config_index] = _run_configuration_concurrent(
                     config=config,
                     config_id=config_id,
@@ -534,8 +873,12 @@ def run_spec(
                 max_workers=effective_workers,
                 thread_name_prefix=f"localization-{stage_index + 1}",
             ) as executor:
-                futures = {
-                    executor.submit(
+                futures = {}
+                for config_index, config_id, config in jobs:
+                    signals, events, no_event_failures, clean_rollouts = (
+                        _records_for_config(config, records_by_mode)
+                    )
+                    future = executor.submit(
                         _run_configuration_concurrent,
                         config=config,
                         config_id=config_id,
@@ -547,9 +890,8 @@ def run_spec(
                         clean_rollouts=clean_rollouts,
                         checkpoint_root=out / "checkpoints" / stage_name,
                         use_cuda_stream=True,
-                    ): (config_index, config_id)
-                    for config_index, config_id, config in jobs
-                }
+                    )
+                    futures[future] = (config_index, config_id)
                 for future in as_completed(futures):
                     config_index, config_id = futures[future]
                     completed[config_index] = future.result()
@@ -602,7 +944,7 @@ def run_spec(
         "name": normalized["name"],
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_root": project_relative(source_root),
-        "selection_mode": "latest_usable_fused_per_rollout",
+        "selection_mode": "latest_usable_fused_anchor_aligned_input_signal",
         "configuration_count": len(all_summary),
         "training_run_count": len(all_records),
         "all_failure_prediction_count": len(all_failure_predictions),

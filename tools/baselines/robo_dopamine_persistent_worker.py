@@ -249,19 +249,44 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
     model_config = config.get("model")
     if not isinstance(model_config, dict):
         raise ValueError("Localization checkpoint config is missing model settings")
+    data_config = config.get("data")
+    signal_mode = (
+        str(data_config.get("signal_mode", "fused"))
+        if isinstance(data_config, dict)
+        else "fused"
+    )
+    if signal_mode not in {
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
+    }:
+        raise ValueError(
+            f"Localization checkpoint has invalid input signal: {signal_mode}"
+        )
+    input_dim = int(
+        payload.get("input_dim")
+        or (
+            8 if signal_mode == "fused_perspectives_8d"
+            else 6 if signal_mode == "perspectives_6d"
+            else 2
+        )
+    )
     hidden = int(model_config.get("hidden", 16))
-    model = TinyBiLSTM(hidden=hidden)
+    num_layers = int(model_config.get("num_layers", 1))
+    model = TinyBiLSTM(
+        hidden=hidden,
+        input_dim=input_dim,
+        num_layers=num_layers,
+    )
     model.load_state_dict(state)
     model.eval()
 
     mean = np.asarray(
         torch.as_tensor(payload.get("normalization_mean")).cpu().numpy(),
         dtype=np.float32,
-    ).reshape(1, 2)
+    ).reshape(1, input_dim)
     std = np.asarray(
         torch.as_tensor(payload.get("normalization_std")).cpu().numpy(),
         dtype=np.float32,
-    ).reshape(1, 2)
+    ).reshape(1, input_dim)
     if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(std)):
         raise ValueError("Localization checkpoint normalization is not finite")
     if np.any(std <= 0):
@@ -272,6 +297,9 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         "model": model,
         "mean": mean,
         "std": std,
+        "signal_mode": signal_mode,
+        "input_dim": input_dim,
+        "num_layers": num_layers,
         "config": config,
         "stage": payload.get("stage"),
         "config_id": payload.get("config_id"),
@@ -283,32 +311,82 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
 
 
 def run_localization_checkpoint(
-    prediction_path: Path,
+    prediction_source: Path | dict[str, Path],
     checkpoint_path: Path,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Infer one localization point from a fused Robo-Dopamine progress/hop curve."""
+    """Infer one localization point using the checkpoint's configured input."""
     import numpy as np
     import torch
 
-    rows = json.loads(prediction_path.read_text(encoding="utf-8"))
-    if not isinstance(rows, list) or not rows:
-        raise ValueError(f"Localization input is empty: {prediction_path}")
-
-    frames: list[int] = []
-    features: list[list[float]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            raise ValueError("Localization input contains a non-object row")
-        progress = float(row["progress"])
-        hop = float(row["hop"])
-        if not math.isfinite(progress) or not math.isfinite(hop):
-            raise ValueError("Localization input contains non-finite progress/hop")
-        frames.append(frame_index(row))
-        features.append([progress, hop])
-
     bundle = _load_localization_checkpoint(checkpoint_path)
-    sequence = np.asarray(features, dtype=np.float32)
+    signal_mode = str(bundle["signal_mode"])
+
+    def read_two_dim(path: Path) -> tuple[list[int], np.ndarray]:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list) or not rows:
+            raise ValueError(f"Localization input is empty: {path}")
+        frames: list[int] = []
+        features: list[list[float]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("Localization input contains a non-object row")
+            progress = float(row["progress"])
+            hop = float(row["hop"])
+            if not math.isfinite(progress) or not math.isfinite(hop):
+                raise ValueError(
+                    "Localization input contains non-finite progress/hop"
+                )
+            frames.append(frame_index(row))
+            features.append([progress, hop])
+        return frames, np.asarray(features, dtype=np.float32)
+
+    if signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
+        if not isinstance(prediction_source, dict):
+            raise ValueError(
+                f"{signal_mode} localization requires aligned perspective inputs"
+            )
+        ordered_modes = (
+            ("fused", "incremental", "forward", "backward")
+            if signal_mode == "fused_perspectives_8d"
+            else ("incremental", "forward", "backward")
+        )
+        mode_data = []
+        for mode in ordered_modes:
+            path = prediction_source.get(mode)
+            if path is None:
+                raise ValueError(
+                    f"{signal_mode} localization is missing {mode} input"
+                )
+            mode_data.append((mode, path, *read_two_dim(path)))
+        frames = mode_data[0][2]
+        for mode, _path, mode_frames, _features in mode_data[1:]:
+            if mode_frames != frames:
+                raise ValueError(
+                    f"{signal_mode} {mode} frame indices do not match "
+                    f"{ordered_modes[0]}"
+                )
+        sequence = np.concatenate(
+            [mode_features for _mode, _path, _frames, mode_features in mode_data],
+            axis=1,
+        )
+        source_prediction: Any = {
+            mode: str(path)
+            for mode, path, _frames, _features in mode_data
+        }
+    else:
+        if not isinstance(prediction_source, Path):
+            raise ValueError(
+                f"{signal_mode} localization requires one prediction path"
+            )
+        frames, sequence = read_two_dim(prediction_source)
+        source_prediction = str(prediction_source)
+
+    if sequence.shape[1] != int(bundle["input_dim"]):
+        raise ValueError(
+            f"Localization checkpoint expects {bundle['input_dim']} features, "
+            f"got {sequence.shape[1]}"
+        )
     normalized = (sequence - bundle["mean"]) / bundle["std"]
     tensor = torch.from_numpy(normalized).unsqueeze(0)
     with torch.no_grad():
@@ -325,8 +403,11 @@ def run_localization_checkpoint(
         "checkpoint_config_id": bundle.get("config_id"),
         "checkpoint_repeat": bundle.get("repeat"),
         "checkpoint_seed": bundle.get("seed"),
-        "input": "fused_robo_dopamine_progress_hop",
-        "source_prediction": str(prediction_path),
+        "input": f"{signal_mode}_robo_dopamine_progress_hop",
+        "signal_mode": signal_mode,
+        "input_dim": int(bundle["input_dim"]),
+        "num_layers": int(bundle.get("num_layers", 1)),
+        "source_prediction": source_prediction,
         "frame_count": len(frames),
         "frames": frames,
         "logits": [float(value) for value in logits.tolist()],
@@ -705,13 +786,35 @@ def infer_rollout(
 
     localization_prediction: dict[str, Any] | None = None
     if args.localization_checkpoint is not None:
-        if fused_path is None:
+        localization_bundle = _load_localization_checkpoint(
+            args.localization_checkpoint
+        )
+        localization_signal_mode = localization_bundle["signal_mode"]
+        if localization_signal_mode == "fused_perspectives_8d":
+            localization_input = (
+                {"fused": fused_path, **{
+                    mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES
+                }}
+                if fused_path is not None
+                else None
+            )
+        elif localization_signal_mode == "perspectives_6d":
+            localization_input = {
+                mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES
+            }
+        else:
+            localization_input = (
+                fused_path
+                if localization_signal_mode == "fused"
+                else mode_predictions.get(localization_signal_mode)
+            )
+        if localization_input is None:
             raise ValueError(
-                "Localization checkpoint inference requires fused Robo-Dopamine "
-                "(incremental + forward + backward)"
+                "Localization checkpoint requires saved Robo-Dopamine "
+                f"{localization_signal_mode} input, but this run did not produce it"
             )
         localization_prediction = run_localization_checkpoint(
-            fused_path,
+            localization_input,
             args.localization_checkpoint,
             output_dir,
         )
@@ -746,6 +849,9 @@ def infer_rollout(
                 "checkpoint_config_id",
                 "checkpoint_repeat",
                 "checkpoint_seed",
+                "signal_mode",
+                "input_dim",
+                "source_prediction",
                 "frames",
                 "logits",
                 "sigmoid_scores",

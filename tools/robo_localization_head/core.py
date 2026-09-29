@@ -33,12 +33,20 @@ def onset_anchor(frames: Sequence[int], frame: int) -> int | None:
 
 
 def sequence_from_signal(signal: Mapping[str, Any]) -> np.ndarray:
+    explicit = signal.get("features")
+    if explicit is not None:
+        features = np.asarray(explicit, dtype=np.float32)
+        if features.ndim != 2 or features.shape[0] == 0:
+            raise ValueError("explicit signal features must be a non-empty 2D array")
+        if not np.all(np.isfinite(features)):
+            raise ValueError("explicit signal features contain non-finite values")
+        return features
     progress = np.asarray(signal["progress"], dtype=np.float32)
     hops = np.asarray(signal["hops"], dtype=np.float32)
     if progress.ndim != 1 or hops.ndim != 1 or len(progress) != len(hops):
         raise ValueError("progress/hops must be same-length 1D arrays")
     if len(progress) == 0:
-        raise ValueError("empty fused signal")
+        raise ValueError("empty signal")
     return np.stack([progress, hops], axis=1)
 
 
@@ -176,13 +184,24 @@ def standardization_stats(
 
 
 class TinyBiLSTM(nn.Module):
-    def __init__(self, hidden: int = 16) -> None:
+    def __init__(
+        self,
+        hidden: int = 16,
+        input_dim: int = 2,
+        num_layers: int = 1,
+    ) -> None:
         super().__init__()
+        if input_dim < 1:
+            raise ValueError("input_dim must be >= 1")
+        if num_layers < 1:
+            raise ValueError("num_layers must be >= 1")
         self.hidden = hidden
+        self.input_dim = input_dim
+        self.num_layers = num_layers
         self.lstm = nn.LSTM(
-            input_size=2,
+            input_size=input_dim,
             hidden_size=hidden,
-            num_layers=1,
+            num_layers=num_layers,
             batch_first=True,
             bidirectional=True,
         )
@@ -305,18 +324,29 @@ def train_bilstm(
     row_loss_fn: RowLossFn,
     progress_label: str,
     logger: Callable[[str], None],
+    input_dim: int | None = None,
+    num_layers: int = 1,
 ) -> tuple[TinyBiLSTM, dict[str, Any]]:
     if not train_ids:
         raise ValueError("training split is empty")
     if not val_ids:
         raise ValueError("validation split is empty")
+    resolved_input_dim = int(
+        input_dim if input_dim is not None else np.asarray(mean).shape[-1]
+    )
+    if resolved_input_dim < 1:
+        raise ValueError("localization input_dim must be >= 1")
 
     prepared = prepare_tensor_dataset(dataset, mean, std)
     # Model initialization uses global RNG state. Keep it deterministic when
     # several independent configurations train concurrently in worker threads.
     with _SEED_LOCK:
         set_seed(seed)
-        model = TinyBiLSTM(hidden=hidden).to(device)
+        model = TinyBiLSTM(
+            hidden=hidden,
+            input_dim=resolved_input_dim,
+            num_layers=num_layers,
+        ).to(device)
     weight_params = [
         parameter for name, parameter in model.named_parameters() if "bias" not in name
     ]
@@ -429,6 +459,8 @@ def train_bilstm(
         "best_epoch": best_epoch,
         "pos_weight": pos_weight,
         "hidden": hidden,
+        "input_dim": resolved_input_dim,
+        "num_layers": num_layers,
         "device": str(device),
         "batch_size": batch_size,
         "effective_train_batch_size": effective_train_batch,

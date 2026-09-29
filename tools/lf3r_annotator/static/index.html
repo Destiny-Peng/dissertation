@@ -187,10 +187,10 @@
               <span><kbd>Space</kbd> play/pause</span>
               <span><kbd>←</kbd><kbd>→</kbd> one frame</span>
               <span><kbd>Shift</kbd> + arrows ten frames</span>
-              <span><kbd>1</kbd> active event causal</span>
-              <span><kbd>2</kbd> active event observable</span>
-              <span><kbd>3</kbd> active event terminal</span>
-              <span><kbd>S</kbd> save</span>
+              <span><kbd>Q</kbd> causal · <kbd>W</kbd> observable · <kbd>E</kbd> terminal · <kbd>R</kbd> recovery</span>
+              <span><kbd>1</kbd>–<kbd>9</kbd> set active event failure type</span>
+              <span><kbd>A</kbd> add event · <kbd>↑</kbd><kbd>↓</kbd> switch active event</span>
+              <span><kbd>S</kbd> save · <kbd>,</kbd>/<kbd>.</kbd> previous/next rollout</span>
             </div>
           </details>
         </section>
@@ -234,15 +234,15 @@
               <span>Primary / default failure type</span>
               <select id="failureType" name="failure_type">
                 <option value="none_success">No failure / success</option>
-                <option value="grasp_failure">Grasp failure</option>
-                <option value="placement_failure">Placement failure</option>
-                <option value="dropped_object">Dropped object</option>
-                <option value="wrong_object">Wrong object</option>
-                <option value="collision">Collision</option>
-                <option value="timeout_no_progress">Timeout / no progress</option>
-                <option value="control_error">Control error</option>
-                <option value="observation_error">Observation error</option>
-                <option value="other">Other</option>
+                <option value="grasp_failure">1 · Grasp failure</option>
+                <option value="placement_failure">2 · Placement failure</option>
+                <option value="dropped_object">3 · Dropped object</option>
+                <option value="wrong_object">4 · Wrong object</option>
+                <option value="collision">5 · Collision</option>
+                <option value="timeout_no_progress">6 · Timeout / no progress</option>
+                <option value="control_error">7 · Control error</option>
+                <option value="observation_error">8 · Observation error</option>
+                <option value="other">9 · Other</option>
               </select>
             </label>
 
@@ -256,7 +256,7 @@
               </div>
               <div id="failureEvents" class="failure-events"></div>
               <button id="addFailureEvent" class="ghost-button add-event-button" type="button">+ Add failure
-                event</button>
+                event <kbd>A</kbd></button>
             </section>
 
             <label class="field">
@@ -758,6 +758,16 @@
                 <input id="localizationRepeats" type="number" min="1" max="50" value="5" step="1">
               </label>
               <div class="analysis-run-field">
+                <span>Repeat varies</span>
+                <label class="localization-checkbox-field">
+                  <span><input id="localizationVaryModelSeed" type="checkbox" checked> Model seed</span>
+                </label>
+                <label class="localization-checkbox-field">
+                  <span><input id="localizationVarySplitSeed" type="checkbox" checked> Split seed</span>
+                </label>
+                <small class="analysis-run-field-help">Choose independently what changes from repeat to repeat.</small>
+              </div>
+              <div class="analysis-run-field">
                 <span>Estimated work</span>
                 <strong id="localizationEstimate">1 configuration × 5 repeats</strong>
                 <small id="localizationEstimateWarning" class="analysis-run-field-help"></small>
@@ -770,6 +780,17 @@
                 <section class="localization-config-group">
                   <h5 class="localization-config-group-title">Data</h5>
                   <div class="analysis-run-grid localization-config-grid">
+                    <label><span>Input signal</span>
+                      <select id="localizationSignalMode">
+                        <option value="fused" selected>Fused</option>
+                        <option value="incremental">Incremental</option>
+                        <option value="forward">Forward</option>
+                        <option value="backward">Backward</option>
+                        <option value="perspectives_6d">Perspectives 6D</option>
+                        <option value="fused_perspectives_8d">Fused + Perspectives 8D</option>
+                      </select>
+                      <small class="analysis-run-field-help">2D: one progress + hop pair. 6D: three raw perspectives. 8D: fused progress/hop + the same six raw perspective features.</small>
+                    </label>
                     <label><span>Training population</span>
                       <select id="localizationPopulation">
                         <option value="failure_only">Failure only</option>
@@ -817,6 +838,10 @@
                   <div class="analysis-run-grid localization-model-grid">
                     <label><span>Hidden size</span>
                       <input id="localizationHidden" type="number" min="1" max="512" step="1" value="16">
+                    </label>
+                    <label><span>BiLSTM layers</span>
+                      <input id="localizationNumLayers" type="number" min="1" max="8" step="1" value="1">
+                      <small class="analysis-run-field-help">Number of stacked bidirectional LSTM layers.</small>
                     </label>
                     <label class="localization-loss-field"><span>Loss</span>
                       <select id="localizationLoss">
@@ -869,7 +894,12 @@
                   <label><span>Learning rate</span><input id="localizationLearningRate" type="number" min="0.000001" step="0.0001" value="0.003"></label>
                   <label><span>Weight decay</span><input id="localizationWeightDecay" type="number" min="0" step="0.0001" value="0.0001"></label>
                   <label><span>Gradient clip</span><input id="localizationGradClip" type="number" min="0.01" step="0.1" value="5"></label>
-                  <label><span>Seed</span><input id="localizationSeed" type="number" min="0" step="1" value="17"></label>
+                  <label><span>Model seed</span><input id="localizationSeed" type="number" min="0" step="1" value="17">
+                    <small class="analysis-run-field-help">Controls model initialization and training shuffle.</small>
+                  </label>
+                  <label><span>Split seed</span><input id="localizationSplitSeed" type="number" min="0" step="1" value="17">
+                    <small class="analysis-run-field-help">Controls train/validation/test split and success subset selection.</small>
+                  </label>
                   <label><span>Train fraction</span><input id="localizationTrainFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.70"></label>
                   <label><span>Validation fraction</span><input id="localizationValFraction" type="number" min="0.05" max="0.9" step="0.05" value="0.15"></label>
                 </div>

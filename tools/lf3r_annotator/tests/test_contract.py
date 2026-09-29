@@ -270,6 +270,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
             "analysisHopArtifacts",
             "localizationRunExperiment",
             "localizationRunsList",
+            "localizationSignalMode",
             "settingsView",
             "settingsForm",
         ]:
@@ -302,6 +303,7 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
 
     def test_analysis_dashboard_contract(self) -> None:
         html = (TOOL_ROOT / "static/index.html").read_text(encoding="utf-8")
+        localization_js = (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8")
         dashboard = (TOOL_ROOT / "static/analysis/dashboard.js").read_text(encoding="utf-8")
         outcome_analysis = (TOOL_ROOT / "static/analysis-outcome.js").read_text(encoding="utf-8")
         router = (TOOL_ROOT / "static/workspace/router.js").read_text(encoding="utf-8")
@@ -313,6 +315,18 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("Rule-based performance by failure type", html)
         self.assertIn("Learned localization model", html)
         self.assertIn("Fused-hop rule tuning", html)
+        self.assertIn('id="localizationSignalMode"', html)
+        self.assertIn('path: "data.signal_mode"', (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8"))
+        self.assertIn('defaults: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"]', (TOOL_ROOT / "static/localization-lab.js").read_text(encoding="utf-8"))
+        self.assertIn('<option value="perspectives_6d">Perspectives 6D</option>', html)
+        self.assertIn('<option value="fused_perspectives_8d">Fused + Perspectives 8D</option>', html)
+        self.assertIn('id="localizationNumLayers"', html)
+        self.assertIn('id="localizationSplitSeed"', html)
+        self.assertIn('id="localizationVaryModelSeed"', html)
+        self.assertIn('id="localizationVarySplitSeed"', html)
+        self.assertIn('path: "model.num_layers"', localization_js)
+        self.assertIn('vary_model_seed: node("localizationVaryModelSeed").checked', localization_js)
+        self.assertIn('vary_split_seed: node("localizationVarySplitSeed").checked', localization_js)
         self.assertIn("Success recall", dashboard)
         self.assertIn("Failure recall", dashboard)
         self.assertIn("clean + recovered success", dashboard)
@@ -396,10 +410,23 @@ class DatasetAndFrontendContractTest(unittest.TestCase):
         self.assertIn("--log-safe-features", spatial_shell)
         self.assertIn("--video-view-mode", spatial_shell)
         robo_worker = (PROJECT_ROOT / "tools/baselines/robo_dopamine_persistent_worker.py").read_text(encoding="utf-8")
+        robo_posthoc = (PROJECT_ROOT / "tools/baselines/posthoc_robo_localization.py").read_text(encoding="utf-8")
         robo_reader = (TOOL_ROOT / "baseline_readers.py").read_text(encoding="utf-8")
         self.assertIn('"frames"', robo_worker)
         self.assertIn('"logits"', robo_worker)
         self.assertIn('"sigmoid_scores"', robo_worker)
+        self.assertIn('"signal_mode": bundle["signal_mode"]', robo_worker)
+        self.assertIn("localization_signal_mode", robo_worker)
+        self.assertIn('"perspectives_6d"', robo_worker)
+        self.assertIn('"fused_perspectives_8d"', robo_worker)
+        self.assertIn('"input_dim": int(bundle["input_dim"])', robo_worker)
+        self.assertIn('num_layers=num_layers', robo_worker)
+        self.assertIn("resolve_signal_prediction", robo_posthoc)
+        self.assertIn('"perspectives_6d"', robo_posthoc)
+        self.assertIn('"fused_perspectives_8d"', robo_posthoc)
+        self.assertIn('"input_dim": int(bundle["input_dim"])', robo_posthoc)
+        self.assertIn('num_layers=num_layers', robo_posthoc)
+        self.assertIn('"signal_mode": signal_mode', robo_posthoc)
         self.assertIn('"frames"', robo_reader)
         self.assertIn('"logits"', robo_reader)
         self.assertIn('"sigmoid_scores"', robo_reader)

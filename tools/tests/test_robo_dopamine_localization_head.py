@@ -19,6 +19,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 from robo_incremental_hop import io as hop_io
+from robo_localization_head import spec_runner
 
 SCRIPT = TOOLS_DIR / "train_robo_dopamine_localization_head.py"
 SPEC = importlib.util.spec_from_file_location("robo_localization_head_probe", SCRIPT)
@@ -206,11 +207,58 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             )
         )
 
+    def test_repeat_seed_pair_can_isolate_split_and_model_variance(self) -> None:
+        both = {"seed": 17, "split_seed": 101, "vary_model_seed": True, "vary_split_seed": True}
+        self.assertEqual(spec_runner._repeat_seed_pair(both, 3), (20, 104))
+
+        model_only = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": True, "vary_split_seed": False,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(model_only, 3), (20, 101))
+
+        split_only = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": False, "vary_split_seed": True,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(split_only, 3), (17, 104))
+
+        fixed = {
+            "seed": 17, "split_seed": 101,
+            "vary_model_seed": False, "vary_split_seed": False,
+        }
+        self.assertEqual(spec_runner._repeat_seed_pair(fixed, 3), (17, 101))
+
+        legacy = {"seed": 17}
+        self.assertEqual(spec_runner._repeat_seed_pair(legacy, 3), (20, 20))
+
     def test_bilstm_forward_shape(self) -> None:
         model = probe.TinyBiLSTM(hidden=16)
         x = torch.randn(1, 11, 2)
         logits = model(x)
         self.assertEqual(tuple(logits.shape), (1, 11))
+
+        model_6d = spec_runner.core.TinyBiLSTM(hidden=16, input_dim=6)
+        x_6d = torch.randn(1, 11, 6)
+        logits_6d = model_6d(x_6d)
+        self.assertEqual(tuple(logits_6d.shape), (1, 11))
+        self.assertEqual(model_6d.input_dim, 6)
+
+        model_8d = spec_runner.core.TinyBiLSTM(hidden=16, input_dim=8)
+        x_8d = torch.randn(1, 11, 8)
+        logits_8d = model_8d(x_8d)
+        self.assertEqual(tuple(logits_8d.shape), (1, 11))
+        self.assertEqual(model_8d.input_dim, 8)
+
+        model_stacked = spec_runner.core.TinyBiLSTM(
+            hidden=16,
+            input_dim=8,
+            num_layers=3,
+        )
+        logits_stacked = model_stacked(x_8d)
+        self.assertEqual(tuple(logits_stacked.shape), (1, 11))
+        self.assertEqual(model_stacked.num_layers, 3)
+        self.assertEqual(model_stacked.lstm.num_layers, 3)
 
     def test_shared_normalization_and_pos_weight_ignore_success(self) -> None:
         failures = self.failure_dataset(8)
@@ -327,6 +375,150 @@ class RoboLocalizationHeadTests(unittest.TestCase):
                 "latest_usable_signal_per_rollout",
             )
             self.assertEqual(len(provenance["rejected_newer_candidates"]), 1)
+
+    def test_input_signal_records_are_paired_to_fused_run_and_frames(self) -> None:
+        run_a = Path("/tmp/run-a")
+        run_b = Path("/tmp/run-b")
+        fused_signals = {
+            "r1": {
+                "rollout_id": "r1",
+                "source_run_root": run_a,
+                "frames": [0, 5, 10],
+                "progress": [100.0, 100.5, 101.0],
+                "hops": [100.0, 100.25, 100.5],
+                "task_key": "suite:task0",
+                "task_suite": "suite",
+                "task_id": "0",
+                "task_description": "task zero",
+                "outcome": "terminal_failure",
+            },
+            "r2": {
+                "rollout_id": "r2",
+                "source_run_root": run_b,
+                "frames": [0, 5, 10],
+                "progress": [100.0, 100.5, 101.0],
+                "hops": [100.0, 100.25, 100.5],
+                "task_key": "suite:task1",
+                "task_suite": "suite",
+                "task_id": "1",
+                "task_description": "task one",
+                "outcome": "clean_success",
+            },
+        }
+        events = [{"rollout_id": "r1"}]
+        clean = [{"rollout_id": "r2"}]
+        calls = []
+
+        def load_signal(run_root, rollout_id, signal_mode):
+            calls.append((run_root, rollout_id, signal_mode))
+            frames = [0, 5, 10]
+            if rollout_id == "r2" and signal_mode == "backward":
+                frames = [0, 6, 10]
+            offsets = {"incremental": 0.0, "forward": 10.0, "backward": 20.0}
+            offset = offsets[signal_mode]
+            return {
+                "rollout_id": rollout_id,
+                "signal_mode": signal_mode,
+                "frames": frames,
+                "progress": [offset + 0.0, offset + 0.5, offset + 1.0],
+                "hops": [offset + 0.0, offset + 0.25, offset + 0.5],
+            }
+
+        with mock.patch.object(
+            spec_runner,
+            "build_base_records",
+            return_value=(
+                fused_signals,
+                events,
+                [],
+                clean,
+                {"selection_mode": "latest_usable_signal_per_rollout"},
+            ),
+        ), mock.patch.object(
+            spec_runner,
+            "load_signal",
+            side_effect=load_signal,
+        ):
+            records, provenance = spec_runner._aligned_signal_records(
+                Path("/tmp/pool"),
+                {},
+                Path("/tmp/annotations"),
+            )
+
+        self.assertEqual(
+            set(records),
+            {
+                "incremental", "forward", "backward", "fused",
+                "perspectives_6d", "fused_perspectives_8d",
+            },
+        )
+        self.assertEqual(set(records["forward"][0]), {"r1", "r2"})
+        self.assertEqual(set(records["backward"][0]), {"r1"})
+        self.assertEqual(
+            provenance["alignment"],
+            "same_run_same_native_frame_indices",
+        )
+        self.assertIn((run_a, "r1", "incremental"), calls)
+        self.assertIn((run_b, "r2", "forward"), calls)
+        self.assertEqual(
+            records["forward"][0]["r1"]["source_run_root"],
+            run_a,
+        )
+        self.assertEqual(
+            provenance["modes"]["backward"]["excluded_rollout_n"],
+            1,
+        )
+        six_d = records["perspectives_6d"][0]["r1"]
+        self.assertEqual(np.asarray(six_d["features"]).shape, (3, 6))
+        np.testing.assert_allclose(
+            np.asarray(six_d["features"])[1],
+            [0.5, 0.25, 10.5, 10.25, 20.5, 20.25],
+        )
+        self.assertEqual(
+            six_d["feature_names"],
+            [
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
+        )
+        eight_d = records["fused_perspectives_8d"][0]["r1"]
+        self.assertEqual(np.asarray(eight_d["features"]).shape, (3, 8))
+        np.testing.assert_allclose(
+            np.asarray(eight_d["features"])[1],
+            [100.5, 100.25, 0.5, 0.25, 10.5, 10.25, 20.5, 20.25],
+        )
+        self.assertEqual(
+            eight_d["feature_names"],
+            [
+                "fused_progress",
+                "fused_hop",
+                "incremental_progress",
+                "incremental_hop",
+                "forward_progress",
+                "forward_hop",
+                "backward_progress",
+                "backward_hop",
+            ],
+        )
+        forward_records = spec_runner._records_for_config(
+            {"data": {"signal_mode": "forward"}},
+            records,
+        )
+        self.assertEqual(set(forward_records[0]), {"r1", "r2"})
+        with self.assertRaises(ValueError):
+            spec_runner._records_for_config(
+                {"data": {"signal_mode": "backward"}},
+                records,
+            )
+        with self.assertRaises(ValueError):
+            spec_runner._records_for_config(
+                {"data": {"signal_mode": "fused_perspectives_8d"}},
+                records,
+            )
 
     def test_interval_metrics_match_definition(self) -> None:
         dataset = self.failure_dataset(1)
