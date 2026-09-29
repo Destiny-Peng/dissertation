@@ -14,6 +14,7 @@ from typing import Any
 import server
 from non_analysis_tools import NonAnalysisToolService
 from repair import RepairService
+from tactile_service import FailRecoveryTactileService
 from webui_baseline import WebUIBaselineService
 
 
@@ -106,6 +107,7 @@ class WebUIApplication(server.LF3RApplication):
         # the canonical rollout manifest explicitly; rebuild_manifest uses the
         # same canonical target in non_analysis_tools.py.
         self.rollout_jobs.manifest_path = self.canonical_manifest_path
+        self.tactile = FailRecoveryTactileService(self.project_root)
 
     def _relative_manifest_path(self, path: Path) -> str:
         try:
