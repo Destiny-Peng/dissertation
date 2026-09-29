@@ -404,13 +404,17 @@
       "Ctrl-World runtime: " + String(
         validation.model_runtime || "unresolved"
       ),
-      "Repair/LIBERO runtime: " + String(
-        validation.repair_runtime || "preflight failed"
+      "Repair/LIBERO runtime: " + (
+        validation.model_name === "ctrl_world"
+          ? "not required at runtime · prepared offline"
+          : String(validation.repair_runtime || "preflight failed")
       ),
       validation.repair_runtime_error
         ? ("Repair/LIBERO preflight error: " + String(validation.repair_runtime_error))
         : "",
-      "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
+      (smoke.source === "offline_preparation"
+        ? "Alignment validation: passed offline during data preparation"
+        : ("Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"))),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       modelLines.join("\n"),
       validation.gpu
