@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Execute one LF3R Synthetic Suffix run.
 
-Every world-model run shares the same official LIBERO cut/alignment smoke test.
-Model-specific adapters then prepare their own conditioning without changing the
-manifest or the underlying demonstration.
+Official LIBERO preparation is performed offline by prepare_libero_manifest.py.
+Ctrl-World runtime consumes prepared frame-aligned controls and validated RGB
+metadata without starting LIBERO. Other adapters may still use their own
+runtime validation path.
 """
 
 from __future__ import annotations
@@ -21,14 +22,10 @@ from typing import Any
 from backend_core import ValidationError
 from non_analysis_tools import gpu_status
 from repair.adapters import A2WorldAdapter
+from repair.alignment import project_path
 from repair.alignment_runner import run_alignment_subprocess
 from repair.ctrl_world import CtrlWorldAdapter
-from repair.trajectory import (
-    load_actions,
-    load_model_xml,
-    load_states,
-    replay_ctrl_world_pose_controls,
-)
+from repair.trajectory import load_actions
 
 
 def atomic_json(path: Path, payload: Any) -> None:
@@ -69,13 +66,79 @@ def update_status(run_dir: Path, **updates: Any) -> dict[str, Any]:
 
 
 def read_frames(path: Path) -> list[Any]:
-    import imageio.v2 as imageio
-
-    reader = imageio.get_reader(str(path))
     try:
-        return [frame for frame in reader]
-    finally:
-        reader.close()
+        import decord
+
+        reader = decord.VideoReader(str(path))
+        return [reader[index].asnumpy() for index in range(len(reader))]
+    except ImportError:
+        import imageio.v2 as imageio
+
+        reader = imageio.get_reader(str(path))
+        try:
+            return [frame for frame in reader]
+        finally:
+            reader.close()
+
+
+def prepared_ctrl_replay(
+    project_root: Path,
+    rollout: dict[str, Any],
+    *,
+    cut_frame: int,
+    frame_step: int,
+) -> dict[str, Any]:
+    import numpy as np
+
+    raw = str(rollout.get("ctrl_controls_path") or "").strip()
+    if not raw:
+        raise ValidationError(
+            "Prepared Ctrl controls are missing; rerun prepare_libero_manifest.py --resume"
+        )
+    path = project_path(
+        project_root,
+        raw,
+        label="prepared Ctrl controls",
+    )
+    if not path.is_file():
+        raise ValidationError(f"Prepared Ctrl controls do not exist: {raw}")
+    with np.load(path, allow_pickle=False) as payload:
+        controls = np.asarray(payload["controls"], dtype=np.float32)
+        indices = np.asarray(payload["source_frame_indices"], dtype=np.int64)
+    total_frames = int(rollout.get("total_frames") or 0)
+    if controls.shape != (total_frames, 7):
+        raise ValidationError(
+            f"Prepared Ctrl controls must be [{total_frames},7], got {controls.shape}"
+        )
+    expected = np.arange(total_frames, dtype=np.int64)
+    if indices.shape != expected.shape or not np.array_equal(indices, expected):
+        raise ValidationError(
+            "Prepared Ctrl source indices must contain exactly one control per RGB frame"
+        )
+    if frame_step < 1 or cut_frame < 0 or cut_frame >= total_frames - 1:
+        raise ValidationError("Invalid Ctrl cut/frame step for prepared controls")
+    selected_indices = np.arange(
+        int(cut_frame),
+        total_frames,
+        int(frame_step),
+        dtype=np.int64,
+    )
+    if len(selected_indices) < 2:
+        raise ValidationError(
+            "Ctrl-World temporal sampling leaves no future prepared control"
+        )
+    return {
+        "controls": controls[selected_indices],
+        "source_frame_indices": selected_indices,
+        "branch_state_index": int(cut_frame) + 1,
+        "action_start": int(cut_frame) + 1,
+        "derivation": (
+            "offline prepare_libero_manifest.py replay; runtime slices "
+            "frame-aligned absolute pose/gripper controls"
+        ),
+        "future_recorded_proprio_used": False,
+        "prepared_controls_source": raw,
+    }
 
 
 def metric_aligned_frames(real: Any, generated: Any) -> tuple[Any, Any, bool]:
@@ -405,38 +468,69 @@ def main() -> None:
             phase="load_trajectory",
             progress=0.08,
         )
-        actions = load_actions(project_root, rollout)
-        if actions.ndim != 2 or actions.shape[1] != 7:
-            raise ValidationError(
-                f"LIBERO actions must be [T,7], got {actions.shape}"
-            )
-        action_start = int(alignment["gt_action_start"])
-        if action_start >= len(actions):
-            raise ValidationError(
-                "No future action remains after LIBERO alignment"
-            )
-        future_actions = actions[action_start:]
-
-        update_status(
-            run_dir,
-            phase="alignment_validation",
-            progress=0.18,
-        )
         gpu_value = wm_config.get("gpu_index")
         gpu_index = int(gpu_value) if gpu_value is not None else None
         gpu_before_alignment = gpu_snapshot(gpu_index)
-        smoke = run_alignment_subprocess(
-            project_root=project_root,
-            rollout=rollout,
-            cut_frame=cut_frame,
-            min_psnr=float(config.get("alignment_min_psnr", 20.0)),
-            gpu_index=gpu_index,
-        )
-        atomic_json(run_dir / "alignment.json", smoke)
-        if not smoke["passed"]:
-            raise ValidationError(
-                "LIBERO alignment smoke test failed; generation was not started"
+        actions = None
+        future_actions = None
+
+        if model_name == "a2world":
+            actions = load_actions(project_root, rollout)
+            if actions.ndim != 2 or actions.shape[1] != 7:
+                raise ValidationError(
+                    f"LIBERO actions must be [T,7], got {actions.shape}"
+                )
+            action_start = int(alignment["gt_action_start"])
+            if action_start >= len(actions):
+                raise ValidationError(
+                    "No future action remains after LIBERO alignment"
+                )
+            future_actions = actions[action_start:]
+            update_status(
+                run_dir,
+                phase="alignment_validation",
+                progress=0.18,
             )
+            smoke = run_alignment_subprocess(
+                project_root=project_root,
+                rollout=rollout,
+                cut_frame=cut_frame,
+                min_psnr=float(config.get("alignment_min_psnr", 20.0)),
+                gpu_index=gpu_index,
+            )
+            if not smoke["passed"]:
+                raise ValidationError(
+                    "LIBERO alignment smoke test failed; generation was not started"
+                )
+        elif model_name in {"ctrl", "ctrl_world"}:
+            alignment_meta = rollout.get("rgb_alignment")
+            if not (
+                isinstance(alignment_meta, dict)
+                and alignment_meta.get("validated")
+                and rollout.get("ctrl_prepared")
+            ):
+                raise ValidationError(
+                    "Ctrl-World requires offline prepared controls and alignment; "
+                    "rerun prepare_libero_manifest.py --resume"
+                )
+            smoke = {
+                "passed": True,
+                "source": "offline_preparation",
+                "validation_path": alignment_meta.get("validation_path"),
+                "minimum_psnr": alignment_meta.get("minimum_psnr"),
+                "sampled_cut_frames": alignment_meta.get("sampled_cut_frames"),
+                "index_contract": {
+                    "condition_frame": "rgb[c]",
+                    "branch_state": "states[c+1]",
+                    "future_actions": "actions[c+1:]",
+                    "ctrl_control": "ctrl_controls[c]",
+                },
+            }
+        else:
+            raise ValidationError(
+                f"Unsupported Repair world model in worker: {model_name}"
+            )
+        atomic_json(run_dir / "alignment.json", smoke)
 
         prepared_dir = run_dir / "prepared"
         prepared_dir.mkdir(parents=True, exist_ok=True)
@@ -536,32 +630,15 @@ def main() -> None:
 
             update_status(
                 run_dir,
-                phase="gpu_recheck_before_ctrl_replay",
+                phase="load_prepared_ctrl_controls",
                 progress=0.34,
             )
             gpu_before_ctrl_replay = gpu_snapshot(gpu_index)
-
-            # Ctrl-World needs absolute Cartesian pose/gripper controls, but the
-            # experiment supplies only the same GT future LIBERO actions used by
-            # A2World. Derive Ctrl's interface by deterministic simulator replay
-            # from states[c+1]; never read future recorded proprio.
-            os.environ["MUJOCO_GL"] = "egl"
-            os.environ["PYOPENGL_PLATFORM"] = "egl"
-            os.environ["LIBERO_CONFIG_PATH"] = str(
-                project_root / "cache" / "libero"
-            )
-            if gpu_index is not None:
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
-            states = load_states(project_root, rollout)
-            model_xml = load_model_xml(project_root, rollout)
-            replay = replay_ctrl_world_pose_controls(
-                project_root=project_root,
-                rollout=rollout,
-                states=states,
-                actions=actions,
+            replay = prepared_ctrl_replay(
+                project_root,
+                rollout,
                 cut_frame=cut_frame,
                 frame_step=int(adapter_status["source_frame_step"]),
-                model_xml=model_xml,
             )
             controls = adapter.prepare_controls(
                 rollout,
@@ -631,7 +708,9 @@ def main() -> None:
                     if key != "path"
                 },
                 "future_recorded_proprio_used": False,
-                "gpu_recheck_before_control_replay": {
+                "runtime_libero_used": False,
+                "prepared_controls_source": replay.get("prepared_controls_source"),
+                "gpu_snapshot_before_prepared_control_slice": {
                     "index": gpu_index,
                     "gpu_utilization_percent": gpu_before_ctrl_replay.get(
                         "gpu_utilization_percent"
