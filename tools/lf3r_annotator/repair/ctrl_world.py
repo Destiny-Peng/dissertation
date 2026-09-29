@@ -254,6 +254,20 @@ class CtrlWorldAdapter(WorldModelAdapter):
             isinstance(alignment_meta, dict)
             and alignment_meta.get("validated")
         )
+        alignment_validation_raw = (
+            str(alignment_meta.get("validation_path") or "").strip()
+            if isinstance(alignment_meta, dict)
+            else ""
+        )
+        alignment_validation_path = (
+            project_path(
+                self.project_root,
+                alignment_validation_raw,
+                label="offline alignment validation",
+            )
+            if alignment_validation_raw
+            else None
+        )
 
         try:
             target_fps = float(self.config.get("target_fps", self.TARGET_FPS))
@@ -333,6 +347,14 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 "Offline LIBERO alignment validation is unavailable; rerun "
                 "prepare_libero_manifest.py --resume"
             )
+        elif (
+            alignment_validation_path is None
+            or not alignment_validation_path.is_file()
+        ):
+            reasons.append(
+                "Offline alignment validation artifact is unavailable: "
+                + (alignment_validation_raw or "<missing validation_path>")
+            )
 
         source_fps = float(rollout.get("fps") or 0.0)
         frame_step = (
@@ -360,6 +382,14 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 else None
             ),
             "offline_alignment_validated": alignment_validated,
+            "offline_alignment_validation_path": (
+                self._relative_or_absolute(
+                    self.project_root,
+                    alignment_validation_path,
+                )
+                if alignment_validation_path is not None
+                else None
+            ),
             "svd_model_path": self._relative_or_absolute(self.project_root, svd_path),
             "clip_model_path": self._relative_or_absolute(self.project_root, clip_path),
             "data_stat_path": self._relative_or_absolute(self.project_root, data_stat_path),
