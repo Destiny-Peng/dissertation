@@ -55,9 +55,17 @@ class CtrlWorldAdapter(WorldModelAdapter):
             or ""
         ).strip()
         if configured:
-            return project_path(self.project_root, configured)
+            return project_path(
+                self.project_root,
+                configured,
+                label=f"Ctrl-World {key}",
+            )
         candidates = [
-            project_path(self.project_root, value)
+            project_path(
+                self.project_root,
+                value,
+                label=f"Ctrl-World {key}",
+            )
             for value in defaults
         ]
         for candidate in candidates:
@@ -78,10 +86,22 @@ class CtrlWorldAdapter(WorldModelAdapter):
         ).strip()
         candidates: list[Path] = []
         if configured:
-            candidates.append(project_path(self.project_root, configured))
+            candidates.append(
+                project_path(
+                    self.project_root,
+                    configured,
+                    label="Ctrl-World python",
+                )
+            )
         if configured_env:
             candidates.append(
-                project_path(self.project_root, configured_env) / "bin" / "python"
+                project_path(
+                    self.project_root,
+                    configured_env,
+                    label="Ctrl-World environment",
+                )
+                / "bin"
+                / "python"
             )
         candidates.extend(
             [
@@ -101,7 +121,11 @@ class CtrlWorldAdapter(WorldModelAdapter):
     def _checkpoint(self) -> Path:
         raw = str(self.config.get("checkpoint") or "").strip()
         if raw:
-            return project_path(self.project_root, raw)
+            return project_path(
+                self.project_root,
+                raw,
+                label="Ctrl-World checkpoint",
+            )
         candidates = [
             self.project_root
             / "checkpoints"
