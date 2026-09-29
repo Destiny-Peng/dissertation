@@ -310,7 +310,6 @@ class CtrlWorldAdapterTest(unittest.TestCase):
                         "cam_high": "high.mp4",
                         "cam_wrist": "wrist.mp4",
                     },
-                    "source_hdf5_path": "official.hdf5",
                     "ctrl_prepared": True,
                     "ctrl_controls_path": controls,
                     "rgb_alignment": {
@@ -443,6 +442,11 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("CtrlWorldAdapter", ctrl_adapter)
         self.assertIn('"ctrl" in env_dir.name.lower()', ctrl_adapter)
         self.assertIn("future_recorded_proprio_used", ctrl_adapter)
+        self.assertNotIn(
+            "requires the official LIBERO HDF5 trajectory/proprio source",
+            ctrl_adapter,
+        )
+        self.assertIn("runtime consumes no simulator state or HDF5", ctrl_adapter)
         self.assertIn('model_name in {"ctrl", "ctrl_world"}', worker)
         self.assertNotIn("replay_ctrl_world_pose_controls", worker)
         self.assertNotIn("load_states(", worker)
