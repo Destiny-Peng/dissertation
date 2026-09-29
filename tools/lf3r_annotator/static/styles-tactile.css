@@ -196,6 +196,13 @@
   font-size: .68rem;
 }
 
+.results-tactile-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .2rem;
+}
+
 .results-tactile-chip {
   padding: .1rem .32rem;
   color: var(--muted);
@@ -206,12 +213,12 @@
   text-transform: uppercase;
 }
 
-.results-tactile-card.is-invalid .results-tactile-chip {
+.results-tactile-chip.is-invalid {
   color: var(--terminal);
   border-color: color-mix(in srgb, var(--terminal) 45%, var(--line));
 }
 
-.results-tactile-card.is-stale .results-tactile-chip {
+.results-tactile-chip.is-stale {
   color: #b87914;
   border-color: color-mix(in srgb, #b87914 45%, var(--line));
 }
