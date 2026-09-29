@@ -36,6 +36,40 @@ class WebUIHandler(server.LF3RHandler):
         query = parse_qs(parsed.query, keep_blank_values=True)
 
         try:
+            if path.startswith("/api/tactile/"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[0:2] == ["api", "tactile"]:
+                    rollout_id = parts[2]
+                    try:
+                        if parts[3] == "frame":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            frame = int(query.get("frame", ["0"])[0])
+                            self.json_response(
+                                HTTPStatus.OK,
+                                {"tactile": self.app.tactile.frame(rollout_id, camera, frame)},
+                            )
+                            return
+                        if parts[3] == "image":
+                            finger = str(query.get("finger", [""])[0] or "")
+                            event_id = str(query.get("event_id", [""])[0] or "")
+                            kind = str(query.get("kind", ["deform"])[0] or "deform")
+                            body = self.app.tactile.image(
+                                rollout_id, finger, event_id, kind
+                            )
+                            self.send_response(HTTPStatus.OK)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Content-Length", str(len(body)))
+                            self.send_header("Cache-Control", "private, max-age=3600")
+                            self.send_header("Connection", "close")
+                            if self._safe_end_headers():
+                                self._safe_write(body)
+                            return
+                    except KeyError as exc:
+                        self.json_error(HTTPStatus.NOT_FOUND, str(exc.args[0]))
+                        return
+                self.json_error(HTTPStatus.NOT_FOUND, "Tactile resource not found")
+                return
+
             if path == "/api/repair/synthetic-suffix/rollouts":
                 self.json_response(
                     HTTPStatus.OK,
