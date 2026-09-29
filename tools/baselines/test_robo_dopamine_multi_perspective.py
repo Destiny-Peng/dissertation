@@ -169,7 +169,7 @@ class MultiPerspectiveTests(unittest.TestCase):
                 worker._truncate_video_to_frame_count = original_truncate
 
             self.assertTrue(metadata["applied"])
-            self.assertEqual(metadata["policy"], "terminal_small_mismatch")
+            self.assertEqual(metadata["policy"], "shortest_stream")
             self.assertEqual(metadata["effective_frame_count"], 679)
             self.assertEqual(
                 metadata["dropped_frames"],
