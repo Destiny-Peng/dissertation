@@ -425,6 +425,12 @@ def _materialize_ctrl_preparation(
             + ", ".join(str(path) for path in occupied)
         )
 
+    os.environ.setdefault("MUJOCO_GL", "egl")
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+    os.environ.setdefault(
+        "LIBERO_CONFIG_PATH",
+        str(project_root / "cache" / "libero"),
+    )
     replay_ctrl_world_pose_controls, run_libero_alignment_smoke = (
         _repair_trajectory_api(project_root)
     )
