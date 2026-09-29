@@ -39,7 +39,6 @@ from robo_dopamine_multi_perspective import (
 
 
 DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB = 2048
-
 _LOCALIZATION_CHECKPOINT_CACHE: dict[str, dict[str, Any]] = {}
 
 
@@ -152,7 +151,7 @@ def _align_multiview_camera_inputs(
     cam_right: str,
     output_dir: Path,
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    """Tolerate only a one-frame terminal mismatch among multiview inputs."""
+    """Trim multiview inputs to the shortest decodable camera stream."""
     source_paths = {
         "cam_high": Path(cam_high).resolve(),
         "cam_left_wrist": Path(cam_left).resolve(),
@@ -174,15 +173,12 @@ def _align_multiview_camera_inputs(
             {slot: str(path) for slot, path in source_paths.items()},
             {
                 "applied": False,
-                "policy": "terminal_off_by_one_only",
+                "policy": "shortest_stream",
                 "original_frame_counts": counts,
                 "effective_frame_count": target,
                 "dropped_frames": {slot: 0 for slot in source_paths},
             },
         )
-    if spread > 1:
-        raise ValueError(f"Frame count mismatch among cameras: {ordered_counts}")
-
     aligned_root = output_dir / "aligned_camera_inputs"
     aligned_by_source: dict[str, tuple[Path, str]] = {}
     effective: dict[str, str] = {}
@@ -204,7 +200,7 @@ def _align_multiview_camera_inputs(
     dropped = {slot: counts[slot] - target for slot in source_paths}
     metadata = {
         "applied": True,
-        "policy": "terminal_off_by_one_only",
+        "policy": "shortest_stream",
         "original_frame_counts": counts,
         "effective_frame_count": target,
         "dropped_frames": dropped,
