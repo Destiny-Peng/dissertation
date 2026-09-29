@@ -116,6 +116,58 @@ textarea:hover {
   }
 }
 
+/* Keep the instruction selector inside the rollout title band when there is room. */
+body[data-view="annotate"] #reviewWorkspace .task-header,
+body[data-view="results"] #reviewWorkspace .task-header {
+  container: rollout-title / inline-size;
+}
+
+body[data-view="annotate"] #reviewWorkspace .task-header-copy,
+body[data-view="results"] #reviewWorkspace .task-header-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@container rollout-title (min-width: 50rem) {
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy,
+  body[data-view="results"] #reviewWorkspace .task-header-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+    grid-template-rows: auto auto auto;
+    column-gap: .9rem;
+    align-items: end;
+    max-width: none;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy > .badge-row,
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy > #taskTitle,
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy > #recordMeta,
+  body[data-view="results"] #reviewWorkspace .task-header-copy > .badge-row,
+  body[data-view="results"] #reviewWorkspace .task-header-copy > #taskTitle,
+  body[data-view="results"] #reviewWorkspace .task-header-copy > #recordMeta {
+    grid-column: 1;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy > #instructionVariantControl,
+  body[data-view="results"] #reviewWorkspace .task-header-copy > #instructionVariantControl {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: end;
+    width: auto;
+    max-width: none;
+    margin-top: 0;
+    padding: .5rem .6rem;
+    grid-template-columns: 1fr;
+    gap: .2rem;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace #instructionVariantControl select,
+  body[data-view="results"] #reviewWorkspace #instructionVariantControl select {
+    width: 100%;
+    min-height: 1.9rem;
+  }
+}
+
 /* Annotate: give task information and instruction condition comparable weight. */
 body[data-view="annotate"] #reviewWorkspace .task-header {
   gap: 1rem;
