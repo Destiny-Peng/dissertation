@@ -5,7 +5,9 @@ from __future__ import annotations
 import bisect
 import json
 import struct
+import threading
 import zlib
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,9 @@ class FailRecoveryTactileService:
         )
         self.episodes: dict[str, EpisodeTactile] = {}
         self._series_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._sprite_cache: OrderedDict[tuple[str, str, int, str], bytes] = OrderedDict()
+        self._sprite_cache_lock = threading.Lock()
+        self._sprite_cache_limit = 96
         self._load()
 
     def _project_file(self, value: Any) -> Path:
@@ -252,6 +257,7 @@ class FailRecoveryTactileService:
         finger_series: dict[str, list[dict[str, Any]]] = {
             finger: [] for finger in FINGERS
         }
+        sync_frames: list[dict[str, Any]] = []
         last_event_id: dict[str, str | None] = {
             finger: None for finger in FINGERS
         }
@@ -262,6 +268,12 @@ class FailRecoveryTactileService:
                 if isinstance(row.get("tactile"), dict)
                 else {}
             )
+            sync_frame = {
+                "frame": int(video_frame),
+                "sync_row": int(row_index),
+                "complete": row.get("complete"),
+                "fingers": {},
+            }
             for finger in FINGERS:
                 sync = (
                     tactile.get(finger)
@@ -269,6 +281,12 @@ class FailRecoveryTactileService:
                     else {}
                 )
                 event_id = sync.get("event_id")
+                sync_frame["fingers"][finger] = {
+                    "event_id": event_id,
+                    "valid": sync.get("valid"),
+                    "stale": sync.get("stale"),
+                    "age_ms": sync.get("age_ms"),
+                }
                 event_key = None if event_id is None else str(event_id)
                 if event_key is None or event_key == last_event_id[finger]:
                     continue
@@ -296,18 +314,124 @@ class FailRecoveryTactileService:
                         ),
                         "stale": sync.get("stale"),
                         "age_ms": sync.get("age_ms"),
+                        "image_kinds": [
+                            kind for kind in KINDS
+                            if kind in episode.streams.get(finger, {})
+                            and event.get(kind + "_offset_bytes") is not None
+                            and event.get(kind + "_length_bytes") is not None
+                            and event.get(kind + "_shape") is not None
+                        ],
                     }
                 )
+            sync_frames.append(sync_frame)
 
         payload = {
             "rollout_id": rollout_id,
             "camera": camera,
             "frame_min": frames[0],
             "frame_max": frames[-1],
+            "sync_frames": sync_frames,
             "fingers": finger_series,
         }
         self._series_cache[cache_key] = payload
         return payload
+
+    def _read_image(
+        self,
+        episode: EpisodeTactile,
+        finger: str,
+        event_id: Any,
+        kind: str,
+    ) -> tuple[bytes, list[int]] | None:
+        event = self._event(episode, finger, event_id)
+        stream = episode.streams.get(finger, {}).get(kind)
+        if event is None or stream is None:
+            return None
+        offset_value = event.get(kind + "_offset_bytes")
+        length_value = event.get(kind + "_length_bytes")
+        shape_value = event.get(kind + "_shape")
+        if offset_value is None or length_value is None or shape_value is None:
+            return None
+        offset = int(offset_value)
+        length = int(length_value)
+        shape = [int(value) for value in shape_value]
+        if len(shape) != 2 or offset < 0 or length <= 0:
+            return None
+        height, width = shape
+        if height <= 0 or width <= 0 or length != height * width:
+            return None
+        with stream.open("rb") as handle:
+            handle.seek(offset)
+            data = handle.read(length)
+        if len(data) != length:
+            raise ValueError("short tactile image read")
+        return data, shape
+
+    def sprite(
+        self,
+        rollout_id: str,
+        camera: str,
+        video_frame: int,
+        kind: str,
+    ) -> bytes:
+        if kind not in KINDS:
+            raise KeyError("unknown tactile image kind")
+        episode = self.episodes.get(rollout_id)
+        if episode is None:
+            raise KeyError("tactile rollout not found")
+        frames = episode.camera_frames.get(camera)
+        rows = episode.camera_rows.get(camera)
+        if not frames or not rows:
+            raise KeyError("camera has no tactile synchronization")
+
+        index = self._nearest_index(frames, int(video_frame))
+        matched_frame = int(frames[index])
+        cache_key = (rollout_id, camera, matched_frame, kind)
+        with self._sprite_cache_lock:
+            cached = self._sprite_cache.get(cache_key)
+            if cached is not None:
+                self._sprite_cache.move_to_end(cache_key)
+                return cached
+
+        row = episode.frames[rows[index]]
+        tactile = row.get("tactile") if isinstance(row.get("tactile"), dict) else {}
+        images: list[tuple[bytes, list[int]] | None] = []
+        max_height = 0
+        max_width = 0
+        for finger in FINGERS:
+            sync = tactile.get(finger) if isinstance(tactile.get(finger), dict) else {}
+            image = self._read_image(episode, finger, sync.get("event_id"), kind)
+            images.append(image)
+            if image is not None:
+                _data, shape = image
+                max_height = max(max_height, shape[0])
+                max_width = max(max_width, shape[1])
+
+        if max_height <= 0 or max_width <= 0:
+            raise KeyError("tactile sprite not found")
+
+        total_width = max_width * len(FINGERS)
+        sprite = bytearray(max_height * total_width)
+        for finger_index, image in enumerate(images):
+            if image is None:
+                continue
+            data, shape = image
+            height, width = shape
+            x_offset = finger_index * max_width
+            for y in range(height):
+                source_start = y * width
+                target_start = y * total_width + x_offset
+                sprite[target_start:target_start + width] = data[
+                    source_start:source_start + width
+                ]
+
+        body = self._png(bytes(sprite), [max_height, total_width])
+        with self._sprite_cache_lock:
+            self._sprite_cache[cache_key] = body
+            self._sprite_cache.move_to_end(cache_key)
+            while len(self._sprite_cache) > self._sprite_cache_limit:
+                self._sprite_cache.popitem(last=False)
+        return body
 
     @staticmethod
     def _png_chunk(kind: bytes, payload: bytes) -> bytes:
