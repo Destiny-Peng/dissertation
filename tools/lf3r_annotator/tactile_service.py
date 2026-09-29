@@ -425,7 +425,11 @@ class FailRecoveryTactileService:
                     source_start:source_start + width
                 ]
 
-        body = self._png(bytes(sprite), [max_height, total_width])
+        body = self._png(
+            bytes(sprite),
+            [max_height, total_width],
+            compression_level=1,
+        )
         with self._sprite_cache_lock:
             self._sprite_cache[cache_key] = body
             self._sprite_cache.move_to_end(cache_key)
@@ -443,7 +447,12 @@ class FailRecoveryTactileService:
         )
 
     @classmethod
-    def _png(cls, data: bytes, shape: Any) -> bytes:
+    def _png(
+        cls,
+        data: bytes,
+        shape: Any,
+        compression_level: int = 3,
+    ) -> bytes:
         if not isinstance(shape, (list, tuple)):
             raise ValueError("invalid tactile image shape")
         dims = [int(value) for value in shape]
@@ -471,7 +480,10 @@ class FailRecoveryTactileService:
         return (
             signature
             + cls._png_chunk(b"IHDR", ihdr)
-            + cls._png_chunk(b"IDAT", zlib.compress(scanlines, level=3))
+            + cls._png_chunk(
+                b"IDAT",
+                zlib.compress(scanlines, level=compression_level),
+            )
             + cls._png_chunk(b"IEND", b"")
         )
 
