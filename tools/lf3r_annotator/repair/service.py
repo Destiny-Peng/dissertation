@@ -206,29 +206,26 @@ class RepairService:
         )
 
     @staticmethod
-    def _gpu_plan() -> dict[str, Any]:
-        """Report GPU status without enforcing a utilization gate.
-
-        Repair keeps the status for visibility/provenance and, when GPUs are
-        reported, prefers the least-utilized device for CUDA pinning.  The
-        user's Run action is the authority on whether a busy GPU should be used.
-        """
+    def _gpu_plan(requested_index: int) -> dict[str, Any]:
+        """Report the user-selected GPU without applying a utilization gate."""
 
         status = gpu_status()
         gpus = list(status.get("gpus") or []) if isinstance(status, dict) else []
-        gpus.sort(
-            key=lambda gpu: (
-                float(gpu.get("gpu_utilization_percent") or 0.0),
-                -float(gpu.get("memory_free_mib") or 0.0),
-                int(gpu.get("index") or 0),
-            )
+        selected = next(
+            (
+                gpu
+                for gpu in gpus
+                if int(gpu.get("index", -1)) == int(requested_index)
+            ),
+            None,
         )
         return {
             "available": bool(status.get("available")) if isinstance(status, dict) else False,
             "error": status.get("error") if isinstance(status, dict) else "GPU status unavailable",
             "devices": gpus,
-            "selected": gpus[0] if gpus else None,
-            "selection_policy": "least_utilized_reported_device_no_hard_threshold",
+            "requested_index": int(requested_index),
+            "selected": selected,
+            "selection_policy": "user_selected_device_no_hard_threshold",
             "utilization_gate": False,
             "queried_at": status.get("queried_at") if isinstance(status, dict) else None,
         }
@@ -262,7 +259,16 @@ class RepairService:
             wm_config,
         )
         adapter_status = adapter.validate_rollout(rollout)
-        gpu = self._gpu_plan()
+        gpu_value = payload.get("gpu_index", 0)
+        if isinstance(gpu_value, bool):
+            raise ValidationError("gpu_index must be a non-negative integer")
+        try:
+            gpu_index = int(gpu_value)
+        except (TypeError, ValueError) as error:
+            raise ValidationError("gpu_index must be a non-negative integer") from error
+        if gpu_index < 0 or str(gpu_value).strip() != str(gpu_index):
+            raise ValidationError("gpu_index must be a non-negative integer")
+        gpu = self._gpu_plan(gpu_index)
         blockers: list[str] = []
         if not capabilities["actions_available"]:
             blockers.append("GT actions are unavailable in the selected manifest record")
@@ -317,11 +323,7 @@ class RepairService:
                     rollout=rollout,
                     cut_frame=int(plan["alignment"]["cut_rgb_frame"]),
                     min_psnr=float(payload.get("alignment_min_psnr", 20.0)),
-                    gpu_index=(
-                        int(plan["gpu"]["selected"]["index"])
-                        if plan.get("gpu", {}).get("selected") is not None
-                        else None
-                    ),
+                    gpu_index=int(plan["gpu"]["requested_index"]),
                 )
                 if not smoke["passed"]:
                     smoke_error = (
@@ -425,10 +427,7 @@ class RepairService:
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = plan["model_name"]
         selected_gpu = plan.get("gpu", {}).get("selected")
-        if selected_gpu is not None:
-            wm_config["gpu_index"] = int(selected_gpu["index"])
-        else:
-            wm_config.pop("gpu_index", None)
+        wm_config["gpu_index"] = int(plan["gpu"]["requested_index"])
         config = {
             "schema_version": 1,
             "experiment": "synthetic_suffix",
@@ -487,11 +486,14 @@ class RepairService:
                 }
                 if selected_gpu is not None
                 else {
-                    "index": None,
+                    "index": int(plan["gpu"]["requested_index"]),
                     "selection_policy": plan["gpu"].get("selection_policy"),
                     "utilization_gate": False,
                     "status_available": plan["gpu"].get("available"),
-                    "status_error": plan["gpu"].get("error"),
+                    "status_error": (
+                        plan["gpu"].get("error")
+                        or "Selected GPU was not present in the status snapshot"
+                    ),
                 }
             ),
             "generation_config": (
