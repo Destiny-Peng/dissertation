@@ -33,7 +33,7 @@ def _rows(values: list[float]) -> list[dict[str, object]]:
 
 
 class MultiPerspectiveTests(unittest.TestCase):
-    def test_small_terminal_camera_mismatch_is_aligned(self) -> None:
+    def test_terminal_camera_mismatch_is_aligned(self) -> None:
         with tempfile.TemporaryDirectory(prefix="robo-camera-align-") as temporary:
             root = Path(temporary)
             cam_high = root / "cam_high.mp4"
@@ -84,8 +84,8 @@ class MultiPerspectiveTests(unittest.TestCase):
             self.assertEqual(effective["cam_left_wrist"], str(cam_left.resolve()))
             self.assertEqual(effective["cam_right_wrist"], str(cam_right.resolve()))
 
-    def test_camera_mismatch_larger_than_allowed_spread_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="robo-camera-reject-") as temporary:
+    def test_large_camera_mismatch_is_still_aligned_to_shortest(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="robo-camera-align-large-") as temporary:
             root = Path(temporary)
             cam_high = root / "cam_high.mp4"
             cam_left = root / "cam_left.mp4"
@@ -94,25 +94,43 @@ class MultiPerspectiveTests(unittest.TestCase):
                 path.touch()
 
             original_probe = worker._probe_video_frame_count
+            original_truncate = worker._truncate_video_to_frame_count
+            truncated: list[tuple[Path, Path, int]] = []
             counts = {
-                str(cam_high.resolve()): 505,
+                str(cam_high.resolve()): 560,
                 str(cam_left.resolve()): 501,
-                str(cam_right.resolve()): 501,
+                str(cam_right.resolve()): 530,
             }
             try:
                 worker._probe_video_frame_count = lambda path: counts[str(path.resolve())]
-                with self.assertRaisesRegex(
-                    ValueError,
-                    r"Frame count mismatch among cameras: \[505, 501, 501\]; allowed terminal spread <= 3",
-                ):
-                    worker._align_multiview_camera_inputs(
-                        cam_high=str(cam_high),
-                        cam_left=str(cam_left),
-                        cam_right=str(cam_right),
-                        output_dir=root / "raw",
-                    )
+
+                def fake_truncate(source: Path, destination: Path, frame_count: int) -> str:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.touch()
+                    truncated.append((source, destination, frame_count))
+                    counts[str(destination.resolve())] = frame_count
+                    return "stream_copy"
+
+                worker._truncate_video_to_frame_count = fake_truncate
+                effective, metadata = worker._align_multiview_camera_inputs(
+                    cam_high=str(cam_high),
+                    cam_left=str(cam_left),
+                    cam_right=str(cam_right),
+                    output_dir=root / "raw",
+                )
             finally:
                 worker._probe_video_frame_count = original_probe
+                worker._truncate_video_to_frame_count = original_truncate
+
+            self.assertTrue(metadata["applied"])
+            self.assertEqual(metadata["policy"], "shortest_stream")
+            self.assertEqual(metadata["effective_frame_count"], 501)
+            self.assertEqual(
+                metadata["dropped_frames"],
+                {"cam_high": 59, "cam_left_wrist": 0, "cam_right_wrist": 29},
+            )
+            self.assertEqual(len(truncated), 2)
+            self.assertEqual(effective["cam_left_wrist"], str(cam_left.resolve()))
 
     def test_two_frame_shared_wrist_mismatch_is_aligned(self) -> None:
         with tempfile.TemporaryDirectory(prefix="robo-camera-align-shared-") as temporary:
@@ -153,7 +171,6 @@ class MultiPerspectiveTests(unittest.TestCase):
             self.assertTrue(metadata["applied"])
             self.assertEqual(metadata["policy"], "terminal_small_mismatch")
             self.assertEqual(metadata["effective_frame_count"], 679)
-            self.assertEqual(metadata["max_allowed_frame_spread"], 3)
             self.assertEqual(
                 metadata["dropped_frames"],
                 {"cam_high": 0, "cam_left_wrist": 2, "cam_right_wrist": 2},
@@ -221,7 +238,7 @@ class MultiPerspectiveTests(unittest.TestCase):
                         },
                         {
                             "applied": True,
-                            "policy": "terminal_small_mismatch",
+                            "policy": "shortest_stream",
                             "original_frame_counts": {
                                 "cam_high": 502,
                                 "cam_left_wrist": 501,
