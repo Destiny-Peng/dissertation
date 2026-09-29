@@ -18,7 +18,7 @@ from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
 from .ctrl_world import CtrlWorldAdapter
 from .alignment import capability_summary, compute_alignment
-from .alignment_runner import run_alignment_subprocess
+from .alignment_runner import resolve_repair_python, run_alignment_subprocess
 
 
 RUN_ID_RE = re.compile(r"^repair-suffix-[A-Za-z0-9._-]{1,120}$")
@@ -179,17 +179,7 @@ class RepairService:
         return rows
 
     def _worker_python(self) -> Path:
-        configured = str(os.environ.get("LF3R_ENV_OPENVLA") or "").strip()
-        candidates = []
-        if configured:
-            candidates.append(Path(configured) / "bin" / "python")
-        candidates.append(
-            self.project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python"
-        )
-        for candidate in candidates:
-            if candidate.is_file():
-                return candidate.resolve()
-        return candidates[-1].resolve()
+        return resolve_repair_python(self.project_root)
 
     def _world_model_adapter(
         self,
@@ -259,7 +249,9 @@ class RepairService:
             wm_config,
         )
         adapter_status = adapter.validate_rollout(rollout)
-        gpu_value = payload.get("gpu_index", 0)
+        gpu_value = payload.get("gpu_index")
+        if gpu_value is None or str(gpu_value).strip() == "":
+            raise ValidationError("Select a GPU before validating or running Repair")
         if isinstance(gpu_value, bool):
             raise ValidationError("gpu_index must be a non-negative integer")
         try:
