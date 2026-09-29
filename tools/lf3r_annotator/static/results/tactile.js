@@ -108,7 +108,10 @@
     var imageKind = kinds.indexOf(kind) >= 0 ? kind : (kinds[0] || "");
     var stale = data.stale === true;
     var invalid = data.valid === false;
-    var status = invalid ? "invalid" : (stale ? "stale" : "valid");
+    var cardClasses = (invalid ? " is-invalid" : "") + (stale ? " is-stale" : "");
+    var chips = '<span class="results-tactile-chip ' + (invalid ? "is-invalid" : "is-valid") + '">'
+      + (invalid ? "invalid" : "valid") + '</span>'
+      + (stale ? '<span class="results-tactile-chip is-stale">stale</span>' : "");
     var age = Number(data.age_ms);
     var meta = "event " + (eventId == null ? "—" : eventId)
       + (Number.isFinite(age) ? " · " + age.toFixed(1) + " ms" : "");
@@ -117,9 +120,9 @@
         + ' tactile ' + escapeHtml(imageKind) + '" src="'
         + escapeHtml(imageUrl(rolloutId, finger, eventId, imageKind)) + '">'
       : '<div class="results-tactile-image results-tactile-placeholder">No image</div>';
-    return '<article class="results-tactile-card is-' + status + '">'
+    return '<article class="results-tactile-card' + cardClasses + '">'
       + '<header><strong>' + escapeHtml(LABELS[finger]) + '</strong>'
-      + '<span class="results-tactile-chip">' + status + '</span></header>'
+      + '<span class="results-tactile-chips">' + chips + '</span></header>'
       + image
       + '<div class="results-tactile-meta">' + escapeHtml(meta) + '</div>'
       + '<div class="results-tactile-f6">' + formatF6(data.f6) + '</div>'
