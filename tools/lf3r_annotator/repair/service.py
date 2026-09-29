@@ -207,15 +207,16 @@ class RepairService:
 
     @staticmethod
     def _gpu_plan() -> dict[str, Any]:
+        """Report GPU status without enforcing a utilization gate.
+
+        Repair keeps the status for visibility/provenance and, when GPUs are
+        reported, prefers the least-utilized device for CUDA pinning.  The
+        user's Run action is the authority on whether a busy GPU should be used.
+        """
+
         status = gpu_status()
-        gpus = status.get("gpus") if isinstance(status, dict) else []
-        eligible = [
-            gpu
-            for gpu in (gpus or [])
-            if gpu.get("gpu_utilization_percent") is not None
-            and float(gpu["gpu_utilization_percent"]) < 50.0
-        ]
-        eligible.sort(
+        gpus = list(status.get("gpus") or []) if isinstance(status, dict) else []
+        gpus.sort(
             key=lambda gpu: (
                 float(gpu.get("gpu_utilization_percent") or 0.0),
                 -float(gpu.get("memory_free_mib") or 0.0),
@@ -225,9 +226,10 @@ class RepairService:
         return {
             "available": bool(status.get("available")) if isinstance(status, dict) else False,
             "error": status.get("error") if isinstance(status, dict) else "GPU status unavailable",
-            "threshold_percent": 50.0,
-            "eligible": eligible,
-            "selected": eligible[0] if eligible else None,
+            "devices": gpus,
+            "selected": gpus[0] if gpus else None,
+            "selection_policy": "least_utilized_reported_device_no_hard_threshold",
+            "utilization_gate": False,
             "queried_at": status.get("queried_at") if isinstance(status, dict) else None,
         }
 
@@ -273,13 +275,8 @@ class RepairService:
                 "Repair worker runtime is unavailable: "
                 + str(worker_python.relative_to(self.project_root))
             )
-        if gpu["selected"] is None:
-            if gpu["available"]:
-                blockers.append("No GPU is below the 50% utilization threshold")
-            else:
-                blockers.append(
-                    "GPU status is unavailable: " + str(gpu.get("error") or "unknown error")
-                )
+        # GPU utilization/status is informational only.  Do not block Repair:
+        # the user explicitly controls whether to submit the run.
         return {
             "ready": not blockers,
             "rollout_id": rollout_id,
@@ -313,7 +310,6 @@ class RepairService:
         if (
             capabilities["actions_available"]
             and capabilities["sim_state_available"]
-            and plan.get("gpu", {}).get("selected") is not None
         ):
             try:
                 smoke = run_alignment_subprocess(
@@ -321,7 +317,11 @@ class RepairService:
                     rollout=rollout,
                     cut_frame=int(plan["alignment"]["cut_rgb_frame"]),
                     min_psnr=float(payload.get("alignment_min_psnr", 20.0)),
-                    gpu_index=int(plan["gpu"]["selected"]["index"]),
+                    gpu_index=(
+                        int(plan["gpu"]["selected"]["index"])
+                        if plan.get("gpu", {}).get("selected") is not None
+                        else None
+                    ),
                 )
                 if not smoke["passed"]:
                     smoke_error = (
@@ -330,12 +330,8 @@ class RepairService:
                     )
             except (ValidationError, OSError, ValueError) as error:
                 smoke_error = f"{type(error).__name__}: {error}"
-        elif not (
-            capabilities["actions_available"] and capabilities["sim_state_available"]
-        ):
-            smoke_error = "Alignment smoke test requires both GT actions and simulator states"
         else:
-            smoke_error = "Alignment smoke test requires an eligible GPU below 50% utilization"
+            smoke_error = "Alignment smoke test requires both GT actions and simulator states"
 
         if smoke is not None and smoke.get("action_count") is not None:
             future_action_count = max(
@@ -428,7 +424,11 @@ class RepairService:
 
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = plan["model_name"]
-        wm_config["gpu_index"] = int(plan["gpu"]["selected"]["index"])
+        selected_gpu = plan.get("gpu", {}).get("selected")
+        if selected_gpu is not None:
+            wm_config["gpu_index"] = int(selected_gpu["index"])
+        else:
+            wm_config.pop("gpu_index", None)
         config = {
             "schema_version": 1,
             "experiment": "synthetic_suffix",
@@ -473,14 +473,27 @@ class RepairService:
             "action_adapter": adapter_status.get("action_adapter"),
             "control_adapter": adapter_status.get("control_adapter"),
             "control_semantics": adapter_status.get("control_semantics"),
-            "gpu": {
-                "index": int(plan["gpu"]["selected"]["index"]),
-                "uuid": plan["gpu"]["selected"].get("uuid"),
-                "name": plan["gpu"]["selected"].get("name"),
-                "utilization_percent_at_submit": plan["gpu"]["selected"].get("gpu_utilization_percent"),
-                "memory_free_mib_at_submit": plan["gpu"]["selected"].get("memory_free_mib"),
-                "selection_threshold_percent": plan["gpu"]["threshold_percent"],
-            },
+            "gpu": (
+                {
+                    "index": int(selected_gpu["index"]),
+                    "uuid": selected_gpu.get("uuid"),
+                    "name": selected_gpu.get("name"),
+                    "utilization_percent_at_submit": selected_gpu.get(
+                        "gpu_utilization_percent"
+                    ),
+                    "memory_free_mib_at_submit": selected_gpu.get("memory_free_mib"),
+                    "selection_policy": plan["gpu"].get("selection_policy"),
+                    "utilization_gate": False,
+                }
+                if selected_gpu is not None
+                else {
+                    "index": None,
+                    "selection_policy": plan["gpu"].get("selection_policy"),
+                    "utilization_gate": False,
+                    "status_available": plan["gpu"].get("available"),
+                    "status_error": plan["gpu"].get("error"),
+                }
+            ),
             "generation_config": (
                 {
                     "variant": adapter_status["variant"],
