@@ -182,8 +182,8 @@ function maybeSelectRollout(id) {
 }
 
 function instructionConditionLabel(condition, option) {
+  if (condition === "full_instruction") return "Full";
   if (option && option.label) return option.label;
-  if (condition === "full_instruction") return "Full instruction";
   if (condition === "subtask_a") return "A";
   if (condition === "subtask_b") return "B";
   return condition;
@@ -196,7 +196,7 @@ function currentInstructionVariant(record) {
   state.instructionCondition = condition;
   return options[condition] || {
     condition: "full_instruction",
-    label: "Full instruction",
+    label: "Full",
     instruction: record ? record.task_description : "",
     available: true,
     counterfactual: false
@@ -213,16 +213,16 @@ function updateInstructionVariantHeader(record) {
     + " - episode " + record.episode_index
     + " - " + record.fps + " fps"
     + " - " + instructionConditionLabel(condition, variant);
-  var note;
-  if (condition === "full_instruction") {
-    note = "Original full instruction. Existing completed baseline outputs are classified here.";
-  } else if (variant.available) {
+  var note = "";
+  if (condition !== "full_instruction" && variant.available) {
     note = "Counterfactual " + instructionConditionLabel(condition, variant)
       + " label on the same video and annotation. No baseline output has been run for this condition yet.";
-  } else {
+  } else if (condition !== "full_instruction") {
     note = "This rollout has no validated " + instructionConditionLabel(condition, variant) + " instruction variant.";
   }
-  byId("instructionVariantNote").textContent = note;
+  var noteElement = byId("instructionVariantNote");
+  noteElement.textContent = note;
+  noteElement.hidden = !note;
 }
 
 function renderInstructionVariantControl(record) {
