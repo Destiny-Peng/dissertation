@@ -110,8 +110,22 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 self.project_root / "conda_envs" / "Ctrl-World" / "bin" / "python",
                 self.project_root / "conda_envs" / "ctrl-world" / "bin" / "python",
                 self.project_root / "conda_envs" / "LF3R-ctrl" / "bin" / "python",
-                self.project_root / "repos" / "Ctrl-World" / ".venv" / "bin" / "python",
             ]
+        )
+        conda_root = self.project_root / "conda_envs"
+        if conda_root.is_dir():
+            candidates.extend(
+                sorted(
+                    (
+                        env_dir / "bin" / "python"
+                        for env_dir in conda_root.iterdir()
+                        if env_dir.is_dir() and "ctrl" in env_dir.name.lower()
+                    ),
+                    key=lambda path: str(path).lower(),
+                )
+            )
+        candidates.append(
+            self.project_root / "repos" / "Ctrl-World" / ".venv" / "bin" / "python"
         )
         for candidate in candidates:
             if candidate.is_file():
