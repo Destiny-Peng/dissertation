@@ -281,6 +281,10 @@ class CtrlWorldAdapterTest(unittest.TestCase):
         )
         trajectory = root / "official.hdf5"
         trajectory.write_bytes(b"hdf5")
+        controls = root / "prepared.ctrl_controls.npz"
+        controls.write_bytes(b"prepared")
+        alignment = root / "prepared.alignment.json"
+        alignment.write_text('{"passed": true}\n', encoding="utf-8")
         return {
             "source_root": "repos/Ctrl-World",
             "checkpoint": (
@@ -289,19 +293,29 @@ class CtrlWorldAdapterTest(unittest.TestCase):
             "svd_model_path": "checkpoints/stable-video-diffusion-img2vid",
             "clip_model_path": "checkpoints/clip-vit-base-patch32",
             "data_stat_path": "repos/Ctrl-World/dataset_meta_info/droid/stat.json",
+            "_test_controls": "prepared.ctrl_controls.npz",
+            "_test_alignment": "prepared.alignment.json",
         }
 
     def test_ctrl_world_uses_adapter_local_third_view_duplication(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            adapter = CtrlWorldAdapter(root, self._config(root))
+            config = self._config(root)
+            controls = config.pop("_test_controls")
+            alignment = config.pop("_test_alignment")
+            adapter = CtrlWorldAdapter(root, config)
             status = adapter.validate_rollout(
                 {
                     "camera_video_paths": {
                         "cam_high": "high.mp4",
                         "cam_wrist": "wrist.mp4",
                     },
-                    "source_hdf5_path": "official.hdf5",
+                    "ctrl_prepared": True,
+                    "ctrl_controls_path": controls,
+                    "rgb_alignment": {
+                        "validated": True,
+                        "validation_path": alignment,
+                    },
                     "fps": 20.0,
                 }
             )
@@ -322,12 +336,21 @@ class CtrlWorldAdapterTest(unittest.TestCase):
     def test_ctrl_world_requires_real_wrist_view(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            adapter = CtrlWorldAdapter(root, self._config(root))
+            config = self._config(root)
+            controls = config.pop("_test_controls")
+            alignment = config.pop("_test_alignment")
+            adapter = CtrlWorldAdapter(root, config)
             with self.assertRaises(ValidationError):
                 adapter.validate_rollout(
                     {
                         "camera_video_paths": {"cam_high": "high.mp4"},
                         "source_hdf5_path": "official.hdf5",
+                        "ctrl_prepared": True,
+                        "ctrl_controls_path": controls,
+                        "rgb_alignment": {
+                            "validated": True,
+                            "validation_path": alignment,
+                        },
                         "fps": 20.0,
                     }
                 )
@@ -371,6 +394,11 @@ class OfficialLiberoManifestContractTest(unittest.TestCase):
         self.assertIn('"trajectory_group": group_name', source)
         self.assertIn('"branch_state": "states[c+1]"', source)
         self.assertIn('"future_actions": "actions[c+1:]"', source)
+        self.assertIn('"ctrl_control": "ctrl_controls[c]"', source)
+        self.assertIn('"ctrl_prepared": True', source)
+        self.assertIn('"ctrl_controls_path": _project_relative(', source)
+        self.assertIn("_materialize_ctrl_preparation(", source)
+        self.assertIn("offline_libero_replay_sampled_cuts", source)
         self.assertIn('"rgb_transform": "none"', source)
         self.assertNotIn("cam_left_wrist", source)
         self.assertNotIn("cam_right_wrist", source)
@@ -414,8 +442,17 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("CtrlWorldAdapter", ctrl_adapter)
         self.assertIn('"ctrl" in env_dir.name.lower()', ctrl_adapter)
         self.assertIn("future_recorded_proprio_used", ctrl_adapter)
+        self.assertNotIn(
+            "requires the official LIBERO HDF5 trajectory/proprio source",
+            ctrl_adapter,
+        )
+        self.assertIn("runtime consumes no simulator state or HDF5", ctrl_adapter)
         self.assertIn('model_name in {"ctrl", "ctrl_world"}', worker)
-        self.assertIn("replay_ctrl_world_pose_controls", worker)
+        self.assertNotIn("replay_ctrl_world_pose_controls", worker)
+        self.assertNotIn("load_states(", worker)
+        self.assertNotIn("load_model_xml(", worker)
+        self.assertIn("prepared_ctrl_replay(", worker)
+        self.assertIn('"runtime_libero_used": False', worker)
         self.assertIn('"future_recorded_proprio_used": False', worker)
         self.assertNotIn("ensure_gpu_below_threshold", worker)
         self.assertNotIn("below the 50% utilization threshold", service)
@@ -431,10 +468,12 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("Select a GPU before validating or running Repair", service)
         self.assertIn("resolve_repair_python", service)
         self.assertIn('model_runtime = str(adapter_status.get("python")', service)
+        self.assertIn('if model_name == "ctrl_world":', service)
         self.assertIn('"repair_runtime": repair_runtime', service)
         self.assertIn('"model_runtime": model_runtime', service)
         self.assertIn('runtime_label="Repair/LIBERO"', service)
         self.assertIn("python_override=", service)
+        self.assertIn('"runtime_libero_required": plan["model_name"] != "ctrl_world"', service)
         self.assertIn('plan["worker_python"]', service)
         self.assertIn('"numpy"', alignment_runner)
         self.assertIn('"h5py"', alignment_runner)
@@ -446,6 +485,8 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("No project-local Repair/LIBERO Python", alignment_runner)
         self.assertIn("Ctrl-World runtime:", repair_js)
         self.assertIn("Repair/LIBERO runtime:", repair_js)
+        self.assertIn("not required at runtime · prepared offline", repair_js)
+        self.assertIn("Alignment validation: passed offline during data preparation", repair_js)
         self.assertIn("Repair/LIBERO preflight error:", repair_js)
         self.assertIn('"repair_runtime_error": repair_runtime_error', service)
         self.assertNotIn("User-managed CUDA device index, matching Runs.", repair_page)

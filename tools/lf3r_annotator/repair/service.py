@@ -137,10 +137,20 @@ class RepairService:
             except ValidationError as error:
                 plan_error = str(error)
             eligibility_reasons: list[str] = []
-            if not capabilities["actions_available"]:
-                eligibility_reasons.append("missing GT actions")
-            if not capabilities["sim_state_available"]:
-                eligibility_reasons.append("missing simulator states")
+            has_online_trajectory = bool(
+                capabilities["actions_available"]
+                and capabilities["sim_state_available"]
+            )
+            has_prepared_ctrl = bool(
+                rollout.get("ctrl_prepared")
+                and rollout.get("ctrl_controls_path")
+                and isinstance(rollout.get("rgb_alignment"), dict)
+                and rollout["rgb_alignment"].get("validated")
+            )
+            if not has_online_trajectory and not has_prepared_ctrl:
+                eligibility_reasons.append(
+                    "missing both online trajectory data and offline prepared Ctrl controls"
+                )
             if "cam_high" not in capabilities["views"]:
                 eligibility_reasons.append("missing cam_high")
             if plan is None:
@@ -264,28 +274,45 @@ class RepairService:
             raise ValidationError("gpu_index must be a non-negative integer")
         gpu = self._gpu_plan(gpu_index)
         blockers: list[str] = []
-        if not capabilities["actions_available"]:
-            blockers.append("GT actions are unavailable in the selected manifest record")
-        if not capabilities["sim_state_available"]:
-            blockers.append("simulator state trajectory is unavailable in the selected manifest record")
+        if model_name != "ctrl_world":
+            if not capabilities["actions_available"]:
+                blockers.append(
+                    "GT actions are unavailable in the selected manifest record"
+                )
+            if not capabilities["sim_state_available"]:
+                blockers.append(
+                    "simulator state trajectory is unavailable in the selected manifest record"
+                )
         blockers.extend(adapter_status["unavailable_reasons"])
         model_runtime = str(adapter_status.get("python") or "").strip() or None
         worker_python: Path | None = None
         repair_runtime_error: str | None = None
-        try:
-            worker_python = self._worker_python()
-        except ValidationError as error:
-            repair_runtime_error = str(error)
-            blockers.append(repair_runtime_error)
-        repair_runtime = (
-            (
-                str(worker_python.relative_to(self.project_root))
-                if worker_python.is_relative_to(self.project_root)
-                else str(worker_python)
+        repair_runtime: str | None = None
+        if model_name == "ctrl_world":
+            if model_runtime:
+                model_python = Path(model_runtime).expanduser()
+                worker_python = (
+                    model_python.resolve()
+                    if model_python.is_absolute()
+                    else (self.project_root / model_python).resolve()
+                )
+            else:
+                blockers.append("Ctrl-World runtime path is unavailable")
+        else:
+            try:
+                worker_python = self._worker_python()
+            except ValidationError as error:
+                repair_runtime_error = str(error)
+                blockers.append(repair_runtime_error)
+            repair_runtime = (
+                (
+                    str(worker_python.relative_to(self.project_root))
+                    if worker_python.is_relative_to(self.project_root)
+                    else str(worker_python)
+                )
+                if worker_python is not None
+                else None
             )
-            if worker_python is not None
-            else None
-        )
         # GPU utilization/status is informational only.  Do not block Repair:
         # the user explicitly controls whether to submit the run.
         return {
@@ -295,7 +322,14 @@ class RepairService:
             "capabilities": capabilities,
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
-            "worker_python": repair_runtime,
+            "worker_python": (
+                (
+                    str(worker_python.relative_to(self.project_root))
+                    if worker_python is not None
+                    and worker_python.is_relative_to(self.project_root)
+                    else (str(worker_python) if worker_python is not None else None)
+                )
+            ),
             "repair_runtime": repair_runtime,
             "repair_runtime_error": repair_runtime_error,
             "model_runtime": model_runtime,
@@ -317,7 +351,27 @@ class RepairService:
         capabilities = plan["capabilities"]
         smoke: dict[str, Any] | None = None
         smoke_error: str | None = None
-        if (
+        if plan["model_name"] == "ctrl_world":
+            alignment_meta = rollout.get("rgb_alignment")
+            if (
+                isinstance(alignment_meta, dict)
+                and alignment_meta.get("validated")
+                and rollout.get("ctrl_prepared")
+            ):
+                smoke = {
+                    "passed": True,
+                    "source": "offline_preparation",
+                    "validation_path": alignment_meta.get("validation_path"),
+                    "minimum_psnr": alignment_meta.get("minimum_psnr"),
+                    "sampled_cut_frames": alignment_meta.get("sampled_cut_frames"),
+                    "action_count": int(rollout.get("total_frames") or 0),
+                }
+            else:
+                smoke_error = (
+                    "Ctrl-World offline preparation is incomplete; rerun "
+                    "prepare_libero_manifest.py --resume"
+                )
+        elif (
             capabilities["actions_available"]
             and capabilities["sim_state_available"]
             and plan.get("worker_python")
@@ -392,28 +446,21 @@ class RepairService:
                     "control_points_including_condition": sample_count,
                     "generated_suffix_frames": max(0, sample_count - 1),
                     "note": (
-                        "Ctrl-World uses DROID-style future pose/state conditioning "
-                        "sampled at its target temporal rate; raw LIBERO delta actions "
-                        "remain the alignment/smoke-test ground truth."
+                        "Ctrl-World slices frame-aligned pose/gripper controls prepared "
+                        "offline from the official LIBERO demonstration; runtime does "
+                        "not start LIBERO or replay actions."
                     ),
                 }
         if smoke_error:
             plan["blockers"].append(smoke_error)
         if smoke is not None and plan["model_name"] == "ctrl_world":
-            ctrl_pose = smoke.get("ctrl_world_pose") or {}
-            if not ctrl_pose.get("available"):
+            frame_step = int(plan["world_model"].get("source_frame_step") or 0)
+            cut_frame = int(plan["alignment"]["cut_rgb_frame"])
+            total_frames = int(rollout.get("total_frames") or 0)
+            if frame_step <= 0 or cut_frame + frame_step >= total_frames:
                 plan["blockers"].append(
-                    "Ctrl-World pose preflight failed: "
-                    + str(ctrl_pose.get("error") or "required LIBERO proprio is unavailable")
+                    "Ctrl-World temporal sampling leaves no future prepared control"
                 )
-            else:
-                frame_step = int(plan["world_model"].get("source_frame_step") or 0)
-                cut_frame = int(plan["alignment"]["cut_rgb_frame"])
-                total_frames = int(rollout.get("total_frames") or 0)
-                if frame_step <= 0 or cut_frame + frame_step >= total_frames:
-                    plan["blockers"].append(
-                        "Ctrl-World temporal sampling leaves no future pose-conditioned frame"
-                    )
         plan["ready"] = bool(
             not plan["blockers"]
             and smoke is not None
@@ -485,6 +532,8 @@ class RepairService:
             "checkpoint": adapter_status["checkpoint"],
             "checkpoint_type": adapter_status["checkpoint_type"],
             "repair_worker_python": plan["worker_python"],
+            "runtime_libero_required": plan["model_name"] != "ctrl_world",
+            "offline_ctrl_prepared": bool(rollout.get("ctrl_prepared")),
             "camera_mapping": adapter_status["camera_mapping"],
             "duplicated_camera": adapter_status["duplicated_camera"],
             "action_adapter": adapter_status.get("action_adapter"),

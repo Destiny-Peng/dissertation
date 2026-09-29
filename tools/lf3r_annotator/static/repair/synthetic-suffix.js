@@ -360,7 +360,7 @@
         "Ctrl views: exterior_1 ← cam_high · exterior_2 ← cam_high (adapter duplicate) · wrist ← cam_wrist"
       );
       modelLines.push(
-        "Ctrl control: states[c+1] + replayed GT actions[c+1:] → absolute Cartesian pose/gripper; no future recorded proprio"
+        "Ctrl control: prepared offline once from LIBERO GT replay; runtime slices ctrl_controls[c::step] · no LIBERO/HDF5 replay"
       );
       modelLines.push(
         "Ctrl native geometry: source RGB is resized to 192×320; resize is recorded in provenance"
@@ -404,13 +404,17 @@
       "Ctrl-World runtime: " + String(
         validation.model_runtime || "unresolved"
       ),
-      "Repair/LIBERO runtime: " + String(
-        validation.repair_runtime || "preflight failed"
+      "Repair/LIBERO runtime: " + (
+        validation.model_name === "ctrl_world"
+          ? "not required at runtime · prepared offline"
+          : String(validation.repair_runtime || "preflight failed")
       ),
       validation.repair_runtime_error
         ? ("Repair/LIBERO preflight error: " + String(validation.repair_runtime_error))
         : "",
-      "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
+      (smoke.source === "offline_preparation"
+        ? "Alignment validation: passed offline during data preparation"
+        : ("Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"))),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       modelLines.join("\n"),
       validation.gpu
