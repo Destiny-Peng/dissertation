@@ -401,7 +401,15 @@
       "condition_rgb = rgb[" + validation.alignment.condition_frame + "]",
       "branch_state = states[" + validation.alignment.branch_state_index + "]",
       "future_actions = actions[" + validation.alignment.gt_action_start + ":]",
-      "Repair runtime: " + String(validation.worker_python || "unavailable"),
+      "Repair runtime candidate: " + String(
+        validation.runtime_candidate || validation.worker_python || "unresolved"
+      ),
+      "Repair runtime: " + String(
+        validation.worker_python || "preflight failed"
+      ),
+      validation.runtime_error
+        ? ("Runtime preflight error: " + String(validation.runtime_error))
+        : "",
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       modelLines.join("\n"),
