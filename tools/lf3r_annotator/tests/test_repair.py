@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend_core import ValidationError
 from repair.adapters import A2WorldAdapter
 from repair.ctrl_world import CtrlWorldAdapter
-from repair.alignment import capability_summary, compute_alignment
+from repair.alignment import capability_summary, compute_alignment, project_path
 from repair.prepare_libero_manifest import _ensure_project_libero_on_sys_path
 
 
@@ -25,6 +25,25 @@ class RepairAlignmentTest(unittest.TestCase):
     def test_fixed_frame_cannot_consume_last_rgb_frame(self) -> None:
         with self.assertRaises(ValidationError):
             compute_alignment(total_frames=10, cut_type="frame", cut_frame=9)
+
+    def test_project_relative_official_libero_path_resolves_under_project_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            relative = (
+                "datasets/libero_official/libero_10/"
+                "LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_"
+                "tomato_sauce_in_the_basket_demo.hdf5"
+            )
+            expected = root / relative
+            expected.parent.mkdir(parents=True)
+            expected.write_bytes(b"hdf5")
+            resolved = project_path(
+                root,
+                relative,
+                label="trajectory field source_hdf5_path",
+            )
+            self.assertEqual(resolved, expected.resolve())
+            self.assertTrue(resolved.is_relative_to(root))
 
     def test_manifest_capabilities_report_only_real_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -371,6 +390,9 @@ class RepairFrontendContractTest(unittest.TestCase):
         worker = (
             Path(__file__).resolve().parents[1] / "repair" / "worker.py"
         ).read_text(encoding="utf-8")
+        service = (
+            Path(__file__).resolve().parents[1] / "repair" / "service.py"
+        ).read_text(encoding="utf-8")
         repair_js = (static_root / "repair" / "synthetic-suffix.js").read_text(
             encoding="utf-8"
         )
@@ -391,6 +413,11 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('model_name in {"ctrl", "ctrl_world"}', worker)
         self.assertIn("replay_ctrl_world_pose_controls", worker)
         self.assertIn('"future_recorded_proprio_used": False', worker)
+        self.assertNotIn("ensure_gpu_below_threshold", worker)
+        self.assertNotIn("below the 50% utilization threshold", service)
+        self.assertNotIn("threshold_percent", service)
+        self.assertIn('"utilization_gate": False', service)
+        self.assertIn("informational only, no utilization gate", repair_js)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
