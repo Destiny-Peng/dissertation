@@ -382,3 +382,11 @@ body[data-view="runs"] .job-card-log {
     grid-template-columns: 1fr;
   }
 }
+
+
+@container rollout-title (min-width: 50rem) {
+  body[data-view="annotate"] #reviewWorkspace .task-header > .task-header-copy,
+  body[data-view="results"] #reviewWorkspace .task-header > .task-header-copy {
+    max-width: none;
+  }
+}
