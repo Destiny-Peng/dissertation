@@ -178,26 +178,9 @@ class RepairService:
             )
         return rows
 
-    def _worker_python(
-        self,
-        model_name: str,
-        adapter_status: dict[str, Any],
-    ) -> Path:
-        if model_name == "ctrl_world":
-            raw = str(adapter_status.get("python") or "").strip()
-            if not raw:
-                raise ValidationError("Ctrl-World runtime path is unavailable")
-            candidate = Path(raw).expanduser()
-            python = (
-                candidate.resolve()
-                if candidate.is_absolute()
-                else (self.project_root / candidate).resolve()
-            )
-            return resolve_repair_python(
-                self.project_root,
-                preferred_python=python,
-                runtime_label="Ctrl-World",
-            )
+    def _worker_python(self) -> Path:
+        # Repair/LIBERO orchestration is intentionally separate from the
+        # world-model environment. Ctrl-World runs in adapter_status["python"].
         return resolve_repair_python(self.project_root)
 
     def _world_model_adapter(
@@ -286,23 +269,23 @@ class RepairService:
         if not capabilities["sim_state_available"]:
             blockers.append("simulator state trajectory is unavailable in the selected manifest record")
         blockers.extend(adapter_status["unavailable_reasons"])
-        runtime_candidate: str | None = None
-        if model_name == "ctrl_world":
-            raw_runtime = str(adapter_status.get("python") or "").strip()
-            runtime_candidate = raw_runtime or None
+        model_runtime = str(adapter_status.get("python") or "").strip() or None
         worker_python: Path | None = None
-        runtime_error: str | None = None
+        repair_runtime_error: str | None = None
         try:
-            worker_python = self._worker_python(model_name, adapter_status)
-            if runtime_candidate is None:
-                runtime_candidate = (
-                    str(worker_python.relative_to(self.project_root))
-                    if worker_python.is_relative_to(self.project_root)
-                    else str(worker_python)
-                )
+            worker_python = self._worker_python()
         except ValidationError as error:
-            runtime_error = str(error)
-            blockers.append(runtime_error)
+            repair_runtime_error = str(error)
+            blockers.append(repair_runtime_error)
+        repair_runtime = (
+            (
+                str(worker_python.relative_to(self.project_root))
+                if worker_python.is_relative_to(self.project_root)
+                else str(worker_python)
+            )
+            if worker_python is not None
+            else None
+        )
         # GPU utilization/status is informational only.  Do not block Repair:
         # the user explicitly controls whether to submit the run.
         return {
@@ -312,17 +295,10 @@ class RepairService:
             "capabilities": capabilities,
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
-            "worker_python": (
-                (
-                    str(worker_python.relative_to(self.project_root))
-                    if worker_python.is_relative_to(self.project_root)
-                    else str(worker_python)
-                )
-                if worker_python is not None
-                else None
-            ),
-            "runtime_candidate": runtime_candidate,
-            "runtime_error": runtime_error,
+            "worker_python": repair_runtime,
+            "repair_runtime": repair_runtime,
+            "repair_runtime_error": repair_runtime_error,
+            "model_runtime": model_runtime,
             "gpu": gpu,
             "blockers": blockers,
             "validation": {
@@ -363,11 +339,7 @@ class RepairService:
                             else None
                         )
                     ),
-                    runtime_label=(
-                        "Ctrl-World"
-                        if plan["model_name"] == "ctrl_world"
-                        else "Repair/LIBERO"
-                    ),
+                    runtime_label="Repair/LIBERO",
                 )
                 if not smoke["passed"]:
                     smoke_error = (
@@ -377,14 +349,7 @@ class RepairService:
             except (ValidationError, OSError, ValueError) as error:
                 smoke_error = f"{type(error).__name__}: {error}"
         elif not plan.get("worker_python"):
-            smoke_error = (
-                "Alignment smoke test was not run because runtime preflight failed"
-                + (
-                    ": " + str(plan.get("runtime_candidate"))
-                    if plan.get("runtime_candidate")
-                    else ""
-                )
-            )
+            smoke_error = "Alignment smoke test was not run because Repair/LIBERO runtime preflight failed"
         else:
             smoke_error = "Alignment smoke test requires both GT actions and simulator states"
 
