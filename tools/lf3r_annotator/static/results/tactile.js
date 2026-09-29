@@ -48,13 +48,20 @@
   var statusNode = document.getElementById("resultsTactileStatus");
   var curveNode = document.getElementById("resultsTactileCurve");
   var grid = document.getElementById("resultsTactileGrid");
-  var lastKey = "";
-  var requestSerial = 0;
-  var lastPayload = null;
+
   var lastSeriesKey = "";
   var loadingSeriesKey = "";
   var seriesSerial = 0;
   var lastSeries = null;
+  var eventLookup = null;
+  var lastSyncKey = "";
+  var lastPresentedFrame = 0;
+  var appliedSpriteKey = "";
+  var requestedSpriteKey = "";
+  var spriteSerial = 0;
+  var spritePreloads = new Map();
+  var videoFrameCallbackId = 0;
+  var fallbackAnimationId = 0;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -79,10 +86,14 @@
     );
   }
 
-  function imageUrl(rolloutId, finger, eventId, kind) {
-    return "/api/tactile/" + encodeURIComponent(rolloutId) + "/image"
-      + "?finger=" + encodeURIComponent(finger)
-      + "&event_id=" + encodeURIComponent(eventId)
+  function cameraKey() {
+    return String(video.dataset.videoView || state.reviewVideoView || "cam_high");
+  }
+
+  function spriteUrl(record, camera, frame, kind) {
+    return "/api/tactile/" + encodeURIComponent(record.id) + "/sprite"
+      + "?camera=" + encodeURIComponent(camera)
+      + "&frame=" + encodeURIComponent(frame)
       + "&kind=" + encodeURIComponent(kind);
   }
 
@@ -97,7 +108,62 @@
     }).join("");
   }
 
-  function renderFinger(rolloutId, finger, data, kind) {
+  function buildEventLookup(series) {
+    var lookup = {};
+    FINGERS.forEach(function (finger) {
+      lookup[finger] = new Map();
+      var rows = series && series.fingers && Array.isArray(series.fingers[finger])
+        ? series.fingers[finger] : [];
+      rows.forEach(function (row) {
+        if (row && row.event_id != null) {
+          lookup[finger].set(String(row.event_id), row);
+        }
+      });
+    });
+    return lookup;
+  }
+
+  function nearestSyncFrame(frame) {
+    var rows = lastSeries && Array.isArray(lastSeries.sync_frames)
+      ? lastSeries.sync_frames : [];
+    if (!rows.length) return null;
+    var low = 0;
+    var high = rows.length - 1;
+    while (low <= high) {
+      var mid = (low + high) >> 1;
+      var value = Number(rows[mid].frame);
+      if (value < frame) low = mid + 1;
+      else if (value > frame) high = mid - 1;
+      else return { row: rows[mid], index: mid };
+    }
+    if (low <= 0) return { row: rows[0], index: 0 };
+    if (low >= rows.length) return { row: rows[rows.length - 1], index: rows.length - 1 };
+    var before = rows[low - 1];
+    var after = rows[low];
+    return Math.abs(frame - Number(before.frame)) <= Math.abs(Number(after.frame) - frame)
+      ? { row: before, index: low - 1 }
+      : { row: after, index: low };
+  }
+
+  function currentFingerData(syncRow, finger) {
+    var sync = syncRow && syncRow.fingers && syncRow.fingers[finger]
+      ? syncRow.fingers[finger] : {};
+    var eventId = sync.event_id;
+    var event = eventLookup && eventLookup[finger] && eventId != null
+      ? eventLookup[finger].get(String(eventId)) : null;
+    if (!event && eventId == null) return null;
+    event = event || {};
+    return {
+      event_id: eventId,
+      f6: event.f6,
+      valid: sync.valid == null ? event.valid : sync.valid,
+      stale: sync.stale,
+      age_ms: sync.age_ms,
+      image_kinds: event.image_kinds || []
+    };
+  }
+
+  function renderFinger(finger, data, kind) {
     if (!data) {
       return '<article class="results-tactile-card is-missing"><header><strong>'
         + escapeHtml(LABELS[finger]) + '</strong><span>missing</span></header>'
@@ -105,7 +171,7 @@
     }
     var eventId = data.event_id;
     var kinds = Array.isArray(data.image_kinds) ? data.image_kinds : [];
-    var imageKind = kinds.indexOf(kind) >= 0 ? kind : (kinds[0] || "");
+    var hasImage = kinds.indexOf(kind) >= 0 && eventId != null;
     var stale = data.stale === true;
     var invalid = data.valid === false;
     var cardClasses = (invalid ? " is-invalid" : "") + (stale ? " is-stale" : "");
@@ -115,10 +181,10 @@
     var age = Number(data.age_ms);
     var meta = "event " + (eventId == null ? "—" : eventId)
       + (Number.isFinite(age) ? " · " + age.toFixed(1) + " ms" : "");
-    var image = imageKind && eventId != null
-      ? '<img class="results-tactile-image" loading="eager" alt="' + escapeHtml(LABELS[finger])
-        + ' tactile ' + escapeHtml(imageKind) + '" src="'
-        + escapeHtml(imageUrl(rolloutId, finger, eventId, imageKind)) + '">'
+    var fingerIndex = FINGERS.indexOf(finger);
+    var image = hasImage
+      ? '<div class="results-tactile-image results-tactile-sprite finger-' + fingerIndex
+        + '" role="img" aria-label="' + escapeHtml(LABELS[finger]) + ' tactile ' + escapeHtml(kind) + '"></div>'
       : '<div class="results-tactile-image results-tactile-placeholder">No image</div>';
     return '<article class="results-tactile-card' + cardClasses + '">'
       + '<header><strong>' + escapeHtml(LABELS[finger]) + '</strong>'
@@ -127,22 +193,6 @@
       + '<div class="results-tactile-meta">' + escapeHtml(meta) + '</div>'
       + '<div class="results-tactile-f6">' + formatF6(data.f6) + '</div>'
       + '</article>';
-  }
-
-  function render(payload) {
-    lastPayload = payload;
-    var record = selectedRecord();
-    if (!record || !payload) return;
-    var kind = String(kindSelect.value || "deform");
-    var fingers = payload.fingers || {};
-    var completeText = payload.complete === false ? "incomplete" : "complete";
-    statusNode.textContent =
-      String(payload.camera || "camera") + " frame " + payload.requested_video_frame
-      + " → sync video frame " + payload.matched_video_frame
-      + " · row " + payload.sync_row + " · " + completeText;
-    grid.innerHTML = FINGERS.map(function (finger) {
-      return renderFinger(record.id, finger, fingers[finger], kind);
-    }).join("");
   }
 
   function formatAxisNumber(value) {
@@ -212,7 +262,7 @@
         + '" points="' + coords.join(" ") + '"></polyline>';
     }).join("");
 
-    var playheadX = xFor(Number(state.currentFrame) || 0);
+    var playheadX = xFor(lastPresentedFrame);
     curveNode.innerHTML =
       '<div class="results-tactile-axis"><span>' + escapeHtml(formatAxisNumber(yMax))
       + '</span><span>' + escapeHtml(formatAxisNumber(yMin)) + '</span></div>'
@@ -230,27 +280,100 @@
     curveNode.dataset.frameMax = String(frameMax);
   }
 
-  function updateCurvePlayhead() {
+  function updateCurvePlayhead(frame) {
     var playhead = curveNode.querySelector("[data-tactile-playhead]");
     if (!playhead) return;
     var frameMin = Number(curveNode.dataset.frameMin);
     var frameMax = Number(curveNode.dataset.frameMax);
     if (!Number.isFinite(frameMin) || !Number.isFinite(frameMax) || frameMax <= frameMin) return;
-    var frame = Number(state.currentFrame) || 0;
     var x = Math.max(0, Math.min(640, (frame - frameMin) / (frameMax - frameMin) * 640));
     playhead.setAttribute("x1", x.toFixed(2));
     playhead.setAttribute("x2", x.toFixed(2));
   }
 
-  async function ensureSeries(record, camera) {
-    var key = record.id + "|" + camera;
-    if (lastSeriesKey === key && lastSeries) {
-      updateCurvePlayhead();
+  function preloadSprite(url, key) {
+    if (spritePreloads.has(key)) return spritePreloads.get(key);
+    var promise = new Promise(function (resolve, reject) {
+      var image = new Image();
+      image.onload = function () { resolve(url); };
+      image.onerror = function () { reject(new Error("Tactile sprite failed to load")); };
+      image.src = url;
+    });
+    spritePreloads.set(key, promise);
+    if (spritePreloads.size > 40) {
+      var first = spritePreloads.keys().next();
+      if (!first.done) spritePreloads.delete(first.value);
+    }
+    return promise;
+  }
+
+  function prefetchFollowingSprites(record, camera, syncIndex, kind) {
+    var rows = lastSeries && Array.isArray(lastSeries.sync_frames)
+      ? lastSeries.sync_frames : [];
+    for (var offset = 1; offset <= 3; offset += 1) {
+      var row = rows[syncIndex + offset];
+      if (!row) break;
+      var frame = Number(row.frame);
+      var key = record.id + "|" + camera + "|" + frame + "|" + kind;
+      var url = spriteUrl(record, camera, frame, kind);
+      preloadSprite(url, key).catch(function () {});
+    }
+  }
+
+  function applySprite(record, camera, matchedFrame, syncIndex, kind) {
+    var key = record.id + "|" + camera + "|" + matchedFrame + "|" + kind;
+    if (appliedSpriteKey === key || requestedSpriteKey === key) {
+      prefetchFollowingSprites(record, camera, syncIndex, kind);
       return;
     }
-    if (loadingSeriesKey === key) return;
+    requestedSpriteKey = key;
+    var serial = ++spriteSerial;
+    var url = spriteUrl(record, camera, matchedFrame, kind);
+    preloadSprite(url, key).then(function () {
+      if (serial !== spriteSerial || requestedSpriteKey !== key) return;
+      grid.style.setProperty("--tactile-sprite-url", 'url("' + url.replace(/"/g, "%22") + '")');
+      appliedSpriteKey = key;
+      prefetchFollowingSprites(record, camera, syncIndex, kind);
+    }).catch(function () {
+      if (serial !== spriteSerial) return;
+      statusNode.textContent += " · tactile image unavailable";
+    });
+  }
+
+  function renderSynchronizedFrame(record, camera, match, videoFrame, force) {
+    if (!match || !match.row) return;
+    var syncRow = match.row;
+    var kind = String(kindSelect.value || "deform");
+    var syncKey = record.id + "|" + camera + "|" + syncRow.sync_row + "|" + kind;
+    if (!force && syncKey === lastSyncKey) {
+      updateCurvePlayhead(videoFrame);
+      return;
+    }
+    lastSyncKey = syncKey;
+    grid.style.setProperty("--tactile-cell-aspect", kind === "raw" ? "4 / 3" : "1 / 1");
+
+    var completeText = syncRow.complete === false ? "incomplete" : "complete";
+    statusNode.textContent =
+      camera + " frame " + videoFrame
+      + " → sync video frame " + syncRow.frame
+      + " · row " + syncRow.sync_row + " · " + completeText;
+
+    grid.innerHTML = FINGERS.map(function (finger) {
+      return renderFinger(finger, currentFingerData(syncRow, finger), kind);
+    }).join("");
+
+    appliedSpriteKey = "";
+    applySprite(record, camera, Number(syncRow.frame), match.index, kind);
+    updateCurvePlayhead(videoFrame);
+  }
+
+  async function ensureSeries(record, camera) {
+    var key = record.id + "|" + camera;
+    if (lastSeriesKey === key && lastSeries) return lastSeries;
+    if (loadingSeriesKey === key) return null;
     loadingSeriesKey = key;
     var serial = ++seriesSerial;
+    statusNode.textContent = "Loading tactile timeline…";
     curveNode.innerHTML = '<div class="results-tactile-placeholder">Loading f6 history…</div>';
     try {
       var response = await fetch(
@@ -259,76 +382,100 @@
         { cache: "no-store" }
       );
       var body = await response.json();
-      if (serial !== seriesSerial) return;
-      if (!response.ok) throw new Error(body.error || "Tactile series request failed");
+      if (serial !== seriesSerial) return null;
+      if (!response.ok) throw new Error(body.error || "Tactile timeline request failed");
       lastSeriesKey = key;
       lastSeries = body.tactile;
+      eventLookup = buildEventLookup(lastSeries);
+      lastSyncKey = "";
+      appliedSpriteKey = "";
+      requestedSpriteKey = "";
       renderCurve();
+      return lastSeries;
     } catch (error) {
-      if (serial !== seriesSerial) return;
+      if (serial !== seriesSerial) return null;
       lastSeriesKey = key;
       lastSeries = null;
-      curveNode.innerHTML = '<div class="results-tactile-placeholder">f6 history unavailable: '
-        + escapeHtml(error.message || error) + '</div>';
+      eventLookup = null;
+      statusNode.textContent = "Tactile unavailable: " + String(error.message || error);
+      curveNode.innerHTML = '<div class="results-tactile-placeholder">f6 history unavailable.</div>';
+      grid.innerHTML = "";
+      return null;
     } finally {
       if (serial === seriesSerial) loadingSeriesKey = "";
     }
   }
 
-  async function refresh(force) {
+  function frameFromVideo(record, mediaTime) {
+    var fps = Number(record && record.fps);
+    var time = Number.isFinite(Number(mediaTime)) ? Number(mediaTime) : Number(video.currentTime);
+    if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(time)) {
+      return Math.max(0, Math.round(Number(state.currentFrame) || 0));
+    }
+    return Math.max(0, Math.round(time * fps));
+  }
+
+  async function tick(videoFrame, force) {
     var record = selectedRecord();
     var resultsView = document.body.dataset.view === "results";
     if (!resultsView || !supportsTactile(record)) {
       panel.hidden = true;
-      lastKey = "";
-      lastPayload = null;
-      lastSeriesKey = "";
-      loadingSeriesKey = "";
-      lastSeries = null;
       return;
     }
     panel.hidden = false;
+    lastPresentedFrame = Math.max(0, Math.round(Number(videoFrame) || 0));
 
-    var camera = String(video.dataset.videoView || state.reviewVideoView || "cam_high");
-    var frame = Math.max(0, Math.round(Number(state.currentFrame) || 0));
-    ensureSeries(record, camera);
-    updateCurvePlayhead();
+    var camera = cameraKey();
+    var series = await ensureSeries(record, camera);
+    if (!series) return;
+    var match = nearestSyncFrame(lastPresentedFrame);
+    renderSynchronizedFrame(record, camera, match, lastPresentedFrame, Boolean(force));
+  }
 
-    var key = record.id + "|" + camera + "|" + frame;
-    if (!force && key === lastKey) return;
-    lastKey = key;
-    var serial = ++requestSerial;
-    statusNode.textContent = "Loading tactile frame…";
-
-    try {
-      var response = await fetch(
-        "/api/tactile/" + encodeURIComponent(record.id) + "/frame"
-        + "?camera=" + encodeURIComponent(camera)
-        + "&frame=" + encodeURIComponent(frame),
-        { cache: "no-store" }
-      );
-      var body = await response.json();
-      if (serial !== requestSerial) return;
-      if (!response.ok) throw new Error(body.error || "Tactile frame request failed");
-      render(body.tactile);
-      updateCurvePlayhead();
-    } catch (error) {
-      if (serial !== requestSerial) return;
-      statusNode.textContent = "Tactile unavailable: " + String(error.message || error);
-      grid.innerHTML = "";
+  function installVideoDrivenRefresh() {
+    if (typeof video.requestVideoFrameCallback === "function") {
+      var onVideoFrame = function (_now, metadata) {
+        var record = selectedRecord();
+        var frame = frameFromVideo(record, metadata && metadata.mediaTime);
+        tick(frame, false);
+        videoFrameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
+      };
+      videoFrameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
+      return;
     }
+
+    var onAnimationFrame = function () {
+      if (!video.paused && !video.ended) {
+        tick(frameFromVideo(selectedRecord(), video.currentTime), false);
+      }
+      fallbackAnimationId = window.requestAnimationFrame(onAnimationFrame);
+    };
+    fallbackAnimationId = window.requestAnimationFrame(onAnimationFrame);
   }
 
   kindSelect.addEventListener("change", function () {
-    if (lastPayload) render(lastPayload);
+    lastSyncKey = "";
+    appliedSpriteKey = "";
+    requestedSpriteKey = "";
+    spriteSerial += 1;
+    tick(frameFromVideo(selectedRecord(), video.currentTime), true);
   });
   curveFingerSelect.addEventListener("change", renderCurve);
-  video.addEventListener("loadedmetadata", function () { refresh(true); });
-  video.addEventListener("seeked", function () { refresh(true); });
+
+  video.addEventListener("loadedmetadata", function () {
+    lastSyncKey = "";
+    tick(frameFromVideo(selectedRecord(), video.currentTime), true);
+  });
+  video.addEventListener("seeked", function () {
+    tick(frameFromVideo(selectedRecord(), video.currentTime), true);
+  });
+  video.addEventListener("pause", function () {
+    tick(frameFromVideo(selectedRecord(), video.currentTime), true);
+  });
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) refresh(true);
+    if (!document.hidden) tick(frameFromVideo(selectedRecord(), video.currentTime), true);
   });
 
-  window.setInterval(function () { refresh(false); }, 120);
-  refresh(true);
+  installVideoDrivenRefresh();
+  tick(frameFromVideo(selectedRecord(), video.currentTime), true);
 })();
