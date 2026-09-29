@@ -329,6 +329,7 @@
     requestedSpriteKey = key;
     var serial = ++spriteSerial;
     var url = spriteUrl(record, camera, matchedFrame, kind);
+    prefetchFollowingSprites(record, camera, syncIndex, kind);
     preloadSprite(url, key).then(function () {
       if (serial !== spriteSerial || requestedSpriteKey !== key) return;
       grid.style.setProperty("--tactile-sprite-url", 'url("' + url.replace(/"/g, "%22") + '")');
