@@ -39,6 +39,7 @@ class FailRecoveryTactileService:
             / "failrecovery_manifest.jsonl"
         )
         self.episodes: dict[str, EpisodeTactile] = {}
+        self._series_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._load()
 
     def _project_file(self, value: Any) -> Path:
@@ -200,11 +201,15 @@ class FailRecoveryTactileService:
             if event is None and event_id is None:
                 continue
             event = event or {}
+            sync_valid = sync.get("valid")
             fingers[finger] = {
                 "event_id": event_id,
-                "timestamp": event.get("timestamp"),
+                "sensor_ts_ns": event.get("sensor_ts_ns"),
+                "receive_wall_ns": event.get("receive_wall_ns"),
+                "receive_mono_ns": event.get("receive_mono_ns"),
                 "f6": event.get("f6"),
-                "valid": event.get("valid"),
+                "valid": event.get("valid") if sync_valid is None else sync_valid,
+                "event_valid": event.get("valid"),
                 "stale": sync.get("stale"),
                 "age_ms": sync.get("age_ms"),
                 "image_kinds": [
@@ -224,9 +229,85 @@ class FailRecoveryTactileService:
             "matched_video_frame": frames[index],
             "sync_row": row_index,
             "complete": row.get("complete"),
-            "timestamp": row.get("timestamp"),
+            "elapsed_s": row.get("elapsed_s"),
+            "tick_wall_ns": row.get("tick_wall_ns"),
+            "tick_mono_ns": row.get("tick_mono_ns"),
             "fingers": fingers,
         }
+
+    def series(self, rollout_id: str, camera: str) -> dict[str, Any]:
+        cache_key = (rollout_id, camera)
+        cached = self._series_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        episode = self.episodes.get(rollout_id)
+        if episode is None:
+            raise KeyError("tactile rollout not found")
+        frames = episode.camera_frames.get(camera)
+        rows = episode.camera_rows.get(camera)
+        if not frames or not rows:
+            raise KeyError("camera has no tactile synchronization")
+
+        finger_series: dict[str, list[dict[str, Any]]] = {
+            finger: [] for finger in FINGERS
+        }
+        last_event_id: dict[str, str | None] = {
+            finger: None for finger in FINGERS
+        }
+        for video_frame, row_index in zip(frames, rows):
+            row = episode.frames[row_index]
+            tactile = (
+                row.get("tactile")
+                if isinstance(row.get("tactile"), dict)
+                else {}
+            )
+            for finger in FINGERS:
+                sync = (
+                    tactile.get(finger)
+                    if isinstance(tactile.get(finger), dict)
+                    else {}
+                )
+                event_id = sync.get("event_id")
+                event_key = None if event_id is None else str(event_id)
+                if event_key is None or event_key == last_event_id[finger]:
+                    continue
+                last_event_id[finger] = event_key
+                event = self._event(episode, finger, event_id)
+                if event is None:
+                    continue
+                f6 = event.get("f6")
+                if not isinstance(f6, list) or not f6:
+                    continue
+                try:
+                    values = [float(value) for value in f6]
+                except (TypeError, ValueError):
+                    continue
+                sync_valid = sync.get("valid")
+                finger_series[finger].append(
+                    {
+                        "frame": int(video_frame),
+                        "event_id": event_id,
+                        "f6": values,
+                        "valid": (
+                            event.get("valid")
+                            if sync_valid is None
+                            else sync_valid
+                        ),
+                        "stale": sync.get("stale"),
+                        "age_ms": sync.get("age_ms"),
+                    }
+                )
+
+        payload = {
+            "rollout_id": rollout_id,
+            "camera": camera,
+            "frame_min": frames[0],
+            "frame_max": frames[-1],
+            "fingers": finger_series,
+        }
+        self._series_cache[cache_key] = payload
+        return payload
 
     @staticmethod
     def _png_chunk(kind: bytes, payload: bytes) -> bytes:
