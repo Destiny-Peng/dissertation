@@ -286,11 +286,23 @@ class RepairService:
         if not capabilities["sim_state_available"]:
             blockers.append("simulator state trajectory is unavailable in the selected manifest record")
         blockers.extend(adapter_status["unavailable_reasons"])
+        runtime_candidate: str | None = None
+        if model_name == "ctrl_world":
+            raw_runtime = str(adapter_status.get("python") or "").strip()
+            runtime_candidate = raw_runtime or None
         worker_python: Path | None = None
+        runtime_error: str | None = None
         try:
             worker_python = self._worker_python(model_name, adapter_status)
+            if runtime_candidate is None:
+                runtime_candidate = (
+                    str(worker_python.relative_to(self.project_root))
+                    if worker_python.is_relative_to(self.project_root)
+                    else str(worker_python)
+                )
         except ValidationError as error:
-            blockers.append(str(error))
+            runtime_error = str(error)
+            blockers.append(runtime_error)
         # GPU utilization/status is informational only.  Do not block Repair:
         # the user explicitly controls whether to submit the run.
         return {
@@ -309,6 +321,8 @@ class RepairService:
                 if worker_python is not None
                 else None
             ),
+            "runtime_candidate": runtime_candidate,
+            "runtime_error": runtime_error,
             "gpu": gpu,
             "blockers": blockers,
             "validation": {
@@ -363,7 +377,14 @@ class RepairService:
             except (ValidationError, OSError, ValueError) as error:
                 smoke_error = f"{type(error).__name__}: {error}"
         elif not plan.get("worker_python"):
-            smoke_error = "Alignment smoke test was not run because the Repair/LIBERO runtime is unavailable"
+            smoke_error = (
+                "Alignment smoke test was not run because runtime preflight failed"
+                + (
+                    ": " + str(plan.get("runtime_candidate"))
+                    if plan.get("runtime_candidate")
+                    else ""
+                )
+            )
         else:
             smoke_error = "Alignment smoke test requires both GT actions and simulator states"
 
