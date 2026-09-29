@@ -110,9 +110,19 @@ def _probe_repair_python(project_root: Path, python: Path) -> tuple[bool, str]:
     return False, detail[-1600:]
 
 
-def resolve_repair_python(project_root: Path) -> Path:
+def resolve_repair_python(
+    project_root: Path,
+    *,
+    preferred_python: Path | None = None,
+    runtime_label: str = "Repair/LIBERO",
+) -> Path:
+    candidates = (
+        [preferred_python.expanduser().resolve()]
+        if preferred_python is not None
+        else repair_python_candidates(project_root)
+    )
     diagnostics: list[str] = []
-    for candidate in repair_python_candidates(project_root):
+    for candidate in candidates:
         passed, detail = _probe_repair_python(project_root, candidate)
         if passed:
             return candidate.resolve()
@@ -121,6 +131,13 @@ def resolve_repair_python(project_root: Path) -> Path:
         except ValueError:
             label = str(candidate)
         diagnostics.append(f"{label}: {detail}")
+    if preferred_python is not None:
+        raise ValidationError(
+            f"{runtime_label} runtime is missing required modules "
+            + ", ".join(REPAIR_RUNTIME_MODULES)
+            + ". "
+            + " | ".join(diagnostics)
+        )
     raise ValidationError(
         "No project-local Repair/LIBERO Python has the required runtime modules "
         + ", ".join(REPAIR_RUNTIME_MODULES)
@@ -129,8 +146,17 @@ def resolve_repair_python(project_root: Path) -> Path:
     )
 
 
-def _project_python(project_root: Path) -> Path:
-    return resolve_repair_python(project_root)
+def _project_python(
+    project_root: Path,
+    *,
+    preferred_python: Path | None = None,
+    runtime_label: str = "Repair/LIBERO",
+) -> Path:
+    return resolve_repair_python(
+        project_root,
+        preferred_python=preferred_python,
+        runtime_label=runtime_label,
+    )
 
 
 def run_alignment_subprocess(
@@ -140,10 +166,16 @@ def run_alignment_subprocess(
     cut_frame: int,
     min_psnr: float,
     gpu_index: int | None,
+    python_override: Path | None = None,
+    runtime_label: str = "Repair/LIBERO",
     timeout_seconds: float = 120.0,
 ) -> dict[str, Any]:
     project_root = project_root.resolve()
-    python = _project_python(project_root)
+    python = _project_python(
+        project_root,
+        preferred_python=python_override,
+        runtime_label=runtime_label,
+    )
     scratch = project_root / "cache" / "lf3r_annotator" / "repair_alignment"
     scratch.mkdir(parents=True, exist_ok=True)
     helper = Path(__file__).resolve().parent / "alignment_cli.py"
