@@ -440,7 +440,11 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('"libero.libero"', alignment_runner)
         self.assertIn("LF3R_ENV_REPAIR", alignment_runner)
         self.assertIn("No project-local Repair/LIBERO Python", alignment_runner)
-        self.assertIn("Repair runtime:", repair_js)
+        self.assertIn("Repair runtime candidate:", repair_js)
+        self.assertIn("Runtime preflight error:", repair_js)
+        self.assertIn('"runtime_candidate": runtime_candidate', service)
+        self.assertIn('"runtime_error": runtime_error', service)
+        self.assertNotIn("User-managed CUDA device index, matching Runs.", repair_page)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
