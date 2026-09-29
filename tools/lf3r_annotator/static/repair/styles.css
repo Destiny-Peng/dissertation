@@ -13,6 +13,22 @@
 .repair-step-title { display:flex; gap:10px; align-items:flex-start; }
 .repair-filter-grid, .repair-config-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .repair-filter-grid label, .repair-config-grid label { display:grid; gap:6px; }
+.repair-filter-grid > *, .repair-config-grid > * { min-width:0; }
+.repair-filter-grid input, .repair-filter-grid select,
+.repair-config-grid input, .repair-config-grid select {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.repair-filter-grid select, .repair-config-grid select {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.repair-config-span-2 { grid-column:1 / -1; min-width:0; }
+.repair-field-help { color:var(--muted); font-size:.72rem; line-height:1.35; }
+.repair-kv strong { min-width:0; overflow-wrap:anywhere; }
 .repair-filter-grid label > span, .repair-config-grid label > span { font-size:.78rem; color:var(--muted); }
 .repair-rollout-select { width:100%; min-height:42px; }
 .repair-rollout-summary { margin-top:12px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
