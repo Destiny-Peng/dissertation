@@ -404,8 +404,12 @@
       validation.gpu && validation.gpu.selected
         ? ("GPU " + validation.gpu.selected.index + ": "
           + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
-          + "% utilization")
-        : "GPU: no eligible device below 50%",
+          + "% utilization · informational only, no utilization gate")
+        : ("GPU status: "
+          + ((validation.gpu && validation.gpu.error)
+            ? String(validation.gpu.error)
+            : "no reported device")
+          + " · informational only, no utilization gate"),
       blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
     ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
