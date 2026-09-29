@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -12,18 +13,124 @@ from typing import Any
 from backend_core import ValidationError
 
 
-def _project_python(project_root: Path) -> Path:
-    configured = str(os.environ.get("LF3R_ENV_OPENVLA") or "").strip()
-    candidates = []
-    if configured:
-        candidates.append(Path(configured) / "bin" / "python")
-    candidates.append(project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python")
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-    raise ValidationError(
-        "LF3R OpenVLA Python is unavailable; expected conda_envs/LF3R-openvla/bin/python"
+REPAIR_RUNTIME_MODULES = (
+    "numpy",
+    "h5py",
+    "imageio",
+    "scipy",
+    "robosuite",
+    "libero.libero",
+)
+
+
+def _runtime_environment(project_root: Path) -> dict[str, str]:
+    environment = os.environ.copy()
+    python_paths = [
+        str(Path(__file__).resolve().parents[1]),
+        str(project_root / "repos" / "LIBERO"),
+    ]
+    existing = environment.get("PYTHONPATH", "")
+    if existing:
+        python_paths.append(existing)
+    environment["PYTHONPATH"] = os.pathsep.join(python_paths)
+    environment["MUJOCO_GL"] = "egl"
+    environment["PYOPENGL_PLATFORM"] = "egl"
+    environment["LIBERO_CONFIG_PATH"] = str(project_root / "cache" / "libero")
+    return environment
+
+
+def _configured_python(value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.name.startswith("python") and path.is_file():
+        return path.resolve()
+    return (path / "bin" / "python").resolve()
+
+
+def repair_python_candidates(project_root: Path) -> list[Path]:
+    raw_candidates: list[Path] = []
+    for key in ("LF3R_ENV_REPAIR", "LF3R_ENV_OPENVLA"):
+        configured = str(os.environ.get(key) or "").strip()
+        if configured:
+            raw_candidates.append(_configured_python(configured))
+    raw_candidates.extend(
+        [
+            project_root / "conda_envs" / "LF3R-openvla" / "bin" / "python",
+            project_root / "conda_envs" / "LF3R-ctrl-world" / "bin" / "python",
+            project_root / "conda_envs" / "LF3R-Ctrl-World" / "bin" / "python",
+        ]
     )
+    current = Path(sys.executable).resolve()
+    try:
+        current.relative_to(project_root)
+        raw_candidates.append(current)
+    except ValueError:
+        pass
+
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for candidate in raw_candidates:
+        resolved = candidate.expanduser().resolve()
+        key = str(resolved)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(resolved)
+    return candidates
+
+
+def _probe_repair_python(project_root: Path, python: Path) -> tuple[bool, str]:
+    if not python.is_file():
+        return False, "python executable not found"
+    code = (
+        "import importlib\n"
+        f"mods={REPAIR_RUNTIME_MODULES!r}\n"
+        "missing=[]\n"
+        "for name in mods:\n"
+        "    try:\n"
+        "        importlib.import_module(name)\n"
+        "    except Exception as exc:\n"
+        "        missing.append(name + ': ' + type(exc).__name__ + ': ' + str(exc))\n"
+        "print('\\n'.join(missing))\n"
+        "raise SystemExit(1 if missing else 0)\n"
+    )
+    try:
+        completed = subprocess.run(
+            [str(python), "-c", code],
+            cwd=str(project_root),
+            env=_runtime_environment(project_root),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30.0,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, f"{type(error).__name__}: {error}"
+    if completed.returncode == 0:
+        return True, "ok"
+    detail = (completed.stdout or completed.stderr or "import preflight failed").strip()
+    return False, detail[-1600:]
+
+
+def resolve_repair_python(project_root: Path) -> Path:
+    diagnostics: list[str] = []
+    for candidate in repair_python_candidates(project_root):
+        passed, detail = _probe_repair_python(project_root, candidate)
+        if passed:
+            return candidate.resolve()
+        try:
+            label = str(candidate.relative_to(project_root))
+        except ValueError:
+            label = str(candidate)
+        diagnostics.append(f"{label}: {detail}")
+    raise ValidationError(
+        "No project-local Repair/LIBERO Python has the required runtime modules "
+        + ", ".join(REPAIR_RUNTIME_MODULES)
+        + ". Checked: "
+        + " | ".join(diagnostics)
+    )
+
+
+def _project_python(project_root: Path) -> Path:
+    return resolve_repair_python(project_root)
 
 
 def run_alignment_subprocess(
@@ -49,18 +156,7 @@ def run_alignment_subprocess(
             json.dumps(rollout, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        environment = os.environ.copy()
-        python_paths = [
-            str(Path(__file__).resolve().parents[1]),
-            str(project_root / "repos" / "LIBERO"),
-        ]
-        existing = environment.get("PYTHONPATH", "")
-        if existing:
-            python_paths.append(existing)
-        environment["PYTHONPATH"] = os.pathsep.join(python_paths)
-        environment["MUJOCO_GL"] = "egl"
-        environment["PYOPENGL_PLATFORM"] = "egl"
-        environment["LIBERO_CONFIG_PATH"] = str(project_root / "cache" / "libero")
+        environment = _runtime_environment(project_root)
         if gpu_index is not None:
             environment["CUDA_VISIBLE_DEVICES"] = str(int(gpu_index))
 
