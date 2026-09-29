@@ -412,7 +412,7 @@
               + "% utilization"
             : ": status unavailable")
           + " · user selected · no utilization gate")
-        : "GPU: user selected · no utilization gate",
+        : "GPU: not selected",
       blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
     ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
