@@ -417,12 +417,17 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertNotIn("below the 50% utilization threshold", service)
         self.assertNotIn("threshold_percent", service)
         self.assertIn('"utilization_gate": False', service)
-        self.assertIn("informational only, no utilization gate", repair_js)
+        self.assertIn('"selection_policy": "user_selected_device_no_hard_threshold"', service)
+        self.assertNotIn("least_utilized_reported_device", service)
+        self.assertIn('id=\\"repairGpu\\"', repair_page)
+        self.assertIn('gpu_index: Number(gpu)', repair_js)
+        self.assertIn("user selected · no utilization gate", repair_js)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
             "repairSeed",
             "repairHistory",
+            "repairGpu",
             "repairCtrlCheckpoint",
             "repairCtrlSourceRoot",
             "repairCtrlPython",
