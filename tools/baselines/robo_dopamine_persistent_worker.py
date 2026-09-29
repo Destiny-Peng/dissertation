@@ -39,6 +39,7 @@ from robo_dopamine_multi_perspective import (
 
 
 DEFAULT_VLLM_MEMORY_SAFETY_BUFFER_MIB = 2048
+MAX_MULTIVIEW_FRAME_SPREAD = 3
 
 _LOCALIZATION_CHECKPOINT_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -152,7 +153,7 @@ def _align_multiview_camera_inputs(
     cam_right: str,
     output_dir: Path,
 ) -> tuple[dict[str, str], dict[str, Any]]:
-    """Tolerate only a one-frame terminal mismatch among multiview inputs."""
+    """Trim small terminal frame-count mismatches among multiview inputs."""
     source_paths = {
         "cam_high": Path(cam_high).resolve(),
         "cam_left_wrist": Path(cam_left).resolve(),
@@ -174,14 +175,18 @@ def _align_multiview_camera_inputs(
             {slot: str(path) for slot, path in source_paths.items()},
             {
                 "applied": False,
-                "policy": "terminal_off_by_one_only",
+                "policy": "terminal_small_mismatch",
                 "original_frame_counts": counts,
                 "effective_frame_count": target,
+                "max_allowed_frame_spread": MAX_MULTIVIEW_FRAME_SPREAD,
                 "dropped_frames": {slot: 0 for slot in source_paths},
             },
         )
-    if spread > 1:
-        raise ValueError(f"Frame count mismatch among cameras: {ordered_counts}")
+    if spread > MAX_MULTIVIEW_FRAME_SPREAD:
+        raise ValueError(
+            f"Frame count mismatch among cameras: {ordered_counts}; "
+            f"allowed terminal spread <= {MAX_MULTIVIEW_FRAME_SPREAD}"
+        )
 
     aligned_root = output_dir / "aligned_camera_inputs"
     aligned_by_source: dict[str, tuple[Path, str]] = {}
@@ -204,9 +209,10 @@ def _align_multiview_camera_inputs(
     dropped = {slot: counts[slot] - target for slot in source_paths}
     metadata = {
         "applied": True,
-        "policy": "terminal_off_by_one_only",
+        "policy": "terminal_small_mismatch",
         "original_frame_counts": counts,
         "effective_frame_count": target,
+        "max_allowed_frame_spread": MAX_MULTIVIEW_FRAME_SPREAD,
         "dropped_frames": dropped,
         "effective_camera_video_paths": effective,
         "trim_methods": methods,
@@ -214,6 +220,7 @@ def _align_multiview_camera_inputs(
     print(
         "CAMERA_FRAME_ALIGNMENT "
         f"counts={ordered_counts} using={target} "
+        f"max_spread={MAX_MULTIVIEW_FRAME_SPREAD} "
         f"dropped={[dropped['cam_high'], dropped['cam_left_wrist'], dropped['cam_right_wrist']]}",
         flush=True,
     )
