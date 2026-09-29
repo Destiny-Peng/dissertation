@@ -393,6 +393,9 @@ class RepairFrontendContractTest(unittest.TestCase):
         service = (
             Path(__file__).resolve().parents[1] / "repair" / "service.py"
         ).read_text(encoding="utf-8")
+        alignment_runner = (
+            Path(__file__).resolve().parents[1] / "repair" / "alignment_runner.py"
+        ).read_text(encoding="utf-8")
         repair_js = (static_root / "repair" / "synthetic-suffix.js").read_text(
             encoding="utf-8"
         )
@@ -420,8 +423,18 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('"selection_policy": "user_selected_device_no_hard_threshold"', service)
         self.assertNotIn("least_utilized_reported_device", service)
         self.assertIn('id=\\"repairGpu\\"', repair_page)
+        self.assertIn('value=\\"\\" placeholder=\\"e.g. 0\\"', repair_page)
+        self.assertNotIn('id=\\"repairGpu\\" type=\\"text\\" inputmode=\\"numeric\\" value=\\"0\\"', repair_page)
         self.assertIn('gpu_index: Number(gpu)', repair_js)
         self.assertIn("user selected · no utilization gate", repair_js)
+        self.assertIn("Select a GPU before validating or running Repair", service)
+        self.assertIn("resolve_repair_python", service)
+        self.assertIn('"numpy"', alignment_runner)
+        self.assertIn('"h5py"', alignment_runner)
+        self.assertIn('"libero.libero"', alignment_runner)
+        self.assertIn("LF3R_ENV_REPAIR", alignment_runner)
+        self.assertIn("No project-local Repair/LIBERO Python", alignment_runner)
+        self.assertIn("Repair runtime:", repair_js)
         for control_id in [
             "repairSamplingSteps",
             "repairGuidance",
