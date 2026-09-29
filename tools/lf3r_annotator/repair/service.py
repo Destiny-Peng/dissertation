@@ -137,10 +137,20 @@ class RepairService:
             except ValidationError as error:
                 plan_error = str(error)
             eligibility_reasons: list[str] = []
-            if not capabilities["actions_available"]:
-                eligibility_reasons.append("missing GT actions")
-            if not capabilities["sim_state_available"]:
-                eligibility_reasons.append("missing simulator states")
+            has_online_trajectory = bool(
+                capabilities["actions_available"]
+                and capabilities["sim_state_available"]
+            )
+            has_prepared_ctrl = bool(
+                rollout.get("ctrl_prepared")
+                and rollout.get("ctrl_controls_path")
+                and isinstance(rollout.get("rgb_alignment"), dict)
+                and rollout["rgb_alignment"].get("validated")
+            )
+            if not has_online_trajectory and not has_prepared_ctrl:
+                eligibility_reasons.append(
+                    "missing both online trajectory data and offline prepared Ctrl controls"
+                )
             if "cam_high" not in capabilities["views"]:
                 eligibility_reasons.append("missing cam_high")
             if plan is None:
@@ -264,10 +274,15 @@ class RepairService:
             raise ValidationError("gpu_index must be a non-negative integer")
         gpu = self._gpu_plan(gpu_index)
         blockers: list[str] = []
-        if not capabilities["actions_available"]:
-            blockers.append("GT actions are unavailable in the selected manifest record")
-        if not capabilities["sim_state_available"]:
-            blockers.append("simulator state trajectory is unavailable in the selected manifest record")
+        if model_name != "ctrl_world":
+            if not capabilities["actions_available"]:
+                blockers.append(
+                    "GT actions are unavailable in the selected manifest record"
+                )
+            if not capabilities["sim_state_available"]:
+                blockers.append(
+                    "simulator state trajectory is unavailable in the selected manifest record"
+                )
         blockers.extend(adapter_status["unavailable_reasons"])
         model_runtime = str(adapter_status.get("python") or "").strip() or None
         worker_python: Path | None = None
