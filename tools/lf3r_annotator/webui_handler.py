@@ -49,6 +49,13 @@ class WebUIHandler(server.LF3RHandler):
                                 {"tactile": self.app.tactile.frame(rollout_id, camera, frame)},
                             )
                             return
+                        if parts[3] == "series":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            self.json_response(
+                                HTTPStatus.OK,
+                                {"tactile": self.app.tactile.series(rollout_id, camera)},
+                            )
+                            return
                         if parts[3] == "image":
                             finger = str(query.get("finger", [""])[0] or "")
                             event_id = str(query.get("event_id", [""])[0] or "")
