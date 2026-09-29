@@ -295,8 +295,11 @@
         }
       };
     }
+    var gpu = node("repairGpu").value.trim();
+    if (!/^\d+$/.test(gpu)) throw new Error("GPU must be one numeric CUDA device index.");
     var payload = {
       rollout_id: row.id,
+      gpu_index: Number(gpu),
       cut_type: cut.type,
       cut_progress: cut.progress,
       cut_frame: cut.frame,
@@ -401,15 +404,14 @@
       "Alignment smoke test: " + (smoke.passed ? "passed" : "not passed"),
       smokeLines.length ? smokeLines.join("\n") : (smoke.error || ""),
       modelLines.join("\n"),
-      validation.gpu && validation.gpu.selected
-        ? ("GPU " + validation.gpu.selected.index + ": "
-          + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
-          + "% utilization · informational only, no utilization gate")
-        : ("GPU status: "
-          + ((validation.gpu && validation.gpu.error)
-            ? String(validation.gpu.error)
-            : "no reported device")
-          + " · informational only, no utilization gate"),
+      validation.gpu
+        ? ("GPU " + String(validation.gpu.requested_index)
+          + (validation.gpu.selected
+            ? ": " + Number(validation.gpu.selected.gpu_utilization_percent).toFixed(1)
+              + "% utilization"
+            : ": status unavailable")
+          + " · user selected · no utilization gate")
+        : "GPU: user selected · no utilization gate",
       blockers.length ? ("Blockers:\n- " + blockers.join("\n- ")) : "Ready to generate."
     ].filter(Boolean).join("\n");
     node("repairRunButton").disabled = !validation.ready;
@@ -784,6 +786,7 @@
       renderValidation(null);
     });
     [
+      "repairGpu",
       "repairCheckpoint",
       "repairBaseCheckpoints",
       "repairDuplicateViews",
