@@ -267,12 +267,11 @@ class RepairService:
         if not capabilities["sim_state_available"]:
             blockers.append("simulator state trajectory is unavailable in the selected manifest record")
         blockers.extend(adapter_status["unavailable_reasons"])
-        worker_python = self._worker_python()
-        if not worker_python.is_file():
-            blockers.append(
-                "Repair worker runtime is unavailable: "
-                + str(worker_python.relative_to(self.project_root))
-            )
+        worker_python: Path | None = None
+        try:
+            worker_python = self._worker_python()
+        except ValidationError as error:
+            blockers.append(str(error))
         # GPU utilization/status is informational only.  Do not block Repair:
         # the user explicitly controls whether to submit the run.
         return {
@@ -283,9 +282,13 @@ class RepairService:
             "alignment": alignment.as_dict(),
             "world_model": adapter_status,
             "worker_python": (
-                str(worker_python.relative_to(self.project_root))
-                if worker_python.is_relative_to(self.project_root)
-                else str(worker_python)
+                (
+                    str(worker_python.relative_to(self.project_root))
+                    if worker_python.is_relative_to(self.project_root)
+                    else str(worker_python)
+                )
+                if worker_python is not None
+                else None
             ),
             "gpu": gpu,
             "blockers": blockers,
@@ -308,6 +311,7 @@ class RepairService:
         if (
             capabilities["actions_available"]
             and capabilities["sim_state_available"]
+            and plan.get("worker_python")
         ):
             try:
                 smoke = run_alignment_subprocess(
@@ -324,6 +328,8 @@ class RepairService:
                     )
             except (ValidationError, OSError, ValueError) as error:
                 smoke_error = f"{type(error).__name__}: {error}"
+        elif not plan.get("worker_python"):
+            smoke_error = "Alignment smoke test was not run because the Repair/LIBERO runtime is unavailable"
         else:
             smoke_error = "Alignment smoke test requires both GT actions and simulator states"
 
