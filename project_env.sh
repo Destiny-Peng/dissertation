@@ -26,6 +26,7 @@ export CACHE="${PROJECT_ROOT}/cache"
 export OUTPUTS="${PROJECT_ROOT}/outputs"
 export LOGS="${PROJECT_ROOT}/logs"
 export ENV_REPORTS="${PROJECT_ROOT}/environment_reports"
+export LF3R_CONDA_EXE="${PROJECT_ROOT}/tools/miniforge3/bin/conda"
 
 # ------------------------------------------------------------
 # Package caches
@@ -58,6 +59,13 @@ export LF3R_ANALYSIS_PYTHON="${LF3R_ENV_ANALYSE}/bin/python"
 export LF3R_ENV_DENSEREWARD="${CONDA_ENVS}/LF3R-densereward"
 export LF3R_DENSEREWARD_PYTHON="${LF3R_ENV_DENSEREWARD}/bin/python"
 export LF3R_DENSEREWARD_CHECKPOINT="${CHECKPOINTS}/densereward-3frame-thinking"
+export LF3R_ENV_CTRL_WORLD="${CONDA_ENVS}/Ctrl-World"
+export LF3R_CTRL_WORLD_PYTHON="${LF3R_ENV_CTRL_WORLD}/bin/python"
+
+# Make the project-local Conda command available in sourced Bash sessions.
+if [[ -f "${PROJECT_ROOT}/tools/miniforge3/etc/profile.d/conda.sh" ]]; then
+    source "${PROJECT_ROOT}/tools/miniforge3/etc/profile.d/conda.sh"
+fi
 
 # ------------------------------------------------------------
 # Timestamp helpers
