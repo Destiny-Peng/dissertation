@@ -18,6 +18,21 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
 
   function node(id) { return document.getElementById(id); }
 
+  function historyLog() {
+    var output = node("repairJobHistoryLog");
+    if (output) return output;
+    var legacy = node("repairJobLog");
+    if (!legacy || !legacy.parentNode) return null;
+    legacy.hidden = true;
+    output = document.createElement("pre");
+    output.id = "repairJobHistoryLog";
+    output.className = "job-log repair-log";
+    output.hidden = true;
+    output.setAttribute("aria-label", "Selected Repair job log");
+    legacy.parentNode.insertBefore(output, legacy.nextSibling);
+    return output;
+  }
+
   function timestamp(job) {
     return Date.parse(
       job.submitted_at || job.tmux_created_at || job.started_at || job.finished_at || ""
@@ -114,7 +129,7 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
   function closeLog() {
     logRequest += 1;
     visibleLogId = "";
-    var output = node("repairJobLog");
+    var output = historyLog();
     if (output) {
       output.hidden = true;
       output.dataset.visibleJobId = "";
@@ -125,7 +140,7 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
   }
 
   function followTail() {
-    var output = node("repairJobLog");
+    var output = historyLog();
     if (!output || output.hidden || output.dataset.followTail !== "true") return;
     window.requestAnimationFrame(function () {
       output.scrollTop = output.scrollHeight;
@@ -133,7 +148,7 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
   }
 
   async function showLog(jobId, button) {
-    var output = node("repairJobLog");
+    var output = historyLog();
     if (!output || !jobId) return;
     if (visibleLogId === jobId && !output.hidden) {
       closeLog();
@@ -182,7 +197,7 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
       );
       var payload = await response.json();
       if (!response.ok || visibleLogId !== jobId) return;
-      var output = node("repairJobLog");
+      var output = historyLog();
       if (!output || output.hidden) return;
       output.textContent = payload.log ? payload.log.text || "" : "";
       followTail();
@@ -227,7 +242,7 @@ window.LF3RRepairJobs = (function createRepairJobsController() {
     if (installed) return true;
     var select = node("repairJobFilter");
     var list = node("repairJobList");
-    var output = node("repairJobLog");
+    var output = historyLog();
     if (!select || !list || !output) return false;
     installed = true;
     select.value = filter;
