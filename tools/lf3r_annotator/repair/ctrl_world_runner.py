@@ -16,6 +16,16 @@ from pathlib import Path
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def resolve_project_path(path: Path) -> Path:
+    value = path.expanduser()
+    if not value.is_absolute():
+        value = PROJECT_ROOT / value
+    return value.resolve()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
@@ -156,7 +166,17 @@ def load_checkpoint_state(path: Path) -> Any:
 
 def main() -> None:
     args = parse_args()
-    source_root = args.source_root.expanduser().resolve()
+    source_root = resolve_project_path(args.source_root)
+    checkpoint = resolve_project_path(args.checkpoint)
+    svd_model_path = resolve_project_path(args.svd_model_path)
+    clip_model_path = resolve_project_path(args.clip_model_path)
+    data_stat_path = resolve_project_path(args.data_stat_path)
+    controls_path = resolve_project_path(args.controls)
+    exterior_1 = resolve_project_path(args.exterior_1)
+    exterior_2 = resolve_project_path(args.exterior_2)
+    wrist = resolve_project_path(args.wrist)
+    output_dir = resolve_project_path(args.output_dir)
+
     if not source_root.is_dir():
         raise SystemExit(f"Ctrl-World source root does not exist: {source_root}")
     sys.path.insert(0, str(source_root))
@@ -182,11 +202,11 @@ def main() -> None:
         raise SystemExit("Ctrl-World generation requires CUDA")
 
     config = wm_args(task_type="replay")
-    config.svd_model_path = str(args.svd_model_path.resolve())
-    config.clip_model_path = str(args.clip_model_path.resolve())
-    config.ckpt_path = str(args.checkpoint.resolve())
+    config.svd_model_path = str(svd_model_path)
+    config.clip_model_path = str(clip_model_path)
+    config.ckpt_path = str(checkpoint)
     config.val_model_path = config.ckpt_path
-    config.data_stat_path = str(args.data_stat_path.resolve())
+    config.data_stat_path = str(data_stat_path)
     config.num_frames = 5
     config.num_history = 6
     config.action_dim = 7
@@ -200,13 +220,13 @@ def main() -> None:
     config.his_cond_zero = False
 
     model = CrtlWorld(config)
-    state_dict = load_checkpoint_state(args.checkpoint.resolve())
+    state_dict = load_checkpoint_state(checkpoint)
     model.load_state_dict(state_dict)
     dtype = getattr(config, "dtype", torch.bfloat16)
     model.to(device).to(dtype)
     model.eval()
 
-    stats = json.loads(args.data_stat_path.read_text(encoding="utf-8"))
+    stats = json.loads(data_stat_path.read_text(encoding="utf-8"))
     state_p01 = np.asarray(stats["state_01"], dtype=np.float32)[None, :]
     state_p99 = np.asarray(stats["state_99"], dtype=np.float32)[None, :]
     if state_p01.shape != (1, 7) or state_p99.shape != (1, 7):
@@ -214,7 +234,7 @@ def main() -> None:
             "Ctrl-World DROID stat.json must contain state_01/state_99 with seven values"
         )
 
-    payload = np.load(args.controls.resolve(), allow_pickle=False)
+    payload = np.load(controls_path, allow_pickle=False)
     controls = np.asarray(payload["controls"], dtype=np.float32)
     source_indices = np.asarray(payload["source_frame_indices"], dtype=np.int64)
     if controls.ndim != 2 or controls.shape[1] != 7 or len(controls) < 2:
@@ -224,11 +244,7 @@ def main() -> None:
 
     first_latent = encode_condition_views(
         model,
-        [
-            args.exterior_1.resolve(),
-            args.exterior_2.resolve(),
-            args.wrist.resolve(),
-        ],
+        [exterior_1, exterior_2, wrist],
         device,
         dtype,
     )
@@ -354,14 +370,14 @@ def main() -> None:
     if not suffix_views[0]:
         raise RuntimeError("Ctrl-World produced no suffix after removing condition-aligned frame")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     outputs = {
-        "cam_high": (args.output_dir / "cam_high.mp4", suffix_views[0]),
+        "cam_high": (output_dir / "cam_high.mp4", suffix_views[0]),
         "ctrl_world_exterior_2_duplicate": (
-            args.output_dir / "ctrl_world_exterior_2_duplicate.mp4",
+            output_dir / "ctrl_world_exterior_2_duplicate.mp4",
             suffix_views[1],
         ),
-        "cam_wrist": (args.output_dir / "cam_wrist.mp4", suffix_views[2]),
+        "cam_wrist": (output_dir / "cam_wrist.mp4", suffix_views[2]),
     }
     for _, (path, frames) in outputs.items():
         mediapy.write_video(
@@ -375,7 +391,7 @@ def main() -> None:
 
     metadata = {
         "model": "ctrl_world",
-        "checkpoint": str(args.checkpoint.resolve()),
+        "checkpoint": str(checkpoint),
         "source_root": str(source_root),
         "view_order": ["exterior_1", "exterior_2", "wrist"],
         "published_view_mapping": {
@@ -401,7 +417,7 @@ def main() -> None:
         "text_conditioning": bool(config.text_cond),
         "instruction": str(args.instruction),
     }
-    (args.output_dir / "ctrl_world_generation.json").write_text(
+    (output_dir / "ctrl_world_generation.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
