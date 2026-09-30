@@ -390,3 +390,43 @@ body[data-view="runs"] .job-card-log {
     max-width: none;
   }
 }
+
+
+/* Compact the title-band instruction selector so navigation stays on one row. */
+body[data-view="annotate"] #reviewWorkspace .instruction-variant-control,
+body[data-view="results"] #reviewWorkspace .instruction-variant-control {
+  gap: .25rem .35rem;
+}
+
+body[data-view="annotate"] #reviewWorkspace .instruction-variant-control label,
+body[data-view="results"] #reviewWorkspace .instruction-variant-control label {
+  white-space: nowrap;
+}
+
+@container rollout-title (min-width: 50rem) {
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy,
+  body[data-view="results"] #reviewWorkspace .task-header-copy {
+    grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 13rem);
+    column-gap: .55rem;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace .task-header-copy > #instructionVariantControl,
+  body[data-view="results"] #reviewWorkspace .task-header-copy > #instructionVariantControl {
+    width: auto;
+    max-width: none;
+    margin-top: 0;
+    padding: .4rem .5rem;
+    grid-template-columns: auto minmax(6.5rem, 9rem);
+    gap: .2rem .3rem;
+  }
+
+  body[data-view="annotate"] #reviewWorkspace #instructionVariantControl select,
+  body[data-view="results"] #reviewWorkspace #instructionVariantControl select {
+    min-height: 1.8rem;
+    padding-inline: .4rem 1.5rem;
+  }
+}
+
+.instruction-variant-note[hidden] {
+  display: none !important;
+}

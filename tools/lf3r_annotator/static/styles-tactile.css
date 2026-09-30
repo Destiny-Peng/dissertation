@@ -226,13 +226,26 @@
 .results-tactile-image {
   display: block;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--tactile-cell-aspect, 1 / 1);
   object-fit: contain;
   background: var(--control);
   border: 1px solid var(--line-soft);
   border-radius: .4rem;
   image-rendering: auto;
 }
+
+.results-tactile-sprite {
+  background-image: var(--tactile-sprite-url);
+  background-repeat: no-repeat;
+  background-size: 500% 100%;
+  background-color: var(--control);
+}
+
+.results-tactile-sprite.finger-0 { background-position: 0% 50%; }
+.results-tactile-sprite.finger-1 { background-position: 25% 50%; }
+.results-tactile-sprite.finger-2 { background-position: 50% 50%; }
+.results-tactile-sprite.finger-3 { background-position: 75% 50%; }
+.results-tactile-sprite.finger-4 { background-position: 100% 50%; }
 
 .results-tactile-placeholder {
   display: grid;
