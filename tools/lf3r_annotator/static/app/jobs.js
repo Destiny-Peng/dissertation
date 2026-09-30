@@ -6,6 +6,9 @@ function persistentJobEndpoint(jobType, jobId) {
   var encoded = encodeURIComponent(jobId);
   if (jobType === "baseline") return "/api/baseline-jobs/" + encoded;
   if (jobType === "analysis") return "/api/analysis-jobs/" + encoded;
+  if (jobType === "repair_synthetic_suffix") {
+    return "/api/repair/synthetic-suffix/jobs/" + encoded;
+  }
   return "/api/rollout-jobs/" + encoded;
 }
 
@@ -22,6 +25,10 @@ function persistentJobProgress(job) {
   }
   if (job.job_type === "analysis") {
     return (job.selected_rollouts || 0) + " rollout(s) selected";
+  }
+  if (job.job_type === "repair_synthetic_suffix") {
+    var repairProgress = Math.round(Math.max(0, Math.min(1, Number(job.progress || 0))) * 100);
+    return String(job.phase || job.status || "queued") + " · " + repairProgress + "%";
   }
   return (job.completed_rollouts || 0) + "/" + (job.expected_rollouts || job.requested_rollouts || 0)
     + " rollout(s) complete";
@@ -41,6 +48,10 @@ function persistentJobMethod(job) {
       return "Learned localization";
     }
     return "Analysis";
+  }
+  if (job.job_type === "repair_synthetic_suffix") {
+    var model = String(job.world_model || "world model").replace(/_/g, "-");
+    return "Synthetic suffix · " + model;
   }
   return "OpenVLA rollout generation";
 }
@@ -64,6 +75,11 @@ function persistentJobScope(job) {
   if (job.job_type === "rollout_generation") {
     var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
     return suite + " - " + (job.run_note || "");
+  }
+  if (job.job_type === "repair_synthetic_suffix") {
+    return job.source_rollout
+      ? "rollout: " + job.source_rollout
+      : (job.run_id ? "run: " + job.run_id : "Synthetic Suffix");
   }
   if (job.job_type === "baseline" && job.scope
       && window.LF3RDatasetScopes
@@ -96,9 +112,10 @@ function renderPersistentJobCards(containerId, jobs, emptyMessage) {
   container.innerHTML = jobs.map(function (job) {
     var status = String(job.status || "unknown");
     var tmuxState = job.tmux_state || "unknown";
-    var gpu = job.gpu ? "GPU " + job.gpu : "CPU";
+    var gpu = job.gpu ? "GPU " + job.gpu
+      : (job.job_type === "repair_synthetic_suffix" ? "GPU selected at run" : "CPU");
     var interpreter = job.interpreter ? " / " + job.interpreter : "";
-    var runRoot = job.run_root || job.output_dir || "";
+    var runRoot = job.run_root || job.output_dir || job.run_dir || "";
     return '<article class="persistent-job-card" data-persistent-job="' + escapeHtml(job.job_id) + '">'
       + '<div class="persistent-job-heading"><strong>' + escapeHtml(persistentJobMethod(job)) + "</strong>"
       + '<span class="analysis-badge job-status-' + escapeHtml(persistentJobClass(status)) + '">' + escapeHtml(status) + "</span></div>"
@@ -150,6 +167,11 @@ function renderPersistentJobLists() {
 
   if (runsJobs && typeof runsJobs.afterRender === "function") {
     runsJobs.afterRender();
+  }
+  if (window.LF3RRepairJobs && typeof window.LF3RRepairJobs.render === "function") {
+    window.LF3RRepairJobs.render(
+      jobs.filter(function (job) { return job.job_type === "repair_synthetic_suffix"; })
+    );
   }
   if (typeof window.lf3rWorkspaceJobsChanged === "function") {
     window.lf3rWorkspaceJobsChanged(jobs);
@@ -217,6 +239,7 @@ async function loadPersistentJobLog(jobId, jobType, button) {
     var target = byId("baselineBatchStatus");
     if (jobType === "analysis") target = byId("analysisRunSelection") || target;
     if (jobType === "rollout_generation") target = byId("rolloutGenerationStatus") || target;
+    if (jobType === "repair_synthetic_suffix") target = byId("repairJobStatus") || target;
     if (target) target.textContent = "Job log error: " + error.message;
   }
 }
@@ -265,12 +288,18 @@ async function pollPersistentJob(jobId) {
           && job.baseline_mode === "rollout" && job.rollout_id) {
         loadEvaluation(job.rollout_id);
       }
+      if (job.job_type === "repair_synthetic_suffix"
+          && window.LF3RRepairSyntheticSuffix
+          && typeof window.LF3RRepairSyntheticSuffix.refresh === "function") {
+        window.LF3RRepairSyntheticSuffix.refresh();
+      }
     }
   } catch (error) {
     delete state.persistentJobPollTimers[jobId];
     var status = byId("baselineBatchStatus");
     if (known.job_type === "analysis") status = byId("analysisRunSelection") || status;
     if (known.job_type === "rollout_generation") status = byId("rolloutGenerationStatus") || status;
+    if (known.job_type === "repair_synthetic_suffix") status = byId("repairJobStatus") || status;
     if (status) status.textContent = "Persistent job error: " + error.message;
     if (activePersistentJob(known)) {
       state.persistentJobPollTimers[jobId] = window.setTimeout(function () {
