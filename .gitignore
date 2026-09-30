@@ -51,3 +51,4 @@ __pycache__/
 Robo-Dopamine-Bench/**
 *.zip
 *.tar.gz
+artifacts/
