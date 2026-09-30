@@ -38,3 +38,4 @@
 {"timestamp": "2026-09-30T08:46:48.912932+00:00", "rollout_id": "realrobot-failrecovery-20260912_035151_usb_success_0912_0003-483d6fd5b6", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
 {"timestamp": "2026-09-30T08:46:57.049397+00:00", "rollout_id": "realrobot-failrecovery-20260912_035151_usb_success_0912_0003-483d6fd5b6", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
 {"timestamp": "2026-09-30T08:47:06.872510+00:00", "rollout_id": "realrobot-failrecovery-20260912_035229_usb_success_0912_0004-796a0efeb6", "review_status": "complete", "annotator": "Jacy", "outcome_label": "success", "failure_event_count": 0}
+{"timestamp": "2026-09-30T13:29:00.928466+00:00", "rollout_id": "realrobot-failrecovery-20260929_232226_usb_0929_mixedfail_0001-3a5f0097e7", "review_status": "complete", "annotator": "Jacy", "outcome_label": "failure", "failure_event_count": 2}
