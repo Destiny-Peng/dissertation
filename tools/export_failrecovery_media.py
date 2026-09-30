@@ -3,8 +3,9 @@
 
 The source episode SQLite files and recordings are read only. Each exported
 episode contains two RGB videos, five tactile byte streams, a tactile event
-index, and a compact synchronized-frame index. Paths in the aggregate manifest
-are relative to PROJECT_ROOT, as expected by the LF3R annotator.
+index, and a compact synchronized-frame index. Exported asset paths are relative
+to PROJECT_ROOT, as expected by the LF3R annotator. Source recordings may live
+outside PROJECT_ROOT; their provenance paths are then stored as absolute paths.
 """
 
 from __future__ import annotations
@@ -14,26 +15,41 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
 import tempfile
 from contextlib import ExitStack
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = PROJECT_ROOT / "outputs/realrobot/failrecovery"
+SOURCE_ROOT = Path("/mnt/hdd/qiuxia/datasets/failrecovery")
 DATASET_ROOT = PROJECT_ROOT / "datasets/lf3r_failure_rollouts/v1"
 EPISODE_ROOT = DATASET_ROOT / "failrecovery"
 MANIFEST_PATH = DATASET_ROOT / "failrecovery_manifest.jsonl"
 FINGERS = ("thumb", "index", "middle", "ring", "pinky")
 CAMERAS = {"cam_high": "realsense_color", "cam_wrist": "wrist_right"}
+KNOWN_TASKS = {
+    "Pick up the tube": (0, "tube"),
+    "Pick up the usb stick and insert into the middle panel": (1, "usb_panel"),
+    "Pick up the usb and insert it into the socket": (2, "usb_socket"),
+}
 
 
 def rel(path: Path) -> str:
     return path.relative_to(PROJECT_ROOT).as_posix()
+
+
+def source_path(path: Path) -> str:
+    path = path.resolve()
+    try:
+        return rel(path)
+    except ValueError:
+        return str(path)
 
 
 def json_line(value: Any) -> str:
@@ -115,7 +131,12 @@ def ensure_h264(path: Path, expected_frames: int | None = None) -> dict[str, Any
 
 
 def source_db(path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    wal = path.with_name(path.name + "-wal")
+    if wal.exists() and wal.stat().st_size:
+        raise ValueError(f"Source database has uncheckpointed WAL data: {path}")
+    connection = sqlite3.connect(
+        f"{path.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+    )
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -226,24 +247,54 @@ def export_sync_frames(
     return {"frames": frames, "complete": complete}
 
 
-def export_episode(source: Path, destination: Path) -> dict[str, Any]:
+def export_episode(
+    source: Path, destination: Path, *, verify_videos: bool = True,
+) -> dict[str, Any]:
     source_manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
-    if source_manifest.get("schema_version") != 3:
+    if source_manifest.get("schema_version") not in (2, 3):
         raise ValueError(f"Unsupported recorder schema: {source}")
     if source_manifest.get("status") != "complete":
         raise ValueError(f"Incomplete source recording: {source}")
+    signature = {
+        "manifest_sha256": hashlib.sha256(
+            json.dumps(source_manifest, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        "database_bytes": (source / "episode.sqlite3").stat().st_size,
+        "video_bytes": {
+            camera: (source / "videos" / f"{camera}.mp4").stat().st_size
+            for camera in CAMERAS.values()
+        },
+    }
     if destination.exists():
         metadata_path = destination / "export.json"
         if not metadata_path.is_file():
             raise ValueError(f"Existing episode has no export metadata: {destination}")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        for key, camera in CAMERAS.items():
+        if metadata.get("source_signature") not in (None, signature):
+            raise ValueError(f"Existing export belongs to different source data: {destination}")
+        if metadata["synchronized"]["frames"] != source_manifest["synchronized_frame_count"]:
+            raise ValueError(f"Existing export frame count differs from source: {destination}")
+        for finger, count in metadata["tactile_counts"].items():
+            if count != source_manifest["source_counts"][f"tactile:right:{finger}"]:
+                raise ValueError(f"Existing tactile count differs from source: {destination}")
+        metadata["source_manifest_path"] = source_path(source / "manifest.json")
+        metadata["source_database_path"] = source_path(source / "episode.sqlite3")
+        metadata["source_signature"] = signature
+        metadata["recorder_schema_version"] = source_manifest["schema_version"]
+        for key, camera in (CAMERAS.items() if verify_videos else ()):
+            source_info = probe_video(source / "videos" / f"{camera}.mp4")
+            for field in ("frames", "width", "height", "fps"):
+                if source_info[field] != metadata["videos"][key][field]:
+                    raise ValueError(f"Existing video differs from source: {destination} {camera}")
             metadata["videos"][key] = ensure_h264(
                 destination / "videos" / f"{camera}.mp4",
                 metadata["videos"][key]["frames"],
             )
         atomic_text(metadata_path, json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
         return metadata
+
+    if not verify_videos:
+        raise FileNotFoundError(f"Manifest refresh requires an existing export: {destination}")
 
     temp_dir = Path(tempfile.mkdtemp(prefix=f".{source.name}.", dir=destination.parent))
     try:
@@ -269,8 +320,10 @@ def export_episode(source: Path, destination: Path) -> dict[str, Any]:
             raise ValueError(f"Synchronized frame count mismatch: {source}")
         metadata = {
             "schema_version": 1, "episode": source.name,
-            "source_manifest_path": rel(source / "manifest.json"),
-            "source_database_path": rel(source / "episode.sqlite3"),
+            "source_manifest_path": source_path(source / "manifest.json"),
+            "source_database_path": source_path(source / "episode.sqlite3"),
+            "source_signature": signature,
+            "recorder_schema_version": source_manifest["schema_version"],
             "videos": video_info, "synchronized": sync,
             "tactile_counts": tactile["counts"],
             "tactile_encoding": "uint8 row-major; byte offsets and shapes in tactile/events.jsonl",
@@ -286,17 +339,51 @@ def export_episode(source: Path, destination: Path) -> dict[str, Any]:
         raise
 
 
-def manifest_record(source: Path, destination: Path, index: int, meta: dict[str, Any]) -> dict[str, Any]:
+def filename_outcome(name: str) -> str | None:
+    tokens = set(re.split(r"[^a-z0-9]+", name.lower()))
+    success = bool(tokens & {"success", "successful"})
+    failure = bool(tokens & {"fail", "failure", "failed", "mixedfail"})
+    if success == failure:
+        return None
+    return "success" if success else "failure"
+
+
+def manifest_record(
+    source: Path, destination: Path, index: int, meta: dict[str, Any],
+    task_id: int, task_key: str, previous_id: str | None = None,
+) -> dict[str, Any]:
     recorded = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     primary = meta["videos"]["cam_high"]
-    digest = hashlib.sha1(rel(source).encode("utf-8")).hexdigest()[:10]
+    identity = {
+        key: recorded.get(key) for key in (
+            "episode_label", "recording_started_at_utc", "recording_start_wall_ns",
+            "recorder_git_commit", "task",
+        )
+    }
+    digest = hashlib.sha1(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()[:10]
+    review_path = source / "review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8")) if review_path.exists() else {}
+    note = str(review.get("notes") or "").strip().lower()
+    review_outcome = {"success": "success", "failure": "failure", "fail": "failure"}.get(note)
+    filename_hint = filename_outcome(source.name)
+    outcome = review_outcome or filename_hint or "unknown"
     return {
         "schema_version": 1,
-        "id": f"realrobot-failrecovery-{source.name}-{digest}",
-        "task_suite": "realrobot_failrecovery", "task_id": 0,
+        "id": previous_id or f"realrobot-failrecovery-{source.name}-{digest}",
+        "task_suite": "realrobot_failrecovery", "task_id": task_id,
+        "task_key": task_key,
         "episode_index": index, "episode_label": recorded["episode_label"],
         "task": recorded["task"], "task_description": recorded["task"],
-        "ground_truth_outcome": "unknown",
+        "ground_truth_outcome": outcome,
+        "outcome_source": (
+            "review.json" if review_outcome else "filename" if filename_hint else None
+        ),
+        "review": review,
+        "source_review_path": source_path(review_path) if review_path.exists() else None,
+        "episode_label_outcome_hint": filename_hint,
+        "quality_flags": (
+            ["short_recording"] if recorded["synchronized_frame_count"] < 2 * recorded["config"]["sample_hz"] else []
+        ),
         "source_kind": "realrobot_failrecovery",
         "analysis_partition": "natural_observation",
         "dataset_role": "realrobot_failrecovery",
@@ -323,7 +410,10 @@ def manifest_record(source: Path, destination: Path, index: int, meta: dict[str,
         "sample_hz": recorded["config"]["sample_hz"],
         "recorded_duration_seconds": recorded["duration_s"],
         "recording_status": recorded["status"],
-        "source_manifest_path": rel(source / "manifest.json"),
+        "source_manifest_path": source_path(source / "manifest.json"),
+        "recorder_schema_version": recorded["schema_version"],
+        "recording_started_at_utc": recorded.get("recording_started_at_utc"),
+        "recorder_git_commit": recorded.get("recorder_git_commit"),
         "policy_family": "realrobot_recording", "policy_checkpoint": None,
         "csv_path": None, "first_environment_timestep": None,
         "last_environment_timestep": None,
@@ -355,39 +445,130 @@ def save_goal_image(record: dict[str, Any], path: Path) -> dict[str, Any]:
     return {
         "path": rel(path), "source_rollout_id": record["id"],
         "camera": "cam_high", "video_frame_index": final_frame,
+        "task_id": record["task_id"], "task_key": record["task_key"],
+        "ground_truth_outcome": record["ground_truth_outcome"],
+        "outcome_source": record["outcome_source"],
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-root", type=Path, default=SOURCE_ROOT)
+    parser.add_argument(
+        "--source-root", type=Path, default=SOURCE_ROOT,
+        help="Directory containing episode folders; may be outside PROJECT_ROOT.",
+    )
     parser.add_argument("--output-root", type=Path, default=EPISODE_ROOT)
     parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
+    parser.add_argument(
+        "--manifests-only", action="store_true",
+        help="Refresh manifests from existing exports without copying or transcoding videos.",
+    )
     args = parser.parse_args()
-    source_root = args.source_root.resolve()
-    output_root = args.output_root.resolve()
-    manifest_path = args.manifest.resolve()
-    for path in (source_root, output_root, manifest_path):
+    source_root = args.source_root.expanduser().resolve()
+    output_root = args.output_root.expanduser().resolve()
+    manifest_path = args.manifest.expanduser().resolve()
+    for path in (output_root, manifest_path):
         path.relative_to(PROJECT_ROOT)
     if not source_root.is_dir():
         raise FileNotFoundError(source_root)
-    sources = sorted(path.parent for path in source_root.glob("*/manifest.json"))
+    all_sources = sorted(path for path in source_root.iterdir() if path.is_dir())
+    sources = []
+    excluded = []
+    tasks = set()
+    for source in all_sources:
+        manifest = source / "manifest.json"
+        if not manifest.is_file():
+            excluded.append({"episode": source.name, "reason": "missing_manifest"})
+            continue
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+        review_path = source / "review.json"
+        review = json.loads(review_path.read_text(encoding="utf-8")) if review_path.exists() else {}
+        if str(review.get("notes") or "").strip().lower().startswith("discard"):
+            excluded.append({"episode": source.name, "reason": "review_discard", "review": review})
+            continue
+        if recorded.get("status") != "complete" or recorded.get("worker_errors"):
+            excluded.append({"episode": source.name, "reason": "incomplete_or_worker_errors"})
+            continue
+        if recorded.get("schema_version") not in (2, 3):
+            raise ValueError(f"Unsupported recorder schema: {source}")
+        for required in [source / "episode.sqlite3", *(source / "videos" / f"{c}.mp4" for c in CAMERAS.values())]:
+            if not required.is_file():
+                raise FileNotFoundError(required)
+        sources.append(source)
+        tasks.add(recorded["task"])
     if not sources:
         raise ValueError(f"No episodes under {source_root}")
+    task_catalog = {}
+    next_task_id = max(v[0] for v in KNOWN_TASKS.values()) + 1
+    for task in sorted(tasks):
+        if task in KNOWN_TASKS:
+            task_catalog[task] = KNOWN_TASKS[task]
+        else:
+            task_catalog[task] = (next_task_id, f"task_{next_task_id}")
+            next_task_id += 1
+    previous_ids = {}
+    if manifest_path.exists():
+        for line in manifest_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            old = json.loads(line)
+            videos = old.get("camera_video_paths") or {}
+            if videos:
+                episode = Path(next(iter(videos.values()))).parents[1].name
+                previous_ids[episode] = old["id"]
     output_root.mkdir(parents=True, exist_ok=True)
     records = []
     for index, source in enumerate(sources):
         destination = output_root / source.name
         print(f"[{index + 1}/{len(sources)}] {source.name}", flush=True)
-        metadata = export_episode(source, destination)
-        records.append(manifest_record(source, destination, index, metadata))
-    goal = save_goal_image(records[0], output_root / "goal_image.png")
+        metadata = export_episode(source, destination, verify_videos=not args.manifests_only)
+        task = json.loads((source / "manifest.json").read_text(encoding="utf-8"))["task"]
+        task_id, task_key = task_catalog[task]
+        records.append(manifest_record(
+            source, destination, index, metadata, task_id, task_key,
+            previous_ids.get(source.name),
+        ))
+    if len({r["id"] for r in records}) != len(records):
+        raise ValueError("Duplicate rollout IDs")
+    confirmed = [r for r in records if r["ground_truth_outcome"] == "success"]
+    reviewed_success = [r for r in confirmed if r["outcome_source"] == "review.json"]
+    goal_record = (reviewed_success or confirmed or records)[0]
+    goal = save_goal_image(goal_record, output_root / "goal_image.png")
+    for record in records:
+        if record["task_id"] == goal_record["task_id"]:
+            record["goal_image_path"] = goal["path"]
     atomic_text(manifest_path, "".join(json_line(record) for record in records))
+    task_manifests = {}
+    task_manifest_root = output_root / "task_manifests"
+    archive_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    for task, (task_id, task_key) in task_catalog.items():
+        subset = [r for r in records if r["task_id"] == task_id]
+        task_filename = f"{manifest_path.stem}.{task_key}.jsonl"
+        task_manifest = task_manifest_root / task_filename
+        legacy_manifest = manifest_path.with_name(task_filename)
+        if legacy_manifest.exists():
+            archive = task_manifest_root / "previous" / archive_stamp / task_filename
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(legacy_manifest, archive)
+        atomic_text(task_manifest, "".join(json_line(r) for r in subset))
+        task_manifests[task_key] = {
+            "task_id": task_id, "task_description": task,
+            "manifest": rel(task_manifest), "rollouts": len(subset),
+            "outcome_counts": dict(Counter(r["ground_truth_outcome"] for r in subset)),
+        }
     summary = {
         "schema_version": 1,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "source_root": rel(source_root), "episode_root": rel(output_root),
+        "source_root": source_path(source_root), "episode_root": rel(output_root),
         "manifest": rel(manifest_path), "total_rollouts": len(records),
+        "source_episode_count": len(all_sources),
+        "excluded_episodes": excluded,
+        "task_manifests": task_manifests,
+        "manifest_layout": "one top-level combined manifest; task subsets under episode_root/task_manifests",
+        "recorder_schema_counts": dict(Counter(r["recorder_schema_version"] for r in records)),
+        "outcome_counts": dict(Counter(r["ground_truth_outcome"] for r in records)),
+        "outcome_source_counts": dict(Counter(r["outcome_source"] or "unknown" for r in records)),
+        "short_episodes": [r["id"] for r in records if "short_recording" in r["quality_flags"]],
         "camera_keys": list(CAMERAS), "tactile_fingers": list(FINGERS),
         "synchronized_frames": sum(r["synchronized_frame_count"] for r in records),
         "complete_synchronized_frames": sum(
@@ -396,13 +577,40 @@ def main() -> None:
         "tactile_samples": sum(
             sum(r["tactile_counts"].values()) for r in records
         ),
-        "ground_truth_outcome": "unknown",
         "goal_image": goal,
     }
     atomic_text(
         manifest_path.with_name(manifest_path.stem + ".summary.json"),
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
     )
+    atomic_text(output_root / "README.md", (
+        "# RealRobot failrecovery export\n\n"
+        f"Aggregate manifest: `{rel(manifest_path)}` (paths relative to LF3R).\n"
+        f"Episodes: {len(records)}; excluded: {len(excluded)}.\n\n"
+        "Only the combined manifest lives in the top-level discovery directory. "
+        "Task subsets live under task_manifests/ so the WebUI will not reject "
+        "duplicate IDs across combined and subset manifests.\n\n"
+        "Each episode has H.264 realsense_color (cam_high) and wrist_right (cam_wrist), "
+        "frames.jsonl, tactile/events.jsonl, and raw/deform byte streams for five fingers. "
+        "Image bytes are row-major uint8. Use the event index byte offsets, lengths, and "
+        "shapes to read images. Join synchronized frames to events by event_id; video "
+        "frame indices may differ from synchronized frame indices.\n\n"
+        "Review notes success/failure/fail take priority for ground_truth_outcome. "
+        "Otherwise filename tokens success/successful imply success, and "
+        "fail/failure/failed/mixedfail imply failure. The mixedfail token is a "
+        "filename-based inference, not an individually reviewed result. Names with "
+        "no outcome token or conflicting tokens remain unknown. outcome_source "
+        "records review.json or filename; filename hints are stored separately. Discard reviews "
+        "are excluded. Short recordings are retained with quality_flags.\n\n"
+        "There is one goal_image.png, extracted from the last cam_high frame of "
+        f"`{goal_record['id']}` (task {goal_record['task_id']}, "
+        f"outcome {goal_record['ground_truth_outcome']}). Only matching-task records "
+        "declare goal_image_path. Source details and per-task manifests are listed "
+        "in the aggregate summary JSON.\n\n"
+        "Regenerate with:\n\n```bash\n"
+        f"python3 tools/export_failrecovery_media.py --source-root {str(source_root)!r}\n"
+        "```\n\nRefresh manifests using existing exports with `--manifests-only`.\n"
+    ))
     print(json.dumps(summary, ensure_ascii=False), flush=True)
 
 

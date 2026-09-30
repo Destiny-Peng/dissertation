@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "rollout_id": "realrobot-failrecovery-20260929_234804_usb_0929_mixedfail_0050-8f6012a8d3",
+  "updated_at": "2026-09-30T08:40:13.490607+00:00",
+  "created_at": "2026-09-30T08:40:13.490607+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "failure",
+  "failure_type": "timeout_no_progress",
+  "confidence": 5,
+  "failure_events": [
+    {
+      "failure_type": "timeout_no_progress",
+      "causal_onset_frame": 321,
+      "observable_onset_frame": 373,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    },
+    {
+      "failure_type": "dropped_object",
+      "causal_onset_frame": 548,
+      "observable_onset_frame": 577,
+      "terminal_failure_frame": null,
+      "recovery_frame": null,
+      "notes": ""
+    }
+  ],
+  "causal_onset_frame": 321,
+  "observable_onset_frame": 373,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}
