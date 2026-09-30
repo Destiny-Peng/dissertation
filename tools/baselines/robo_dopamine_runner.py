@@ -46,8 +46,10 @@ def resolve_goal_image(
     args: argparse.Namespace,
     config: dict[str, Any],
 ) -> Path:
-    """Resolve one Robo-Dopamine goal image with per-task LIBERO-10 defaults."""
-    explicit = record.get("goal_image")
+    """Resolve one Robo-Dopamine goal image with manifest paths taking priority."""
+    explicit = record.get("goal_image_path")
+    if explicit in (None, ""):
+        explicit = record.get("goal_image")
     if explicit in (None, ""):
         explicit = args.goal_image
     if explicit not in (None, ""):
