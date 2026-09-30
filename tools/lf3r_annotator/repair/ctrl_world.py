@@ -146,6 +146,11 @@ class CtrlWorldAdapter(WorldModelAdapter):
             / "ctrl_world"
             / "Ctrl-World"
             / "checkpoint-10000.pt",
+            self.project_root
+            / "checkpoints"
+            / "ctrl-world"
+            / "Ctrl-World"
+            / "checkpoint-10000.pt",
             self.project_root / "checkpoints" / "Ctrl-World" / "checkpoint-10000.pt",
             self.project_root / "checkpoints" / "ctrl-world" / "checkpoint-10000.pt",
             self.project_root / "repos" / "Ctrl-World" / "checkpoint-10000.pt",
@@ -607,7 +612,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             }
 
         metadata = {
-            "path": str(path.relative_to(self.project_root)),
+            "artifact_path": str(path.relative_to(self.project_root)),
             "source_fps": source_fps,
             "requested_target_fps": status["target_fps"],
             "source_frame_step": frame_step,
@@ -633,8 +638,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        return {"path": path, **metadata}
-
+        return {"path": path.resolve(), **metadata}
 
     def generate(
         self,
@@ -660,7 +664,15 @@ class CtrlWorldAdapter(WorldModelAdapter):
         svd_path = project_path(self.project_root, status["svd_model_path"])
         clip_path = project_path(self.project_root, status["clip_model_path"])
         data_stat_path = project_path(self.project_root, status["data_stat_path"])
-        images = condition["images"]
+        controls_path = Path(controls["path"]).expanduser()
+        if not controls_path.is_absolute():
+            controls_path = self.project_root / controls_path
+        controls_path = controls_path.resolve()
+        images = {
+            key: Path(value).expanduser().resolve()
+            for key, value in condition["images"].items()
+        }
+        output_dir = output_dir.resolve()
 
         command = [
             str(python),
@@ -676,7 +688,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "--data-stat-path",
             str(data_stat_path),
             "--controls",
-            str(controls["path"]),
+            str(controls_path),
             "--exterior-1",
             str(images["exterior_1"]),
             "--exterior-2",
