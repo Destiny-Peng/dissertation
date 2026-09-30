@@ -306,17 +306,20 @@ class BaselineJobsMixin:
             "--continue-on-error",
         ]
         if rollout_ids is not None:
-            # Explicit rollout IDs define the authoritative pre-range selection.
-            # This is used both for instruction variants and for the
-            # missing-valid-result batch filter, so positional worker ranges
-            # remain relative to the filtered rollout list.
+            # Explicit IDs preserve custom task-suite scopes and define the
+            # authoritative pre-range selection for variants and result
+            # filtering, so positional ranges apply to the selected records.
             command.extend(["--partition", "all"])
             for rollout_id in rollout_ids:
                 command.extend(["--rollout-id", str(rollout_id)])
         elif scope in {"all", "controlled_analysis"}:
             command.extend(["--partition", scope])
-        else:
+        elif scope in {"libero_10", "libero_spatial"}:
             command.extend(["--partition", "natural_observation", "--task-suite", scope])
+        else:
+            raise ValidationError(
+                "Manifest-defined task-suite scopes require explicit rollout IDs"
+            )
         if end_index is not None:
             command.extend(["--start-index", str(start_index), "--end-index", str(end_index)])
         else:
@@ -666,6 +669,12 @@ class BaselineJobsMixin:
                     if (
                         instruction_condition != "full_instruction"
                         or result_filter == "missing_valid"
+                        or scope not in {
+                            "all",
+                            "controlled_analysis",
+                            "libero_10",
+                            "libero_spatial",
+                        }
                     )
                     else None
                 ),

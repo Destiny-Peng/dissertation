@@ -517,3 +517,109 @@ The dataset sidecar and manifest describe only those physical facts:
 
 Robo-Dopamine's adapter owns the consumer-specific three-slot mapping: `cam_high_path <- cam_high`, while both `cam_left_path` and `cam_right_path` receive `cam_wrist`. When no supported multiview set is present, single-view mode repeats the preferred physical camera for all three Robo-Dopamine inputs. The Review player shows only cameras declared by the manifest and defaults to the first preferred available camera; a specific camera can be served with `/api/videos/<rollout-id>?camera=<camera-key>`.
 
+
+
+## Repair: Synthetic Suffix
+
+The top-level `#/repair` workspace owns LF3R's world-model completion stage. It is intentionally separate from Analysis and Failure Localization. Phase 1 implements only the success-cut benchmark:
+
+```text
+successful rollout
+  -> fixed progress/frame cut
+  -> real prefix + RGB[c] condition
+  -> branch from states[c+1]
+  -> GT continuation information
+  -> selected world-model adapter (A2World or Ctrl-World)
+  -> generated observation suffix
+  -> synchronized real-vs-generated review
+```
+
+Repair uses the loaded rollout manifests as its only dataset catalog. It never adds consumer-specific camera aliases to a manifest. A2World maps physical `cam_high` / `cam_wrist` to `agentview` / `eye_in_hand` inside the adapter. Ctrl-World keeps the same two physical manifest views but maps them internally to `exterior_1 <- cam_high`, `exterior_2 <- cam_high`, and `wrist <- cam_wrist`; the second exterior stream is therefore an explicit adapter-local duplicate and is recorded in run provenance.
+
+For a rollout to pass Repair validation, the manifest must describe real success data and point to both executable actions and simulator states. Supported trajectory/action fields include `trajectory_path`, `hdf5_path`, `source_hdf5_path`, `state_action_path`, `states_path`, `sim_state_path`, `actions_path`, and the existing `csv_path`. Official LIBERO HDF5 may be selected with `trajectory_group` / `demo_key` when automatic `data/demo_<episode>` lookup is not appropriate.
+
+Phase 1 is intended to use the official LIBERO success demonstrations rather than treating the existing OpenVLA rollout manifest as if it contained simulator states. After the official dataset is mounted under the project (the default is `data/libero_official/libero_10/`), index it with the project-local OpenVLA environment:
+
+```bash
+conda_envs/LF3R-openvla/bin/python \
+  tools/lf3r_annotator/repair/prepare_libero_manifest.py \
+  --input-root data/libero_official \
+  --task-suite libero_10 \
+  --resume
+```
+
+The importer reads the official HDF5 `states`, `actions`, `obs/agentview_rgb`, `obs/eye_in_hand_rgb`, and per-demo `model_file` in place. It does not rewrite the trajectory. It materializes only the two physical RGB streams under `datasets/libero_official_success/v1/`, records their real keys as `cam_high` and `cam_wrist`, and writes `datasets/lf3r_failure_rollouts/v1/libero_official_success_manifest.jsonl`. That filename is part of the WebUI's normal default manifest discovery on the next server start. Existing extracted videos are never silently overwritten; `--resume` reuses them only when the source sidecar still exactly matches the HDF5 demo.
+
+The alignment smoke test is mandatory. It runs in the project-local `conda_envs/LF3R-openvla` runtime and verifies:
+
+```text
+restore states[c+1] -> render ~= RGB[c]
+step actions[c+1]   -> render ~= RGB[c+1]
+```
+
+The test records the finite RGB storage-orientation transform used for the comparison instead of changing manifest videos. The A2World adapter then derives the manifest-to-training transform from that result: the released LIBERO converter's horizontal-flip convention is applied only inside the adapter, and generated frames are transformed back into the manifest convention before comparison/export. A run is not submitted when the smoke test fails.
+
+A2World is not downloaded by the WebUI. The default adapter expects project-local assets:
+
+```text
+repos/A2World/world_model/
+conda_envs/LF3R-a2world/bin/python
+checkpoints/a2world-libero.pt
+checkpoints/                  # NVIDIA base assets, or an explicit base_checkpoints path
+```
+
+These locations may be overridden by Repair config / `LF3R_A2WORLD_SOURCE` / `LF3R_A2WORLD_PYTHON`, but paths remain confined to `PROJECT_ROOT`. GPU selection requires utilization below 50% both during validation/submission and immediately before A2World generation.
+
+A2World consumes 20-action chunks. LF3R applies the released LIBERO servo preprocessing, pads only the final incomplete chunk when necessary, generates autoregressively, removes the condition frame, and trims every padded output frame before publishing the suffix. The padding count is shown during validation and recorded in provenance.
+
+### Ctrl-World adapter
+
+Ctrl-World is a separate Repair adapter; it does not reuse A2World's action preprocessing. The released Ctrl-World replay path is DROID-based and conditions on a seven-dimensional absolute Cartesian pose/gripper sequence. LF3R does **not** read future recorded LIBERO proprio to obtain that sequence. Starting from the same verified branch state, it instead derives the interface from the experiment's GT future actions:
+
+```text
+restore states[c+1]
++ replay actions[c+1:] in LIBERO
++ resulting robot0_eef_pos
++ resulting robot0_eef_quat -> axis-angle -> Euler XYZ
++ resulting Panda finger qpos -> DROID-style 0=open, 1=closed
+= Ctrl-World 7D pose/state conditioning
+```
+
+Thus A2World receives the released LIBERO action representation directly, while Ctrl-World receives a model-specific Cartesian representation deterministically derived from the **same GT action continuation**. Run provenance records the transformation and `future_recorded_proprio_used=false`; the two models still have different conditioning interfaces and should not be described as identical action-conditioning models.
+
+The released Ctrl-World setup uses three camera streams and 192x320 frames. LF3R does not add a fake third camera to the manifest: `cam_high` is duplicated only inside the Ctrl adapter for `exterior_2`. Source LIBERO RGB is resized to Ctrl-World's native 192x320 geometry and that resize is recorded. Visual PSNR/SSIM/LPIPS therefore remain diagnostics; when source/generated resolutions differ, generated frames are resized back to the real frame size only for metric computation.
+
+Ctrl-World's DROID preprocessing is approximately 5 Hz while the SVD pipeline keeps its released FPS micro-condition of 7. LF3R samples the source trajectory at the nearest integer source-frame step for a requested target of 5 Hz (for a 20 Hz LIBERO source this is `c, c+4, c+8, ...`). The condition-aligned sample at `c` is removed from the published suffix, so the first Ctrl generated frame is compared with real frame `c+4`, not `c+1`. Explicit source-frame indices and effective FPS are saved in provenance and drive synchronized playback.
+
+Repair never downloads Ctrl-World assets. The adapter auto-detects common project-local layouts and every path is editable in the WebUI. The following environment overrides are also supported:
+
+```text
+LF3R_CTRL_WORLD_SOURCE
+LF3R_CTRL_WORLD_PYTHON
+LF3R_ENV_CTRL_WORLD
+LF3R_CTRL_WORLD_SVD
+LF3R_CTRL_WORLD_CLIP
+LF3R_CTRL_WORLD_DATA_STAT
+```
+
+Typical project-local layouts include `repos/Ctrl-World/`, a Ctrl environment under `conda_envs/` or `repos/Ctrl-World/.venv/`, the DROID `dataset_meta_info/droid/stat.json` shipped with the Ctrl source, and locally installed Ctrl/SVD/CLIP checkpoints. Validation reports the resolved paths and refuses generation if any required asset is missing. The same <50% GPU-utilization rule is checked again immediately before Ctrl generation.
+
+Run artifacts live under:
+
+```text
+artifacts/repair/synthetic_suffix/runs/<run_id>/
+  config.json
+  status.json
+  input.json
+  alignment.json
+  prepared/
+  generated/
+    a2world_combined.mp4                 # A2World runs
+    ctrl_world_exterior_2_duplicate.mp4 # Ctrl debug/provenance view
+    cam_high.mp4
+    cam_wrist.mp4
+  metrics.json
+  provenance.json
+```
+
+`metrics.json` stores PSNR/SSIM when their local dependencies are available. LPIPS is disabled by default to prevent an implicit trunk-weight download; it is only attempted when `LF3R_ENABLE_LPIPS=1` is set after the required weights are installed. Human review records `yes/no/uncertain` training usability and task-aware failure reasons. Dataset building and policy training are deliberately outside Phase 1.

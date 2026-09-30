@@ -153,6 +153,47 @@ class BuildManifestCameraVideoTests(unittest.TestCase):
 
             self.assertEqual(output.read_text(encoding="utf-8"), "keep-existing\n")
 
+    def test_rebuild_preserves_curated_external_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            scan_root = root / "outputs"
+            suite_dir = scan_root / "lf3r-data-natural-test" / "libero_10"
+            suite_dir.mkdir(parents=True)
+            rollout = suite_dir / "task0--ep0--succ1.mp4"
+            rollout.write_bytes(b"single")
+            output = root / "manifest.jsonl"
+            external = {
+                "id": "droid-curated-episode",
+                "source_kind": "external_dataset",
+                "task_suite": "droid",
+                "dataset_role": "droid_failure_subset",
+                "ground_truth_outcome": "failure",
+                "task_id": 0,
+                "episode_index": None,
+            }
+            output.write_text(json.dumps(external) + "\n", encoding="utf-8")
+            args = mock.Mock(
+                project_root=root,
+                scan_root=[scan_root],
+                task_metadata=root / "missing-task-metadata.json",
+                output=output,
+                refresh_instruction_variants=False,
+            )
+
+            with (
+                mock.patch.object(build_manifest, "parse_args", return_value=args),
+                mock.patch.object(build_manifest, "probe_video", return_value=(42, 30.0, 1.4)),
+            ):
+                build_manifest.main()
+
+            records = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(sum(record["id"] == external["id"] for record in records), 1)
+            self.assertEqual(sum(record["source_kind"] == "natural_policy" for record in records), 1)
+
     def test_existing_camera_sidecar_must_declare_camera_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

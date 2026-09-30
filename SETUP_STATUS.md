@@ -2,6 +2,7 @@
 
 | Timestamp | Component | Stage | Attempt | Status | Details |
 | --- | --- | ---: | ---: | --- | --- |
+| 2026-09-29T16:55:02+0800 | Ctrl-World | conda_environment | 1 | CTRL_WORLD_CONDA_ENV_READY | Created project-local Conda prefix `conda_envs/Ctrl-World` with Python 3.11.16 and Torch 2.7.1+cu128 (CUDA 12.8); reused the existing matching package set by hardlink, verified core imports and accelerate/torchrun CLI startup, and did not run GPU inference. `pip check` reports only the decord 0.6.0 wheel tag as cp36. See `environment_reports/CTRL_WORLD_ENV_20260929.md`. |
 | 2026-08-24T15:18:17+0800 | SAFE | environment | 1 | SAFE_ENV_READY | Project-local Python 3.10 environment exists at \`conda_envs/LF3R-safe\`; OpenVLA uncertainty CSV artifacts are present. |
 | 2026-08-24T15:18:17+0800 | LIBERO | reset | 3 | LIBERO_READY | Native reset completed and RGB observation saved as \`outputs/libero_reset_rgb_20260821_165044.png\`. |
 | 2026-08-24T15:18:17+0800 | OpenVLA | model_load | 1 | OPENVLA_MODEL_LOAD_OK | Local \`openvla-7b-finetuned-libero-spatial\` checkpoint loaded in the project-local Blackwell-capable environment. |

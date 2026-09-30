@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "rollout_id": "realrobot-failrecovery-20260929_233742_usb_0929_mixedfail_0029-b85f3e7f44",
+  "updated_at": "2026-09-30T08:34:17.978498+00:00",
+  "created_at": "2026-09-30T08:34:17.978498+00:00",
+  "annotator": "Jacy",
+  "review_status": "complete",
+  "outcome_label": "success",
+  "failure_type": "none_success",
+  "confidence": 4,
+  "failure_events": [],
+  "causal_onset_frame": null,
+  "observable_onset_frame": null,
+  "terminal_failure_frame": null,
+  "recovery_frame": null,
+  "notes": ""
+}

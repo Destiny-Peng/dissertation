@@ -27,6 +27,7 @@ class LF3RApplication:
     coordinator_class = JobCoordinator
     baseline_service_class = BaselineService
     project_tool_service_class = None
+    repair_service_class = None
 
     def __init__(
         self,
@@ -81,6 +82,12 @@ class LF3RApplication:
         if self.project_tool_service_class is not None:
             self.project_tools = self.project_tool_service_class(
                 self.project_root,
+                self.tmux,
+            )
+        if self.repair_service_class is not None:
+            self.repair = self.repair_service_class(
+                self.project_root,
+                self.job_coordinator,
                 self.tmux,
             )
         self.tmux.recover()

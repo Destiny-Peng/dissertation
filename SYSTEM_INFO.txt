@@ -71,3 +71,13 @@ Swap:           59Gi       3.0Gi        56Gi
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/sda1        19T   17T  240G  99% /mnt/hdd
 Python 3.12.3
+
+=== Environment check 2026-09-29T16:48:00+0800 ===
+OS: Ubuntu 24.04.4 LTS; kernel 7.0.0-30-generic
+GPU: 3 x NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition; driver 610.57.04; CUDA UMD 13.3
+System Conda: /mnt/hdd/qiuxia/miniconda3/bin/conda, version 26.5.3, base /mnt/hdd/qiuxia/miniconda3
+LF3R Conda: tools/miniforge3/bin/conda, version 26.3.2, base is project-local
+LF3R Ctrl-World environment: conda_envs/Ctrl-World; Python 3.11.16; PyTorch 2.7.1+cu128 (CUDA 12.8)
+LF3R package caches: cache/conda/pkgs and cache/uv
+Storage at check: /mnt/hdd filesystem, 2.6 TB available
+GPU inference was not run; the GPUs were occupied by other processes.

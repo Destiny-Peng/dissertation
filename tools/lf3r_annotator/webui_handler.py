@@ -36,6 +36,123 @@ class WebUIHandler(server.LF3RHandler):
         query = parse_qs(parsed.query, keep_blank_values=True)
 
         try:
+            if path.startswith("/api/tactile/"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4 and parts[0:2] == ["api", "tactile"]:
+                    rollout_id = parts[2]
+                    try:
+                        if parts[3] == "frame":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            frame = int(query.get("frame", ["0"])[0])
+                            self.json_response(
+                                HTTPStatus.OK,
+                                {"tactile": self.app.tactile.frame(rollout_id, camera, frame)},
+                            )
+                            return
+                        if parts[3] == "series":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            self.json_response(
+                                HTTPStatus.OK,
+                                {"tactile": self.app.tactile.series(rollout_id, camera)},
+                            )
+                            return
+                        if parts[3] == "sprite":
+                            camera = str(query.get("camera", ["cam_high"])[0] or "cam_high")
+                            frame = int(query.get("frame", ["0"])[0])
+                            kind = str(query.get("kind", ["deform"])[0] or "deform")
+                            body = self.app.tactile.sprite(
+                                rollout_id, camera, frame, kind
+                            )
+                            self.send_response(HTTPStatus.OK)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Content-Length", str(len(body)))
+                            self.send_header("Cache-Control", "private, max-age=3600")
+                            self.send_header("Connection", "close")
+                            if self._safe_end_headers():
+                                self._safe_write(body)
+                            return
+                        if parts[3] == "image":
+                            finger = str(query.get("finger", [""])[0] or "")
+                            event_id = str(query.get("event_id", [""])[0] or "")
+                            kind = str(query.get("kind", ["deform"])[0] or "deform")
+                            body = self.app.tactile.image(
+                                rollout_id, finger, event_id, kind
+                            )
+                            self.send_response(HTTPStatus.OK)
+                            self.send_header("Content-Type", "image/png")
+                            self.send_header("Content-Length", str(len(body)))
+                            self.send_header("Cache-Control", "private, max-age=3600")
+                            self.send_header("Connection", "close")
+                            if self._safe_end_headers():
+                                self._safe_write(body)
+                            return
+                    except KeyError as exc:
+                        self.json_error(HTTPStatus.NOT_FOUND, str(exc.args[0]))
+                        return
+                self.json_error(HTTPStatus.NOT_FOUND, "Tactile resource not found")
+                return
+
+            if path == "/api/repair/synthetic-suffix/rollouts":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"rollouts": self.app.repair.catalog(self.app.load_rollouts())},
+                )
+                return
+
+            if path == "/api/repair/synthetic-suffix/runs":
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"runs": self.app.repair.list_runs()},
+                )
+                return
+
+            if path.startswith("/api/repair/synthetic-suffix/artifact/"):
+                relative = path[len("/api/repair/synthetic-suffix/artifact/"):]
+                parts = relative.split("/", 1)
+                if len(parts) != 2:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Repair artifact not found")
+                    return
+                artifact = self.app.repair.artifact(parts[0], parts[1])
+                if artifact.suffix.lower() == ".mp4":
+                    self.serve_video(artifact)
+                else:
+                    self.file_response(artifact)
+                return
+
+            if path.startswith("/api/repair/synthetic-suffix/run/"):
+                run_id = path[len("/api/repair/synthetic-suffix/run/"):].strip("/")
+                if "/" in run_id or not run_id:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Repair run not found")
+                    return
+                self.json_response(
+                    HTTPStatus.OK,
+                    {"run": self.app.repair.detail(run_id)},
+                )
+                return
+
+            if path.startswith("/api/repair/synthetic-suffix/jobs/"):
+                parts = path.strip("/").split("/")
+                try:
+                    if len(parts) == 6 and parts[5] == "log":
+                        job_id = parts[4]
+                        tail = query.get("tail", ["240"])[0]
+                        self.json_response(
+                            HTTPStatus.OK,
+                            {"log": self.app.repair.log(job_id, tail)},
+                        )
+                        return
+                    if len(parts) == 5:
+                        self.json_response(
+                            HTTPStatus.OK,
+                            {"job": self.app.repair.job(parts[4])},
+                        )
+                        return
+                except KeyError:
+                    self.json_error(HTTPStatus.NOT_FOUND, "Unknown Repair job")
+                    return
+                self.json_error(HTTPStatus.NOT_FOUND, "Repair job not found")
+                return
+
             if path == "/api/gpu-status":
                 self.json_response(
                     HTTPStatus.OK,
@@ -150,6 +267,9 @@ class WebUIHandler(server.LF3RHandler):
         except (TypeError, ValueError) as exc:
             self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
             return
+        except FileNotFoundError:
+            self.json_error(HTTPStatus.NOT_FOUND, "Resource not found")
+            return
         except OSError as exc:
             self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
             return
@@ -158,6 +278,53 @@ class WebUIHandler(server.LF3RHandler):
 
     def do_POST(self) -> None:
         path = unquote(urlparse(self.path).path)
+
+        if path in {
+            "/api/repair/synthetic-suffix/validate",
+            "/api/repair/synthetic-suffix/run",
+        }:
+            try:
+                payload = self._read_json_body(maximum=300_000)
+                if path.endswith("/validate"):
+                    plan = self.app.repair.validate_with_alignment(
+                        payload,
+                        self.app.rollout_map(),
+                    )
+                    self.json_response(HTTPStatus.OK, {"validation": plan})
+                else:
+                    job = self.app.repair.start(
+                        payload,
+                        self.app.rollout_map(),
+                    )
+                    self.json_response(HTTPStatus.ACCEPTED, {"job": job})
+            except server.TmuxSupervisorError as exc:
+                self.json_error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+            except server.ValidationError as exc:
+                self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            except OSError as exc:
+                self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+            return
+
+        if path.startswith("/api/repair/synthetic-suffix/run/") and path.endswith("/review"):
+            try:
+                prefix = "/api/repair/synthetic-suffix/run/"
+                run_id = path[len(prefix):-len("/review")].strip("/")
+                if "/" in run_id or not run_id:
+                    raise server.ValidationError("Invalid Repair run id")
+                payload = self._read_json_body(maximum=100_000)
+                evaluation = self.app.repair.save_human_evaluation(run_id, payload)
+                self.json_response(HTTPStatus.OK, {"human_evaluation": evaluation})
+            except FileNotFoundError:
+                self.json_error(HTTPStatus.NOT_FOUND, "Repair run not found")
+            except server.ValidationError as exc:
+                self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                self.json_error(HTTPStatus.BAD_REQUEST, str(exc))
+            except OSError as exc:
+                self.json_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+            return
 
         if path == "/api/tools/run":
             try:
