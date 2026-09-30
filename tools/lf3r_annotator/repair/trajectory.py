@@ -140,7 +140,6 @@ def load_states(project_root: Path, rollout: dict[str, Any]) -> Any:
     raise ValidationError(f"Unsupported simulator-state source: {source.suffix}")
 
 
-
 def _ctrl_world_pose_from_observation(obs: dict[str, Any]) -> Any:
     """Convert one LIBERO observation to Ctrl-World's DROID-style 7D pose."""
 
@@ -248,9 +247,6 @@ def replay_ctrl_world_pose_controls(
     try:
         env.seed(0)
         env.reset()
-        if model_xml:
-            env.reset_from_xml_string(model_xml)
-            env.sim.reset()
         obs = env.set_init_state(states[branch])
         controls.append(_ctrl_world_pose_from_observation(obs))
         source_indices.append(int(cut_frame))
@@ -280,7 +276,6 @@ def replay_ctrl_world_pose_controls(
         ),
         "future_recorded_proprio_used": False,
     }
-
 
 
 def _video_frame(path: Path, index: int) -> Any:
@@ -422,9 +417,6 @@ def run_libero_alignment_smoke(
     try:
         env.seed(0)
         env.reset()
-        if model_xml:
-            env.reset_from_xml_string(model_xml)
-            env.sim.reset()
         obs0 = env.set_init_state(states[branch])
         try:
             ctrl_pose = _ctrl_world_pose_from_observation(obs0)
@@ -476,7 +468,7 @@ def run_libero_alignment_smoke(
         "cut_rgb_frame": int(cut_frame),
         "branch_state_index": branch,
         "future_action_start": action_index,
-        "model_xml_used": bool(model_xml),
+        "model_xml_used": False,
         "ctrl_world_pose": ctrl_pose_status,
         "comparisons": comparisons,
     }
