@@ -470,6 +470,10 @@ class CtrlWorldAdapter(WorldModelAdapter):
             ) from error
 
         status = self._validation or self.validate_rollout(rollout)
+        output_dir = output_dir.expanduser()
+        if not output_dir.is_absolute():
+            output_dir = self.project_root / output_dir
+        output_dir = output_dir.resolve()
         mapping = status["camera_mapping"]
         camera_paths = rollout["camera_video_paths"]
         condition_dir = output_dir / "ctrl_world_condition"
@@ -505,7 +509,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             "camera_mapping": mapping,
             "duplicated_camera": status["duplicated_camera"],
             "condition_images": {
-                key: str(path.relative_to(self.project_root))
+                key: self._relative_or_absolute(self.project_root, path)
                 for key, path in images.items()
             },
             "width": self.WIDTH,
@@ -541,6 +545,11 @@ class CtrlWorldAdapter(WorldModelAdapter):
             ) from error
 
         status = self._validation or self.validate_rollout(rollout)
+        output_dir = output_dir.expanduser()
+        if not output_dir.is_absolute():
+            output_dir = self.project_root / output_dir
+        output_dir = output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
         source_fps = float(rollout.get("fps") or 0.0)
         frame_step = int(status.get("source_frame_step") or 0)
         if source_fps <= 0 or frame_step < 1:
@@ -573,7 +582,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
                 "Ctrl-World replay source indices do not match the configured frame step"
             )
 
-        path = output_dir / "ctrl_world_controls.npz"
+        path = (output_dir / "ctrl_world_controls.npz").resolve()
         np.savez_compressed(
             path,
             controls=controls,
@@ -612,7 +621,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             }
 
         metadata = {
-            "artifact_path": str(path.relative_to(self.project_root)),
+            "artifact_path": self._relative_or_absolute(self.project_root, path),
             "source_fps": source_fps,
             "requested_target_fps": status["target_fps"],
             "source_frame_step": frame_step,
@@ -638,7 +647,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        return {"path": path.resolve(), **metadata}
+        return {"path": path, **metadata}
 
     def generate(
         self,
