@@ -228,11 +228,25 @@
         </div>
 
         <aside class="runs-activity repair-activity" aria-label="Repair job activity">
-          <div class="runs-activity-heading">
-            <div><p class="eyebrow">ACTIVITY</p><h3>Repair job</h3></div>
+          <div class="runs-activity-heading repair-activity-heading">
+            <div><p class="eyebrow">ACTIVITY</p><h3>Repair jobs</h3></div>
+            <div class="runs-job-filter repair-job-filter">
+              <label for="repairJobFilter"><span>Show</span>
+                <select id="repairJobFilter">
+                  <option value="active">Active</option>
+                  <option value="all">All</option>
+                  <option value="running">Running</option>
+                  <option value="queued">Queued</option>
+                  <option value="complete">Complete</option>
+                  <option value="problem">Failed / cancelled</option>
+                </select>
+              </label>
+              <span id="repairJobFilterCount" class="runs-job-filter-count">0 / 0</span>
+            </div>
           </div>
           <div id="repairJobStatus" class="runs-activity-status" role="status">No active Repair job.</div>
-          <pre id="repairJobLog" class="job-log repair-log" aria-label="Repair job log"></pre>
+          <div id="repairJobList" class="persistent-job-list runs-filtered-job-list"></div>
+          <pre id="repairJobLog" class="job-log repair-log" aria-label="Repair job log" hidden></pre>
         </aside>
       </div>
     </div>
