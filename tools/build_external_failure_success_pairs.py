@@ -307,6 +307,16 @@ def write_jsonl(path, rows):
     temp.replace(path)
 
 
+def manifest_pair(record):
+    """Keep failure inputs and the goal path; store success provenance separately."""
+    fields = ('pair_id', 'dataset', 'task', 'task_original', 'failure_episode',
+              'failure_video', 'camera_view', 'failure_video_info',
+              'failure_label_kind', 'terminal_failure_verified', 'evaluation_scope')
+    result = {key: record[key] for key in fields if key in record}
+    result['goal_image_path'] = record['goal_image']
+    return result
+
+
 def finalize(dataset):
     """Export only explicitly reviewed candidates, with truthful label scope."""
     import cv2
@@ -336,7 +346,8 @@ def finalize(dataset):
         retained.append(r)
     if not 10<=len(retained)<=20:raise RuntimeError(f'{dataset}: expected 10–20 reviewed pairs, got {len(retained)}')
     if len({r['failure_episode'] for r in retained})!=len(retained):raise RuntimeError('Duplicate failure')
-    write_jsonl(OUT/dataset/'pairing_manifest.jsonl',retained)
+    write(OUT/dataset/'pairing_provenance.json',retained)
+    write_jsonl(OUT/dataset/'pairing_manifest.jsonl',[manifest_pair(r) for r in retained])
     write(OUT/dataset/'excluded_candidates.json',excluded)
     model_records=[]
     camera={'droid':'ext1','robovad':'left','reboot':'cam_high'}[dataset]
@@ -350,24 +361,23 @@ def finalize(dataset):
             dataset_role=dataset+'_matched_failure_success',analysis_partition='real_robot_analysis',
             source_kind='external_dataset',source_episode_id=r['failure_episode'],episode_index=r['failure_source_record'].get('episode_index'),
             video_path=r['failure_video'],failure_video=r['failure_video'],camera_video_paths={camera:r['failure_video']},
-            camera_view=r['camera_view'],goal_image=r['goal_image'],goal_frame_index=r['goal_frame_index'],
-            success_episode=r['success_episode'],success_video=r['success_video'],
-            pairing_manifest_path=relative(OUT/dataset/'pairing_manifest.jsonl'),
+            camera_view=r['camera_view'],goal_image_path=r['goal_image'],
             fps=info['fps'],duration_seconds=info['duration'],total_frames=info['frames'],csv_path=None,
             ground_truth_outcome='failure' if dataset=='droid' else 'unknown',contains_failure=True,
             failure_label_kind=r['failure_label_kind'],terminal_failure_verified=r['terminal_failure_verified'],
             evaluation_scope=r['evaluation_scope'],source=r['failure_source_record'].get('source',{})))
     write_jsonl(OUT/dataset/'robodopamine_manifest.jsonl',model_records)
-    completed=[];combined=[]
+    completed=[];combined=[];provenance=[]
     for ds in ('droid','robovad','reboot'):
         pp=OUT/ds/'pairing_manifest.jsonl';mp=OUT/ds/'robodopamine_manifest.jsonl'
         if pp.exists() and mp.exists():
             completed.extend(json.loads(line) for line in pp.read_text().splitlines())
+            provenance.extend(read(OUT/ds/'pairing_provenance.json'))
             combined.extend(json.loads(line) for line in mp.read_text().splitlines())
     write_jsonl(OUT/'pairing_manifest.jsonl',completed)
     write_jsonl(OUT/'robodopamine_manifest.jsonl',combined)
     summary=dict(generated_at=datetime.now(timezone.utc).isoformat(),counts=dict(Counter(r['dataset'] for r in completed)),
-        total_pairs=len(completed),unique_success_rollouts=len({(r['dataset'],r['success_episode']) for r in completed}),
+        total_pairs=len(completed),unique_success_rollouts=len({(r['dataset'],r['success_episode']) for r in provenance}),
         terminal_failure_label_policy='DROID: official success=false; RoboVAD: anomalous intervals; REBOOT: recovery-from-failure. Only DROID is asserted terminal failure.',
         goal_policy='unresized lossless PNG of last decoded frame of complete successful episode',
         completed_datasets=sorted({r['dataset'] for r in completed}))
