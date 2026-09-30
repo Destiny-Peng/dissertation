@@ -530,13 +530,30 @@ def main() -> None:
         ))
     if len({r["id"] for r in records}) != len(records):
         raise ValueError("Duplicate rollout IDs")
-    confirmed = [r for r in records if r["ground_truth_outcome"] == "success"]
-    reviewed_success = [r for r in confirmed if r["outcome_source"] == "review.json"]
-    goal_record = (reviewed_success or confirmed or records)[0]
-    goal = save_goal_image(goal_record, output_root / "goal_image.png")
+    goals = {}
+    missing_goal_tasks = []
+    goal_root = output_root / "goal_images"
+    goal_root.mkdir(parents=True, exist_ok=True)
+    for task, (task_id, task_key) in task_catalog.items():
+        task_records = [r for r in records if r["task_id"] == task_id]
+        successes = [r for r in task_records if r["ground_truth_outcome"] == "success"]
+        reviewed = [r for r in successes if r["outcome_source"] == "review.json"]
+        candidates = reviewed or successes
+        selection_reason = "success_rollout"
+        if not candidates and task_key == "tube":
+            # The dataset owner permits any tube rollout as the goal source.
+            candidates = [r for r in task_records if r["ground_truth_outcome"] == "unknown"]
+            candidates = [r for r in candidates if not r["quality_flags"]] or candidates
+            selection_reason = "user_allowed_unknown_tube_rollout"
+        if not candidates:
+            missing_goal_tasks.append(task_key)
+            continue
+        goal_record = candidates[0]
+        goals[task_key] = save_goal_image(goal_record, goal_root / f"{task_key}.png")
+        goals[task_key]["selection_reason"] = selection_reason
     for record in records:
-        if record["task_id"] == goal_record["task_id"]:
-            record["goal_image_path"] = goal["path"]
+        if record["task_key"] in goals:
+            record["goal_image_path"] = goals[record["task_key"]]["path"]
     atomic_text(manifest_path, "".join(json_line(record) for record in records))
     task_manifests = {}
     task_manifest_root = output_root / "task_manifests"
@@ -577,7 +594,8 @@ def main() -> None:
         "tactile_samples": sum(
             sum(r["tactile_counts"].values()) for r in records
         ),
-        "goal_image": goal,
+        "goal_images": goals,
+        "missing_goal_tasks": missing_goal_tasks,
     }
     atomic_text(
         manifest_path.with_name(manifest_path.stem + ".summary.json"),
@@ -602,10 +620,12 @@ def main() -> None:
         "no outcome token or conflicting tokens remain unknown. outcome_source "
         "records review.json or filename; filename hints are stored separately. Discard reviews "
         "are excluded. Short recordings are retained with quality_flags.\n\n"
-        "There is one goal_image.png, extracted from the last cam_high frame of "
-        f"`{goal_record['id']}` (task {goal_record['task_id']}, "
-        f"outcome {goal_record['ground_truth_outcome']}). Only matching-task records "
-        "declare goal_image_path. Source details and per-task manifests are listed "
+        "Each task with a success rollout has goal_images/<task_key>.png, extracted "
+        "from its last cam_high frame. Reviewed successes take priority over filename "
+        "labels. For tube only, the dataset owner permits an unknown-outcome rollout "
+        "when no success is available; its outcome remains unknown. Other tasks "
+        "without a success rollout have no goal image. Matching-task "
+        "records declare goal_image_path. Source details and per-task manifests are listed "
         "in the aggregate summary JSON.\n\n"
         "Regenerate with:\n\n```bash\n"
         f"python3 tools/export_failrecovery_media.py --source-root {str(source_root)!r}\n"
