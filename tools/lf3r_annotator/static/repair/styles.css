@@ -1,11 +1,17 @@
 /* Repair / Synthetic Suffix */
-.repair-page-container { max-width: 1540px; }
-.repair-subtabs { display:flex; gap:8px; margin:16px 0 20px; flex-wrap:wrap; }
-.repair-subtabs a, .repair-subtabs span { padding:9px 14px; border:1px solid var(--line); border-radius:999px; color:var(--muted); text-decoration:none; }
-.repair-subtabs .active { color:var(--text); border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
-.repair-subtabs .disabled { opacity:.45; cursor:not-allowed; }
-.repair-layout { display:grid; grid-template-columns:minmax(0, .86fr) minmax(520px, 1.14fr); gap:18px; align-items:start; }
-.repair-stack { display:grid; gap:18px; }
+.repair-page-container { max-width:1540px; }
+.repair-shell-header { margin-bottom:14px; }
+.repair-header-actions { display:flex; align-items:flex-start; gap:8px; }
+.repair-mode-switch { margin:0 0 14px; }
+.repair-gpu-mount { margin-bottom:14px; }
+.repair-gpu-mount:empty { display:none; }
+.repair-page-status { margin:0 0 14px; }
+.repair-console { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,360px); gap:18px; align-items:start; }
+.repair-tab-stack { min-width:0; }
+.repair-tab-panel { min-width:0; }
+.repair-activity { position:sticky; top:14px; min-width:0; }
+.repair-activity .job-log { min-height:120px; max-height:440px; overflow:auto; }
+.repair-activity .runs-activity-status { white-space:normal; overflow-wrap:anywhere; }
 .repair-card { padding:18px; }
 .repair-card h3 { margin:0; }
 .repair-step-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:14px; }
@@ -26,6 +32,7 @@
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+.repair-config-section { margin-top:10px; }
 .repair-config-span-2 { grid-column:1 / -1; min-width:0; }
 .repair-field-help { color:var(--muted); font-size:.72rem; line-height:1.35; }
 .repair-kv strong { min-width:0; overflow-wrap:anywhere; }
@@ -43,10 +50,11 @@
 .repair-cut-prefix { background:color-mix(in srgb, var(--accent) 48%, var(--surface-raised)); }
 .repair-cut-suffix { background:repeating-linear-gradient(135deg,var(--surface-raised),var(--surface-raised) 6px,color-mix(in srgb,var(--accent) 12%,var(--surface-raised)) 6px,color-mix(in srgb,var(--accent) 12%,var(--surface-raised)) 12px); }
 .repair-cut-labels { display:flex; justify-content:space-between; margin-top:5px; color:var(--muted); font-size:.75rem; }
-.repair-validation { margin-top:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; white-space:pre-wrap; }
+.repair-validation { margin-top:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .repair-actions { display:flex; gap:9px; justify-content:flex-end; margin-top:14px; flex-wrap:wrap; }
 .repair-run-picker { display:flex; gap:9px; align-items:end; margin-bottom:12px; }
 .repair-run-picker label { flex:1; display:grid; gap:6px; }
+.repair-compare-panel { overflow:hidden; }
 .repair-compare-grid { display:grid; grid-template-columns:120px minmax(0,1fr) minmax(0,1fr); gap:8px; align-items:center; }
 .repair-compare-grid .repair-col-head { color:var(--muted); font-size:.76rem; text-transform:uppercase; letter-spacing:.08em; }
 .repair-view-label { color:var(--muted); font-weight:600; }
@@ -65,12 +73,19 @@
 .repair-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
 .repair-review { margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }
 .repair-review-options, .repair-reasons { display:flex; flex-wrap:wrap; gap:8px 14px; margin:8px 0 10px; }
-.repair-log { max-height:180px; overflow:auto; margin-top:10px; }
-@media (max-width:1050px) {
-  .repair-layout { grid-template-columns:1fr; }
+.repair-log { overflow:auto; }
+
+@media (max-width:1180px) {
+  .repair-console { grid-template-columns:1fr; }
+  .repair-activity { position:static; }
+  .repair-activity .job-log { max-height:280px; }
 }
 @media (max-width:720px) {
   .repair-filter-grid,.repair-config-grid,.repair-rollout-summary,.repair-metrics { grid-template-columns:1fr; }
+  .repair-config-span-2 { grid-column:auto; }
   .repair-compare-grid { grid-template-columns:1fr; }
   .repair-view-label,.repair-col-head { margin-top:8px; }
+  .repair-mode-switch { display:grid; grid-template-columns:1fr 1fr; }
+  .repair-transport { align-items:stretch; flex-wrap:wrap; }
+  .repair-transport input[type=range] { flex-basis:100%; }
 }
