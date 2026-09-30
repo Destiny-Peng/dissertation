@@ -9,7 +9,8 @@
     ["lf3rBaselineJobStyles", "/static/styles-baseline-jobs.css"],
     ["lf3rPolishStyles", "/static/styles-polish.css"],
     ["lf3rToolsStyles", "/static/styles-tools.css"],
-    ["lf3rRepairStyles", "/static/repair/styles.css"]
+    ["lf3rRepairStyles", "/static/repair/styles.css"],
+    ["lf3rRepairJobStyles", "/static/repair/jobs.css"]
   ];
 
   var guardScript = "/static/frontend-loop-guard.js";
@@ -53,6 +54,7 @@
   // These modules have top-level initialization that expects either
   // workspaceState or the complete Runs controller graph.
   var postCoreScripts = [
+    "/static/repair/jobs.js",
     "/static/repair/synthetic-suffix.js",
     "/static/analysis-outcome.js",
     "/static/analysis-robo-hop.js",
