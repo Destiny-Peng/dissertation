@@ -4,10 +4,308 @@
   var mount = document.getElementById("repairMount");
   if (!mount) return;
 
-  mount.innerHTML = "    <div class=\"page-container repair-page-container\">\n      <div class=\"page-heading\">\n        <div>\n          <p class=\"eyebrow\">LF3R REPAIR</p>\n          <h2>Synthetic Suffix</h2>\n          <p class=\"page-subtitle\">Test whether a world-model observation suffix can replace the real suffix of a successful demonstration while keeping the original ground-truth future actions.</p>\n        </div>\n        <button id=\"repairRefreshRuns\" class=\"ghost-button\" type=\"button\">Refresh</button>\n      </div>\n\n      <nav class=\"repair-subtabs\" aria-label=\"Repair sections\">\n        <a href=\"#/repair\" class=\"active\" aria-current=\"page\">Synthetic Suffix</a>\n        <span class=\"disabled\" title=\"Later phase\">Repair Rollouts</span>\n        <span class=\"disabled\" title=\"Later phase\">Datasets</span>\n      </nav>\n\n      <div id=\"repairPageStatus\" class=\"analysis-status\" role=\"status\">Open Repair to load success rollouts.</div>\n\n      <div class=\"repair-layout\">\n        <div class=\"repair-stack\">\n          <section class=\"analysis-card repair-card\">\n            <div class=\"repair-step-head\">\n              <div class=\"repair-step-title\">\n                <span class=\"repair-step-number\">1</span>\n                <div>\n                  <h3>Select Data</h3>\n                  <p class=\"analysis-card-note\">Phase 1 exposes only manifest rollouts whose ground-truth outcome is success. Manifest camera keys are never synthesized here.</p>\n                </div>\n              </div>\n            </div>\n            <div class=\"repair-filter-grid\">\n              <label><span>Manifest</span><select id=\"repairManifestFilter\"><option value=\"all\">All manifests</option></select></label>\n              <label><span>Suite</span><select id=\"repairSuiteFilter\"><option value=\"all\">All suites</option></select></label>\n              <label><span>Task</span><select id=\"repairTaskFilter\"><option value=\"all\">All tasks</option></select></label>\n              <label><span>Success rollout</span><select id=\"repairRolloutSelect\" class=\"repair-rollout-select\"></select></label>\n            </div>\n            <div id=\"repairRolloutSummary\" class=\"repair-rollout-summary\"></div>\n          </section>\n\n          <section class=\"analysis-card repair-card\">\n            <div class=\"repair-step-head\">\n              <div class=\"repair-step-title\">\n                <span class=\"repair-step-number\">2</span>\n                <div>\n                  <h3>Define Cut</h3>\n                  <p class=\"analysis-card-note\">The cut is an experiment variable, not a failure annotation. LIBERO continuation always branches from state[c+1] and actions[c+1:].</p>\n                </div>\n              </div>\n            </div>\n            <div class=\"repair-config-grid\">\n              <label><span>Cut mode</span>\n                <select id=\"repairCutType\">\n                  <option value=\"progress\" selected>Fixed progress</option>\n                  <option value=\"frame\">Fixed frame (debug)</option>\n                </select>\n              </label>\n              <label id=\"repairCutProgressWrap\"><span>Progress (%)</span>\n                <input id=\"repairCutProgress\" type=\"number\" min=\"1\" max=\"99\" step=\"1\" value=\"50\">\n              </label>\n              <label id=\"repairCutFrameWrap\" class=\"hidden\"><span>RGB frame c</span>\n                <input id=\"repairCutFrame\" type=\"number\" min=\"0\" step=\"1\" value=\"0\">\n              </label>\n              <label><span>Alignment smoke-test minimum PSNR</span>\n                <input id=\"repairAlignmentPsnr\" type=\"number\" min=\"0\" step=\"0.5\" value=\"20\">\n              </label>\n            </div>\n            <div id=\"repairCutReadout\" class=\"analysis-status\">Select a rollout.</div>\n            <div class=\"repair-cut-visual\">\n              <div class=\"repair-cut-track\" aria-label=\"Real prefix and world-model suffix split\">\n                <div id=\"repairCutPrefix\" class=\"repair-cut-prefix\" style=\"width:50%\"></div>\n                <div id=\"repairCutSuffix\" class=\"repair-cut-suffix\" style=\"width:50%\"></div>\n              </div>\n              <div class=\"repair-cut-labels\"><span>REAL PREFIX</span><span>WM SUFFIX</span></div>\n            </div>\n          </section>\n\n          <section class=\"analysis-card repair-card\">\n            <div class=\"repair-step-head\">\n              <div class=\"repair-step-title\">\n                <span class=\"repair-step-number\">3</span>\n                <div>\n                  <h3>Generate Suffix</h3>\n                  <p class=\"analysis-card-note\">A2World and Ctrl-World share the same LIBERO cut/alignment benchmark. Model-specific view, control, timing, and resize adapters stay inside Repair and are recorded in provenance.</p>\n                </div>\n              </div>\n            </div>\n            <div class=\"repair-config-grid\">\n              <label><span>World model</span>\n                <select id=\"repairWorldModel\">\n                  <option value=\"a2world\" selected>A2World</option>\n                  <option value=\"ctrl_world\">Ctrl-World</option>\n                </select>\n              </label>\n              <label><span>GPU</span>\n                <input id=\"repairGpu\" type=\"text\" inputmode=\"numeric\" value=\"\" placeholder=\"e.g. 0\" maxlength=\"8\">\n              </label>\n              <div class=\"repair-kv repair-config-span-2\"><small>Shared protocol</small><strong>LIBERO smoke test → model adapter → synchronized suffix comparison</strong></div>\n            </div>\n            <div id=\"repairA2WorldPanel\" data-repair-model-panel=\"a2world\">\n              <div class=\"repair-config-grid\" style=\"margin-top:10px\">\n                <label><span>Checkpoint type</span>\n                  <select id=\"repairCheckpointType\">\n                    <option value=\"libero_adapted\" selected>LIBERO adapted (in-domain upper bound)</option>\n                    <option value=\"generic_pretrained\">Generic pretrained</option>\n                    <option value=\"custom\">Custom path</option>\n                  </select>\n                </label>\n                <label><span>Checkpoint</span><input id=\"repairCheckpoint\" type=\"text\" value=\"checkpoints/a2world-libero.pt\"></label>\n                <label><span>Base checkpoints</span><input id=\"repairBaseCheckpoints\" type=\"text\" value=\"checkpoints\"></label>\n                <label><span>Sampling steps</span><input id=\"repairSamplingSteps\" type=\"number\" min=\"1\" step=\"1\" value=\"35\"></label>\n                <label><span>Guidance</span><input id=\"repairGuidance\" type=\"number\" min=\"0\" step=\"0.1\" value=\"0\"></label>\n                <label><span>Seed</span><input id=\"repairSeed\" type=\"number\" step=\"1\" value=\"0\"></label>\n              </div>\n              <div class=\"repair-config-grid\" style=\"margin-top:10px\">\n                <div class=\"repair-kv\"><small>View adapter</small><strong id=\"repairCameraMapping\" style=\"white-space:pre-line\">agentview ← cam_high\neye_in_hand ← cam_wrist</strong></div>\n                <label class=\"repair-kv\"><small>Missing view handling</small><span><input id=\"repairDuplicateViews\" type=\"checkbox\"> Explicitly allow cam_high duplication inside A2World adapter</span></label>\n                <div class=\"repair-kv\"><small>Action adapter</small><strong id=\"repairActionAdapter\">LIBERO 7D → A2World LIBERO servo</strong></div>\n                <label class=\"repair-kv\"><small>History conditioning</small><span><input id=\"repairHistory\" type=\"checkbox\" checked> Enabled (A2World default)</span></label>\n              </div>\n            </div>\n            <div id=\"repairCtrlWorldPanel\" data-repair-model-panel=\"ctrl_world\" class=\"hidden\">\n              <div class=\"repair-config-grid\" style=\"margin-top:10px\">\n                <label><span>Checkpoint</span><input id=\"repairCtrlCheckpoint\" type=\"text\" placeholder=\"auto-detect project-local Ctrl-World checkpoint\"></label>\n                <label><span>Ctrl-World source</span><input id=\"repairCtrlSourceRoot\" type=\"text\" placeholder=\"repos/Ctrl-World (auto-detect)\"></label>\n                <label><span>Ctrl Python</span><input id=\"repairCtrlPython\" type=\"text\" placeholder=\"auto-detect configured project-local environment\"></label>\n                <label><span>SVD base model</span><input id=\"repairCtrlSvd\" type=\"text\" placeholder=\"auto-detect project-local stable-video-diffusion-img2vid\"></label>\n                <label><span>CLIP model</span><input id=\"repairCtrlClip\" type=\"text\" placeholder=\"auto-detect project-local clip-vit-base-patch32\"></label>\n                <label><span>DROID normalization stats</span><input id=\"repairCtrlDataStat\" type=\"text\" placeholder=\"repos/Ctrl-World/dataset_meta_info/droid/stat.json\"></label>\n              </div>\n              <div class=\"repair-config-grid\" style=\"margin-top:10px\">\n                <label><span>Target FPS</span><input id=\"repairCtrlTargetFps\" type=\"number\" min=\"0.1\" step=\"0.1\" value=\"5\"></label>\n                <label><span>Inference steps</span><input id=\"repairCtrlInferenceSteps\" type=\"number\" min=\"1\" step=\"1\" value=\"50\"></label>\n                <label><span>Guidance scale</span><input id=\"repairCtrlGuidance\" type=\"number\" min=\"0\" step=\"0.1\" value=\"1\"></label>\n                <label><span>Seed</span><input id=\"repairCtrlSeed\" type=\"number\" step=\"1\" value=\"0\"></label>\n              </div>\n              <div class=\"repair-config-grid\" style=\"margin-top:10px\">\n                <div class=\"repair-kv\"><small>View adapter</small><strong style=\"white-space:pre-line\">exterior_1 ← cam_high\nexterior_2 ← cam_high (adapter-local duplicate)\nwrist ← cam_wrist</strong></div>\n                <div class=\"repair-kv\"><small>Control adapter</small><strong>Replay GT LIBERO actions from states[c+1] → DROID-style 7D absolute pose/state</strong></div>\n                <div class=\"repair-kv\"><small>Native image geometry</small><strong>source RGB → 192×320 Ctrl-World input (recorded resize)</strong></div>\n                <label class=\"repair-kv\"><small>Text conditioning</small><span><input id=\"repairCtrlTextConditioning\" type=\"checkbox\" checked> Use task instruction</span></label>\n              </div>\n            </div>\n            <div id=\"repairValidation\" class=\"repair-validation\"></div>\n            <div class=\"repair-actions\">\n              <button id=\"repairValidateButton\" class=\"ghost-button\" type=\"button\">Validate inputs</button>\n              <button id=\"repairRunButton\" class=\"save-button\" type=\"button\" disabled>Run A2World</button>\n            </div>\n            <div id=\"repairJobStatus\" class=\"analysis-status\" role=\"status\">No active Repair job.</div>\n            <pre id=\"repairJobLog\" class=\"job-log repair-log\" aria-label=\"Repair job log\"></pre>\n          </section>\n        </div>\n\n        <section class=\"analysis-card repair-card\">\n          <div class=\"repair-step-head\">\n            <div class=\"repair-step-title\">\n              <span class=\"repair-step-number\">4</span>\n              <div>\n                <h3>Compare / Export</h3>\n                <p class=\"analysis-card-note\">The primary result is synchronized real-vs-generated inspection. Dataset export is intentionally deferred to a later phase.</p>\n              </div>\n            </div>\n          </div>\n\n          <div class=\"repair-run-picker\">\n            <label><span>Repair run</span><select id=\"repairRunSelect\"><option value=\"\">No Repair runs yet</option></select></label>\n          </div>\n          <div id=\"repairResultStatus\" class=\"analysis-status\">Select a completed Repair run.</div>\n\n          <div class=\"repair-timeline\" aria-label=\"Real and world-model suffix timeline\">\n            <div class=\"repair-timeline-row\"><span>REAL</span><div class=\"repair-timeline-track\">\n              <div id=\"repairRealPrefix\" class=\"repair-timeline-real-prefix\" style=\"width:50%\"></div>\n              <div id=\"repairRealSuffix\" class=\"repair-timeline-real-suffix\" style=\"width:50%\"></div>\n            </div></div>\n            <div class=\"repair-timeline-row\"><span>WM</span><div class=\"repair-timeline-track\">\n              <div id=\"repairWmPrefix\" class=\"repair-timeline-wm-prefix\" style=\"width:50%\"></div>\n              <div id=\"repairWmSuffix\" class=\"repair-timeline-wm-suffix\" style=\"width:50%\"></div>\n            </div></div>\n          </div>\n\n          <div id=\"repairCompareGrid\" class=\"repair-compare-grid\">\n            <div class=\"repair-video-empty\">No result selected</div>\n          </div>\n          <div class=\"repair-transport\">\n            <button id=\"repairPlayPause\" class=\"ghost-button\" type=\"button\">Play</button>\n            <input id=\"repairSeek\" type=\"range\" min=\"0\" max=\"1\" step=\"0.01\" value=\"0\" aria-label=\"Synchronized suffix time\">\n            <span id=\"repairTimeReadout\">0.00 s after cut</span>\n          </div>\n\n          <h4>Visual metrics</h4>\n          <div id=\"repairMetrics\" class=\"repair-metrics\"></div>\n          <p class=\"analysis-card-note\">PSNR / SSIM / LPIPS are diagnostics only; policy-training validity is not inferred from them.</p>\n\n          <div class=\"repair-review\">\n            <h4>Task-aware human evaluation</h4>\n            <p class=\"analysis-card-note\">Usable for policy training?</p>\n            <div class=\"repair-review-options\">\n              <label><input type=\"radio\" name=\"repairUsability\" value=\"yes\"> Yes</label>\n              <label><input type=\"radio\" name=\"repairUsability\" value=\"no\"> No</label>\n              <label><input type=\"radio\" name=\"repairUsability\" value=\"uncertain\"> Uncertain</label>\n            </div>\n            <p class=\"analysis-card-note\">Failure reason</p>\n            <div class=\"repair-reasons\">\n              <label><input type=\"checkbox\" data-repair-reason value=\"robot_motion\"> robot motion</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"gripper\"> gripper</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"object_motion\"> object motion</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"contact\"> contact</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"geometry\"> geometry</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"visual_corruption\"> visual corruption</label>\n              <label><input type=\"checkbox\" data-repair-reason value=\"temporal_drift\"> temporal drift</label>\n            </div>\n            <div class=\"repair-actions\">\n              <span id=\"repairHumanStatus\" class=\"analysis-card-note\"></span>\n              <button id=\"repairSaveHuman\" class=\"ghost-button\" type=\"button\">Save evaluation</button>\n            </div>\n          </div>\n        </section>\n      </div>\n    </div>\n";
+  mount.innerHTML = `
+    <div class="page-container repair-page-container">
+      <header class="repair-shell-header runs-shell-header">
+        <div class="runs-shell-copy">
+          <p class="eyebrow">LF3R REPAIR</p>
+          <h2>Synthetic Suffix</h2>
+          <p>Prepare one success rollout, define the cut, generate a world-model suffix, then compare it against the real suffix.</p>
+        </div>
+        <div class="repair-header-actions">
+          <button id="repairRefreshRuns" class="ghost-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <div class="repair-mode-switch runs-mode-switch" role="tablist" aria-label="Repair workflow">
+        <button id="repairDataTab" type="button" role="tab" data-repair-mode="data">1 · Select Data</button>
+        <button id="repairCutTab" type="button" role="tab" data-repair-mode="cut">2 · Define Cut</button>
+        <button id="repairGenerateTab" type="button" role="tab" data-repair-mode="generate">3 · Generate Suffix</button>
+        <button id="repairCompareTab" type="button" role="tab" data-repair-mode="compare">4 · Compare / Export</button>
+      </div>
+
+      <div id="repairGpuMount" class="repair-gpu-mount"></div>
+      <div id="repairPageStatus" class="analysis-status repair-page-status" role="status">Open Repair to load success rollouts.</div>
+
+      <div class="repair-console">
+        <div class="repair-tab-stack">
+          <section id="repairDataPanel" class="analysis-card repair-card repair-tab-panel" data-repair-panel="data" role="tabpanel" aria-labelledby="repairDataTab">
+            <div class="repair-step-head">
+              <div class="repair-step-title">
+                <span class="repair-step-number">1</span>
+                <div>
+                  <h3>Select Data</h3>
+                  <p class="analysis-card-note">Choose one successful rollout from the loaded manifests. The manifest remains the source of truth for physical camera views and prepared controls.</p>
+                </div>
+              </div>
+            </div>
+            <div class="repair-filter-grid">
+              <label><span>Manifest</span><select id="repairManifestFilter"><option value="all">All manifests</option></select></label>
+              <label><span>Suite</span><select id="repairSuiteFilter"><option value="all">All suites</option></select></label>
+              <label><span>Task</span><select id="repairTaskFilter"><option value="all">All tasks</option></select></label>
+              <label><span>Success rollout</span><select id="repairRolloutSelect" class="repair-rollout-select"></select></label>
+            </div>
+            <div id="repairRolloutSummary" class="repair-rollout-summary"></div>
+          </section>
+
+          <section id="repairCutPanel" class="analysis-card repair-card repair-tab-panel" data-repair-panel="cut" role="tabpanel" aria-labelledby="repairCutTab" hidden>
+            <div class="repair-step-head">
+              <div class="repair-step-title">
+                <span class="repair-step-number">2</span>
+                <div>
+                  <h3>Define Cut</h3>
+                  <p class="analysis-card-note">The cut is an experiment variable, not a failure annotation. LIBERO continuation branches from state[c+1] and actions[c+1:].</p>
+                </div>
+              </div>
+            </div>
+            <div class="repair-config-grid">
+              <label><span>Cut mode</span>
+                <select id="repairCutType">
+                  <option value="progress" selected>Fixed progress</option>
+                  <option value="frame">Fixed frame (debug)</option>
+                </select>
+              </label>
+              <label id="repairCutProgressWrap"><span>Progress (%)</span>
+                <input id="repairCutProgress" type="number" min="1" max="99" step="1" value="50">
+              </label>
+              <label id="repairCutFrameWrap" class="hidden"><span>RGB frame c</span>
+                <input id="repairCutFrame" type="number" min="0" step="1" value="0">
+              </label>
+              <label><span>Alignment smoke-test minimum PSNR</span>
+                <input id="repairAlignmentPsnr" type="number" min="0" step="0.5" value="20">
+              </label>
+            </div>
+            <div id="repairCutReadout" class="analysis-status">Select a rollout.</div>
+            <div class="repair-cut-visual">
+              <div class="repair-cut-track" aria-label="Real prefix and world-model suffix split">
+                <div id="repairCutPrefix" class="repair-cut-prefix" style="width:50%"></div>
+                <div id="repairCutSuffix" class="repair-cut-suffix" style="width:50%"></div>
+              </div>
+              <div class="repair-cut-labels"><span>REAL PREFIX</span><span>WM SUFFIX</span></div>
+            </div>
+          </section>
+
+          <section id="repairGeneratePanel" class="analysis-card repair-card repair-tab-panel" data-repair-panel="generate" role="tabpanel" aria-labelledby="repairGenerateTab" hidden>
+            <div class="repair-step-head">
+              <div class="repair-step-title">
+                <span class="repair-step-number">3</span>
+                <div>
+                  <h3>Generate Suffix</h3>
+                  <p class="analysis-card-note">A2World and Ctrl-World share the same LIBERO cut/alignment benchmark. Model-specific views, controls, timing, and resize adapters remain explicit in provenance.</p>
+                </div>
+              </div>
+            </div>
+            <div class="repair-config-grid">
+              <label><span>World model</span>
+                <select id="repairWorldModel">
+                  <option value="a2world" selected>A2World</option>
+                  <option value="ctrl_world">Ctrl-World</option>
+                </select>
+              </label>
+              <label><span>GPU</span>
+                <input id="repairGpu" type="text" inputmode="numeric" value="" placeholder="e.g. 0" maxlength="8">
+              </label>
+              <div class="repair-kv repair-config-span-2"><small>Shared protocol</small><strong>LIBERO alignment → model adapter → synchronized suffix comparison</strong></div>
+            </div>
+
+            <div id="repairA2WorldPanel" data-repair-model-panel="a2world">
+              <div class="repair-config-grid repair-config-section">
+                <label><span>Checkpoint type</span>
+                  <select id="repairCheckpointType">
+                    <option value="libero_adapted" selected>LIBERO adapted (in-domain upper bound)</option>
+                    <option value="generic_pretrained">Generic pretrained</option>
+                    <option value="custom">Custom path</option>
+                  </select>
+                </label>
+                <label><span>Checkpoint</span><input id="repairCheckpoint" type="text" value="checkpoints/a2world-libero.pt"></label>
+                <label><span>Base checkpoints</span><input id="repairBaseCheckpoints" type="text" value="checkpoints"></label>
+                <label><span>Sampling steps</span><input id="repairSamplingSteps" type="number" min="1" step="1" value="35"></label>
+                <label><span>Guidance</span><input id="repairGuidance" type="number" min="0" step="0.1" value="0"></label>
+                <label><span>Seed</span><input id="repairSeed" type="number" step="1" value="0"></label>
+              </div>
+              <div class="repair-config-grid repair-config-section">
+                <div class="repair-kv"><small>View adapter</small><strong id="repairCameraMapping" style="white-space:pre-line">agentview ← cam_high\neye_in_hand ← cam_wrist</strong></div>
+                <label class="repair-kv"><small>Missing view handling</small><span><input id="repairDuplicateViews" type="checkbox"> Explicitly allow cam_high duplication inside A2World adapter</span></label>
+                <div class="repair-kv"><small>Action adapter</small><strong id="repairActionAdapter">LIBERO 7D → A2World LIBERO servo</strong></div>
+                <label class="repair-kv"><small>History conditioning</small><span><input id="repairHistory" type="checkbox" checked> Enabled (A2World default)</span></label>
+              </div>
+            </div>
+
+            <div id="repairCtrlWorldPanel" data-repair-model-panel="ctrl_world" class="hidden">
+              <div class="repair-config-grid repair-config-section">
+                <label><span>Checkpoint</span><input id="repairCtrlCheckpoint" type="text" placeholder="auto-detect project-local Ctrl-World checkpoint"></label>
+                <label><span>Ctrl-World source</span><input id="repairCtrlSourceRoot" type="text" placeholder="repos/Ctrl-World (auto-detect)"></label>
+                <label><span>Ctrl Python</span><input id="repairCtrlPython" type="text" placeholder="auto-detect configured project-local environment"></label>
+                <label><span>SVD base model</span><input id="repairCtrlSvd" type="text" placeholder="auto-detect project-local stable-video-diffusion-img2vid"></label>
+                <label><span>CLIP model</span><input id="repairCtrlClip" type="text" placeholder="auto-detect project-local clip-vit-base-patch32"></label>
+                <label><span>DROID normalization stats</span><input id="repairCtrlDataStat" type="text" placeholder="repos/Ctrl-World/dataset_meta_info/droid/stat.json"></label>
+              </div>
+              <div class="repair-config-grid repair-config-section">
+                <label><span>Target FPS</span><input id="repairCtrlTargetFps" type="number" min="0.1" step="0.1" value="5"></label>
+                <label><span>Inference steps</span><input id="repairCtrlInferenceSteps" type="number" min="1" step="1" value="50"></label>
+                <label><span>Guidance scale</span><input id="repairCtrlGuidance" type="number" min="0" step="0.1" value="1"></label>
+                <label><span>Seed</span><input id="repairCtrlSeed" type="number" step="1" value="0"></label>
+              </div>
+              <div class="repair-config-grid repair-config-section">
+                <div class="repair-kv"><small>View adapter</small><strong style="white-space:pre-line">exterior_1 ← cam_high\nexterior_2 ← cam_high (adapter-local duplicate)\nwrist ← cam_wrist</strong></div>
+                <div class="repair-kv"><small>Control adapter</small><strong>Prepared LIBERO GT replay → DROID-style 7D absolute pose/state</strong></div>
+                <div class="repair-kv"><small>Native image geometry</small><strong>source RGB → 192×320 Ctrl-World input (recorded resize)</strong></div>
+                <label class="repair-kv"><small>Text conditioning</small><span><input id="repairCtrlTextConditioning" type="checkbox" checked> Use task instruction</span></label>
+              </div>
+            </div>
+
+            <div id="repairValidation" class="repair-validation"></div>
+            <div class="repair-actions">
+              <button id="repairValidateButton" class="ghost-button" type="button">Validate inputs</button>
+              <button id="repairRunButton" class="save-button" type="button" disabled>Run A2World</button>
+            </div>
+          </section>
+
+          <section id="repairComparePanel" class="analysis-card repair-card repair-tab-panel repair-compare-panel" data-repair-panel="compare" role="tabpanel" aria-labelledby="repairCompareTab" hidden>
+            <div class="repair-step-head">
+              <div class="repair-step-title">
+                <span class="repair-step-number">4</span>
+                <div>
+                  <h3>Compare / Export</h3>
+                  <p class="analysis-card-note">Inspect the synchronized real and generated suffixes. Dataset export remains a later phase.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="repair-run-picker">
+              <label><span>Repair run</span><select id="repairRunSelect"><option value="">No Repair runs yet</option></select></label>
+            </div>
+            <div id="repairResultStatus" class="analysis-status">Select a completed Repair run.</div>
+
+            <div class="repair-timeline" aria-label="Real and world-model suffix timeline">
+              <div class="repair-timeline-row"><span>REAL</span><div class="repair-timeline-track">
+                <div id="repairRealPrefix" class="repair-timeline-real-prefix" style="width:50%"></div>
+                <div id="repairRealSuffix" class="repair-timeline-real-suffix" style="width:50%"></div>
+              </div></div>
+              <div class="repair-timeline-row"><span>WM</span><div class="repair-timeline-track">
+                <div id="repairWmPrefix" class="repair-timeline-wm-prefix" style="width:50%"></div>
+                <div id="repairWmSuffix" class="repair-timeline-wm-suffix" style="width:50%"></div>
+              </div></div>
+            </div>
+
+            <div id="repairCompareGrid" class="repair-compare-grid">
+              <div class="repair-video-empty">No result selected</div>
+            </div>
+            <div class="repair-transport">
+              <button id="repairPlayPause" class="ghost-button" type="button">Play</button>
+              <input id="repairSeek" type="range" min="0" max="1" step="0.01" value="0" aria-label="Synchronized suffix time">
+              <span id="repairTimeReadout">0.00 s after cut</span>
+            </div>
+
+            <h4>Visual metrics</h4>
+            <div id="repairMetrics" class="repair-metrics"></div>
+            <p class="analysis-card-note">PSNR / SSIM / LPIPS are diagnostics only; policy-training validity is not inferred from them.</p>
+
+            <div class="repair-review">
+              <h4>Task-aware human evaluation</h4>
+              <p class="analysis-card-note">Usable for policy training?</p>
+              <div class="repair-review-options">
+                <label><input type="radio" name="repairUsability" value="yes"> Yes</label>
+                <label><input type="radio" name="repairUsability" value="no"> No</label>
+                <label><input type="radio" name="repairUsability" value="uncertain"> Uncertain</label>
+              </div>
+              <p class="analysis-card-note">Failure reason</p>
+              <div class="repair-reasons">
+                <label><input type="checkbox" data-repair-reason value="robot_motion"> robot motion</label>
+                <label><input type="checkbox" data-repair-reason value="gripper"> gripper</label>
+                <label><input type="checkbox" data-repair-reason value="object_motion"> object motion</label>
+                <label><input type="checkbox" data-repair-reason value="contact"> contact</label>
+                <label><input type="checkbox" data-repair-reason value="geometry"> geometry</label>
+                <label><input type="checkbox" data-repair-reason value="visual_corruption"> visual corruption</label>
+                <label><input type="checkbox" data-repair-reason value="temporal_drift"> temporal drift</label>
+              </div>
+              <div class="repair-actions">
+                <span id="repairHumanStatus" class="analysis-card-note"></span>
+                <button id="repairSaveHuman" class="ghost-button" type="button">Save evaluation</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="runs-activity repair-activity" aria-label="Repair job activity">
+          <div class="runs-activity-heading">
+            <div><p class="eyebrow">ACTIVITY</p><h3>Repair job</h3></div>
+          </div>
+          <div id="repairJobStatus" class="runs-activity-status" role="status">No active Repair job.</div>
+          <pre id="repairJobLog" class="job-log repair-log" aria-label="Repair job log"></pre>
+        </aside>
+      </div>
+    </div>
+  `;
+
+  var validModes = ["data", "cut", "generate", "compare"];
+  var buttons = Array.prototype.slice.call(mount.querySelectorAll("[data-repair-mode]"));
+  var panels = Array.prototype.slice.call(mount.querySelectorAll("[data-repair-panel]"));
+  var currentMode = "data";
+  try {
+    var stored = localStorage.getItem("lf3r.repair.mode");
+    if (validModes.indexOf(stored) >= 0) currentMode = stored;
+  } catch (_) {}
+
+  buttons.forEach(function (button) {
+    var panel = mount.querySelector('[data-repair-panel="' + button.dataset.repairMode + '"]');
+    if (panel) button.setAttribute("aria-controls", panel.id);
+  });
+
+  function setMode(mode) {
+    currentMode = validModes.indexOf(mode) >= 0 ? mode : "data";
+    buttons.forEach(function (button) {
+      var active = button.dataset.repairMode === currentMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    panels.forEach(function (panel) {
+      panel.hidden = panel.dataset.repairPanel !== currentMode;
+    });
+    try { localStorage.setItem("lf3r.repair.mode", currentMode); } catch (_) {}
+  }
+
+  buttons.forEach(function (button, index) {
+    button.addEventListener("click", function () { setMode(button.dataset.repairMode); });
+    button.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      var next = event.key === "ArrowRight"
+        ? (index + 1) % buttons.length
+        : (index - 1 + buttons.length) % buttons.length;
+      buttons[next].focus();
+      setMode(buttons[next].dataset.repairMode);
+    });
+  });
+
+  var gpuAttempts = 0;
+  function installGpuStrip() {
+    var host = document.getElementById("repairGpuMount");
+    if (!host || host.dataset.gpuInstalled === "true") return true;
+    if (!window.LF3RRunsGpu || typeof window.LF3RRunsGpu.createStrip !== "function") {
+      gpuAttempts += 1;
+      if (gpuAttempts < 20) window.setTimeout(installGpuStrip, 100);
+      return false;
+    }
+    host.dataset.gpuInstalled = "true";
+    var strip = window.LF3RRunsGpu.createStrip({
+      prefix: "repairGpuStatus",
+      eyebrow: "GPU STATUS",
+      title: "Current device state"
+    });
+    host.replaceChildren(strip);
+    if (typeof window.LF3RRunsGpu.install === "function") {
+      window.LF3RRunsGpu.install("repairGpuStatus");
+    }
+    return true;
+  }
+
+  setMode(currentMode);
+  installGpuStrip();
 
   window.LF3RRepairPage = {
-    mounted: true,
-    mount: mount
+    setMode: setMode,
+    installGpu: installGpuStrip
   };
 })();
