@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate successful ManiSkill3 motion-planning rollouts for LF3R.
 
-This wrapper deliberately leaves the pinned ManiSkill checkout untouched.  It
+This wrapper deliberately leaves the pinned ManiSkill checkout untouched. It
 reuses the official Panda motion-planning runner and only injects camera width
 and height into the environment construction so WebUI render resolution is
 explicit and reproducible.
@@ -50,11 +50,43 @@ def _validate(args: argparse.Namespace) -> None:
             raise SystemExit(f"{name} must be an even integer from 64 to 2048")
 
 
+def _upstream_args(args: argparse.Namespace, record_dir: Path) -> argparse.Namespace:
+    """Build the Namespace expected by the pinned upstream _main().
+
+    The pinned ManiSkill parse_args(args=None) accepts an args parameter but
+    ignores it and always parses process sys.argv. Calling it from this wrapper
+    therefore re-parses LF3R-only flags such as --seed and --render-width. Build
+    the small upstream Namespace explicitly instead.
+    """
+    return argparse.Namespace(
+        env_id=args.env_id,
+        obs_mode="none",
+        num_traj=args.num_traj,
+        only_count_success=True,
+        reward_mode=None,
+        sim_backend="cpu",
+        render_mode="rgb_array",
+        vis=False,
+        save_video=True,
+        traj_name="trajectory",
+        shader=args.shader,
+        record_dir=str(record_dir),
+        num_procs=1,
+    )
+
+
 def main() -> None:
     args = parse_args()
     _validate(args)
     record_dir = args.record_dir.expanduser().resolve()
     record_dir.mkdir(parents=True, exist_ok=True)
+
+    print(
+        "LF3R_MANISKILL3_START="
+        f"env={args.env_id} num_traj={args.num_traj} seed={args.seed} "
+        f"render={args.render_width}x{args.render_height} record_dir={record_dir}",
+        flush=True,
+    )
 
     original_make = maniskill_run.gym.make
 
@@ -74,32 +106,11 @@ def main() -> None:
     # We restore it in finally so importing this wrapper never leaks state.
     maniskill_run.gym.make = make_with_resolution
     try:
-        upstream_args = maniskill_run.parse_args(
-            [
-                "--env-id",
-                args.env_id,
-                "--num-traj",
-                str(args.num_traj),
-                "--only-count-success",
-                "--save-video",
-                "--obs-mode",
-                "none",
-                "--sim-backend",
-                "cpu",
-                "--render-mode",
-                "rgb_array",
-                "--shader",
-                args.shader,
-                "--traj-name",
-                "trajectory",
-                "--record-dir",
-                str(record_dir),
-                "--num-procs",
-                "1",
-            ]
-        )
         trajectory_path = Path(
-            maniskill_run._main(upstream_args, start_seed=args.seed)
+            maniskill_run._main(
+                _upstream_args(args, record_dir),
+                start_seed=args.seed,
+            )
         ).resolve()
     finally:
         maniskill_run.gym.make = original_make
