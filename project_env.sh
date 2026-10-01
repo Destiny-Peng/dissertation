@@ -62,6 +62,13 @@ export LF3R_DENSEREWARD_CHECKPOINT="${CHECKPOINTS}/densereward-3frame-thinking"
 export LF3R_ENV_CTRL_WORLD="${CONDA_ENVS}/Ctrl-World"
 export LF3R_CTRL_WORLD_PYTHON="${LF3R_ENV_CTRL_WORLD}/bin/python"
 
+export LF3R_ENV_MANISKILL3="${CONDA_ENVS}/LF3R-maniskill3"
+export LF3R_MANISKILL3_PYTHON="${LF3R_ENV_MANISKILL3}/bin/python"
+export MS_ASSET_DIR="${DATASETS}/maniskill3"
+export SAPIEN_CACHE_DIR="${CACHE}/sapien"
+export CUDA_CACHE_PATH="${CACHE}/cuda"
+export __GL_SHADER_DISK_CACHE_PATH="${CACHE}/nvidia"
+
 # Make the project-local Conda command available in sourced Bash sessions.
 if [[ -f "${PROJECT_ROOT}/tools/miniforge3/etc/profile.d/conda.sh" ]]; then
     source "${PROJECT_ROOT}/tools/miniforge3/etc/profile.d/conda.sh"

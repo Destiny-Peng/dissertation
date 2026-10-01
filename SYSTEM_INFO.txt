@@ -81,3 +81,13 @@ LF3R Ctrl-World environment: conda_envs/Ctrl-World; Python 3.11.16; PyTorch 2.7.
 LF3R package caches: cache/conda/pkgs and cache/uv
 Storage at check: /mnt/hdd filesystem, 2.6 TB available
 GPU inference was not run; the GPUs were occupied by other processes.
+
+=== ManiSkill3 environment check 2026-10-01T19:26:34+0800 ===
+OS: Ubuntu 24.04.4 LTS; kernel 7.0.0-30-generic
+GPU: 3 x NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition; driver 610.57.04
+LF3R environment: conda_envs/LF3R-maniskill3; Python 3.11.16; Torch 2.7.1+cu128; ManiSkill 3.0.1; SAPIEN 3.0.3
+ManiSkill commit: 62ff3a5896b4d5b4cf0ac4c8d79afe600c9404a3
+Vulkan: existing NVIDIA ICD and libvulkan; validated through official headless GPU/RGBD demo
+Assets: datasets/maniskill3; PhysX: cache/sapien; NVIDIA caches: cache/cuda and cache/nvidia
+Validation: core imports, official CLI, pip check, and 2-env 50-step GPU/RGBD rollout PASS; GPU 2 with 16518 MiB free before rollout
+Report: environment_reports/MANISKILL3_ENV_20261001_192202.md
