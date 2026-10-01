@@ -21,7 +21,45 @@ function setRolloutGenerationStatus(message, kind) {
   }
 }
 
+function ensureRolloutMultiviewSizeInputs() {
+  var existingWidth = byId("rolloutGenerationMultiviewWidth");
+  var existingHeight = byId("rolloutGenerationMultiviewHeight");
+  if (existingWidth && existingHeight) {
+    return { width: existingWidth, height: existingHeight };
+  }
+  var recordInput = byId("rolloutGenerationRecordResolution");
+  if (!recordInput) return { width: null, height: null };
+  var grid = recordInput.closest(".rollout-generation-grid");
+  var recordLabel = recordInput.closest("label");
+  if (!grid || !recordLabel) return { width: null, height: null };
+
+  function makeField(id, labelText, value) {
+    var label = document.createElement("label");
+    label.dataset.multiviewSizeField = "true";
+    var span = document.createElement("span");
+    span.textContent = labelText;
+    var input = document.createElement("input");
+    input.id = id;
+    input.type = "number";
+    input.min = "64";
+    input.max = "2048";
+    input.step = "2";
+    input.value = String(value);
+    input.addEventListener("input", updateRolloutGenerationSelection);
+    label.appendChild(span);
+    label.appendChild(input);
+    return { label: label, input: input };
+  }
+
+  var widthField = makeField("rolloutGenerationMultiviewWidth", "Camera width", 320);
+  var heightField = makeField("rolloutGenerationMultiviewHeight", "Camera height", 192);
+  recordLabel.insertAdjacentElement("afterend", heightField.label);
+  recordLabel.insertAdjacentElement("afterend", widthField.label);
+  return { width: widthField.input, height: heightField.input };
+}
+
 function updateRolloutGenerationSelection() {
+  var multiviewFields = ensureRolloutMultiviewSizeInputs();
   var suiteNode = byId("rolloutGenerationSuite");
   var suite = suiteNode ? suiteNode.value : "libero_10";
   var isSpatial = suite === "libero_spatial";
@@ -30,12 +68,17 @@ function updateRolloutGenerationSelection() {
   var trials = Number(byId("rolloutGenerationTrials").value);
   var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
   var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
+  var multiviewWidth = Number(multiviewFields.width ? multiviewFields.width.value : 320);
+  var multiviewHeight = Number(multiviewFields.height ? multiviewFields.height.value : 192);
   var videoViewMode = byId("rolloutGenerationVideoViewMode").value;
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var note = byId("rolloutGenerationSelection");
   var button = byId("rolloutGenerationRun");
   var title = byId("rolloutGenerationTitle");
   var description = byId("rolloutGenerationDescription");
+  document.querySelectorAll("[data-multiview-size-field]").forEach(function (field) {
+    field.classList.toggle("hidden", videoViewMode !== "libero_three_view");
+  });
   if (title) {
     title.textContent = isSpatial
       ? "Generate natural LIBERO-Spatial rollouts"
@@ -43,30 +86,33 @@ function updateRolloutGenerationSelection() {
   }
   if (description) {
     var viewText = videoViewMode === "libero_three_view"
-      ? " Camera videos are generated afterward as physical dataset facts: one cam_high MP4 plus one cam_wrist MP4. Robo-Dopamine later maps cam_wrist to both left/right input slots in its adapter. The existing policy recording remains unchanged."
+      ? " Camera videos are replay-rendered at " + multiviewWidth + "x" + multiviewHeight + " as one cam_high MP4 plus one cam_wrist MP4. The existing policy recording remains unchanged."
       : " Only the primary single-view replay video is generated.";
     description.textContent = (isSpatial
-      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
-      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224.")
+      ? "Uses the existing OpenVLA LIBERO-Spatial checkpoint. Render is " + renderResolution + "x" + renderResolution + ", canonical record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224."
+      : "Uses the existing OpenVLA LIBERO-10 natural generator and output root. Render is " + renderResolution + "x" + renderResolution + ", canonical record is " + recordResolution + "x" + recordResolution + ", and policy preprocessing remains 224x224.")
       + viewText + " GPU selection is user-managed; the WebUI does not block launch based on utilization or free memory.";
   }
   var valid = (suite === "libero_10" || suite === "libero_spatial")
     && (videoViewMode === "single_view" || videoViewMode === "libero_three_view")
     && Number.isInteger(start) && Number.isInteger(end) && Number.isInteger(trials)
     && Number.isInteger(renderResolution) && Number.isInteger(recordResolution)
+    && Number.isInteger(multiviewWidth) && Number.isInteger(multiviewHeight)
     && renderResolution >= 64 && renderResolution <= 2048 && renderResolution % 2 === 0
     && recordResolution >= 64 && recordResolution <= 2048 && recordResolution % 2 === 0
+    && multiviewWidth >= 64 && multiviewWidth <= 2048 && multiviewWidth % 2 === 0
+    && multiviewHeight >= 64 && multiviewHeight <= 2048 && multiviewHeight % 2 === 0
     && start >= 0 && end >= start && end <= 9 && trials >= 1 && trials <= 50;
   if (!valid) {
-    note.textContent = "Task range must be 0-9, trials 1-50, and both resolutions must be even values from 64 to 2048.";
+    note.textContent = "Task range must be 0-9, trials 1-50, and all image dimensions must be even values from 64 to 2048.";
     button.disabled = true;
     return;
   }
   var expected = (end - start + 1) * trials;
   note.textContent = (isSpatial ? "LIBERO-Spatial" : "LIBERO-10")
     + " output: " + expected + " rollout(s), render " + renderResolution + "x" + renderResolution
-    + ", record " + recordResolution + "x" + recordResolution
-    + ", camera videos " + (videoViewMode === "libero_three_view" ? "Robo-Dopamine 3-view" : "canonical only")
+    + ", canonical record " + recordResolution + "x" + recordResolution
+    + ", camera videos " + (videoViewMode === "libero_three_view" ? multiviewWidth + "x" + multiviewHeight : "canonical only")
     + "; run note is generated automatically. "
     + (saveLatent ? "Latent saving enabled." : "Latent saving disabled.");
   button.disabled = state.rolloutGenerationSubmitting;
@@ -90,9 +136,12 @@ async function loadRolloutGenerationLog(jobId) {
 function rolloutGenerationJobMessage(job) {
   var progress = (job.completed_rollouts || 0) + "/" + (job.expected_rollouts || 0);
   var suite = job.task_suite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
+  var cameraResolution = job.video_view_mode === "libero_three_view"
+    ? (job.multiview_width || "?") + "x" + (job.multiview_height || "?")
+    : "canonical only";
   var resolution = "render " + (job.render_resolution || "?") + "x" + (job.render_resolution || "?")
-    + ", record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?")
-    + ", camera videos " + (job.video_view_mode === "libero_three_view" ? "Robo-Dopamine 3-view" : "canonical only");
+    + ", canonical record " + (job.record_resolution || "?") + "x" + (job.record_resolution || "?")
+    + ", camera videos " + cameraResolution;
   if (job.status === "queued") return suite + " generation queued (" + resolution + ") - " + progress + " rollout(s) complete...";
   if (job.status === "running") return "Generating " + suite + " rollouts (" + resolution + ") - " + progress + " complete...";
   if (job.status === "complete") {
@@ -108,6 +157,7 @@ function rolloutGenerationJobMessage(job) {
 async function startRolloutGeneration(event) {
   if (event) event.preventDefault();
   if (state.rolloutGenerationSubmitting) return;
+  var multiviewFields = ensureRolloutMultiviewSizeInputs();
   var suiteNode = byId("rolloutGenerationSuite");
   var taskSuite = suiteNode ? suiteNode.value : "libero_10";
   var suiteLabel = taskSuite === "libero_spatial" ? "LIBERO-Spatial" : "LIBERO-10";
@@ -123,6 +173,8 @@ async function startRolloutGeneration(event) {
   var seed = Number(byId("rolloutGenerationSeed").value);
   var renderResolution = Number(byId("rolloutGenerationRenderResolution").value);
   var recordResolution = Number(byId("rolloutGenerationRecordResolution").value);
+  var multiviewWidth = Number(multiviewFields.width ? multiviewFields.width.value : 320);
+  var multiviewHeight = Number(multiviewFields.height ? multiviewFields.height.value : 192);
   var videoViewMode = byId("rolloutGenerationVideoViewMode").value;
   var saveLatent = byId("rolloutGenerationLogSafeFeatures").checked;
   var label = byId("rolloutGenerationLabel").value.trim();
@@ -156,6 +208,11 @@ async function startRolloutGeneration(event) {
     byId("rolloutGenerationRecordResolution").focus();
     return;
   }
+  if (!Number.isInteger(multiviewWidth) || multiviewWidth < 64 || multiviewWidth > 2048 || multiviewWidth % 2 !== 0
+      || !Number.isInteger(multiviewHeight) || multiviewHeight < 64 || multiviewHeight > 2048 || multiviewHeight % 2 !== 0) {
+    setRolloutGenerationStatus("Camera width and height must be even integers from 64 to 2048.", "error");
+    return;
+  }
   if (label && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(label)) {
     setRolloutGenerationStatus("Run-note label may use only letters, numbers, dot, underscore, or hyphen.", "error");
     byId("rolloutGenerationLabel").focus();
@@ -168,10 +225,9 @@ async function startRolloutGeneration(event) {
   }
   var expected = (taskEnd - taskStart + 1) * trials;
   var multiviewNote = videoViewMode === "libero_three_view"
-    ? " A no-model LIBERO replay will then record agent + side + wrist views."
+    ? " A no-model LIBERO replay will then record camera videos at " + multiviewWidth + "x" + multiviewHeight + "."
     : "";
   if (!window.confirm("Generate " + expected + " OpenVLA " + suiteLabel + " rollout(s)? This launches GPU inference." + multiviewNote)) return;
-  var button = byId("rolloutGenerationRun");
   state.rolloutGenerationSubmitting = true;
   updateRolloutGenerationSelection();
   byId("rolloutGenerationLog").textContent = "";
@@ -191,6 +247,8 @@ async function startRolloutGeneration(event) {
         log_safe_features: saveLatent,
         render_resolution: renderResolution,
         record_resolution: recordResolution,
+        multiview_width: multiviewWidth,
+        multiview_height: multiviewHeight,
         video_view_mode: videoViewMode
       })
     });

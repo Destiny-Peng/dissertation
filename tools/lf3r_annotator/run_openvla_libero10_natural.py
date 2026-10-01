@@ -113,7 +113,19 @@ def parse_args() -> argparse.Namespace:
         "--record-resolution",
         type=int,
         default=None,
-        help="Square replay-video resolution; defaults to the suite configuration",
+        help="Square canonical replay-video resolution; defaults to the suite configuration",
+    )
+    parser.add_argument(
+        "--multiview-width",
+        type=int,
+        default=None,
+        help="Width for post-run cam_high/cam_wrist replay videos; defaults to LF3R_MULTIVIEW_WIDTH or 320",
+    )
+    parser.add_argument(
+        "--multiview-height",
+        type=int,
+        default=None,
+        help="Height for post-run cam_high/cam_wrist replay videos; defaults to LF3R_MULTIVIEW_HEIGHT or 192",
     )
     parser.add_argument(
         "--video-view-mode",
@@ -136,6 +148,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _even_dimension(value: int, name: str) -> int:
+    if value < 64 or value > 2048 or value % 2:
+        raise SystemExit(f"{name} must be an even integer between 64 and 2048")
+    return int(value)
+
+
 def main() -> None:
     args = parse_args()
     suite = SUITE_CONFIGS[args.task_suite]
@@ -149,12 +167,23 @@ def main() -> None:
         if args.record_resolution is not None
         else int(suite["record_resolution"])
     )
+    multiview_width = _even_dimension(
+        int(args.multiview_width)
+        if args.multiview_width is not None
+        else int(os.environ.get("LF3R_MULTIVIEW_WIDTH", "320")),
+        "multiview-width",
+    )
+    multiview_height = _even_dimension(
+        int(args.multiview_height)
+        if args.multiview_height is not None
+        else int(os.environ.get("LF3R_MULTIVIEW_HEIGHT", "192")),
+        "multiview-height",
+    )
     for name, value in (
         ("render-resolution", render_resolution),
         ("record-resolution", record_resolution),
     ):
-        if value < 64 or value > 2048 or value % 2:
-            raise SystemExit(f"{name} must be an even integer between 64 and 2048")
+        _even_dimension(value, name)
     checkpoint = Path(suite["checkpoint"])
     output_root = Path(suite["output_root"])
     max_task = int(suite["max_task"])
@@ -192,6 +221,9 @@ def main() -> None:
     print(f"LF3R_TASK_RANGE start={args.task_start} end={args.task_end} trials={args.trials}")
     print(
         f"LF3R_RESOLUTION render={render_resolution} policy=224 record={record_resolution}"
+    )
+    print(
+        f"LF3R_MULTIVIEW_RESOLUTION width={multiview_width} height={multiview_height}"
     )
     print(f"LF3R_SAFE_FEATURES enabled={args.log_safe_features}")
     print(f"LF3R_VIDEO_VIEW_MODE mode={args.video_view_mode}")
@@ -242,6 +274,10 @@ def main() -> None:
                 args.task_suite,
                 "--record-resolution",
                 str(record_resolution),
+                "--record-width",
+                str(multiview_width),
+                "--record-height",
+                str(multiview_height),
                 "--fps",
                 "30",
             ],

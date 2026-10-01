@@ -24,6 +24,8 @@ GENERATION_CONFIGS = {
         "render_resolution": 256,
         "policy_resolution": 224,
         "record_resolution": 224,
+        "multiview_width": 320,
+        "multiview_height": 192,
     },
     "libero_spatial": {
         "label": "LIBERO-Spatial",
@@ -34,6 +36,8 @@ GENERATION_CONFIGS = {
         "render_resolution": 256,
         "policy_resolution": 224,
         "record_resolution": 256,
+        "multiview_width": 320,
+        "multiview_height": 192,
     },
 }
 GENERATION_RUN_PREFIX = GENERATION_CONFIGS["libero_10"]["run_prefix"]
@@ -185,7 +189,7 @@ class RolloutGenerationService:
         allowed = {
             "task_suite", "gpu", "task_start", "task_end", "trials", "seed",
             "run_label", "log_safe_features", "render_resolution", "record_resolution",
-            "video_view_mode",
+            "multiview_width", "multiview_height", "video_view_mode",
         }
         unknown = set(payload) - allowed
         if unknown:
@@ -203,6 +207,12 @@ class RolloutGenerationService:
         )
         record_resolution = self._resolution(
             payload.get("record_resolution"), "record_resolution", int(config["record_resolution"])
+        )
+        multiview_width = self._resolution(
+            payload.get("multiview_width"), "multiview_width", int(config["multiview_width"])
+        )
+        multiview_height = self._resolution(
+            payload.get("multiview_height"), "multiview_height", int(config["multiview_height"])
         )
         video_view_mode = self._video_view_mode(payload.get("video_view_mode"))
         max_task = int(config["max_task"])
@@ -268,6 +278,8 @@ class RolloutGenerationService:
             "render_resolution": render_resolution,
             "policy_resolution": config["policy_resolution"],
             "record_resolution": record_resolution,
+            "multiview_width": multiview_width,
+            "multiview_height": multiview_height,
             "video_view_mode": video_view_mode,
             "camera_video_slots": (
                 ["cam_high", "cam_wrist"]
@@ -308,6 +320,8 @@ class RolloutGenerationService:
                     "MPLBACKEND": "Agg",
                     "MUJOCO_GL": "egl",
                     "PYOPENGL_PLATFORM": "egl",
+                    "LF3R_MULTIVIEW_WIDTH": str(multiview_width),
+                    "LF3R_MULTIVIEW_HEIGHT": str(multiview_height),
                 },
                 on_poll=self._on_job_poll,
                 on_finished=self._on_job_finished,
