@@ -45,6 +45,13 @@ class WebUIRolloutGenerationService(RolloutGenerationService):
             self.project_root / "tools/lf3r_annotator/generate_maniskill3_success.py"
         )
         self.maniskill_output_root = self.project_root / "outputs/maniskill3"
+        self.maniskill_manifest_path = (
+            self.project_root
+            / "datasets"
+            / "lf3r_failure_rollouts"
+            / "v1"
+            / "maniskill3_manifest.jsonl"
+        )
 
     @staticmethod
     def _generator(value: Any) -> str:
@@ -176,6 +183,7 @@ class WebUIRolloutGenerationService(RolloutGenerationService):
             "output_root": self._relative(self.maniskill_output_root),
             "run_root": self._relative(output_dir),
             "output_dir": self._relative(output_dir),
+            "manifest_path": self._relative(self.maniskill_manifest_path),
             "log_path": self._relative(self.log_root / f"{job_id}.log"),
             "command": command,
             "manifest_rebuilt": False,
@@ -240,14 +248,26 @@ class WebUIRolloutGenerationService(RolloutGenerationService):
             return
 
         completed = self._count_maniskill_generated(job)
+        manifest_ready = (
+            self.maniskill_manifest_path.is_file()
+            and self.maniskill_manifest_path.stat().st_size > 0
+        )
         error = reason
         with self.jobs_lock:
             job["completed_rollouts"] = completed
-            job["manifest_rebuilt"] = False
+            job["manifest_rebuilt"] = bool(
+                return_code == 0
+                and completed >= int(job.get("expected_rollouts", 0))
+                and manifest_ready
+            )
             if error:
                 job["status"] = "failed"
             elif return_code == 0 and completed >= int(job.get("expected_rollouts", 0)):
-                job["status"] = "complete"
+                if manifest_ready:
+                    job["status"] = "complete"
+                else:
+                    job["status"] = "failed"
+                    error = "ManiSkill3 rollouts completed but its manifest was not rebuilt"
             elif return_code == 0:
                 job["status"] = "failed"
                 error = (
