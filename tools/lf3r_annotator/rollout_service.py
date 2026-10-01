@@ -282,7 +282,7 @@ class RolloutGenerationService:
             "multiview_height": multiview_height,
             "video_view_mode": video_view_mode,
             "camera_video_slots": (
-                ["cam_high", "cam_wrist"]
+                ["cam_high", "cam_front", "cam_wrist"]
                 if video_view_mode == "libero_three_view"
                 else None
             ),
