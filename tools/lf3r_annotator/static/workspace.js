@@ -56,6 +56,7 @@
   var postCoreScripts = [
     "/static/repair/jobs.js",
     "/static/repair/synthetic-suffix.js",
+    "/static/repair/batch-ui.js",
     "/static/analysis-outcome.js",
     "/static/analysis-robo-hop.js",
     "/static/runs/layout.js"
