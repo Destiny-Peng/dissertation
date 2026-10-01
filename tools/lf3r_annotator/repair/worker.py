@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Execute the Repair worker with Ctrl-World-safe provenance finalization.
 
-The implementation lives in worker_core.py.  Ctrl-World intentionally does not
+The implementation lives in worker_core.py. Ctrl-World intentionally does not
 load the recorded LIBERO action array at runtime, so provenance must derive the
-action horizon from the already validated alignment contract instead of calling
-len() on A2World-only arrays.
+action horizon from the validated rollout/alignment contract instead of calling
+len() on A2World-only arrays or assuming gt_action_end is populated.
 """
 
 from __future__ import annotations
@@ -18,14 +18,22 @@ _BAD = '''                "gt_action_end": int(len(actions)),
 _FIXED = '''                "gt_action_end": int(
                     len(actions)
                     if actions is not None
-                    else alignment["gt_action_end"]
+                    else (
+                        alignment["gt_action_end"]
+                        if alignment.get("gt_action_end") is not None
+                        else rollout["total_frames"]
+                    )
                 ),
                 "gt_future_action_count": int(
                     len(future_actions)
                     if future_actions is not None
                     else max(
                         0,
-                        int(alignment["gt_action_end"])
+                        int(
+                            alignment["gt_action_end"]
+                            if alignment.get("gt_action_end") is not None
+                            else rollout["total_frames"]
+                        )
                         - int(alignment["gt_action_start"]),
                     )
                 ),'''
