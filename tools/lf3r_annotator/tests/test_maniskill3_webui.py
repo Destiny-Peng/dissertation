@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import ast
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from webui_rollout import WebUIRolloutGenerationService
-
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
+if str(TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOL_ROOT))
+
+from webui_rollout import WebUIRolloutGenerationService  # noqa: E402
 
 
 class _Coordinator:
