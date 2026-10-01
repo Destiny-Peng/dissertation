@@ -26,6 +26,7 @@ from task_supervisor import TmuxJobSupervisor
 class LF3RApplication:
     coordinator_class = JobCoordinator
     baseline_service_class = BaselineService
+    rollout_service_class = RolloutGenerationService
     project_tool_service_class = None
     repair_service_class = None
 
@@ -76,7 +77,7 @@ class LF3RApplication:
             self.tmux,
             analysis_python=configured_analysis_python,
         )
-        self.rollout_jobs = RolloutGenerationService(
+        self.rollout_jobs = self.rollout_service_class(
             self.project_root, self.manifest_path, self.job_coordinator, self.tmux
         )
         if self.project_tool_service_class is not None:
