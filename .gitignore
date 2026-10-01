@@ -9,11 +9,11 @@
 /migration_reports
 /WeeklySummary
 /tmp
-# Upstream repositories are managed as pinned clones/submodules, not copied
-# into the LF3R root history. Local patches should live under patches/ or in
-# a fork/branch of the corresponding upstream repository.
+# Ignore third-party clones by default. ProcVLM and Robo-Dopamine are
+# managed as squash subtrees; commit their local changes directly in LF3R.
 /repos/*
 !/repos/ProcVLM/
+!/repos/Robo-Dopamine/
 # Local bootstrap distribution kept under tools; rebuild it separately.
 /tools/miniforge3/
 /tools/**/.venv/
