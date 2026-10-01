@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 from .batch import RepairBatchService
@@ -11,9 +13,13 @@ from .service import RepairService as _SingleRepairService
 class RepairService(_SingleRepairService):
     """Single-run Repair service with Runs-style sequential batch support."""
 
+    GPU_PLAN_CACHE_SECONDS = 5.0
+
     def __init__(self, project_root, coordinator, tmux) -> None:
         # The parent registers callbacks using these overridden bound methods.
         # Batch state is attached before tmux.recover() is called by the app.
+        self._gpu_plan_cache_lock = threading.Lock()
+        self._gpu_plan_cache: dict[int, tuple[float, dict[str, Any]]] = {}
         super().__init__(project_root, coordinator, tmux)
         self.batch = RepairBatchService(
             self.project_root,
@@ -21,6 +27,19 @@ class RepairService(_SingleRepairService):
             self.tmux,
             self,
         )
+
+    def _gpu_plan(self, requested_index: int) -> dict[str, Any]:
+        """Reuse one nvidia-smi snapshot across a batch preflight."""
+        index = int(requested_index)
+        now = time.monotonic()
+        with self._gpu_plan_cache_lock:
+            cached = self._gpu_plan_cache.get(index)
+            if cached is not None and now - cached[0] <= self.GPU_PLAN_CACHE_SECONDS:
+                return dict(cached[1])
+        result = _SingleRepairService._gpu_plan(index)
+        with self._gpu_plan_cache_lock:
+            self._gpu_plan_cache[index] = (now, dict(result))
+        return result
 
     def start(
         self,
