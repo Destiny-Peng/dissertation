@@ -18,10 +18,11 @@ class CtrlWorldAdapter(WorldModelAdapter):
     """Adapt LF3R LIBERO demonstrations to the released Ctrl-World interface.
 
     Ctrl-World's released replay path is trained on DROID and conditions on
-    sparse history plus a future 7D Cartesian pose/gripper trajectory.  The
-    model expects exactly three visual streams.  LF3R keeps its manifest honest
-    (cam_high + cam_wrist); the required second exterior stream is duplicated
-    only inside this adapter and the duplication is recorded in provenance.
+    sparse history plus a future 7D Cartesian pose/gripper trajectory. The
+    model expects exactly three visual streams. New LF3R LIBERO replays expose
+    agentview, frontview, and wrist as cam_high, cam_front, and cam_wrist.
+    Older two-view rollouts remain supported by duplicating cam_high only when
+    a distinct cam_front stream is unavailable.
     """
 
     name = "ctrl_world"
@@ -29,7 +30,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
     VIEW_ORDER = ("exterior_1", "exterior_2", "wrist")
     DEFAULT_CAMERA_MAPPING = {
         "exterior_1": "cam_high",
-        "exterior_2": "cam_high",
+        "exterior_2": "cam_front",
         "wrist": "cam_wrist",
     }
     TARGET_FPS = 5.0
@@ -174,6 +175,20 @@ class CtrlWorldAdapter(WorldModelAdapter):
             if isinstance(requested, dict) and requested
             else dict(self.DEFAULT_CAMERA_MAPPING)
         )
+
+        # Older WebUI payloads explicitly duplicated cam_high for exterior_2.
+        # Upgrade that legacy mapping whenever the newly recorded physical
+        # frontview stream is available. Conversely, preserve old two-view
+        # rollouts by falling back to cam_high when cam_front is absent.
+        if "cam_front" in cameras:
+            if (
+                mapping.get("exterior_1") == "cam_high"
+                and mapping.get("exterior_2") == "cam_high"
+            ):
+                mapping["exterior_2"] = "cam_front"
+        elif not (isinstance(requested, dict) and requested):
+            mapping["exterior_2"] = "cam_high"
+
         if set(mapping) != set(self.VIEW_ORDER):
             raise ValidationError(
                 "Ctrl-World camera_mapping must define exterior_1, exterior_2, and wrist"
@@ -195,7 +210,7 @@ class CtrlWorldAdapter(WorldModelAdapter):
                         "consumer_view": consumer_view,
                         "manifest_view": manifest_view,
                         "duplicates_consumer_view": seen[manifest_view],
-                        "reason": "Ctrl-World checkpoint requires three views; LF3R LIBERO has two physical views",
+                        "reason": "rollout has no distinct second exterior camera stream",
                     }
                 )
             else:
