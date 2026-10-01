@@ -14,7 +14,10 @@ from pathlib import Path
 
 from mani_skill.examples.motionplanning.panda import run as maniskill_run
 
+from build_maniskill3_manifest import DEFAULT_OUTPUT, build_manifest
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED_ENVS = tuple(maniskill_run.MP_SOLUTIONS.keys())
 
 
@@ -110,10 +113,21 @@ def main() -> None:
             f"Expected {args.num_traj} successful rollout videos, found {len(videos)}"
         )
 
+    manifest_summary = build_manifest(
+        project_root=PROJECT_ROOT,
+        scan_root=PROJECT_ROOT / "outputs" / "maniskill3",
+        output=DEFAULT_OUTPUT,
+    )
+
     print(f"LF3R_MANISKILL3_TRAJECTORY={trajectory_path}")
     print(f"LF3R_MANISKILL3_VIDEO_DIR={video_dir}")
     print(f"LF3R_MANISKILL3_SUCCESS_ROLLOUTS={len(videos)}")
     print(f"LF3R_MANISKILL3_RENDER={args.render_width}x{args.render_height}")
+    print(f"LF3R_MANISKILL3_MANIFEST={DEFAULT_OUTPUT}")
+    print(
+        "LF3R_MANISKILL3_MANIFEST_ROLLOUTS="
+        + str(manifest_summary["total_rollouts"])
+    )
 
 
 if __name__ == "__main__":
