@@ -43,7 +43,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--task-suite", required=True)
-    parser.add_argument("--record-resolution", type=int, required=True)
+    parser.add_argument(
+        "--record-resolution",
+        type=int,
+        default=None,
+        help="Legacy square fallback used when record width/height are omitted.",
+    )
+    parser.add_argument("--record-width", type=int, default=None)
+    parser.add_argument("--record-height", type=int, default=None)
     parser.add_argument("--fps", type=float, default=30.0)
     return parser.parse_args()
 
@@ -66,7 +73,7 @@ def read_actions(path: Path) -> list[np.ndarray]:
     return actions
 
 
-def make_env(task, resolution: int) -> OffScreenRenderEnv:
+def make_env(task, width: int, height: int) -> OffScreenRenderEnv:
     bddl_file = os.path.join(
         get_libero_path("bddl_files"),
         task.problem_folder,
@@ -75,8 +82,8 @@ def make_env(task, resolution: int) -> OffScreenRenderEnv:
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
         camera_names=[HIGH_CAMERA, WRIST_CAMERA],
-        camera_heights=resolution,
-        camera_widths=resolution,
+        camera_heights=int(height),
+        camera_widths=int(width),
     )
     env.seed(0)
     return env
@@ -115,7 +122,8 @@ def record_rollout(
     task_suite,
     task_suite_name: str,
     video: Path,
-    record_resolution: int,
+    record_width: int,
+    record_height: int,
     fps: float,
 ) -> dict[str, Path]:
     match = ROLLOUT_RE.fullmatch(video.name)
@@ -139,7 +147,7 @@ def record_rollout(
             f"Refusing to overwrite existing multiview artifact(s) for {video.name}: {names}"
         )
 
-    env = make_env(task, record_resolution)
+    env = make_env(task, record_width, record_height)
     writers: dict[str, object] = {}
     frame_count = 0
     try:
@@ -176,9 +184,11 @@ def record_rollout(
             slot: path.name
             for slot, path in camera_paths.items()
         },
-        "record_resolution": int(record_resolution),
-        "camera_width": int(record_resolution),
-        "camera_height": int(record_resolution),
+        "record_resolution": (
+            int(record_width) if int(record_width) == int(record_height) else None
+        ),
+        "camera_width": int(record_width),
+        "camera_height": int(record_height),
         "fps": float(fps),
         "frames": frame_count,
         "source_video": video.name,
@@ -196,9 +206,16 @@ def record_rollout(
     outputs = ",".join(f"{slot}={path.name}" for slot, path in camera_paths.items())
     print(
         "LF3R_MULTIVIEW_RECORDED "
-        f"source={video.name} outputs={outputs} frames={frame_count}"
+        f"source={video.name} outputs={outputs} frames={frame_count} "
+        f"size={record_width}x{record_height}"
     )
     return camera_paths
+
+
+def _dimension(value: int | None, name: str) -> int:
+    if value is None or value < 64 or value > 2048 or value % 2:
+        raise SystemExit(f"{name} must be an even integer between 64 and 2048")
+    return int(value)
 
 
 def main() -> None:
@@ -206,8 +223,14 @@ def main() -> None:
     run_dir = args.run_dir.expanduser().resolve()
     if not run_dir.is_dir():
         raise SystemExit(f"Run directory does not exist: {run_dir}")
-    if args.record_resolution < 64 or args.record_resolution > 2048 or args.record_resolution % 2:
-        raise SystemExit("record-resolution must be an even integer between 64 and 2048")
+    record_width = _dimension(
+        args.record_width if args.record_width is not None else args.record_resolution,
+        "record-width",
+    )
+    record_height = _dimension(
+        args.record_height if args.record_height is not None else args.record_resolution,
+        "record-height",
+    )
     if args.fps <= 0:
         raise SystemExit("fps must be positive")
 
@@ -225,12 +248,16 @@ def main() -> None:
             task_suite=task_suite,
             task_suite_name=args.task_suite,
             video=video,
-            record_resolution=args.record_resolution,
+            record_width=record_width,
+            record_height=record_height,
             fps=args.fps,
         )
         for video in videos
     ]
-    print(f"LF3R_MULTIVIEW_COMPLETE rollouts={len(outputs)}")
+    print(
+        f"LF3R_MULTIVIEW_COMPLETE rollouts={len(outputs)} "
+        f"size={record_width}x{record_height}"
+    )
 
 
 if __name__ == "__main__":
