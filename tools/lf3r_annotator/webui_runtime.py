@@ -13,6 +13,7 @@ from typing import Any
 import server
 from webui_application import WebUIApplication, discover_default_manifests
 from webui_handler import WebUIHandler
+from webui_rollout import WebUIRolloutGenerationService
 
 
 def _parse_args() -> argparse.Namespace:
@@ -71,6 +72,9 @@ def main() -> None:
         or project_root / "annotations/failure_annotations/v1"
     )
 
+    # Keep the core application default on the historical LIBERO service; the
+    # WebUI explicitly opts into the additive ManiSkill3-aware subclass.
+    WebUIApplication.rollout_service_class = WebUIRolloutGenerationService
     app = WebUIApplication(
         project_root,
         manifest_paths,

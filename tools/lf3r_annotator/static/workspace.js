@@ -43,6 +43,7 @@
     "/static/runs/manifest-tools.js",
     "/static/runs/project-tools.js",
     "/static/runs/scope.js",
+    "/static/runs/maniskill3.js",
     "/static/runs/jobs.js",
     "/static/baselines/procvlm.js"
   ];
