@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,10 @@ DEFAULT_VIDEO_ROOT = core.DEFAULT_VIDEO_ROOT
 CAMERA_DATASETS = core.CAMERA_DATASETS
 DemoImportError = core.DemoImportError
 _ensure_project_libero_on_sys_path = core._ensure_project_libero_on_sys_path
+
+PACKAGE_ROOT = (PROJECT_ROOT / "tools" / "lf3r_annotator").resolve()
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
 
 CTRL_WORLD_WIDTH = 320
 CTRL_WORLD_HEIGHT = 192
@@ -368,6 +373,8 @@ def _materialize_ctrl_replay(
         for writer in writers.values():
             writer.close()
         writers = {}
+        env.close()
+        env = None
 
         control_array = np.stack(controls, axis=0).astype(np.float32)
         indices = np.arange(frame_count, dtype=np.int64)
