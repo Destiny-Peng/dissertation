@@ -56,11 +56,11 @@
   var postCoreScripts = [
     "/static/repair/jobs.js",
     "/static/repair/synthetic-suffix.js",
-    "/static/repair/batch-ui.js",
     "/static/analysis-outcome.js",
     "/static/analysis-robo-hop.js",
     "/static/runs/layout.js"
   ];
+  var repairBatchScript = "/static/repair/batch-ui.js";
 
   function loadStyle(id, href) {
     if (document.getElementById(id)) return;
@@ -126,7 +126,11 @@
   loadScript(guardScript, function () {
     loadGroup(baseScripts, function () {
       loadScript(workspaceCoreScript, function () {
-        loadGroup(postCoreScripts);
+        loadGroup(postCoreScripts, function () {
+          // Batch UI depends on both Repair's core controller and persistent
+          // job controller, so load it only after that parallel phase settles.
+          loadScript(repairBatchScript);
+        });
       });
     });
   });
