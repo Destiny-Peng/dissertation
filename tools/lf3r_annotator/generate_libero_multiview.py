@@ -23,8 +23,9 @@ from libero.libero.envs import OffScreenRenderEnv
 
 
 HIGH_CAMERA = "agentview"
+FRONT_CAMERA = "frontview"
 WRIST_CAMERA = "robot0_eye_in_hand"
-CAMERA_SLOTS = ("cam_high", "cam_wrist")
+CAMERA_SLOTS = ("cam_high", "cam_front", "cam_wrist")
 ACTION_FIELDS = (
     "action/dx",
     "action/dy",
@@ -81,7 +82,7 @@ def make_env(task, width: int, height: int) -> OffScreenRenderEnv:
     )
     env = OffScreenRenderEnv(
         bddl_file_name=bddl_file,
-        camera_names=[HIGH_CAMERA, WRIST_CAMERA],
+        camera_names=[HIGH_CAMERA, FRONT_CAMERA, WRIST_CAMERA],
         camera_heights=int(height),
         camera_widths=int(width),
     )
@@ -104,9 +105,11 @@ def oriented_rgb(obs: dict, camera: str) -> np.ndarray:
 
 def sidecar_paths(video: Path) -> tuple[dict[str, Path], Path]:
     high_path = video.with_name(video.stem + ".cam_high.mp4")
+    front_path = video.with_name(video.stem + ".cam_front.mp4")
     wrist_path = video.with_name(video.stem + ".cam_wrist.mp4")
     camera_paths = {
         "cam_high": high_path,
+        "cam_front": front_path,
         "cam_wrist": wrist_path,
     }
     return camera_paths, video.with_name(video.stem + ".camera_videos.json")
@@ -158,6 +161,7 @@ def record_rollout(
 
         writers = {
             "cam_high": imageio.get_writer(str(camera_paths["cam_high"]), fps=fps),
+            "cam_front": imageio.get_writer(str(camera_paths["cam_front"]), fps=fps),
             "cam_wrist": imageio.get_writer(
                 str(camera_paths["cam_wrist"]),
                 fps=fps,
@@ -165,6 +169,7 @@ def record_rollout(
         }
         for action in actions:
             writers["cam_high"].append_data(oriented_rgb(obs, HIGH_CAMERA))
+            writers["cam_front"].append_data(oriented_rgb(obs, FRONT_CAMERA))
             writers["cam_wrist"].append_data(oriented_rgb(obs, WRIST_CAMERA))
             frame_count += 1
             obs, _, _, _ = env.step(action.tolist())
@@ -183,6 +188,11 @@ def record_rollout(
         "camera_video_paths": {
             slot: path.name
             for slot, path in camera_paths.items()
+        },
+        "camera_source_names": {
+            "cam_high": HIGH_CAMERA,
+            "cam_front": FRONT_CAMERA,
+            "cam_wrist": WRIST_CAMERA,
         },
         "record_resolution": (
             int(record_width) if int(record_width) == int(record_height) else None
