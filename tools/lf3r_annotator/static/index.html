@@ -427,6 +427,12 @@
             <label data-cli-help="baseline.robo_frame_interval" data-batch-methods="robo_dopamine"><span>Frame
                 interval</span><input data-batch-option="robo_frame_interval" type="number" min="1" step="1"
                 value="4"></label>
+            <label data-batch-methods="robo_dopamine"><span>Reserve GPU memory</span>
+              <input data-batch-option="robo_reserve_gpu_memory" type="checkbox" checked>
+              <small>Hold memory during model startup, then release it for vLLM. The handoff is not an exclusive GPU lock.</small></label>
+            <label data-batch-methods="robo_dopamine"><span>Reservation MiB per GPU (0 = auto)</span>
+              <input data-batch-option="robo_reserve_mib" type="number" min="0" step="1" value="0">
+              <small>Includes 2048 MiB for the handoff; vLLM uses the remainder. Auto follows the free-memory target and also leaves at least 2048 MiB free.</small></label>
             <label data-batch-methods="robo_dopamine"><span>Extract latent / re-inference (incremental)</span>
               <input data-batch-option="robo_extract_latent" type="checkbox">
               <small>Save the 2560D decoder state at the final token of opening &lt;score&gt;. Requires fused or incremental mode. Choose result filter All for re-inference.</small></label>

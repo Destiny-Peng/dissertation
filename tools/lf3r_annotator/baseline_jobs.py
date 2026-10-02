@@ -90,6 +90,7 @@ class BaselineJobsMixin:
             "rynn_max_new_tokens": (1, 1000000),
             "robo_frame_interval": (1, 1000000),
             "robo_batch_size": (1, 4096),
+            "robo_reserve_mib": (0, 1048576),
             "densereward_frame_interval": (1, 1000000),
             "densereward_max_new_tokens": (1, 1000000),
         }
@@ -141,11 +142,15 @@ class BaselineJobsMixin:
             raise ValidationError("procvlm_tracker_support_threshold cannot exceed procvlm_tracker_window_size")
         if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
             raise ValidationError("tracker_only/stateful_history ProcVLM requires procvlm_procedure_config")
-        for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head", "robo_extract_latent"):
+        for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head", "robo_extract_latent", "robo_reserve_gpu_memory"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
         if options.get("robo_extract_latent") and options.get("robo_eval_mode", "fused") not in {"fused", "incremental"}:
             raise ValidationError("Latent extraction requires fused or incremental evaluation")
+        if 0 < options.get("robo_reserve_mib", 0) <= 2048:
+            raise ValidationError("Reservation MiB must exceed 2048, or be 0 for auto")
+        if options.get("robo_reserve_mib", 0) and not options.get("robo_reserve_gpu_memory"):
+            raise ValidationError("Reservation MiB requires Reserve GPU memory")
         return options
 
     @staticmethod
@@ -360,6 +365,7 @@ class BaselineJobsMixin:
             "camera_description": "--camera-description",
             "robo_frame_interval": "--robo-frame-interval",
             "robo_batch_size": "--robo-batch-size",
+            "robo_reserve_mib": "--robo-reserve-mib",
             "robo_eval_mode": "--robo-eval-mode",
             "robo_camera_mode": "--robo-camera-mode",
             "goal_image": "--goal-image",
@@ -372,6 +378,8 @@ class BaselineJobsMixin:
                 command.extend([flag, str(options[name])])
         if options.get("procvlm_enable_value_head"):
             command.append("--procvlm-enable-value-head")
+        if options.get("robo_reserve_gpu_memory"):
+            command.append("--robo-reserve-gpu-memory")
         if options.get("robo_extract_latent"):
             command.append("--robo-extract-latent")
         if options.get("render_video"):

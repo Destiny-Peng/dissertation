@@ -2323,6 +2323,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-description", default="A fixed third-person agent-view RGB camera observing the robot workspace.")
 
     parser.add_argument("--robo-frame-interval", type=int, default=4)
+    parser.add_argument("--robo-reserve-gpu-memory", action="store_true",
+                        help="Hold GPU memory with PyTorch before Robo-Dopamine model imports")
+    parser.add_argument("--robo-reserve-mib", type=int, default=0,
+                        help="Per-GPU reservation MiB; 0 uses the free-memory target and 2048 MiB headroom")
     parser.add_argument("--robo-extract-latent", action="store_true",
                         help="Save incremental 2560D hidden state at the final token of opening <score>")
     parser.add_argument("--robo-batch-size", type=int, default=1)
@@ -2437,6 +2441,14 @@ def parse_args() -> argparse.Namespace:
             parser.error(
                 "--robo-localization-ckpt requires fused Robo-Dopamine output"
             )
+    if args.robo_reserve_mib < 0:
+        parser.error("--robo-reserve-mib must be non-negative")
+    if 0 < args.robo_reserve_mib <= 2048:
+        parser.error("--robo-reserve-mib must exceed the 2048 MiB handoff buffer, or be 0 for auto")
+    if args.robo_reserve_mib and not args.robo_reserve_gpu_memory:
+        parser.error("--robo-reserve-mib requires --robo-reserve-gpu-memory")
+    if args.robo_reserve_gpu_memory and args.baseline != "robo_dopamine":
+        parser.error("--robo-reserve-gpu-memory requires --baseline robo_dopamine")
     if args.robo_extract_latent and args.baseline == "robo_dopamine":
         modes = args.robo_eval_modes or (
             ["incremental", "forward", "backward"] if args.robo_eval_mode == "fused" else [args.robo_eval_mode]

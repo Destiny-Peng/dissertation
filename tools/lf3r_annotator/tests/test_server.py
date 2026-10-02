@@ -290,6 +290,17 @@ class ServerTest(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, 400)
 
+    def test_robo_memory_reservation_options_reach_runner(self) -> None:
+        runner = self.root / "tools/baselines/run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True,exist_ok=True)
+        runner.write_text("# fake runner")
+        options=self.app.baselines._validate_options("robo_dopamine",{
+            "robo_reserve_gpu_memory":True,"robo_reserve_mib":12288})
+        command=self.app.baselines._baseline_command(
+            "robo_dopamine","all","0",.8,self.root/"outputs/web_runs",options)
+        self.assertIn("--robo-reserve-gpu-memory",command)
+        self.assertEqual(command[command.index("--robo-reserve-mib")+1],"12288")
+
     def test_robo_latent_presets_options_and_status(self) -> None:
         with self.request("/api/analysis/localization/presets") as response:
             presets = {row["name"]: row for row in json.load(response)["presets"]}

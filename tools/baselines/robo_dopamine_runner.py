@@ -550,7 +550,41 @@ def run_persistent(
         log_path,
         f"PERSISTENT_ROBO_DOPAMINE_START jobs={len(specs)} resume={resume} engine_reuse=true",
     )
-    worker_return_code = run_streamed(command, config["repo"], env, log_path)
+    reservation = None
+    try:
+        if getattr(args, "robo_reserve_gpu_memory", False):
+            from gpu_memory_reservation import MemoryReservation
+            log_line(log_path, "GPU_RESERVATION_START importing PyTorch before model imports")
+            append_jsonl(progress_path, {"event": "gpu_reservation_started", "at": iso_now()})
+            reservation = MemoryReservation(
+                config["python"], PROJECT_ROOT, env, log_path,
+                args.vllm_free_memory_fraction, args.tensor_parallel_size,
+                getattr(args, "robo_reserve_mib", 0),
+            )
+            reserved_budget = reservation.start()
+            memory_budget = {**memory_budget, **reserved_budget}
+            command[command.index("--memory-budget-json") + 1] = json.dumps(memory_budget)
+            command.extend(["--vllm-total-memory-fraction", str(reserved_budget["resolved_total_fraction"])])
+            env = reservation.worker_env()
+            for row in decorated_specs + command_records:
+                row["vllm_memory_budget"] = memory_budget
+                row["shell_preview"] = shlex.join(command)
+            write_jsonl_atomic(plan_path, decorated_specs)
+            write_jsonl_atomic(commands_path, existing_commands + command_records)
+            metadata["robo_dopamine_engine_memory_budget"] = memory_budget
+            metadata["robo_dopamine_memory_budgets"][-1] = memory_budget
+            metadata["gpu_memory_reservation"] = reserved_budget
+            atomic_json(metadata_path, metadata)
+            append_jsonl(progress_path, {"event": "gpu_reservation_ready", "at": iso_now(), "memory_budget": memory_budget})
+        worker_return_code = run_streamed(command, config["repo"], env, log_path)
+    except Exception as error:
+        log_line(log_path, f"GPU_RESERVATION_OR_WORKER_ERROR {error}")
+        append_jsonl(progress_path, {"event": "fatal_engine_failure", "at": iso_now(), "error": str(error)})
+        worker_return_code = ROBODOPAMINE_FATAL_EXIT_CODE
+    finally:
+        if reservation is not None:
+            reservation.close()
+
     return finalize_run(
         metadata=metadata,
         metadata_path=metadata_path,
@@ -605,6 +639,8 @@ def resume_run(args: argparse.Namespace) -> int:
     args.robo_frame_interval = int(stored_arguments.get("robo_frame_interval", 4))
     args.robo_batch_size = int(stored_arguments.get("robo_batch_size", 1))
     args.robo_extract_latent = bool(stored_arguments.get("robo_extract_latent", False))
+    args.robo_reserve_gpu_memory = bool(getattr(args, "robo_reserve_gpu_memory", False) or stored_arguments.get("robo_reserve_gpu_memory", False))
+    args.robo_reserve_mib = int(getattr(args, "robo_reserve_mib", 0) or stored_arguments.get("robo_reserve_mib", 0))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     if args.tensor_parallel_size > 1:
         tp_gpus = selected_gpu_ids(args.gpu)

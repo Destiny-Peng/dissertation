@@ -586,6 +586,8 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
         args.resolved_memory_budget = resolved_budget
         model_kwargs["gpu_memory_utilization"] = resolved_fraction
         model_kwargs["tensor_parallel_size"] = args.tp
+        if os.environ.get("LF3R_ROBO_RESERVATION_SOCKET"):
+            model_kwargs["worker_cls"] = "gpu_reservation_worker.ReservedGPUWorker"
         return official_llm(*model_args, **model_kwargs)
 
     official.LLM = bounded_llm

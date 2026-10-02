@@ -73,6 +73,8 @@
     robo_dopamine: {
       core: [
         { key: "robo_frame_interval", label: "Frame interval", type: "number", defaultValue: 4, min: 1 },
+        { key: "robo_reserve_gpu_memory", label: "Reserve GPU memory during startup", type: "checkbox", defaultValue: true },
+        { key: "robo_reserve_mib", label: "Reservation MiB per GPU (0 = auto)", type: "number", defaultValue: 0, min: 0 },
         { key: "robo_extract_latent", label: "Extract latent / re-inference (incremental)", type: "checkbox", defaultValue: false },
         { key: "robo_batch_size", label: "Batch size", type: "number", defaultValue: 1, min: 1 },
         { key: "robo_eval_mode", label: "Evaluation mode", type: "select", defaultValue: "fused", options: [["fused", "Fused"], ["forward", "Forward"], ["incremental", "Incremental"], ["backward", "Backward"]] },
