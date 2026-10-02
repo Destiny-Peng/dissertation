@@ -100,9 +100,9 @@ def main() -> None:
     groups = app.dataset_groups()
     suites = ", ".join(
         f"{item['value']} ({item['count']})"
-        for item in groups["task_suites"]
+        for item in groups["dataset_roles"]
     ) or "none"
-    print(f"Dataset task suites: {suites}")
+    print(f"Dataset roles: {suites}")
     print(f"Controlled rollouts: {groups['controlled_count']}")
     print(f"Annotations: {annotations}")
     print(

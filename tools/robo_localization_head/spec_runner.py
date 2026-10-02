@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
@@ -24,7 +25,7 @@ from robo_incremental_hop.io import (
     resolve_project_path,
 )
 
-from . import core, data, losses, metrics, specs, targets
+from . import core, data, losses, metrics, specs, targets, latent
 
 
 def log(message: str) -> None:
@@ -36,6 +37,7 @@ def _aligned_signal_records(
     source_root: Path,
     manifest_rows: Mapping[str, Mapping[str, Any]],
     annotations: Path,
+    audit_path: Path | None = None,
 ) -> tuple[
     dict[
         str,
@@ -56,11 +58,20 @@ def _aligned_signal_records(
             annotations,
             allowed_rollout_ids=None,
             signal_mode="fused",
-            latest_per_rollout=True,
+            latest_per_rollout=not (source_root / "run.json").is_file(),
+            allow_empty=True,
         )
     )
     if not fused_signals:
-        raise ValueError("no usable fused Robo-Dopamine signals were found")
+        if audit_path is not None:
+            audit_path.write_text(json.dumps({"fused": fused_provenance}, indent=2), encoding="utf-8")
+        reasons = Counter(row["reason"] for row in fused_provenance.get("excluded_rollouts", []))
+        raise ValueError(
+            "no usable annotated fused Robo-Dopamine signals were found: "
+            f"{fused_provenance.get('completed_rollout_n', 0)} completed rollouts; "
+            f"exclusions={dict(reasons)}. Localization requires failure annotations; "
+            "latent extraction alone does not provide training labels."
+        )
 
     records_by_mode = {
         "fused": (
@@ -295,6 +306,27 @@ def _aligned_signal_records(
         "feature_names": list(eight_d_feature_names),
     }
 
+    for mode in latent.LATENT_MODES:
+        signals = {}
+        exclusions = []
+        for rollout_id, fused in fused_signals.items():
+            try:
+                incremental = records_by_mode["incremental"][0][rollout_id]
+                prediction = Path(incremental["prediction_path"])
+                rows = json.loads(prediction.read_text())
+                features = latent.load_latent(prediction.parent / "latent_features.npz", fused["frames"],
+                                              [row["id"] for row in rows])
+                if mode == "robodopamine_latent_plus_fused":
+                    features = np.concatenate([features, core.sequence_from_signal(fused)], axis=1)
+                signals[rollout_id] = {**fused, "features": features, "signal_mode": mode}
+            except (KeyError, FileNotFoundError, OSError, ValueError) as exc:
+                exclusions.append({"rollout_id": rollout_id, "reason": str(exc)})
+        records_by_mode[mode] = (signals, events, no_event_failures, clean_rollouts)
+        mode_provenance["modes"][mode] = {
+            "available_rollout_n": len(signals), "excluded_rollout_n": len(exclusions), "exclusions": exclusions,
+        }
+    if audit_path is not None:
+        audit_path.write_text(json.dumps(mode_provenance, indent=2), encoding="utf-8")
     return records_by_mode, mode_provenance
 
 
@@ -306,7 +338,10 @@ def _records_for_config(
     records = records_by_mode.get(signal_mode)
     if records is None or not records[0]:
         raise ValueError(
-            f"no usable aligned Robo-Dopamine {signal_mode} signals were found"
+            f"no usable aligned Robo-Dopamine {signal_mode} signals were found. "
+            "Use annotated rollouts and extract latent from the same baseline run; "
+            "set data.source_run_root to that run for a small-cohort comparison. "
+            "See data_preflight.json for excluded rollouts."
         )
     fused_records = records_by_mode.get("fused")
     fused_count = len(fused_records[0]) if fused_records is not None else 0
@@ -314,7 +349,9 @@ def _records_for_config(
         raise ValueError(
             f"aligned Robo-Dopamine {signal_mode} coverage is incomplete: "
             f"{len(records[0])}/{fused_count} fused-anchor rollouts. "
-            "Input-signal comparisons require the same rollout/run/frame set."
+            "Input-signal comparisons require the same rollout/run/frame set. "
+            "Set data.source_run_root to a fully extracted annotated baseline run. "
+            "See data_preflight.json for excluded rollouts."
         )
     return records
 
@@ -489,8 +526,8 @@ def _run_configuration(
             f"{sorted(input_dims)}"
         )
     input_dim = input_dims.pop()
-    failure_dataset = targets.apply_labels(base_failure, target_config)
-    success_dataset = data.build_success_dataset(signals, clean_rollouts)
+    raw_failure_dataset = targets.apply_labels(base_failure, target_config)
+    raw_success_dataset = data.build_success_dataset(signals, clean_rollouts)
     device = core.resolve_device(str(training.get("device", "auto")))
 
     per_repeat: list[dict[str, Any]] = []
@@ -513,17 +550,28 @@ def _run_configuration(
         if forced_train_ids:
             split = core.force_train_rollouts(split, forced_train_ids)
         failure_train_ids = list(split["train"])
-        mean, std = core.standardization_stats(base_failure, failure_train_ids)
         pos_weight = _positive_weight(base_failure, failure_train_ids)
         success_ids: list[str] = []
         if str(data_config.get("population", "failure_only")) == "failure_success":
             success_ids = data.select_success_rollouts(
-                success_dataset,
+                raw_success_dataset,
                 base_failure,
                 failure_train_ids,
                 ratio=float(data_config.get("success_ratio", 0.0)),
                 seed=split_seed * 100 + 31,
             )
+        pca = None
+        failure_dataset = raw_failure_dataset
+        success_dataset = raw_success_dataset
+        if data_config.get("signal_mode") in latent.LATENT_MODES:
+            pca = latent.fit_pca({**raw_failure_dataset, **raw_success_dataset},
+                                 [*failure_train_ids, *success_ids],
+                                 int(data_config.get("pca_components", 64)))
+            plus_fused = data_config["signal_mode"] == "robodopamine_latent_plus_fused"
+            failure_dataset = latent.transform_dataset(raw_failure_dataset, pca, plus_fused)
+            success_dataset = latent.transform_dataset(raw_success_dataset, pca, plus_fused)
+        input_dim = int(next(iter(failure_dataset.values()))["sequence"].shape[1])
+        mean, std = core.standardization_stats(failure_dataset, failure_train_ids)
         combined = {**failure_dataset}
         for rollout_id in success_ids:
             combined[rollout_id] = dict(success_dataset[rollout_id])
@@ -584,6 +632,7 @@ def _run_configuration(
                 "success_train_ids": list(success_ids),
                 "forced_train_ids": list(split.get("forced_train", [])),
                 "input_dim": input_dim,
+                "latent_pca": pca,
                 "normalization_mean": torch.from_numpy(np.asarray(mean, dtype=np.float32).copy()),
                 "normalization_std": torch.from_numpy(np.asarray(std, dtype=np.float32).copy()),
                 "model_state_dict": {
@@ -779,7 +828,7 @@ def run_spec(
     output_dir: str | Path,
 ) -> Path:
     normalized = specs.normalize_spec(spec)
-    source_root = ensure_within_project(resolve_project_path(run_pool_root), "run pool root")
+    source_root = ensure_within_project(resolve_project_path(normalized["base"]["data"]["source_run_root"] or run_pool_root), "run source root")
     manifest = ensure_within_project(resolve_project_path(manifest_path), "manifest")
     annotations = ensure_within_project(resolve_project_path(annotation_dir), "annotation directory")
     out = ensure_within_project(resolve_project_path(output_dir), "output directory")
@@ -791,6 +840,7 @@ def run_spec(
         source_root,
         load_manifest(manifest),
         annotations,
+        audit_path=out / "data_preflight.json",
     )
 
     all_summary: list[dict[str, Any]] = []
@@ -836,6 +886,8 @@ def run_spec(
         jobs: list[tuple[int, str, dict[str, Any]]] = []
         for config_index, config in enumerate(configurations):
             specs.validate_config(config)
+            if config["data"].get("source_run_root", "") != normalized["base"]["data"]["source_run_root"]:
+                raise ValueError("data.source_run_root must be shared by all configurations")
             config_id = f"s{stage_index + 1:02d}_c{config_index + 1:03d}"
             configs_by_id[config_id] = config
             jobs.append((config_index, config_id, config))

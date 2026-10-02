@@ -307,11 +307,11 @@
               <option value="densereward">DenseReward</option>
             </select>
           </label>
-          <label data-cli-help="baseline.scope"><span>Rollout scope</span>
+          <label data-cli-help="baseline.scope"><span>Dataset role</span>
             <select id="baselineBatchScope">
               <option value="all">All loaded rollouts</option>
-              <option value="libero_10" selected>LIBERO-10</option>
-              <option value="libero_spatial">LIBERO-Spatial</option>
+              <option value="libero_10" selected>libero_10</option>
+              <option value="libero_spatial">libero_spatial</option>
               <option value="controlled_analysis">Controlled</option>
             </select>
           </label>
@@ -427,6 +427,9 @@
             <label data-cli-help="baseline.robo_frame_interval" data-batch-methods="robo_dopamine"><span>Frame
                 interval</span><input data-batch-option="robo_frame_interval" type="number" min="1" step="1"
                 value="4"></label>
+            <label data-batch-methods="robo_dopamine"><span>Extract latent / re-inference (incremental)</span>
+              <input data-batch-option="robo_extract_latent" type="checkbox">
+              <small>Save the 2560D decoder state at the final token of opening &lt;score&gt;. Requires fused or incremental mode. Choose result filter All for re-inference.</small></label>
             <label data-cli-help="baseline.robo_batch_size" data-batch-methods="robo_dopamine"><span>Batch
                 size</span><input data-batch-option="robo_batch_size" type="number" min="1" step="1" value="1"></label>
             <label data-cli-help="baseline.robo_eval_mode" data-batch-methods="robo_dopamine"><span>Eval
@@ -788,9 +791,15 @@
                         <option value="backward">Backward</option>
                         <option value="perspectives_6d">Perspectives 6D</option>
                         <option value="fused_perspectives_8d">Fused + Perspectives 8D</option>
+                        <option value="robodopamine_latent">PCA latent → BiLSTM</option>
+                        <option value="robodopamine_latent_plus_fused">PCA latent + fused → BiLSTM</option>
                       </select>
                       <small class="analysis-run-field-help">2D: one progress + hop pair. 6D: three raw perspectives. 8D: fused progress/hop + the same six raw perspective features.</small>
                     </label>
+                    <label><span>Baseline run path (optional)</span><input id="localizationSourceRunRoot" type="text" placeholder="outputs/baselines/web_runs/…/robo_dopamine_…">
+                      <small>Use one annotated run for a matched input comparison. Leave empty to use the historical pool.</small></label>
+                    <label><span>Latent PCA dimensions</span><input id="localizationPcaComponents" type="number" min="1" max="2560" value="64">
+                      <small>Fit using the training split only; default 2560 → 64D; presets offer 32, 64 and 128D.</small></label>
                     <label><span>Training population</span>
                       <select id="localizationPopulation">
                         <option value="failure_only">Failure only</option>

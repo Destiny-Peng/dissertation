@@ -15,8 +15,7 @@ function baselineBatchMatchesScope(record, scope) {
     return window.LF3RDatasetScopes.matchesBaseline(record, scope);
   }
   if (scope === "all") return true;
-  if (scope === "libero_10" || scope === "libero_spatial") return record.task_suite === scope;
-  return record.analysis_partition === scope;
+  return String(record.dataset_role || "") === String(scope || "");
 }
 
 function baselineBatchUsesWorkers() {

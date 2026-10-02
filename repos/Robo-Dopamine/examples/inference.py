@@ -431,9 +431,18 @@ def plot_video_reward(episode_root: Path):
 # -----------------------------
 
 class GRMInference:
-    def __init__(self, model_path: str, max_image_num=8, min_pixels=12544, max_pixels=76800):
+    def __init__(self, model_path: str, max_image_num=8, min_pixels=12544, max_pixels=76800, extract_latent=False, latent_position="score_start"):
+        if latent_position not in {"score_next", "score_end", "score_start"}:
+            raise ValueError("latent_position must be score_next, score_end or score_start")
+        self.extract_latent = extract_latent
+        self.latent_position = latent_position
+        self._capture_batch = False
         print(f"Loading model from {model_path} ...")
 
+        latent_engine_options = (
+            {"worker_extension_cls": "examples.latent.LatentWorkerExtension"}
+            if extract_latent else {}
+        )
         self.model = LLM(
             model=model_path,
             gpu_memory_utilization=0.9,
@@ -441,7 +450,10 @@ class GRMInference:
             limit_mm_per_prompt={"image": max_image_num},
             enable_prefix_caching=True,
             trust_remote_code=True,
+            **latent_engine_options,
         )
+        if extract_latent:
+            self.model.collective_rpc("lf3r_install_latent_capture")
         self.sampling_params = SamplingParams(
             temperature=0.1, top_p=0.9, top_k=50, max_tokens=1024
         )
@@ -488,7 +500,18 @@ class GRMInference:
                 "multi_modal_data": {"image": images}
             })
 
-        outputs = self.model.generate(prompts, sampling_params=self.sampling_params, use_tqdm=False)
+        if self._capture_batch:
+            from examples.latent import select_features
+            self.model.collective_rpc("lf3r_start_latent_capture")
+            try:
+                outputs = self.model.generate(prompts, sampling_params=self.sampling_params, use_tqdm=False)
+            finally:
+                captured = self.model.collective_rpc("lf3r_finish_latent_capture")
+            features, indices = select_features(outputs, captured, self.processor.tokenizer, self.latent_position)
+            self._latent_features.extend(features)
+            self._latent_token_indices.extend(indices)
+        else:
+            outputs = self.model.generate(prompts, sampling_params=self.sampling_params, use_tqdm=False)
         
         results = []
         for orig_item, out in zip(batch_data, outputs):
@@ -569,11 +592,19 @@ class GRMInference:
 
         print(f"Running inference on {len(samples)} samples...")
         results = []
-        
+        self._capture_batch = self.extract_latent and eval_mode == "incremental"
+        self._latent_features = []
+        self._latent_token_indices = []
+
         for i in tqdm(range(0, len(samples), batch_size)):
             batch = samples[i : i + batch_size]
             results.extend(self.inference_batch(batch))
 
+        if self._capture_batch:
+            from examples.latent import save_features
+            save_features(run_root / "latent_features.npz", results,
+                          self._latent_features, self._latent_token_indices, self.latent_position)
+        self._capture_batch = False
         # --- Post-Processing Logic based on Mode ---
         prev_prog = 0.0
         

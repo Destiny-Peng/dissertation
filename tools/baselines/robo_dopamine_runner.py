@@ -251,6 +251,8 @@ def build_worker_command(
             "--localization-checkpoint",
             str(Path(args.robo_localization_ckpt).resolve()),
         ])
+    if getattr(args, "robo_extract_latent", False):
+        command.append("--extract-latent")
     requested_modes = getattr(args, "robo_eval_modes", None)
     if requested_modes:
         command.extend(["--eval-modes", *requested_modes])
@@ -602,6 +604,7 @@ def resume_run(args: argparse.Namespace) -> int:
     )
     args.robo_frame_interval = int(stored_arguments.get("robo_frame_interval", 4))
     args.robo_batch_size = int(stored_arguments.get("robo_batch_size", 1))
+    args.robo_extract_latent = bool(stored_arguments.get("robo_extract_latent", False))
     args.tensor_parallel_size = int(stored_arguments.get("tensor_parallel_size", 1))
     if args.tensor_parallel_size > 1:
         tp_gpus = selected_gpu_ids(args.gpu)

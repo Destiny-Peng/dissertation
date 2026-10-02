@@ -55,6 +55,7 @@ def make_args(root: Path) -> argparse.Namespace:
         tp=1,
         eval_mode="forward",
         render_video=False,
+        localization_checkpoint=None,
         vllm_total_memory_fraction=0.55,
         vllm_free_memory_fraction=0.8,
         vllm_memory_safety_buffer_mib=2048,

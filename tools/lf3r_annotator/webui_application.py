@@ -281,8 +281,12 @@ class WebUIApplication(server.LF3RApplication):
     def dataset_groups(self) -> dict[str, Any]:
         records = self._refresh_manifest_catalog()
         suite_counts: dict[str, int] = {}
+        role_counts: dict[str, int] = {}
         controlled = 0
         for record in records:
+            role = str(record.get("dataset_role") or "")
+            if role:
+                role_counts[role] = role_counts.get(role, 0) + 1
             if server._is_controlled_record(record):
                 controlled += 1
                 continue
@@ -290,6 +294,7 @@ class WebUIApplication(server.LF3RApplication):
             if suite:
                 suite_counts[suite] = suite_counts.get(suite, 0) + 1
         return {
+            "dataset_roles": [{"value": role, "count": count} for role, count in role_counts.items()],
             "task_suites": [
                 {"value": suite, "count": count}
                 for suite, count in suite_counts.items()

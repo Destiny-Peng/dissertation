@@ -141,9 +141,11 @@ class BaselineJobsMixin:
             raise ValidationError("procvlm_tracker_support_threshold cannot exceed procvlm_tracker_window_size")
         if options.get("procvlm_procedure_mode", "baseline") != "baseline" and not options.get("procvlm_procedure_config"):
             raise ValidationError("tracker_only/stateful_history ProcVLM requires procvlm_procedure_config")
-        for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head"):
+        for name in ("render_video", "validate_environment", "dry_run", "procvlm_enable_value_head", "robo_extract_latent"):
             if name in options and not isinstance(options[name], bool):
                 raise ValidationError(f"{name} must be boolean")
+        if options.get("robo_extract_latent") and options.get("robo_eval_mode", "fused") not in {"fused", "incremental"}:
+            raise ValidationError("Latent extraction requires fused or incremental evaluation")
         return options
 
     @staticmethod
@@ -306,20 +308,16 @@ class BaselineJobsMixin:
             "--continue-on-error",
         ]
         if rollout_ids is not None:
-            # Explicit IDs preserve custom task-suite scopes and define the
+            # Explicit IDs preserve dataset-role scopes and define the
             # authoritative pre-range selection for variants and result
             # filtering, so positional ranges apply to the selected records.
             command.extend(["--partition", "all"])
             for rollout_id in rollout_ids:
                 command.extend(["--rollout-id", str(rollout_id)])
-        elif scope in {"all", "controlled_analysis"}:
-            command.extend(["--partition", scope])
-        elif scope in {"libero_10", "libero_spatial"}:
-            command.extend(["--partition", "natural_observation", "--task-suite", scope])
+        elif scope == "all":
+            command.extend(["--partition", "all"])
         else:
-            raise ValidationError(
-                "Manifest-defined task-suite scopes require explicit rollout IDs"
-            )
+            command.extend(["--partition", "all", "--dataset-role", scope])
         if end_index is not None:
             command.extend(["--start-index", str(start_index), "--end-index", str(end_index)])
         else:
@@ -374,6 +372,8 @@ class BaselineJobsMixin:
                 command.extend([flag, str(options[name])])
         if options.get("procvlm_enable_value_head"):
             command.append("--procvlm-enable-value-head")
+        if options.get("robo_extract_latent"):
+            command.append("--robo-extract-latent")
         if options.get("render_video"):
             command.append("--render-video")
         if options.get("dry_run"):
@@ -548,6 +548,9 @@ class BaselineJobsMixin:
         )
         scope = validate_run_scope(payload.get("scope"))
         result_filter = self._validate_result_filter(payload.get("result_filter", "all"))
+        options = self._validate_options(baseline, payload.get("options"))
+        if options.get("robo_extract_latent") and result_filter != "all":
+            raise ValidationError("Latent re-inference requires result filter All so existing progress outputs are not skipped")
         records = self._condition_records(instruction_condition, scope)
         scope_record_count = len(records)
         if not records:
@@ -632,7 +635,6 @@ class BaselineJobsMixin:
             or raw_workers is not None
             or worker_plan["parallel_workers"] > 1
         )
-        options = self._validate_options(baseline, payload.get("options"))
         if baseline == "robo_dopamine":
             options.setdefault("robo_eval_mode", "fused")
         selected_count = total_end - start_index
@@ -666,16 +668,8 @@ class BaselineJobsMixin:
                 instruction_condition=instruction_condition,
                 rollout_ids=(
                     [str(record["id"]) for record in records]
-                    if (
-                        instruction_condition != "full_instruction"
-                        or result_filter == "missing_valid"
-                        or scope not in {
-                            "all",
-                            "controlled_analysis",
-                            "libero_10",
-                            "libero_spatial",
-                        }
-                    )
+                    if instruction_condition != "full_instruction"
+                    or result_filter == "missing_valid" or scope != "all"
                     else None
                 ),
             )

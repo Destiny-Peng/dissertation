@@ -2323,6 +2323,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-description", default="A fixed third-person agent-view RGB camera observing the robot workspace.")
 
     parser.add_argument("--robo-frame-interval", type=int, default=4)
+    parser.add_argument("--robo-extract-latent", action="store_true",
+                        help="Save incremental 2560D hidden state at the final token of opening <score>")
     parser.add_argument("--robo-batch-size", type=int, default=1)
     parser.add_argument(
         "--densereward-frame-interval",
@@ -2435,6 +2437,12 @@ def parse_args() -> argparse.Namespace:
             parser.error(
                 "--robo-localization-ckpt requires fused Robo-Dopamine output"
             )
+    if args.robo_extract_latent and args.baseline == "robo_dopamine":
+        modes = args.robo_eval_modes or (
+            ["incremental", "forward", "backward"] if args.robo_eval_mode == "fused" else [args.robo_eval_mode]
+        )
+        if "incremental" not in modes:
+            parser.error("--robo-extract-latent requires incremental or fused evaluation")
     if args.robo_eval_modes:
         if len(set(args.robo_eval_modes)) != len(args.robo_eval_modes):
             parser.error("--robo-eval-modes must not contain duplicates")

@@ -15,10 +15,14 @@
 
   var PARAMS = [
     {
+      path: "data.pca_components", label: "Latent PCA dimensions", type: "integer", min: 1, max: 2560,
+      defaults: [32, 64, 128], help: "Fit on the training split only. Default: 64D. Comparison: [32,64,128]."
+    },
+    {
       path: "data.signal_mode", label: "Input signal", type: "enum",
-      allowed: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"],
-      defaults: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"],
-      help: "2D modes use one [progress, hop] pair. perspectives_6d concatenates the three raw perspectives. fused_perspectives_8d prepends fused [progress, hop] to the same six raw features."
+      allowed: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d", "robodopamine_latent", "robodopamine_latent_plus_fused"],
+      defaults: ["incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d", "robodopamine_latent", "robodopamine_latent_plus_fused"],
+      help: "2D modes use one [progress, hop] pair. perspectives_6d concatenates the three raw perspectives. fused_perspectives_8d prepends fused [progress, hop] to the same six raw features. Latent modes use train-only PCA; plus_fused appends fused progress/hop."
     },
     {
       path: "data.success_ratio", label: "Success ratio", type: "number", min: 0,
@@ -127,6 +131,8 @@
     return {
       data: {
         signal_mode: node("localizationSignalMode").value,
+        pca_components: Math.round(n("localizationPcaComponents")),
+        source_run_root: node("localizationSourceRunRoot").value.trim(),
         population: population,
         success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio"),
         challenge_set_name: forceChallenge ? challengeName : "",
@@ -171,6 +177,8 @@
     var data = base.data || {}, target = base.target || {}, model = base.model || {};
     var loss = base.loss || {}, training = base.training || {};
     node("localizationSignalMode").value = data.signal_mode || "fused";
+    node("localizationSourceRunRoot").value = data.source_run_root || "";
+    node("localizationPcaComponents").value = data.pca_components == null ? 64 : data.pca_components;
     node("localizationPopulation").value = data.population || "failure_only";
     node("localizationSuccessRatio").value = data.success_ratio == null ? 0 : data.success_ratio;
     node("localizationChallengeTrainSet").value = data.challenge_set_name || "";
@@ -574,7 +582,7 @@
     state.presets = payload.presets || [];
     var select = node("localizationPresetSelect");
     select.innerHTML = state.presets.map(function (preset) {
-      return '<option value="' + esc(preset.name) + '">' + esc(preset.name)
+      return '<option value="' + esc(preset.name) + '">' + esc(preset.label || preset.name)
         + (preset.builtin ? " · built-in" : "") + '</option>';
     }).join("");
     renderPresetList();
@@ -608,7 +616,7 @@
     }
     host.innerHTML = '<table class="analysis-table"><thead><tr><th>Name</th><th>Type</th><th>Repeats</th><th>Actions</th></tr></thead><tbody>'
       + state.presets.map(function (preset) {
-        return '<tr><td><strong>' + esc(preset.name) + '</strong></td>'
+        return '<tr><td><strong>' + esc(preset.label || preset.name) + '</strong></td>'
           + '<td>' + (preset.builtin ? "Built-in" : "Project") + '</td>'
           + '<td class="numeric">' + esc(preset.repeats || 1) + '</td>'
           + '<td><button class="ghost-button" type="button" data-load-preset="' + esc(preset.name) + '">Load</button> '

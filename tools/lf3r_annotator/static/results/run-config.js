@@ -73,6 +73,7 @@
     robo_dopamine: {
       core: [
         { key: "robo_frame_interval", label: "Frame interval", type: "number", defaultValue: 4, min: 1 },
+        { key: "robo_extract_latent", label: "Extract latent / re-inference (incremental)", type: "checkbox", defaultValue: false },
         { key: "robo_batch_size", label: "Batch size", type: "number", defaultValue: 1, min: 1 },
         { key: "robo_eval_mode", label: "Evaluation mode", type: "select", defaultValue: "fused", options: [["fused", "Fused"], ["forward", "Forward"], ["incremental", "Incremental"], ["backward", "Backward"]] },
         { key: "robo_camera_mode", label: "Camera input", type: "select", defaultValue: "auto", options: [["auto", "Auto · multiview when available"], ["multi_view", "Multiview · cam_high + cam_wrist"], ["single_view", "Single view · preferred available camera"]] }

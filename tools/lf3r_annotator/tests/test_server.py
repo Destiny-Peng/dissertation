@@ -290,6 +290,42 @@ class ServerTest(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, 400)
 
+    def test_robo_latent_presets_options_and_status(self) -> None:
+        with self.request("/api/analysis/localization/presets") as response:
+            presets = {row["name"]: row for row in json.load(response)["presets"]}
+        self.assertEqual(presets["pca128_latent_bilstm"]["base"]["data"]["signal_mode"], "robodopamine_latent")
+        self.assertEqual(presets["pca128_latent_plus_fused_bilstm"]["base"]["data"]["pca_components"], 128)
+        self.assertIn("fused_progress_bilstm", presets)
+        for dimensions in (32, 64, 128):
+            for suffix in ("latent", "latent_plus_fused"):
+                self.assertEqual(presets[f"pca{dimensions}_{suffix}_bilstm"]["base"]["data"]["pca_components"], dimensions)
+        runner = self.root / "tools/baselines/run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# fake runner")
+        command = self.app.baselines._baseline_command(
+            "robo_dopamine", "all", "0", 0.8, self.root/"outputs/web_runs",
+            {"robo_extract_latent": True})
+        self.assertIn("--robo-extract-latent", command)
+        self.seed_baseline_outputs()
+        with self.request("/api/baselines/sample-rollout") as response:
+            result = json.load(response)["evaluation"]["methods"]["robo_dopamine"]
+        self.assertEqual(result["latent_features"]["status"], "missing")
+        raw = self.root/"outputs/baselines/robo_dopamine_test/raw/sample-rollout"
+        metadata_path = raw/"worker_result.json"
+        metadata = json.loads(metadata_path.read_text())
+        latent_path = raw/"latent_features.npz"
+        latent_path.write_bytes(b"fixture")
+        metadata["latent_features"] = {"path": str(latent_path), "status": "generated", "position": "score_start"}
+        metadata_path.write_text(json.dumps(metadata))
+        with self.request("/api/baselines/sample-rollout") as response:
+            result = json.load(response)["evaluation"]["methods"]["robo_dopamine"]
+        self.assertEqual(result["latent_features"]["status"], "generated")
+        metadata["latent_features"]["position"] = "score_next"
+        metadata_path.write_text(json.dumps(metadata))
+        with self.request("/api/baselines/sample-rollout") as response:
+            result = json.load(response)["evaluation"]["methods"]["robo_dopamine"]
+        self.assertEqual(result["latent_features"]["status"], "position_mismatch")
+
     def test_robo_dopamine_web_command_defaults_to_fused(self) -> None:
         runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
@@ -1155,9 +1191,10 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
         self.assertEqual(job["memory_scope"], "free_gpu_memory")
         self.assertIn("--partition", job["command"])
         partition_index = job["command"].index("--partition")
-        self.assertEqual(job["command"][partition_index + 1], "natural_observation")
-        self.assertIn("--task-suite", job["command"])
-        self.assertIn("libero_10", job["command"])
+        self.assertEqual(job["command"][partition_index + 1], "all")
+        self.assertNotIn("--task-suite", job["command"])
+        self.assertIn("--rollout-id", job["command"])
+        self.assertIn(self.rollout["id"], job["command"])
         self.assertIn("--dry-run", job["command"])
         final = self.wait_for_job("/api/baseline-jobs", job["job_id"])
         self.assertEqual(final["status"], "complete")
@@ -1165,7 +1202,29 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             log = json.load(response)["log"]
         self.assertEqual(log["job_id"], job["job_id"])
 
-    def test_baseline_batch_accepts_manifest_defined_task_suite(self) -> None:
+    def test_baseline_scope_separates_dataset_roles_in_same_suite(self) -> None:
+        official = {**self.rollout, "id": "official-demo",
+                    "dataset_role": "libero_10_official_success",
+                    "source_kind": "official_demonstration",
+                    "analysis_partition": "official_demonstration"}
+        self.app.manifest_path.write_text(
+            json.dumps(official) + "\n" + json.dumps(self.rollout) + "\n", encoding="utf-8")
+        self.assertEqual([r["id"] for r in self.app.baselines._condition_records("full_instruction", "libero_10")], [self.rollout["id"]])
+        self.assertEqual([r["id"] for r in self.app.baselines._condition_records("full_instruction", "libero_10_official_success")], [official["id"]])
+        runner = self.root / "tools" / "baselines" / "run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# test runner\n", encoding="utf-8")
+        with self.request("/api/baselines/run-batch", {
+            "baseline": "safe", "scope": "libero_10", "gpu": "0",
+            "start_index": 0, "end_index": 1, "options": {"dry_run": True},
+        }) as response:
+            job = json.load(response)["job"]
+        selected_ids = [job["command"][i + 1] for i, arg in enumerate(job["command"]) if arg == "--rollout-id"]
+        self.assertEqual(selected_ids, [self.rollout["id"]])
+        self.assertEqual(job["scope_rollouts_before_result_filter"], 1)
+        self.assertEqual(self.wait_for_job("/api/baseline-jobs", job["job_id"])["status"], "complete")
+
+    def test_baseline_batch_accepts_manifest_defined_dataset_role(self) -> None:
         custom_rollout = {
             **self.rollout,
             "task_suite": "realrobot_tube",
@@ -2673,7 +2732,7 @@ print('fake label loss ablation complete')
         script = self.root / "tools" / "train_robo_localization.py"
         script.parent.mkdir(parents=True, exist_ok=True)
         script.write_text(
-            """import argparse
+            r"""import argparse
 import json
 from pathlib import Path
 
@@ -2710,6 +2769,8 @@ out.mkdir(parents=True, exist_ok=True)
     'configuration_count': 1,
     'training_run_count': 1,
 }), encoding='utf-8')
+(out / 'all_failure_predictions.csv').write_text((out / 'per_rollout_predictions.csv').read_text())
+(out / 'checkpoints').mkdir()
 print('fake localization experiment complete')
 """,
             encoding="utf-8",

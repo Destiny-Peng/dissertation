@@ -13,6 +13,8 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 DEFAULT_BASE = {
     "data": {
         "signal_mode": "fused",
+        "pca_components": 64,
+        "source_run_root": "",
         "population": "failure_only",
         "success_ratio": 0.0,
         "challenge_set_name": "",
@@ -184,6 +186,34 @@ BUILTIN_PRESETS = {
 }
 
 
+LATENT_COMPARISON_PRESET_NAMES = ["fused_progress_bilstm"]
+for _dimensions in (32, 64, 128):
+    LATENT_COMPARISON_PRESET_NAMES.extend([
+        f"pca{_dimensions}_latent_bilstm",
+        f"pca{_dimensions}_latent_plus_fused_bilstm",
+    ])
+
+for _name in LATENT_COMPARISON_PRESET_NAMES:
+    _base = copy.deepcopy(DEFAULT_BASE)
+    if _name == "fused_progress_bilstm":
+        _label = "fused progress → BiLSTM"
+    else:
+        _dimensions = int(_name.split("_")[0][3:])
+        _plus_fused = "plus_fused" in _name
+        _base["data"].update(
+            signal_mode="robodopamine_latent_plus_fused" if _plus_fused else "robodopamine_latent",
+            pca_components=_dimensions,
+        )
+        _label = f"PCA-{_dimensions} latent{' + fused' if _plus_fused else ''} → BiLSTM"
+        if _dimensions == 64:
+            _label += " (default)"
+    _base["training"]["split_seed"] = 17
+    BUILTIN_PRESETS[_name] = {
+        "schema_version": 1, "name": _name, "label": _label, "base": _base,
+        "sweep": [], "variants": [], "stages": [], "repeats": 5,
+    }
+
+
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(dict(base))
     for key, value in override.items():
@@ -284,12 +314,18 @@ def validate_config(config: Mapping[str, Any]) -> None:
 
     signal_mode = str(data.get("signal_mode", "fused"))
     if signal_mode not in {
-        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d",
+        "robodopamine_latent", "robodopamine_latent_plus_fused"
     }:
         raise ValueError(
             "data.signal_mode must be incremental, forward, backward, fused, "
-            "perspectives_6d, or fused_perspectives_8d"
+            "perspectives_6d, fused_perspectives_8d, robodopamine_latent, or robodopamine_latent_plus_fused"
         )
+    if not isinstance(data.get("source_run_root", ""), str):
+        raise ValueError("data.source_run_root must be a project-relative baseline run path")
+    components = data.get("pca_components", 64)
+    if isinstance(components, bool) or int(components) != components or not 1 <= int(components) <= 2560:
+        raise ValueError("data.pca_components must be between 1 and 2560")
     population = str(data.get("population", "failure_only"))
     if population not in {"failure_only", "failure_success"}:
         raise ValueError("data.population must be failure_only or failure_success")

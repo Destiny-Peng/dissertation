@@ -81,7 +81,8 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
         else "fused"
     )
     if signal_mode not in {
-        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d",
+        "robodopamine_latent", "robodopamine_latent_plus_fused"
     }:
         raise ValueError(
             f"Localization checkpoint has invalid input signal: {signal_mode}"
@@ -123,6 +124,7 @@ def checkpoint_bundle(path: Path) -> dict[str, Any]:
         "sha256": digest,
         "model": model,
         "signal_mode": signal_mode,
+        "latent_pca": payload.get("latent_pca"),
         "input_dim": input_dim,
         "mean": mean,
         "std": std,
@@ -236,7 +238,25 @@ def infer_one(
             features.append([progress, hop])
         return frames, np.asarray(features, dtype=np.float32)
 
-    if signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
+    if signal_mode in {"robodopamine_latent", "robodopamine_latent_plus_fused"}:
+        from robo_localization_head.latent import load_latent, transform_sequence
+        prediction_path, _payload, _source = resolve_signal_prediction(worker_result, run_root, "incremental")
+        frames, _ = read_two_dim(prediction_path)
+        rows = json.loads(prediction_path.read_text())
+        raw = load_latent(prediction_path.parent / "latent_features.npz", frames, [row["id"] for row in rows])
+        source_prediction = {"incremental": str(prediction_path)}
+        plus = signal_mode == "robodopamine_latent_plus_fused"
+        if plus:
+            fused_path = fused_prediction_path(project_root, worker_result)
+            fused_frames, fused = read_two_dim(fused_path)
+            if fused_frames != frames:
+                raise ValueError("Latent/fused frame alignment mismatch")
+            raw = np.concatenate([raw, fused], axis=1)
+            source_prediction["fused"] = str(fused_path)
+        if bundle.get("latent_pca") is None:
+            raise ValueError("Latent checkpoint has no fitted PCA")
+        sequence = transform_sequence(raw, bundle["latent_pca"], plus)
+    elif signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
         mode_data = []
         if signal_mode == "fused_perspectives_8d":
             fused_path = fused_prediction_path(project_root, worker_result)

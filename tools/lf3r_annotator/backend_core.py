@@ -77,7 +77,7 @@ def validate_run_scope(scope: Any) -> str:
         return value
     if not DYNAMIC_SCOPE_RE.fullmatch(value):
         raise ValidationError(
-            "scope must be 'all', 'controlled_analysis', or a task_suite name "
+            "scope must be 'all', 'controlled_analysis', or a dataset_role name "
             "present in the loaded manifests"
         )
     return value
@@ -97,12 +97,7 @@ def record_matches_scope(record: dict[str, Any], scope: str) -> bool:
     scope = validate_run_scope(scope)
     if scope == "all":
         return True
-    if scope == "controlled_analysis":
-        return is_controlled_record(record)
-    return (
-        str(record.get("task_suite") or "") == scope
-        and not is_controlled_record(record)
-    )
+    return str(record.get("dataset_role") or "") == scope
 
 
 def select_scope_records(

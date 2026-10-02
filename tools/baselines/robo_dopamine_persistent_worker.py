@@ -252,7 +252,8 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         else "fused"
     )
     if signal_mode not in {
-        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d"
+        "incremental", "forward", "backward", "fused", "perspectives_6d", "fused_perspectives_8d",
+        "robodopamine_latent", "robodopamine_latent_plus_fused"
     }:
         raise ValueError(
             f"Localization checkpoint has invalid input signal: {signal_mode}"
@@ -294,6 +295,7 @@ def _load_localization_checkpoint(path: Path) -> dict[str, Any]:
         "mean": mean,
         "std": std,
         "signal_mode": signal_mode,
+        "latent_pca": payload.get("latent_pca"),
         "input_dim": input_dim,
         "num_layers": num_layers,
         "config": config,
@@ -337,7 +339,25 @@ def run_localization_checkpoint(
             features.append([progress, hop])
         return frames, np.asarray(features, dtype=np.float32)
 
-    if signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
+    if signal_mode in {"robodopamine_latent", "robodopamine_latent_plus_fused"}:
+        from robo_localization_head.latent import load_latent, transform_sequence
+        if not isinstance(prediction_source, dict) or "incremental" not in prediction_source:
+            raise ValueError("Latent checkpoint requires incremental predictions and latent_features.npz")
+        path = prediction_source["incremental"]
+        frames, _ = read_two_dim(path)
+        rows = json.loads(path.read_text())
+        raw = load_latent(path.parent / "latent_features.npz", frames, [row["id"] for row in rows])
+        plus = signal_mode == "robodopamine_latent_plus_fused"
+        if plus:
+            fused_frames, fused = read_two_dim(prediction_source["fused"])
+            if fused_frames != frames:
+                raise ValueError("Latent/fused frame alignment mismatch")
+            raw = np.concatenate([raw, fused], axis=1)
+        if bundle.get("latent_pca") is None:
+            raise ValueError("Latent checkpoint has no fitted PCA")
+        sequence = transform_sequence(raw, bundle["latent_pca"], plus)
+        source_prediction = {mode: str(path) for mode, path in prediction_source.items()}
+    elif signal_mode in {"perspectives_6d", "fused_perspectives_8d"}:
         if not isinstance(prediction_source, dict):
             raise ValueError(
                 f"{signal_mode} localization requires aligned perspective inputs"
@@ -569,7 +589,10 @@ def initialize_robo_model(args: argparse.Namespace) -> Any:
         return official_llm(*model_args, **model_kwargs)
 
     official.LLM = bounded_llm
-    return official.GRMInference(str(args.model_path.resolve()))
+    kwargs = {}
+    if getattr(args, "extract_latent", False):
+        kwargs = {"extract_latent": True, "latent_position": getattr(args, "latent_position", "score_start")}
+    return official.GRMInference(str(args.model_path.resolve()), **kwargs)
 
 
 def official_source_revision(repo: Path) -> str | None:
@@ -786,7 +809,11 @@ def infer_rollout(
             args.localization_checkpoint
         )
         localization_signal_mode = localization_bundle["signal_mode"]
-        if localization_signal_mode == "fused_perspectives_8d":
+        if localization_signal_mode in {"robodopamine_latent", "robodopamine_latent_plus_fused"}:
+            localization_input = {"incremental": mode_predictions["incremental"]}
+            if fused_path is not None:
+                localization_input["fused"] = fused_path
+        elif localization_signal_mode == "fused_perspectives_8d":
             localization_input = (
                 {"fused": fused_path, **{
                     mode: mode_predictions[mode] for mode in PERSPECTIVE_MODES
@@ -815,6 +842,8 @@ def infer_rollout(
             output_dir,
         )
 
+    latent_path = (mode_predictions["incremental"].parent / "latent_features.npz"
+                   if "incremental" in mode_predictions else None)
     result_path = output_dir / "worker_result.json"
     result = {
         "schema_version": 2 if multi_perspective else 1,
@@ -835,6 +864,11 @@ def infer_rollout(
     }
     if camera_alignment is not None:
         result["camera_alignment"] = camera_alignment
+    result["latent_features"] = {
+        "status": "generated" if latent_path is not None and latent_path.is_file() else "missing",
+        "path": str(latent_path) if latent_path is not None and latent_path.is_file() else None,
+        "mode": "incremental", "position": getattr(args, "latent_position", "score_start"),
+    }
     if localization_prediction is not None:
         result["localization_prediction"] = {
             key: localization_prediction[key]
@@ -1250,6 +1284,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional LF3R BiLSTM localization checkpoint; requires fused output",
     )
+    parser.add_argument("--extract-latent", action="store_true")
+    parser.add_argument("--latent-position", choices=("score_next", "score_end", "score_start"), default="score_start")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if args.frame_interval < 1:
@@ -1264,6 +1300,8 @@ def parse_args() -> argparse.Namespace:
             parser.error(
                 f"--localization-checkpoint does not exist: {args.localization_checkpoint}"
             )
+    if args.extract_latent and "incremental" not in resolve_eval_modes(args.eval_mode, args.eval_modes):
+        parser.error("--extract-latent requires incremental or fused evaluation")
     if args.eval_modes:
         if len(set(args.eval_modes)) != len(args.eval_modes):
             parser.error("--eval-modes must not contain duplicates")

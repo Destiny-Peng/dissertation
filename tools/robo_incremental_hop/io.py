@@ -587,6 +587,7 @@ def build_base_records(
     allowed_rollout_ids: set[str] | None = None,
     signal_mode: str = "incremental",
     latest_per_rollout: bool = False,
+    allow_empty: bool = False,
 ) -> tuple[
     dict[str, dict[str, Any]],
     list[dict[str, Any]],
@@ -839,7 +840,7 @@ def build_base_records(
                 }
             )
 
-    if not signals:
+    if not signals and not allow_empty:
         raise ValueError(
             "No completed rollouts have usable saved "
             f"{signal_mode} hop outputs"

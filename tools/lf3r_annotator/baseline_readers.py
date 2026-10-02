@@ -516,6 +516,14 @@ class BaselineReadersMixin:
             "_total_frames": total_frames,
             "kind": "model_scores_and_progress",
         }
+        latent_info = dict(result.get("latent_features") or {})
+        latent_path = self._project_path(latent_info["path"]) if latent_info.get("path") else None
+        latent_info["status"] = "generated" if latent_path is not None and latent_path.is_file() else "missing"
+        if latent_info["status"] == "generated" and latent_info.get("position") != "score_start":
+            latent_info["status"] = "position_mismatch"
+        extra["latent_features"] = latent_info
+        if latent_path is not None and latent_path.is_file():
+            files.append(latent_path)
         posthoc_localizations = self._posthoc_localization_history(
             run_path,
             str(rollout["id"]),

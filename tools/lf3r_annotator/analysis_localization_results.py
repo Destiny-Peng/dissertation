@@ -32,7 +32,7 @@ class AnalysisLocalizationResultsMixin:
                 "train_fraction": 0.70, "val_fraction": 0.15,
             },
         }
-        return {
+        presets = {
             "bilstm_default": {
                 "schema_version": 1, "name": "bilstm_default", "base": base,
                 "sweep": [], "variants": [], "stages": [], "repeats": 5, "builtin": True,
@@ -105,6 +105,18 @@ class AnalysisLocalizationResultsMixin:
                 "stages": [], "repeats": 5, "builtin": True,
             },
         }
+
+        # Load the pure-Python schema without requiring a training environment
+        # or altering the server's global import path.
+        import importlib.util
+        schema_path = Path(__file__).resolve().parents[1] / "robo_localization_head" / "specs.py"
+        module_spec = importlib.util.spec_from_file_location("lf3r_localization_specs", schema_path)
+        schema = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(schema)
+        BUILTIN_PRESETS = schema.BUILTIN_PRESETS
+        for name in schema.LATENT_COMPARISON_PRESET_NAMES:
+            presets[name] = {**BUILTIN_PRESETS[name], "builtin": True}
+        return presets
 
     def localization_presets(self) -> list[dict[str, Any]]:
         presets = self._localization_builtin_presets()

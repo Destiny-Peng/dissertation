@@ -1,24 +1,6 @@
 "use strict";
 
 window.LF3RDatasetScopes = (function createDatasetScopeController() {
-  function isControlled(record) {
-    return Boolean(record) && (
-      record.analysis_partition === "controlled_analysis"
-      || record.source_kind === "controlled_injected"
-    );
-  }
-
-  function suiteLabel(value, records) {
-    var suite = String(value || "");
-    var explicit = (records || []).find(function (record) {
-      return String(record.task_suite || "") === suite && record.task_suite_label;
-    });
-    if (explicit) return String(explicit.task_suite_label);
-    if (suite === "libero_10") return "LIBERO-10";
-    if (suite === "libero_spatial") return "LIBERO-Spatial";
-    return suite || "Unknown suite";
-  }
-
   function partitionLabel(value) {
     var labels = {
       natural_observation: "Natural observation",
@@ -30,33 +12,21 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
 
   function datasetGroups() {
     var records = state.rollouts || [];
-    var suites = [];
+    var values = [];
     var counts = {};
-    var controlledCount = 0;
-
     records.forEach(function (record) {
-      if (isControlled(record)) {
-        controlledCount += 1;
-        return;
+      var role = String(record.dataset_role || "");
+      if (!role) return;
+      if (!Object.prototype.hasOwnProperty.call(counts, role)) {
+        counts[role] = 0;
+        values.push(role);
       }
-      var suite = String(record.task_suite || "").trim();
-      if (!suite) return;
-      if (!Object.prototype.hasOwnProperty.call(counts, suite)) {
-        counts[suite] = 0;
-        suites.push(suite);
-      }
-      counts[suite] += 1;
+      counts[role] += 1;
     });
-
     return {
-      suites: suites.map(function (suite) {
-        return {
-          value: suite,
-          label: suiteLabel(suite, records),
-          count: counts[suite]
-        };
+      roles: values.map(function (role) {
+        return { value: role, label: role, count: counts[role] };
       }),
-      controlledCount: controlledCount,
       totalCount: records.length
     };
   }
@@ -79,14 +49,7 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
   }
 
   function scopeRows(groups) {
-    var rows = groups.suites.slice();
-    if (groups.controlledCount) {
-      rows.push({
-        value: "controlled_analysis",
-        label: "Controlled",
-        count: groups.controlledCount
-      });
-    }
+    var rows = groups.roles.slice();
     rows.push({
       value: "all",
       label: "All loaded rollouts",
@@ -101,7 +64,7 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
       all: "All loaded rollouts",
       controlled_analysis: "Controlled"
     };
-    groups.suites.forEach(function (row) {
+    groups.roles.forEach(function (row) {
       labels[row.value] = row.label;
     });
     return labels;
@@ -114,9 +77,7 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
 
   function matchesBaseline(record, scope) {
     if (scope === "all") return true;
-    if (scope === "controlled_analysis") return isControlled(record);
-    return !isControlled(record)
-      && String(record && record.task_suite || "") === String(scope || "");
+    return String(record && record.dataset_role || "") === String(scope || "");
   }
 
   function matchesPartition(record, partition) {
@@ -154,8 +115,8 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
   function decorateHelp(key, entry) {
     if (!entry || key !== "baseline.scope") return entry;
     return Object.assign({}, entry, {
-      default: "first loaded task suite",
-      description: "Task-suite scopes are discovered from the task_suite values in the manifests loaded for the current server run. Controlled rollouts remain a separate scope, and All loaded rollouts selects the full catalog."
+      default: "first loaded dataset role",
+      description: "Scopes match dataset_role exactly in the active manifests. Natural policy rollouts and official demonstrations are separate groups. All loaded rollouts selects the full catalog."
     });
   }
 
@@ -247,11 +208,11 @@ window.LF3RDatasetScopes = (function createDatasetScopeController() {
 
     var runHelp = document.querySelector(".analysis-run-help");
     if (runHelp) {
-      runHelp.textContent = "Uses completed baseline outputs only; it does not start GPU inference. Dataset groups are discovered from the task_suite values in the manifests loaded for this server run.";
+      runHelp.textContent = "Uses completed baseline outputs only; it does not start GPU inference. Dataset groups are discovered from the dataset_role values in the manifests loaded for this server run.";
     }
     var analysisSubtitle = document.querySelector("#analysisView .page-subtitle");
     if (analysisSubtitle) {
-      analysisSubtitle.textContent = "Conclusion-first view of the currently loaded annotated datasets. Task suites and partitions are discovered from the active manifests.";
+      analysisSubtitle.textContent = "Conclusion-first view of the currently loaded annotated datasets. Dataset roles and partitions are discovered from the active manifests.";
     }
   }
 

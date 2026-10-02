@@ -147,6 +147,10 @@ function renderEvaluationCardBody(method, result, record) {
   var status = validation.status || (available ? "ok" : "missing");
   var body = renderBaselineRunControls(method, result, record);
   if (available) {
+    if (method === "robo_dopamine") {
+      var latent = result.latent_features || {};
+      body += '<div class="evaluation-meta">Latent: ' + (latent.status === "generated" ? 'generated · 2560D · final token of opening &lt;score&gt;' : (latent.status === 'position_mismatch' ? 'old token position · re-extract latent before training' : 'missing · enable Extract latent in Configure baseline and rerun')) + '</div>';
+    }
     body += renderPosthocLocalizationControls(method, result)
       + renderLocalizationPredictionSummary(method, result)
       + renderEvaluationChartSlot(method)

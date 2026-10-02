@@ -450,6 +450,7 @@ class RoboLocalizationHeadTests(unittest.TestCase):
             {
                 "incremental", "forward", "backward", "fused",
                 "perspectives_6d", "fused_perspectives_8d",
+                "robodopamine_latent", "robodopamine_latent_plus_fused",
             },
         )
         self.assertEqual(set(records["forward"][0]), {"r1", "r2"})
