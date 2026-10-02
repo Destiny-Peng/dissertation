@@ -18,15 +18,16 @@ from backend_core import (
 )
 from baseline_constants import INSTRUCTION_VARIANT_LABELS
 from baseline_service import BaselineService
+from indexed_task_supervisor import IndexedTmuxJobSupervisor
 from rollout_service import RolloutGenerationService
 from stores import AnnotationStore, SettingsStore
-from task_supervisor import TmuxJobSupervisor
 
 
 class LF3RApplication:
     coordinator_class = JobCoordinator
     baseline_service_class = BaselineService
     rollout_service_class = RolloutGenerationService
+    tmux_supervisor_class = IndexedTmuxJobSupervisor
     project_tool_service_class = None
     repair_service_class = None
 
@@ -55,7 +56,10 @@ class LF3RApplication:
         self.settings = SettingsStore(self.project_root)
         self.analysis = AnalysisService(self.project_root, self.manifest_path, annotation_root)
         self.job_coordinator = self.coordinator_class()
-        self.tmux = TmuxJobSupervisor(self.project_root, tmux_binary=tmux_binary)
+        self.tmux = self.tmux_supervisor_class(
+            self.project_root,
+            tmux_binary=tmux_binary,
+        )
         self.baselines = self.baseline_service_class(
             self.project_root,
             self.manifest_path,
