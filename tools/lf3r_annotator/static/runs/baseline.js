@@ -136,6 +136,8 @@ async function startBaselineBatch(event) {
     scope: scope,
     instruction_condition: condition,
     result_filter: resultFilter,
+    review_status_filter: baselineBatchReviewStatusFilterValue(),
+    outcome_filter: baselineBatchOutcomeFilterValue(),
     gpu: gpu,
     memory_utilization: memory,
     start_index: range.start,

@@ -104,7 +104,12 @@ def main() -> None:
             rollout_id = str(item.get("rollout_id") or "")
             run_id = str(item.get("run_id") or "")
             run_dir = _project_path(project_root, str(item.get("run_dir") or ""))
-            worker_python = Path(str(item.get("worker_python") or "")).expanduser().resolve()
+            worker_python_path = Path(str(item.get("worker_python") or "")).expanduser()
+            worker_python = (
+                worker_python_path.absolute()
+                if plan.get("world_model") == "wan2_2"
+                else worker_python_path.resolve()
+            )
             print(
                 f"[repair-batch] {index + 1}/{total} start "
                 f"rollout={rollout_id} run={run_id}",

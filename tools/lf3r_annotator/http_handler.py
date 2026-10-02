@@ -323,6 +323,8 @@ class LF3RHandler(BaseHTTPRequestHandler):
                         baseline,
                         scope,
                         condition,
+                        query.get("review_status_filter", ["all"])[0],
+                        query.get("outcome_filter", ["all"])[0],
                     ),
                 )
                 return

@@ -304,12 +304,18 @@ class ServerTest(unittest.TestCase):
     def test_robo_latent_presets_options_and_status(self) -> None:
         with self.request("/api/analysis/localization/presets") as response:
             presets = {row["name"]: row for row in json.load(response)["presets"]}
-        self.assertEqual(presets["pca128_latent_bilstm"]["base"]["data"]["signal_mode"], "robodopamine_latent")
-        self.assertEqual(presets["pca128_latent_plus_fused_bilstm"]["base"]["data"]["pca_components"], 128)
-        self.assertIn("fused_progress_bilstm", presets)
-        for dimensions in (32, 64, 128):
-            for suffix in ("latent", "latent_plus_fused"):
-                self.assertEqual(presets[f"pca{dimensions}_{suffix}_bilstm"]["base"]["data"]["pca_components"], dimensions)
+        preset = presets["latent_input_default"]
+        self.assertEqual(preset["base"]["data"]["signal_mode"], "robodopamine_latent")
+        self.assertEqual(preset["base"]["data"]["pca_components"], 64)
+        self.assertEqual(len(preset["variants"]), 7)
+        self.assertEqual(preset["variants"][0]["set"]["data.pca_components"], 64)
+        expected = {(mode, dimensions)
+                    for mode in ("robodopamine_latent", "robodopamine_latent_plus_fused")
+                    for dimensions in (32, 64, 128)} | {("fused", 64)}
+        self.assertEqual({(row["set"]["data.signal_mode"], row["set"]["data.pca_components"])
+                          for row in preset["variants"]}, expected)
+        self.assertFalse(any(name.startswith(("pca32_", "pca64_", "pca128_"))
+                             or name == "fused_progress_bilstm" for name in presets))
         runner = self.root / "tools/baselines/run_lf3r_baseline.py"
         runner.parent.mkdir(parents=True, exist_ok=True)
         runner.write_text("# fake runner")
@@ -1373,6 +1379,99 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             sources_without_complete_label["evaluation_population"],
             0,
         )
+
+    def _seed_run_filter_records(self) -> list[dict]:
+        records = [
+            {**self.rollout, "id": name, "ground_truth_outcome": outcome}
+            for name, outcome in (
+                ("complete-success", "failure"),
+                ("complete-failure", "failure"),
+                ("in-progress-success", "success"),
+                ("unreviewed-success", "success"),
+                ("unreviewed-uncertain", "uncertain"),
+            )
+        ]
+        (self.root / "manifest.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+        )
+        for record, status, outcome in (
+            (records[0], "complete", "success"),
+            (records[1], "complete", "failure"),
+            (records[2], "in_progress", "success"),
+        ):
+            self.app.store.write(record, {
+                "annotator": "test", "review_status": status,
+                "outcome_label": outcome,
+                "failure_type": "none_success" if outcome == "success" else "other",
+                "confidence": 5, "failure_events": [], "notes": "",
+            })
+        runner = self.root / "tools/baselines/run_lf3r_baseline.py"
+        runner.parent.mkdir(parents=True, exist_ok=True)
+        runner.write_text("# filter test fake runner\n", encoding="utf-8")
+        return records
+
+    def test_batch_rollout_filters_are_applied_before_worker_ranges(self) -> None:
+        self._seed_run_filter_records()
+        cases = (
+            ("complete", "success", ["complete-success"], 0, 1),
+            ("complete", "failure", ["complete-failure"], 0, 1),
+            ("complete", "all", ["complete-success", "complete-failure"], 0, 2),
+            ("all", "success", ["complete-success", "in-progress-success", "unreviewed-success"], 1, 3),
+        )
+        for review, outcome, eligible, start, end in cases:
+            with self.subTest(review=review, outcome=outcome):
+                with self.request("/api/baselines/run-batch", {
+                    "baseline": "safe", "scope": "all", "gpu": "0",
+                    "review_status_filter": review, "outcome_filter": outcome,
+                    "start_index": start, "end_index": end,
+                    "parallel_workers": 1,
+                    "workers": [{"gpu": "0", "start_index": start, "end_index": end}],
+                    "options": {"dry_run": True},
+                }) as response:
+                    job = json.load(response)["job"]
+                ids = [job["command"][index + 1]
+                       for index, value in enumerate(job["command"][:-1]) if value == "--rollout-id"]
+                self.assertEqual(ids, eligible)
+                self.assertEqual(job["selected_rollouts"], end - start)
+                self.assertEqual(job["scope_rollouts_before_rollout_filters"], 5)
+                self.assertEqual(job["review_status_filter"], review)
+                self.assertEqual(job["outcome_filter"], outcome)
+                self.assertIn(f"0:{start}:{end}", job["command"])
+                self.assertEqual(self.wait_for_job("/api/baseline-jobs", job["job_id"])["status"], "complete")
+        for filters in ({"review_status_filter": "invalid"}, {"outcome_filter": "invalid"},
+                        {"review_status_filter": "complete", "outcome_filter": "uncertain"}):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.request("/api/baselines/run-batch", {"baseline": "safe", "scope": "all", **filters})
+            self.assertEqual(caught.exception.code, 400)
+
+    def test_batch_rollout_filters_combine_with_missing_valid_coverage(self) -> None:
+        self._seed_run_filter_records()
+        with self.request("/api/baselines/result-coverage?baseline=safe&scope=all"
+                          "&review_status_filter=complete&outcome_filter=success") as response:
+            coverage = json.load(response)
+        self.assertEqual(coverage["scope_rollouts_before_rollout_filters"], 5)
+        self.assertEqual(coverage["scope_rollouts"], 1)
+        self.assertEqual(coverage["missing_source_rollout_ids"], ["complete-success"])
+        with self.request("/api/baselines/run-batch", {
+            "baseline": "safe", "scope": "all", "gpu": "0",
+            "review_status_filter": "complete", "outcome_filter": "success",
+            "result_filter": "missing_valid", "options": {"dry_run": True},
+        }) as response:
+            job = json.load(response)["job"]
+        self.assertEqual(job["selected_rollouts"], 1)
+        self.assertEqual(job["command"][job["command"].index("--rollout-id") + 1], "complete-success")
+        self.assertEqual(self.wait_for_job("/api/baseline-jobs", job["job_id"])["status"], "complete")
+
+    def test_variant_rollout_filters_use_source_annotation_and_outcome(self) -> None:
+        records = self._seed_run_filter_records()
+        variants = [{**record, "id": "variant-" + record["id"],
+                     "source_rollout_id": record["id"], "ground_truth_outcome": "failure"}
+                    for record in records]
+        selected = self.app.baselines._filter_run_records(variants, "subtask_a", "all", "success")
+        self.assertEqual([record["id"] for record in selected],
+                         ["variant-complete-success", "variant-in-progress-success", "variant-unreviewed-success"])
+        selected = self.app.baselines._filter_run_records(variants, "subtask_a", "complete", "success")
+        self.assertEqual([record["id"] for record in selected], ["variant-complete-success"])
 
     def test_batch_missing_valid_result_filter_skips_existing_parseable_outputs(self) -> None:
         self.seed_baseline_outputs()

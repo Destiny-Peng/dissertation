@@ -186,32 +186,34 @@ BUILTIN_PRESETS = {
 }
 
 
-LATENT_COMPARISON_PRESET_NAMES = ["fused_progress_bilstm"]
-for _dimensions in (32, 64, 128):
-    LATENT_COMPARISON_PRESET_NAMES.extend([
-        f"pca{_dimensions}_latent_bilstm",
-        f"pca{_dimensions}_latent_plus_fused_bilstm",
-    ])
-
-for _name in LATENT_COMPARISON_PRESET_NAMES:
-    _base = copy.deepcopy(DEFAULT_BASE)
-    if _name == "fused_progress_bilstm":
-        _label = "fused progress → BiLSTM"
-    else:
-        _dimensions = int(_name.split("_")[0][3:])
-        _plus_fused = "plus_fused" in _name
-        _base["data"].update(
-            signal_mode="robodopamine_latent_plus_fused" if _plus_fused else "robodopamine_latent",
-            pca_components=_dimensions,
-        )
-        _label = f"PCA-{_dimensions} latent{' + fused' if _plus_fused else ''} → BiLSTM"
-        if _dimensions == 64:
-            _label += " (default)"
-    _base["training"]["split_seed"] = 17
-    BUILTIN_PRESETS[_name] = {
-        "schema_version": 1, "name": _name, "label": _label, "base": _base,
-        "sweep": [], "variants": [], "stages": [], "repeats": 5,
-    }
+LATENT_COMPARISON_PRESET_NAMES = ["latent_input_default"]
+_latent_base = copy.deepcopy(DEFAULT_BASE)
+_latent_base["data"].update(signal_mode="robodopamine_latent", pca_components=64)
+_latent_base["training"]["split_seed"] = 17
+_latent_variants = []
+for _dimensions in (64, 32, 128):
+    for _mode, _suffix in (
+        ("robodopamine_latent", "latent"),
+        ("robodopamine_latent_plus_fused", "latent_plus_fused"),
+    ):
+        _latent_variants.append({
+            "name": f"pca{_dimensions}_{_suffix}",
+            "set": {"data.signal_mode": _mode, "data.pca_components": _dimensions},
+        })
+_latent_variants.append({
+    "name": "fused_progress",
+    "set": {"data.signal_mode": "fused", "data.pca_components": 64},
+})
+BUILTIN_PRESETS["latent_input_default"] = {
+    "schema_version": 1,
+    "name": "latent_input_default",
+    "label": "Latent input comparison (PCA-64 default)",
+    "base": _latent_base,
+    "sweep": [],
+    "variants": _latent_variants,
+    "stages": [],
+    "repeats": 5,
+}
 
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:

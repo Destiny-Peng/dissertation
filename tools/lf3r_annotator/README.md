@@ -623,3 +623,34 @@ artifacts/repair/synthetic_suffix/runs/<run_id>/
 ```
 
 `metrics.json` stores PSNR/SSIM when their local dependencies are available. LPIPS is disabled by default to prevent an implicit trunk-weight download; it is only attempted when `LF3R_ENABLE_LPIPS=1` is set after the required weights are installed. Human review records `yes/no/uncertain` training usability and task-aware failure reasons. Dataset building and policy training are deliberately outside Phase 1.
+
+### Wan2.2-I2V-A14B synthetic suffix
+
+Repair's World model menu includes Wan2.2-I2V-A14B. Set **Wan Python** to the
+external environment's executable and **Wan checkpoint directory** to its model
+weights directory. **Wan source directory** points to an existing checkout
+containing `generate.py`. The official source is cloned into `repos/Wan2.2`
+and used by default. An explicit source directory or `WAN_SOURCE_ROOT` can
+override that default. The external Wan environment and checkpoints remain
+user-configured; inference directly uses the official script without modifications.
+
+Wan accepts success rollouts with an existing `cam_high` video, an original
+`task_description` (or `instruction`), and a legal cut. Actions, simulator states,
+Ctrl prepared controls, prefix video, and LIBERO runtime are not required. LF3R's
+own Python exports `prepared/condition_cam_high.png`, `instruction.txt`, and
+`wan_input.json`. This Python needs numpy, Pillow, imageio and its FFmpeg video
+backend; it does not need LIBERO. All inference file arguments are absolute
+paths, including paths outside PROJECT_ROOT for the external Wan environment.
+
+LF3R invokes the existing official `generate.py` with `--task i2v-A14B`,
+`--ckpt_dir`, `--image`, `--prompt` and `--save_file`. The prompt is the original
+instruction without expansion. The Wan Python executes only inference. Its
+stdout/stderr flow into the normal Repair job log. Missing/non-executable Python,
+missing checkpoint/source, inference errors, and missing output videos are
+reported through the existing validation and job failure UI.
+
+The official RGB video is kept as `generated/cam_high.mp4`, with its native
+initial frame, duration and FPS. Existing result cards, run history and comparison
+consume that artifact. Comparison begins at the real cut frame and follows the
+video's native time; metrics are visual diagnostics, not action alignment.
+Single-rollout and existing sequential batch modes use the same Wan contract.

@@ -15,6 +15,20 @@ from robo_localization_head import specs
 
 
 class LocalizationSpecTests(unittest.TestCase):
+    def test_latent_comparison_is_one_preset_with_seven_unique_configurations(self) -> None:
+        preset = specs.BUILTIN_PRESETS["latent_input_default"]
+        normalized = specs.normalize_spec(preset)
+        configs = specs.expand(normalized["base"], normalized["sweep"], normalized["variants"])
+        self.assertEqual(len(configs), 7)
+        combinations = {(config["data"]["signal_mode"], config["data"]["pca_components"])
+                        for config in configs}
+        self.assertEqual(len(combinations), 7)
+        self.assertEqual(sum(config["data"]["signal_mode"] == "fused" for config in configs), 1)
+        self.assertEqual(configs[0]["data"]["pca_components"], 64)
+        self.assertEqual(specs.estimate_runs(preset)["training_runs"], 35)
+        for config in configs:
+            specs.validate_config(config)
+
     def test_input_signal_default_and_sweep(self) -> None:
         normalized = specs.normalize_spec({
             "name": "signal_default",

@@ -163,6 +163,8 @@ function installEvents() {
     }
   });
   byId("baselineBatchResultFilter").addEventListener("change", baselineBatchCoverageChanged);
+  byId("baselineBatchReviewStatusFilter").addEventListener("change", baselineBatchCoverageChanged);
+  byId("baselineBatchOutcomeFilter").addEventListener("change", baselineBatchCoverageChanged);
   byId("baselineBatchStartIndex").addEventListener("input", baselineBatchRangeChanged);
   byId("baselineBatchLimit").addEventListener("input", updateBaselineBatchSelection);
   byId("baselineBatchEndIndex").addEventListener("input", baselineBatchRangeChanged);

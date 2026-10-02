@@ -15,7 +15,7 @@ from pathlib import Path
 _BAD = '''                "gt_action_end": int(len(actions)),
                 "gt_future_action_count": int(len(future_actions)),'''
 
-_FIXED = '''                "gt_action_end": int(
+_FIXED = '''                "gt_action_end": None if model_name == "wan2_2" else int(
                     len(actions)
                     if actions is not None
                     else (
@@ -24,7 +24,7 @@ _FIXED = '''                "gt_action_end": int(
                         else rollout["total_frames"]
                     )
                 ),
-                "gt_future_action_count": int(
+                "gt_future_action_count": None if model_name == "wan2_2" else int(
                     len(future_actions)
                     if future_actions is not None
                     else max(

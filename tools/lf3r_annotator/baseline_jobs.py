@@ -543,7 +543,7 @@ class BaselineJobsMixin:
         allowed_fields = {
             "baseline", "scope", "gpu", "memory_utilization", "start_index", "end_index",
             "limit", "parallel_workers", "workers", "options", "instruction_condition",
-            "result_filter",
+            "result_filter", "review_status_filter", "outcome_filter",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
@@ -559,10 +559,17 @@ class BaselineJobsMixin:
         options = self._validate_options(baseline, payload.get("options"))
         if options.get("robo_extract_latent") and result_filter != "all":
             raise ValidationError("Latent re-inference requires result filter All so existing progress outputs are not skipped")
+        review_status_filter, outcome_filter = self._validate_rollout_filters(
+            payload.get("review_status_filter", "all"), payload.get("outcome_filter", "all")
+        )
         records = self._condition_records(instruction_condition, scope)
+        scope_count_before_filters = len(records)
+        records = self._filter_run_records(
+            records, instruction_condition, review_status_filter, outcome_filter
+        )
         scope_record_count = len(records)
         if not records:
-            raise ValidationError(f"No rollouts matched scope {scope}")
+            raise ValidationError(f"No rollouts matched scope {scope} and the selected rollout filters")
         valid_result_ids: set[str] = set()
         incomplete_source_ids: list[str] = []
         complete_annotation_count = scope_record_count
@@ -678,6 +685,7 @@ class BaselineJobsMixin:
                     [str(record["id"]) for record in records]
                     if instruction_condition != "full_instruction"
                     or result_filter == "missing_valid" or scope != "all"
+                    or review_status_filter != "all" or outcome_filter != "all"
                     else None
                 ),
             )
@@ -700,6 +708,9 @@ class BaselineJobsMixin:
                 manifest_path=self._manifest_for_condition(instruction_condition),
             )
             job["options"] = options
+            job["review_status_filter"] = review_status_filter
+            job["outcome_filter"] = outcome_filter
+            job["scope_rollouts_before_rollout_filters"] = scope_count_before_filters
             job["result_filter"] = result_filter
             job["scope_rollouts_before_result_filter"] = scope_record_count
             job["complete_annotation_rollouts"] = complete_annotation_count

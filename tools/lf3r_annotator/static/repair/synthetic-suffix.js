@@ -88,6 +88,11 @@
     );
   }
 
+  function modelEligibility(row) {
+    var eligibility = (row.model_eligibility || {})[selectedWorldModel()];
+    return eligibility || { eligible: Boolean(row.repair_eligible), reasons: row.eligibility_reasons || [] };
+  }
+
   function renderRolloutSelect() {
     var rows = filteredRollouts();
     var select = node("repairRolloutSelect");
@@ -97,18 +102,18 @@
       renderRolloutSummary();
       return;
     }
-    var eligible = rows.filter(function (row) { return Boolean(row.repair_eligible); });
+    var eligible = rows.filter(function (row) { return modelEligibility(row).eligible; });
     select.innerHTML = rows.map(function (row) {
       var readyBits = [
         row.actions_available ? "actions✓" : "actions—",
         row.sim_state_available ? "state✓" : "state—",
         (row.views || []).join("+") || "no-view"
       ].join(" · ");
-      var suffix = row.repair_eligible
+      var suffix = modelEligibility(row).eligible
         ? ""
-        : " · unavailable: " + ((row.eligibility_reasons || []).join(", ") || "missing required input");
+        : " · unavailable: " + ((modelEligibility(row).reasons || []).join(", ") || "missing required input");
       return '<option value="' + esc(row.id) + '"'
-        + (row.repair_eligible ? "" : " disabled")
+        + (modelEligibility(row).eligible ? "" : " disabled")
         + ">" + esc(row.id)
         + " · " + esc(row.task_suite) + "/task" + esc(row.task_id)
         + " · " + esc(readyBits + suffix) + "</option>";
@@ -140,8 +145,8 @@
       kv("Frames", String(row.frames || "—")),
       kv("Outcome", row.outcome || "—", "repair-ok"),
       kv("Views", (row.views || []).join(", ") || "—"),
-      kv("GT actions", row.actions_available ? "Available" : "Unavailable", row.actions_available ? "repair-ok" : "repair-error"),
-      kv("Sim state", row.sim_state_available ? "Available" : "Unavailable", row.sim_state_available ? "repair-ok" : "repair-error"),
+      kv("GT actions", selectedWorldModel() === "wan2_2" ? "Not required" : row.actions_available ? "Available" : "Unavailable", selectedWorldModel() === "wan2_2" || row.actions_available ? "repair-ok" : "repair-error"),
+      kv("Sim state", selectedWorldModel() === "wan2_2" ? "Not required" : row.sim_state_available ? "Available" : "Unavailable", selectedWorldModel() === "wan2_2" || row.sim_state_available ? "repair-ok" : "repair-error"),
       kv(
         "Existing WM runs",
         (row.wm_runs || []).length
@@ -182,8 +187,8 @@
     }
     var cut = currentCut();
     node("repairCutReadout").textContent = row
-      ? "RGB frame " + cut.frame + " · branch state " + (cut.frame + 1)
-        + " · GT actions start " + (cut.frame + 1)
+      ? (selectedWorldModel() === "wan2_2" ? "cam_high RGB frame " + cut.frame : "RGB frame " + cut.frame + " · branch state " + (cut.frame + 1)
+        + " · GT actions start " + (cut.frame + 1))
       : "Select a rollout";
     var percent = total > 1 ? Math.max(0, Math.min(100, cut.frame / (total - 1) * 100)) : 50;
     node("repairCutPrefix").style.width = percent + "%";
@@ -204,7 +209,7 @@
     });
     var runButton = node("repairRunButton");
     if (runButton) {
-      runButton.textContent = model === "ctrl_world" ? "Run Ctrl-World" : "Run A2World";
+      runButton.textContent = model === "wan2_2" ? "Run Wan2.2-I2V-A14B" : (model === "ctrl_world" ? "Run Ctrl-World" : "Run A2World");
     }
     renderAdapterPreview();
   }
@@ -248,7 +253,14 @@
     var cut = currentCut();
     var model = selectedWorldModel();
     var worldModel;
-    if (model === "ctrl_world") {
+    if (model === "wan2_2") {
+      worldModel = {
+        name: "wan2_2",
+        python: optionalText("repairWanPython"),
+        checkpoint: optionalText("repairWanCheckpoint"),
+        source_root: optionalText("repairWanSourceRoot")
+      };
+    } else if (model === "ctrl_world") {
       worldModel = {
         name: "ctrl_world",
         checkpoint_type: "droid_pretrained",
@@ -304,7 +316,7 @@
       cut_progress: cut.progress,
       cut_frame: cut.frame,
       alignment_min_psnr: Number(node("repairAlignmentPsnr").value || 20),
-      generated_includes_condition: false,
+      generated_includes_condition: model === "wan2_2",
       world_model: worldModel
     };
     if (cut.type !== "progress") delete payload.cut_progress;
@@ -317,7 +329,9 @@
     if (!validation) {
       host.className = "repair-validation";
       host.textContent =
-        "Run validation to check manifest inputs, exact LIBERO indices, selected world-model assets, and the mandatory simulator smoke test.";
+        selectedWorldModel() === "wan2_2"
+          ? "Validate condition RGB frame, instruction, Wan Python, checkpoint and external generate.py. Actions / states / LIBERO runtime not required."
+          : "Run validation to check manifest inputs, exact LIBERO indices, selected world-model assets, and the mandatory simulator smoke test.";
       node("repairRunButton").disabled = true;
       return;
     }
@@ -325,6 +339,22 @@
     var wm = validation.world_model || {};
     var model = String(validation.model_name || wm.adapter || selectedWorldModel());
     host.className = "repair-validation " + (validation.ready ? "repair-ok" : "repair-error");
+    if (model === "wan2_2") {
+      host.textContent = [
+        validation.ready ? "Validation passed." : "Blocked.",
+        "Wan2.2-I2V-A14B · task i2v-A14B",
+        "condition RGB frame: cam_high[" + validation.alignment.condition_frame + "]",
+        "instruction: " + String(wm.instruction || "unavailable"),
+        "Wan Python: " + String(wm.python || "unset"),
+        "checkpoint: " + String(wm.checkpoint || "unset"),
+        "Wan source / generate.py: " + String(wm.source_root || "unset"),
+        "Actions / states / LIBERO runtime: not required",
+        "Input: single RGB frame + original instruction · no future actions or prefix video",
+        blockers.length ? "Blockers:\n- " + blockers.join("\n- ") : "Ready to generate."
+      ].join("\n");
+      node("repairRunButton").disabled = !validation.ready;
+      return;
+    }
     var smoke = ((validation.validation || {}).alignment_smoke_test || {});
     var comparisons = smoke.comparisons || {};
     var smokeLines = Object.keys(comparisons).map(function (view) {
@@ -530,7 +560,7 @@
       renderFilters();
       renderRolloutSelect();
       var eligibleCount = repairState.rollouts.filter(function (row) {
-        return Boolean(row.repair_eligible);
+        return modelEligibility(row).eligible;
       }).length;
       node("repairPageStatus").textContent =
         repairState.rollouts.length + " success rollout(s) found · "
@@ -789,6 +819,7 @@
     });
     node("repairWorldModel").addEventListener("change", function () {
       renderModelPanel();
+      renderRolloutSelect();
       repairState.validation = null;
       renderValidation(null);
     });
@@ -811,6 +842,9 @@
       "repairCtrlCheckpoint",
       "repairCtrlSourceRoot",
       "repairCtrlPython",
+      "repairWanPython",
+      "repairWanCheckpoint",
+      "repairWanSourceRoot",
       "repairCtrlSvd",
       "repairCtrlClip",
       "repairCtrlDataStat",

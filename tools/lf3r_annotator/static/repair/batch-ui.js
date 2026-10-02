@@ -33,6 +33,10 @@
     return String((node("repairWorldModel") || {}).value || "a2world");
   }
 
+  function modelLabel() {
+    return selectedModel() === "wan2_2" ? "Wan2.2-I2V-A14B" : (selectedModel() === "ctrl_world" ? "Ctrl-World" : "A2World");
+  }
+
   function checkpointDefault() {
     var type = String((node("repairCheckpointType") || {}).value || "libero_adapted");
     if (type === "generic_pretrained") return "checkpoints/a2world-pretrained.pt";
@@ -49,7 +53,10 @@
   function commonPayload() {
     var model = selectedModel();
     var worldModel;
-    if (model === "ctrl_world") {
+    if (model === "wan2_2") {
+      worldModel = {name: "wan2_2", python: optionalText("repairWanPython"),
+                    checkpoint: optionalText("repairWanCheckpoint"), source_root: optionalText("repairWanSourceRoot")};
+    } else if (model === "ctrl_world") {
       worldModel = {
         name: "ctrl_world",
         checkpoint_type: "droid_pretrained",
@@ -104,7 +111,7 @@
       gpu_index: Number(gpu),
       cut_type: cutType,
       alignment_min_psnr: Number(node("repairAlignmentPsnr").value || 20),
-      generated_includes_condition: false,
+      generated_includes_condition: model === "wan2_2",
       world_model: worldModel
     };
     if (cutType === "frame") {
@@ -139,7 +146,8 @@
     var current = state();
     if (!current || !current.rollouts || !current.rollouts.length) return;
     var rows = current.rollouts.filter(function (row) {
-      return Boolean(row.repair_eligible);
+      var eligibility = (row.model_eligibility || {})[selectedModel()];
+      return Boolean(eligibility ? eligibility.eligible : row.repair_eligible);
     });
     var manifests = unique(rows, "manifest_source");
     var suites = unique(rows, "task_suite");
@@ -169,7 +177,8 @@
     var manifest = String((node("repairBatchManifest") || {}).value || "");
     var suite = String((node("repairBatchSuite") || {}).value || "");
     return (current.rollouts || []).filter(function (row) {
-      return Boolean(row.repair_eligible)
+      var eligibility = (row.model_eligibility || {})[selectedModel()];
+      return Boolean(eligibility ? eligibility.eligible : row.repair_eligible)
         && String(row.manifest_source || "") === manifest
         && String(row.task_suite || "") === suite;
     });
@@ -311,11 +320,7 @@
     var validationButton = node("repairValidateButton");
     if (validationButton) validationButton.textContent = batch ? "Validate batch" : "Validate inputs";
     var runButton = node("repairRunButton");
-    if (runButton) {
-      runButton.textContent = batch
-        ? (selectedModel() === "ctrl_world" ? "Run batch Ctrl-World" : "Run batch A2World")
-        : (selectedModel() === "ctrl_world" ? "Run Ctrl-World" : "Run A2World");
-    }
+    if (runButton) runButton.textContent = (batch ? "Run batch " : "Run ") + modelLabel();
     if (batch) {
       refreshOptions();
       invalidate();
@@ -360,6 +365,13 @@
           "Batch representative validation passed.",
           "Selected rollouts: " + payload.rollout_ids.length,
           "model = " + String(validation.model_name || selectedModel()),
+          selectedModel() === "wan2_2" ? [
+            "condition RGB frame: cam_high[" + validation.alignment.condition_frame + "]",
+            "instruction: " + String((validation.world_model || {}).instruction || "unavailable"),
+            "Wan Python: " + String((validation.world_model || {}).python || "unset"),
+            "checkpoint: " + String((validation.world_model || {}).checkpoint || "unset"),
+            "Actions / states / LIBERO runtime: not required"
+          ].join("\n") : "",
           "GPU " + String(payload.gpu_index),
           "cut = " + (payload.cut_type === "frame"
             ? ("frame " + payload.cut_frame)
@@ -450,7 +462,7 @@
       payload = batchPayload();
     }
     var count = payload.rollout_ids.length;
-    var model = selectedModel() === "ctrl_world" ? "Ctrl-World" : "A2World";
+    var model = modelLabel();
     if (!window.confirm(
       "Run " + model + " on " + count + " Repair rollout(s)? "
       + "They will execute sequentially on GPU " + payload.gpu_index + "."
@@ -558,7 +570,7 @@
     document.addEventListener("input", function (event) {
       if (!isBatch()) return;
       var id = event.target && event.target.id ? String(event.target.id) : "";
-      if (id.indexOf("repairCtrl") === 0 || id.indexOf("repairCheckpoint") === 0
+      if (id.indexOf("repairWan") === 0 || id.indexOf("repairCtrl") === 0 || id.indexOf("repairCheckpoint") === 0
           || id.indexOf("repairBase") === 0 || id.indexOf("repairSampling") === 0
           || id.indexOf("repairGuidance") === 0 || id.indexOf("repairSeed") === 0
           || id === "repairHistory" || id === "repairDuplicateViews"

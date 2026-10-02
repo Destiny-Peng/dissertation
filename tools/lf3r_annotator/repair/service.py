@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from non_analysis_tools import gpu_status
 from task_supervisor import TmuxJobSupervisor
 from .adapters import A2WorldAdapter
 from .ctrl_world import CtrlWorldAdapter
+from .wan import WanAdapter, wan_eligibility, instruction_for
 from .alignment import capability_summary, compute_alignment
 from .alignment_runner import resolve_repair_python, run_alignment_subprocess
 
@@ -155,6 +157,9 @@ class RepairService:
                 eligibility_reasons.append("missing cam_high")
             if plan is None:
                 eligibility_reasons.append(plan_error or "invalid cut/alignment span")
+            wan_reasons = wan_eligibility(self.project_root, rollout)
+            if plan is None:
+                wan_reasons.append(plan_error or "invalid cut point")
             rows.append(
                 {
                     "id": rollout["id"],
@@ -163,7 +168,7 @@ class RepairService:
                     "task_suite": rollout.get("task_suite"),
                     "task_id": rollout.get("task_id"),
                     "episode_index": rollout.get("episode_index"),
-                    "task_description": rollout.get("task_description"),
+                    "task_description": instruction_for(rollout),
                     "source_kind": rollout.get("source_kind"),
                     "official_demo": bool(rollout.get("official_demo")),
                     "trajectory_group": rollout.get("trajectory_group"),
@@ -171,7 +176,12 @@ class RepairService:
                     "frames": total_frames,
                     "fps": rollout.get("fps"),
                     **capabilities,
-                    "repair_eligible": not eligibility_reasons,
+                    "repair_eligible": not eligibility_reasons or not wan_reasons,
+                    "model_eligibility": {
+                        "a2world": {"eligible": not eligibility_reasons, "reasons": eligibility_reasons},
+                        "ctrl_world": {"eligible": not eligibility_reasons, "reasons": eligibility_reasons},
+                        "wan2_2": {"eligible": not wan_reasons, "reasons": wan_reasons},
+                    },
                     "eligibility_reasons": eligibility_reasons,
                     "default_alignment": plan,
                     "alignment_error": plan_error,
@@ -203,8 +213,10 @@ class RepairService:
             return "a2world", A2WorldAdapter(self.project_root, wm_config)
         if normalized in {"ctrl", "ctrl_world"}:
             return "ctrl_world", CtrlWorldAdapter(self.project_root, wm_config)
+        if normalized in {"wan2_2", "wan2.2", "wan2.2_i2v_a14b"}:
+            return "wan2_2", WanAdapter(self.project_root, wm_config)
         raise ValidationError(
-            "Synthetic Suffix supports world_model.name a2world or ctrl_world"
+            "Synthetic Suffix supports world_model.name a2world, ctrl_world or wan2_2"
         )
 
     @staticmethod
@@ -274,7 +286,7 @@ class RepairService:
             raise ValidationError("gpu_index must be a non-negative integer")
         gpu = self._gpu_plan(gpu_index)
         blockers: list[str] = []
-        if model_name != "ctrl_world":
+        if model_name == "a2world":
             if not capabilities["actions_available"]:
                 blockers.append(
                     "GT actions are unavailable in the selected manifest record"
@@ -288,7 +300,9 @@ class RepairService:
         worker_python: Path | None = None
         repair_runtime_error: str | None = None
         repair_runtime: str | None = None
-        if model_name == "ctrl_world":
+        if model_name == "wan2_2":
+            worker_python = Path(sys.executable).absolute()
+        elif model_name == "ctrl_world":
             if model_runtime:
                 model_python = Path(model_runtime).expanduser()
                 worker_python = (
@@ -351,6 +365,12 @@ class RepairService:
         capabilities = plan["capabilities"]
         smoke: dict[str, Any] | None = None
         smoke_error: str | None = None
+        if plan["model_name"] == "wan2_2":
+            plan["validation"]["alignment_smoke_test"] = {
+                "passed": True, "source": "rgb_only",
+                "note": "Single condition RGB frame and instruction; actions / states / LIBERO runtime not required",
+            }
+            return plan
         if plan["model_name"] == "ctrl_world":
             alignment_meta = rollout.get("rgb_alignment")
             if (
@@ -491,6 +511,8 @@ class RepairService:
 
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = plan["model_name"]
+        if plan["model_name"] == "wan2_2":
+            wm_config.update({key: plan["world_model"][key] for key in ("python", "checkpoint", "source_root")})
         selected_gpu = plan.get("gpu", {}).get("selected")
         wm_config["gpu_index"] = int(plan["gpu"]["requested_index"])
         config = {
@@ -500,9 +522,9 @@ class RepairService:
             "cut_progress": plan["alignment"]["cut_progress"],
             "cut_frame": plan["alignment"]["cut_rgb_frame"],
             "alignment_min_psnr": float(payload.get("alignment_min_psnr", 20.0)),
-            # Every adapter publishes standardized generated/<camera>.mp4
-            # artifacts without the condition-aligned frame.
-            "generated_includes_condition": False,
+            # Wan keeps the official native video, including its initial frame.
+            # A2World/Ctrl standardized videos exclude the condition frame.
+            "generated_includes_condition": plan["model_name"] == "wan2_2",
             "world_model": wm_config,
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         }
@@ -532,7 +554,7 @@ class RepairService:
             "checkpoint": adapter_status["checkpoint"],
             "checkpoint_type": adapter_status["checkpoint_type"],
             "repair_worker_python": plan["worker_python"],
-            "runtime_libero_required": plan["model_name"] != "ctrl_world",
+            "runtime_libero_required": plan["model_name"] == "a2world",
             "offline_ctrl_prepared": bool(rollout.get("ctrl_prepared")),
             "camera_mapping": adapter_status["camera_mapping"],
             "duplicated_camera": adapter_status["duplicated_camera"],
@@ -580,7 +602,9 @@ class RepairService:
                     "tail_policy": "pad final chunk, then trim generated tail",
                 }
                 if plan["model_name"] == "a2world"
-                else {
+                else ({"task": "i2v-A14B", "generated_includes_condition": True,
+                       "input_contract": "single cam_high RGB frame + original task instruction"}
+                      if plan["model_name"] == "wan2_2" else {
                     "rollout_mode": "autoregressive",
                     "generated_includes_condition": False,
                     "view_order": adapter_status["view_order"],
@@ -595,7 +619,7 @@ class RepairService:
                     "seed": adapter_status["seed"],
                     "text_conditioning": adapter_status["text_conditioning"],
                     "artifact_timing_basis": "source time sampled at Ctrl-World effective FPS",
-                }
+                })
             ),
             "output_paths": {},
             "created_at": config["created_at"],
@@ -617,9 +641,13 @@ class RepairService:
         worker_python_value = str(plan["worker_python"])
         worker_python_path = Path(worker_python_value).expanduser()
         worker_python = (
-            worker_python_path.resolve()
-            if worker_python_path.is_absolute()
-            else (self.project_root / worker_python_path).resolve()
+            worker_python_path.absolute()
+            if plan["model_name"] == "wan2_2"
+            else (
+                worker_python_path.resolve()
+                if worker_python_path.is_absolute()
+                else (self.project_root / worker_python_path).resolve()
+            )
         )
         log_path = self.log_root / f"{run_id}.log"
         job_id = "repair-" + uuid.uuid4().hex[:12]

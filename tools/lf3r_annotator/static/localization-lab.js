@@ -336,6 +336,35 @@
     row.querySelector("[data-variant-sigma-post]").disabled = disabled;
   }
 
+  function addInputVariant(host, definition) {
+    var assignments = definition.set;
+    var row = document.createElement("div");
+    row.className = "localization-target-variant-row";
+    row.innerHTML =
+      '<label class="localization-control"><span>Name</span>'
+      + '<input data-variant-name type="text" maxlength="64" value="' + esc(definition.name) + '"></label>'
+      + '<label class="localization-control"><span>Input signal</span>'
+      + '<select data-variant-signal>'
+      + '<option value="robodopamine_latent">Latent</option>'
+      + '<option value="robodopamine_latent_plus_fused">Latent + fused</option>'
+      + '<option value="fused">Fused progress</option></select></label>'
+      + '<label class="localization-control"><span>PCA dimensions (latent only)</span>'
+      + '<input data-variant-pca type="number" min="1" max="2560" step="1" value="'
+      + esc(assignments["data.pca_components"] == null ? 64 : assignments["data.pca_components"]) + '"></label>'
+      + '<button type="button" class="ghost-button localization-variant-remove" data-remove-variant>Remove</button>';
+    row.querySelector("[data-variant-signal]").value = assignments["data.signal_mode"];
+    row.querySelector("[data-remove-variant]").addEventListener("click", function () {
+      row.remove();
+      refreshPreview();
+    });
+    row.querySelectorAll("input, select").forEach(function (input) {
+      input.addEventListener("input", refreshPreview);
+      input.addEventListener("change", refreshPreview);
+    });
+    host.appendChild(row);
+    refreshPreview();
+  }
+
   function addTargetVariant(host, definition) {
     definition = definition || {
       name: "gaussian_sigma_3",
@@ -347,6 +376,10 @@
       }
     };
     var assignments = definition.set || {};
+    if (assignments["data.signal_mode"] != null) {
+      addInputVariant(host, definition);
+      return;
+    }
     var kind = assignments["target.kind"] || "gaussian";
     var row = document.createElement("div");
     row.className = "localization-target-variant-row";
@@ -385,6 +418,17 @@
       var name = row.querySelector("[data-variant-name]").value.trim();
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
         throw new Error("Target variant name is invalid: " + name);
+      }
+      var signal = row.querySelector("[data-variant-signal]");
+      if (signal) {
+        var dimensions = Number(row.querySelector("[data-variant-pca]").value);
+        if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > 2560) {
+          throw new Error(name + ": PCA dimensions must be an integer in [1, 2560]");
+        }
+        return {name: name, set: {
+          "data.signal_mode": signal.value,
+          "data.pca_components": dimensions
+        }};
       }
       var kind = row.querySelector("[data-variant-kind]").value;
       var sigmaPre = Number(row.querySelector("[data-variant-sigma-pre]").value);
@@ -446,7 +490,7 @@
       + '<button type="button" class="ghost-button" data-add-stage-sweep>Add sweep dimension</button>'
       + '</div>'
       + '<div class="localization-stage-subsection">'
-      + '<h5 class="localization-subsection-title">Coupled target variants</h5>'
+      + '<h5 class="localization-subsection-title">Coupled parameter variants</h5>'
       + '<div class="localization-stage-variants localization-target-variant-list"></div>'
       + '<button type="button" class="ghost-button" data-add-stage-variant>Add target variant</button>'
       + '</div>';

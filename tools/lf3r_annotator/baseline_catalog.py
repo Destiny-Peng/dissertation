@@ -71,6 +71,45 @@ class BaselineCatalogMixin:
         return result_filter
 
     @staticmethod
+    def _validate_rollout_filters(review_status: Any, outcome: Any) -> tuple[str, str]:
+        review_status = str(review_status or "all").strip()
+        outcome = str(outcome or "all").strip()
+        if review_status not in {"all", "complete"}:
+            raise ValidationError("review_status_filter must be all or complete")
+        if outcome not in {"all", "success", "failure"}:
+            raise ValidationError("outcome_filter must be all, success or failure")
+        return review_status, outcome
+
+    def _filter_run_records(
+        self,
+        records: list[dict[str, Any]],
+        condition: str,
+        review_status: str,
+        outcome: str,
+    ) -> list[dict[str, Any]]:
+        review_status, outcome = self._validate_rollout_filters(review_status, outcome)
+        if review_status == "all" and outcome == "all":
+            return records
+        if self.annotation_store is None:
+            raise ValidationError("Annotation store is unavailable for rollout filtering")
+        source_records = (
+            {str(record["id"]): record for record in self._manifest_records()}
+            if condition != "full_instruction" and outcome != "all" else {}
+        )
+        selected = []
+        for record in records:
+            source_id = self._source_rollout_id(record, condition)
+            annotation = self.annotation_store.read(source_id) or {}
+            if review_status == "complete" and annotation.get("review_status") != "complete":
+                continue
+            source_record = source_records.get(source_id, record)
+            effective_outcome = annotation.get("outcome_label") or source_record.get("ground_truth_outcome")
+            if outcome != "all" and effective_outcome != outcome:
+                continue
+            selected.append(record)
+        return selected
+
+    @staticmethod
     def _source_rollout_id(record: dict[str, Any], condition: str) -> str:
         if condition == "full_instruction":
             return str(record["id"])
@@ -213,13 +252,22 @@ class BaselineCatalogMixin:
         baseline: Any,
         scope: Any = "libero_10",
         condition: Any = "full_instruction",
+        review_status_filter: Any = "all",
+        outcome_filter: Any = "all",
     ) -> dict[str, Any]:
         baseline = str(baseline or "")
         if baseline not in BASELINE_METHODS:
             raise ValidationError("Invalid baseline method")
         scope = validate_run_scope(scope)
         condition = validate_instruction_condition(condition)
+        review_status_filter, outcome_filter = self._validate_rollout_filters(
+            review_status_filter, outcome_filter
+        )
         scope_records = self._condition_records(condition, scope)
+        scope_count_before_filters = len(scope_records)
+        scope_records = self._filter_run_records(
+            scope_records, condition, review_status_filter, outcome_filter
+        )
         records, incomplete_source_ids = self._complete_annotation_records(
             scope_records,
             condition,
@@ -239,6 +287,9 @@ class BaselineCatalogMixin:
             "baseline": baseline,
             "scope": scope,
             "condition": condition,
+            "review_status_filter": review_status_filter,
+            "outcome_filter": outcome_filter,
+            "scope_rollouts_before_rollout_filters": scope_count_before_filters,
             "scope_rollouts": len(scope_records),
             "matched_rollouts": len(records),
             "complete_annotation_rollouts": len(records),

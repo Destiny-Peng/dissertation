@@ -11,7 +11,7 @@ from backend_core import ValidationError
 from repair.adapters import A2WorldAdapter
 from repair.ctrl_world import CtrlWorldAdapter
 from repair.alignment import capability_summary, compute_alignment, project_path
-from repair.prepare_libero_manifest import _ensure_project_libero_on_sys_path
+from repair.prepare_libero_manifest_core import _ensure_project_libero_on_sys_path
 
 
 class RepairAlignmentTest(unittest.TestCase):
@@ -386,7 +386,7 @@ class OfficialLiberoManifestContractTest(unittest.TestCase):
         source = (
             Path(__file__).resolve().parents[1]
             / "repair"
-            / "prepare_libero_manifest.py"
+            / "prepare_libero_manifest_core.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"cam_high": "obs/agentview_rgb"', source)
         self.assertIn('"cam_wrist": "obs/eye_in_hand_rgb"', source)
@@ -416,7 +416,7 @@ class RepairFrontendContractTest(unittest.TestCase):
             Path(__file__).resolve().parents[1] / "repair" / "ctrl_world.py"
         ).read_text(encoding="utf-8")
         worker = (
-            Path(__file__).resolve().parents[1] / "repair" / "worker.py"
+            Path(__file__).resolve().parents[1] / "repair" / "worker_core.py"
         ).read_text(encoding="utf-8")
         service = (
             Path(__file__).resolve().parents[1] / "repair" / "service.py"
@@ -435,8 +435,8 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn("row.repair_eligible", repair_js)
         self.assertIn('" disabled"', repair_js)
         self.assertIn("Official LIBERO demonstration", repair_js)
-        self.assertIn('id=\\"repairWorldModel\\"', repair_page)
-        self.assertIn('value=\\"ctrl_world\\"', repair_page)
+        self.assertIn('id=\"repairWorldModel\"', repair_page)
+        self.assertIn('value=\"ctrl_world\"', repair_page)
         self.assertIn("Ctrl-World", repair_page)
         self.assertIn('name: "ctrl_world"', repair_js)
         self.assertIn("CtrlWorldAdapter", ctrl_adapter)
@@ -460,9 +460,9 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('"utilization_gate": False', service)
         self.assertIn('"selection_policy": "user_selected_device_no_hard_threshold"', service)
         self.assertNotIn("least_utilized_reported_device", service)
-        self.assertIn('id=\\"repairGpu\\"', repair_page)
-        self.assertIn('value=\\"\\" placeholder=\\"e.g. 0\\"', repair_page)
-        self.assertNotIn('id=\\"repairGpu\\" type=\\"text\\" inputmode=\\"numeric\\" value=\\"0\\"', repair_page)
+        self.assertIn('id=\"repairGpu\"', repair_page)
+        self.assertIn('value=\"\" placeholder=\"e.g. 0\"', repair_page)
+        self.assertNotIn('id=\"repairGpu\" type=\"text\" inputmode=\"numeric\" value=\"0\"', repair_page)
         self.assertIn('gpu_index: Number(gpu)', repair_js)
         self.assertIn("user selected · no utilization gate", repair_js)
         self.assertIn("Select a GPU before validating or running Repair", service)
@@ -473,7 +473,7 @@ class RepairFrontendContractTest(unittest.TestCase):
         self.assertIn('"model_runtime": model_runtime', service)
         self.assertIn('runtime_label="Repair/LIBERO"', service)
         self.assertIn("python_override=", service)
-        self.assertIn('"runtime_libero_required": plan["model_name"] != "ctrl_world"', service)
+        self.assertIn('"runtime_libero_required": plan["model_name"] == "a2world"', service)
         self.assertIn('plan["worker_python"]', service)
         self.assertIn('"numpy"', alignment_runner)
         self.assertIn('"h5py"', alignment_runner)

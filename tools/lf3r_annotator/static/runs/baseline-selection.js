@@ -28,6 +28,16 @@ function baselineBatchIsRynnValue() {
   return Boolean(method && method.value === "rynnvalue");
 }
 
+function baselineBatchReviewStatusFilterValue() {
+  var node = byId("baselineBatchReviewStatusFilter");
+  return node ? (node.value || "all") : "all";
+}
+
+function baselineBatchOutcomeFilterValue() {
+  var node = byId("baselineBatchOutcomeFilter");
+  return node ? (node.value || "all") : "all";
+}
+
 function baselineBatchUnfilteredScopeRecords() {
   var scope = byId("baselineBatchScope");
   if (!scope) return [];
@@ -35,6 +45,10 @@ function baselineBatchUnfilteredScopeRecords() {
   var condition = conditionNode ? conditionNode.value : (state.instructionCondition || "full_instruction");
   return (state.rollouts || []).filter(function (record) {
     if (!baselineBatchMatchesScope(record, scope.value)) return false;
+    if (baselineBatchReviewStatusFilterValue() === "complete"
+        && record.annotation_status !== "complete") return false;
+    var outcome = baselineBatchOutcomeFilterValue();
+    if (outcome !== "all" && effectiveOutcome(record) !== outcome) return false;
     if (condition === "full_instruction") return true;
     return Boolean(record.instruction_variants && record.instruction_variants[condition]);
   });
@@ -52,7 +66,9 @@ function baselineBatchCoverageKey() {
   return [
     method ? method.value : "",
     scope ? scope.value : "",
-    condition ? condition.value : "full_instruction"
+    condition ? condition.value : "full_instruction",
+    baselineBatchReviewStatusFilterValue(),
+    baselineBatchOutcomeFilterValue()
   ].join("::");
 }
 
@@ -93,7 +109,9 @@ async function loadBaselineBatchCoverage(force) {
     var response = await fetch(
       "/api/baselines/result-coverage?baseline=" + encodeURIComponent(method)
       + "&scope=" + encodeURIComponent(scope)
-      + "&condition=" + encodeURIComponent(condition),
+      + "&condition=" + encodeURIComponent(condition)
+      + "&review_status_filter=" + encodeURIComponent(baselineBatchReviewStatusFilterValue())
+      + "&outcome_filter=" + encodeURIComponent(baselineBatchOutcomeFilterValue()),
       { cache: "no-store" }
     );
     var payload = await response.json();
@@ -318,7 +336,8 @@ function updateBaselineBatchSelection() {
     var summary = baselineBatchWorkerSummary();
     var rangeText = summary.range.start == null || summary.range.end == null
       ? "invalid total range" : "total [" + summary.range.start + "," + summary.range.end + ")";
-    note.textContent = conditionLabel + " · " + label + ": " + coverageText + matched + " rollout(s) available; " + rangeText
+    note.textContent = conditionLabel + " · " + label + " · " + baselineBatchReviewStatusFilterValue()
+      + " annotations · " + baselineBatchOutcomeFilterValue() + " outcome: " + coverageText + matched + " rollout(s) available; " + rangeText
       + "; unique execution " + summary.unique + ". "
       + (summary.overlap.length ? "Overlap " + summary.overlap.length + ". " : "No overlap. ")
       + (summary.gaps.length ? "Gap " + summary.gaps.length + ". " : "No gap. ")

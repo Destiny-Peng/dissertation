@@ -25,6 +25,7 @@ from repair.adapters import A2WorldAdapter
 from repair.alignment import project_path
 from repair.alignment_runner import run_alignment_subprocess
 from repair.ctrl_world import CtrlWorldAdapter
+from repair.wan import WanAdapter
 from repair.trajectory import load_actions
 
 
@@ -502,6 +503,8 @@ def main() -> None:
                 raise ValidationError(
                     "LIBERO alignment smoke test failed; generation was not started"
                 )
+        elif model_name == "wan2_2":
+            smoke = {"passed": True, "source": "rgb_only", "runtime_libero_required": False}
         elif model_name in {"ctrl", "ctrl_world"}:
             alignment_meta = rollout.get("rgb_alignment")
             if not (
@@ -609,6 +612,36 @@ def main() -> None:
                 ),
             }
 
+        elif model_name == "wan2_2":
+            update_status(run_dir, phase="prepare_wan", progress=0.30)
+            adapter = WanAdapter(project_root, wm_config)
+            adapter_status = adapter.validate_rollout(rollout)
+            if not adapter_status["available"]:
+                raise ValidationError("; ".join(adapter_status["unavailable_reasons"]))
+            condition = adapter.prepare_condition(rollout, cut_frame=cut_frame, output_dir=prepared_dir)
+            gpu_before_generation = gpu_snapshot(gpu_index)
+            update_status(run_dir, phase="generate_suffix", progress=0.45)
+            generated = adapter.generate(condition=condition, output_dir=generated_dir)
+            generated_paths = {view: str(path.relative_to(project_root)) for view, path in generated.items()}
+            import imageio.v2 as imageio
+            reader = imageio.get_reader(str(generated["cam_high"]))
+            try:
+                generated_fps = float(reader.get_meta_data()["fps"])
+                frame_count = reader.count_frames()
+            finally:
+                reader.close()
+            if frame_count < 1 or generated_fps <= 0:
+                raise ValidationError("Wan2.2 output video has no valid RGB frames/FPS")
+            source_fps = float(rollout.get("fps") or generated_fps)
+            real_frame_indices = [cut_frame + round(i * source_fps / generated_fps) for i in range(frame_count)]
+            model_provenance = {
+                "condition_preparation": condition, "wan_python": adapter_status["python"],
+                "wan_source_root": adapter_status["source_root"], "runtime_libero_used": False,
+                "future_actions_used": False, "sim_state_used": False, "prefix_video_used": False,
+                "generated_real_start_frame": cut_frame, "artifact_playback_fps": generated_fps,
+                "generated_real_frame_indices": real_frame_indices,
+                "timing_note": "Wan native video timing; source-time comparison is diagnostic, not action alignment",
+            }
         elif model_name in {"ctrl", "ctrl_world"}:
             model_name = "ctrl_world"
             update_status(
@@ -757,6 +790,9 @@ def main() -> None:
             cut_frame=cut_frame,
             real_frame_indices=real_frame_indices,
         )
+        if model_name == "wan2_2":
+            metrics["alignment"].update({"generated_includes_condition": True,
+                                         "comparison_basis": "native Wan FPS mapped to source time; diagnostic only"})
         atomic_json(run_dir / "metrics.json", metrics)
 
         provenance = read_json(run_dir / "provenance.json", {})
@@ -797,7 +833,7 @@ def main() -> None:
                     "utilization_gate": False,
                 },
                 **model_provenance,
-                "standardized_generated_includes_condition": False,
+                "standardized_generated_includes_condition": model_name == "wan2_2",
                 "output_paths": generated_paths,
                 "completed_at": dt.datetime.now(
                     dt.timezone.utc

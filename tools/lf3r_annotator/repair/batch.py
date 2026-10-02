@@ -134,6 +134,9 @@ class RepairBatchService:
                 "artifact_timing_basis": "source action/frame index",
                 "tail_policy": "pad final chunk, then trim generated tail",
             }
+        if plan["model_name"] == "wan2_2":
+            return {"task": "i2v-A14B", "generated_includes_condition": True,
+                    "input_contract": "single cam_high RGB frame + original task instruction"}
         return {
             "rollout_mode": "autoregressive",
             "generated_includes_condition": False,
@@ -167,6 +170,8 @@ class RepairBatchService:
 
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = plan["model_name"]
+        if plan["model_name"] == "wan2_2":
+            wm_config.update({key: plan["world_model"][key] for key in ("python", "checkpoint", "source_root")})
         wm_config["gpu_index"] = int(plan["gpu"]["requested_index"])
         created_at = dt.datetime.now(dt.timezone.utc).isoformat()
         config = {
@@ -176,7 +181,7 @@ class RepairBatchService:
             "cut_progress": plan["alignment"]["cut_progress"],
             "cut_frame": plan["alignment"]["cut_rgb_frame"],
             "alignment_min_psnr": float(payload.get("alignment_min_psnr", 20.0)),
-            "generated_includes_condition": False,
+            "generated_includes_condition": plan["model_name"] == "wan2_2",
             "world_model": wm_config,
             "created_at": created_at,
             "batch_id": batch_id,
@@ -207,7 +212,7 @@ class RepairBatchService:
             "checkpoint": adapter["checkpoint"],
             "checkpoint_type": adapter["checkpoint_type"],
             "repair_worker_python": plan["worker_python"],
-            "runtime_libero_required": plan["model_name"] != "ctrl_world",
+            "runtime_libero_required": plan["model_name"] == "a2world",
             "offline_ctrl_prepared": bool(rollout.get("ctrl_prepared")),
             "camera_mapping": adapter["camera_mapping"],
             "duplicated_camera": adapter["duplicated_camera"],
@@ -237,9 +242,13 @@ class RepairBatchService:
         worker_python_value = str(plan["worker_python"])
         worker_python_path = Path(worker_python_value).expanduser()
         worker_python = (
-            worker_python_path.resolve()
-            if worker_python_path.is_absolute()
-            else (self.project_root / worker_python_path).resolve()
+            worker_python_path.absolute()
+            if plan["model_name"] == "wan2_2"
+            else (
+                worker_python_path.resolve()
+                if worker_python_path.is_absolute()
+                else (self.project_root / worker_python_path).resolve()
+            )
         )
         return {
             "run_id": run_id,

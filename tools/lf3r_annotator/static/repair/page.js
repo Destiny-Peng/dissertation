@@ -100,6 +100,7 @@
                 <select id="repairWorldModel">
                   <option value="a2world" selected>A2World</option>
                   <option value="ctrl_world">Ctrl-World</option>
+                  <option value="wan2_2">Wan2.2-I2V-A14B</option>
                 </select>
               </label>
               <label><span>GPU</span>
@@ -154,6 +155,14 @@
               </div>
             </div>
 
+            <div data-repair-model-panel="wan2_2" class="hidden">
+              <div class="repair-config-grid" style="margin-top:10px">
+                <label><span>Wan Python</span><input id="repairWanPython" type="text" placeholder="Absolute path to Wan environment Python"></label>
+                <label><span>Wan checkpoint directory</span><input id="repairWanCheckpoint" type="text" placeholder="Absolute path to Wan2.2-I2V-A14B checkpoint directory"></label>
+                <label><span>Wan source directory (optional)</span><input id="repairWanSourceRoot" type="text" value="" placeholder="repos/Wan2.2 (default); or set WAN_SOURCE_ROOT"></label>
+              </div>
+              <p class="analysis-card-note">Input: one cam_high RGB frame at the cut point and the original task instruction. No actions, states, prefix video, or LIBERO runtime required. Wan generates a video at its native duration and FPS.</p>
+            </div>
             <div id="repairValidation" class="repair-validation"></div>
             <div class="repair-actions">
               <button id="repairValidateButton" class="ghost-button" type="button">Validate inputs</button>
