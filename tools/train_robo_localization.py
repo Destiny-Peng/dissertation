@@ -5,12 +5,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
+
+# Apply job-local limits before NumPy/PyTorch initialize their thread pools.
+CPU_THREADS = int(os.environ.get("LF3R_ANALYSIS_CPU_THREADS", "1"))
+if CPU_THREADS < 1:
+    raise ValueError("LF3R_ANALYSIS_CPU_THREADS must be positive")
+for _pool in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ[_pool] = str(CPU_THREADS)
+print(f"analysis_import_start cpu_threads_per_worker={CPU_THREADS}", flush=True)
 
 from robo_incremental_hop.io import PROJECT_ROOT
 from robo_localization_head.spec_runner import run_spec

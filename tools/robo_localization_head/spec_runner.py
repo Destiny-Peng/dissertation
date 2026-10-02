@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime as dt
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -498,6 +499,7 @@ def _run_configuration(
     no_event_failures: Sequence[Mapping[str, Any]],
     clean_rollouts: Sequence[Mapping[str, Any]],
     checkpoint_root: Path,
+    pca_cache: latent.PCACache | None = None,
 ) -> tuple[
     dict[str, Any],
     list[dict[str, Any]],
@@ -535,6 +537,9 @@ def _run_configuration(
     all_failure_predictions: list[dict[str, Any]] = []
     records: list[dict[str, Any]] = []
     for repeat in range(repeats):
+        repeat_label = f"{stage_name}/{config_id}/repeat{repeat}"
+        log(f"{repeat_label} prepare_start")
+        prepare_started = time.perf_counter()
         model_seed, split_seed = _repeat_seed_pair(training, repeat)
         split = core.rollout_split(
             base_failure,
@@ -564,9 +569,14 @@ def _run_configuration(
         failure_dataset = raw_failure_dataset
         success_dataset = raw_success_dataset
         if data_config.get("signal_mode") in latent.LATENT_MODES:
-            pca = latent.fit_pca({**raw_failure_dataset, **raw_success_dataset},
-                                 [*failure_train_ids, *success_ids],
-                                 int(data_config.get("pca_components", 64)))
+            if pca_cache is None:
+                pca_cache = latent.PCACache(int(data_config.get("pca_components", 64)))
+            pca = pca_cache.get(
+                {**raw_failure_dataset, **raw_success_dataset},
+                [*failure_train_ids, *success_ids],
+                int(data_config.get("pca_components", 64)),
+                logger=log, label=repeat_label,
+            )
             plus_fused = data_config["signal_mode"] == "robodopamine_latent_plus_fused"
             failure_dataset = latent.transform_dataset(raw_failure_dataset, pca, plus_fused)
             success_dataset = latent.transform_dataset(raw_success_dataset, pca, plus_fused)
@@ -591,6 +601,8 @@ def _run_configuration(
                 pos_weight=pos_weight_tensor,
             )
 
+        log(f"{repeat_label} prepare_done seconds={time.perf_counter() - prepare_started:.3f} input_dim={input_dim}")
+        log(f"{repeat_label} training_start")
         model, train_meta = core.train_bilstm(
             dataset=combined,
             train_ids=train_ids,
@@ -775,6 +787,7 @@ def _run_configuration_concurrent(
     clean_rollouts: Sequence[Mapping[str, Any]],
     checkpoint_root: Path,
     use_cuda_stream: bool,
+    pca_cache: latent.PCACache | None = None,
 ) -> tuple[
     dict[str, Any],
     list[dict[str, Any]],
@@ -800,6 +813,7 @@ def _run_configuration_concurrent(
             no_event_failures=no_event_failures,
             clean_rollouts=clean_rollouts,
             checkpoint_root=checkpoint_root,
+            pca_cache=pca_cache,
         )
 
     stream = torch.cuda.Stream(device=device)
@@ -814,6 +828,7 @@ def _run_configuration_concurrent(
             no_event_failures=no_event_failures,
             clean_rollouts=clean_rollouts,
             checkpoint_root=checkpoint_root,
+            pca_cache=pca_cache,
         )
     stream.synchronize()
     return result
@@ -836,12 +851,16 @@ def run_spec(
         raise FileExistsError(f"Output directory is not empty: {out}")
     out.mkdir(parents=True, exist_ok=True)
 
+    log("data_load_start")
+    load_started = time.perf_counter()
     records_by_mode, provenance = _aligned_signal_records(
         source_root,
         load_manifest(manifest),
         annotations,
         audit_path=out / "data_preflight.json",
     )
+
+    log(f"data_load_done seconds={time.perf_counter() - load_started:.3f}")
 
     all_summary: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
@@ -882,6 +901,11 @@ def run_spec(
             f"repeats={normalized['repeats']} workers={effective_workers}"
         )
 
+        pca_dimensions = [int(config["data"].get("pca_components", 64))
+                          for config in configurations
+                          if config["data"].get("signal_mode") in latent.LATENT_MODES]
+        pca_cache = latent.PCACache(max(pca_dimensions, default=64))
+
         configs_by_id: dict[str, dict[str, Any]] = {}
         jobs: list[tuple[int, str, dict[str, Any]]] = []
         for config_index, config in enumerate(configurations):
@@ -918,6 +942,7 @@ def run_spec(
                     clean_rollouts=clean_rollouts,
                     checkpoint_root=out / "checkpoints" / stage_name,
                     use_cuda_stream=False,
+                    pca_cache=pca_cache,
                 )
                 log(f"stage={stage_name} done={config_id}")
         else:
@@ -930,6 +955,7 @@ def run_spec(
                     signals, events, no_event_failures, clean_rollouts = (
                         _records_for_config(config, records_by_mode)
                     )
+                    log(f"stage={stage_name} submit={config_id}")
                     future = executor.submit(
                         _run_configuration_concurrent,
                         config=config,
@@ -942,6 +968,7 @@ def run_spec(
                         clean_rollouts=clean_rollouts,
                         checkpoint_root=out / "checkpoints" / stage_name,
                         use_cuda_stream=True,
+                        pca_cache=pca_cache,
                     )
                     futures[future] = (config_index, config_id)
                 for future in as_completed(futures):

@@ -136,14 +136,10 @@ class LatentTests(unittest.TestCase):
     def test_presets_and_launch_options(self):
         presets = AnalysisLocalizationResultsMixin._localization_builtin_presets()
         self.assertEqual(specs.normalize_spec({})['base']['data']['pca_components'], 64)
-        self.assertEqual(presets['fused_progress_bilstm']['base']['data']['pca_components'], 64)
-        for dimensions in (32, 64, 128):
-            for suffix, mode in [('latent', 'robodopamine_latent'), ('latent_plus_fused', 'robodopamine_latent_plus_fused')]:
-                name = f'pca{dimensions}_{suffix}_bilstm'
-                normalized = specs.normalize_spec(presets[name])
-                self.assertEqual(normalized['base']['data']['signal_mode'], mode)
-                self.assertEqual(normalized['base']['data']['pca_components'], dimensions)
-                self.assertEqual(normalized['base']['training']['split_seed'], 17)
+        preset = presets['latent_input_default']
+        self.assertEqual(preset['base']['data']['pca_components'], 64)
+        self.assertEqual(len(preset['variants']), 7)
+        self.assertEqual(preset['base']['training']['split_seed'], 17)
         service = BaselineJobsMixin()
         self.assertTrue(service._validate_options('robo_dopamine', {'robo_extract_latent': True})['robo_extract_latent'])
         with self.assertRaises(ValidationError):
@@ -271,6 +267,45 @@ class LatentTests(unittest.TestCase):
             forward = Path(instance.run_pipeline(**args, eval_mode='forward'))
             self.assertFalse((forward/'latent_features.npz').exists())
             self.assertEqual(calls, [])
+
+    def test_training_integration_reuses_pca_across_fixed_splits_and_configs(self):
+        rng = np.random.default_rng(22)
+        signals = {f'r{i}': {'frames': list(range(150)),
+                   'features': rng.normal(size=(150, 2562)).astype(np.float32),
+                   'task_key': 'task', 'task_id': 0} for i in range(4)}
+        events = [{'rollout_id': key, 'outcome': 'terminal_failure', 'causal_onset_frame': 2,
+                   'observable_onset_frame': 3, 'task_key': 'task', 'task_id': 0} for key in signals]
+        cache = latent.PCACache(128)
+        def fake_train(**kwargs):
+            dimension = kwargs['input_dim']
+            self.assertEqual(next(iter(kwargs['dataset'].values()))['sequence'].shape[1], dimension)
+            return core.TinyBiLSTM(hidden=16, input_dim=dimension), dict(
+                best_epoch=0, best_val_loss=0.1, effective_train_batch_size=2, optimizer_steps_per_epoch=1)
+        def fake_logits(model, dataset, ids, *args):
+            return {key: torch.zeros(len(dataset[key]['frames'])) for key in ids}
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(core, 'train_bilstm', side_effect=fake_train) as train, \
+             mock.patch.object(core, 'batched_logits', side_effect=fake_logits), \
+             mock.patch.object(latent, 'fit_pca', wraps=latent.fit_pca) as fit:
+            for index, (dimension, mode) in enumerate((
+                (64, 'robodopamine_latent'), (64, 'robodopamine_latent_plus_fused'),
+                (32, 'robodopamine_latent'), (128, 'robodopamine_latent_plus_fused'),
+            )):
+                config = specs.deep_merge(specs.DEFAULT_BASE, {
+                    'data': {'signal_mode': mode, 'pca_components': dimension},
+                    'training': {'device': 'cpu', 'split_seed': 42, 'vary_split_seed': False},
+                })
+                spec_runner._run_configuration_concurrent(
+                    config=config, config_id=f'c{index}', stage_name='main', repeats=2,
+                    signals=signals, events=events, no_event_failures=[], clean_rollouts=[],
+                    checkpoint_root=Path(directory)/'checkpoints'/'main',
+                    use_cuda_stream=False, pca_cache=cache,
+                )
+                saved = torch.load(Path(directory)/'checkpoints'/'main'/f'c{index}'/'repeat_01.pt',
+                                   weights_only=False)
+                self.assertEqual(saved['latent_pca']['components'].shape, (dimension, 2560))
+            self.assertEqual(train.call_count, 8)
+            self.assertEqual(fit.call_count, 1)
 
     def test_training_integration_fits_pca_per_split_and_saves_checkpoint(self):
         rng = np.random.default_rng(2)
