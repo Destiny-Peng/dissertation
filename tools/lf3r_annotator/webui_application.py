@@ -18,6 +18,9 @@ from tactile_service import FailRecoveryTactileService
 from webui_baseline import WebUIBaselineService
 
 
+MANIFEST_CACHE_SCHEMA_VERSION = 1
+
+
 def _atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
@@ -32,6 +35,25 @@ def _atomic_jsonl_write(path: Path, records: list[dict[str, Any]]) -> None:
                     json.dumps(record, ensure_ascii=False, separators=(",", ":"))
                 )
                 handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def _atomic_json_write(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+            handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
@@ -79,6 +101,9 @@ class WebUIApplication(server.LF3RApplication):
             / "manifests"
             / f"catalog-{digest}.jsonl"
         )
+        self.aggregate_manifest_meta_path = self.aggregate_manifest_path.with_suffix(
+            ".meta.json"
+        )
         self.canonical_manifest_path = (
             self.project_root
             / "datasets"
@@ -93,7 +118,10 @@ class WebUIApplication(server.LF3RApplication):
         self._manifest_records_cache: list[dict[str, Any]] = []
         self._manifest_info_cache: list[dict[str, Any]] = []
         self._manifest_source_by_id: dict[str, Path] = {}
-        self._refresh_manifest_catalog(force=True)
+
+        # Normal startup is a cache lookup. Full parsing/validation only runs
+        # when one of the source manifest signatures actually changes.
+        self._refresh_manifest_catalog(force=False)
 
         super().__init__(
             self.project_root,
@@ -133,11 +161,18 @@ class WebUIApplication(server.LF3RApplication):
             )
         return tuple(signature)
 
+    @staticmethod
+    def _signature_payload(
+        signature: tuple[tuple[str, bool, int, int], ...]
+    ) -> list[list[Any]]:
+        return [list(item) for item in signature]
+
     def _validate_manifest_rows(
         self,
         source_path: Path,
         rows: list[dict[str, Any]],
     ) -> None:
+        """Validate manifest structure without resolving every video on disk."""
         source_label = self._relative_manifest_path(source_path)
         for row in rows:
             rollout_id = str(row.get("id") or "")
@@ -155,7 +190,166 @@ class WebUIApplication(server.LF3RApplication):
                     raise server.ValidationError(
                         f"{source_label}: rollout {rollout_id} has an invalid camera path"
                     )
-                self.resolve_project_file(value, ".mp4")
+                candidate = Path(value)
+                if candidate.is_absolute() or ".." in candidate.parts:
+                    raise server.ValidationError(
+                        f"{source_label}: rollout {rollout_id} camera path escapes project root"
+                    )
+                if candidate.suffix.lower() != ".mp4":
+                    raise server.ValidationError(
+                        f"{source_label}: rollout {rollout_id} camera path is not an mp4"
+                    )
+
+    def _cache_records(
+        self,
+        *,
+        signature: tuple[tuple[str, bool, int, int], ...],
+        aggregate_rows: list[dict[str, Any]],
+        source_info: list[dict[str, Any]],
+        source_by_id: dict[str, Path],
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for row in aggregate_rows:
+            rollout_id = str(row.get("id") or "")
+            source_path = source_by_id.get(rollout_id)
+            if source_path is None:
+                raise server.ValidationError(
+                    f"Cached aggregate is missing source mapping for {rollout_id}"
+                )
+            source_relative = self._relative_manifest_path(source_path)
+            enriched = dict(row)
+            enriched["manifest_source"] = source_relative
+            enriched["manifest_label"] = source_path.stem
+            records.append(enriched)
+
+        self._manifest_records_cache = records
+        self._manifest_info_cache = [dict(item) for item in source_info]
+        self._manifest_source_by_id = dict(source_by_id)
+        self._manifest_catalog_signature = signature
+        return [dict(row) for row in records]
+
+    def _write_manifest_cache_meta(
+        self,
+        *,
+        signature: tuple[tuple[str, bool, int, int], ...],
+        source_info: list[dict[str, Any]],
+        source_by_id: dict[str, Path],
+    ) -> None:
+        _atomic_json_write(
+            self.aggregate_manifest_meta_path,
+            {
+                "schema_version": MANIFEST_CACHE_SCHEMA_VERSION,
+                "signature": self._signature_payload(signature),
+                "source_info": source_info,
+                "source_by_id": {
+                    rollout_id: self._relative_manifest_path(source_path)
+                    for rollout_id, source_path in source_by_id.items()
+                },
+            },
+        )
+
+    def _restore_manifest_catalog(
+        self,
+        signature: tuple[tuple[str, bool, int, int], ...],
+    ) -> list[dict[str, Any]] | None:
+        if not self.aggregate_manifest_path.is_file() or not self.aggregate_manifest_meta_path.is_file():
+            return None
+        try:
+            metadata = json.loads(
+                self.aggregate_manifest_meta_path.read_text(encoding="utf-8")
+            )
+            if metadata.get("schema_version") != MANIFEST_CACHE_SCHEMA_VERSION:
+                return None
+            if metadata.get("signature") != self._signature_payload(signature):
+                return None
+            source_info = metadata.get("source_info")
+            raw_source_by_id = metadata.get("source_by_id")
+            if not isinstance(source_info, list) or not isinstance(raw_source_by_id, dict):
+                return None
+            aggregate_rows = server.load_manifest_records(self.aggregate_manifest_path)
+            source_by_id: dict[str, Path] = {}
+            for rollout_id, raw_path in raw_source_by_id.items():
+                if not isinstance(rollout_id, str) or not isinstance(raw_path, str):
+                    return None
+                candidate = Path(raw_path)
+                source_by_id[rollout_id] = (
+                    candidate
+                    if candidate.is_absolute()
+                    else self.project_root / candidate
+                )
+            return self._cache_records(
+                signature=signature,
+                aggregate_rows=aggregate_rows,
+                source_info=source_info,
+                source_by_id=source_by_id,
+            )
+        except (OSError, json.JSONDecodeError, server.ValidationError, TypeError):
+            return None
+
+    def _bootstrap_legacy_aggregate(
+        self,
+        signature: tuple[tuple[str, bool, int, int], ...],
+    ) -> list[dict[str, Any]] | None:
+        """Trust a newer existing aggregate once and create the sidecar cache.
+
+        This avoids one expensive legacy startup immediately after upgrading.
+        Source manifests are parsed only to recover source-id mapping; camera
+        paths are not resolved and the aggregate is not rewritten.
+        """
+        if not self.aggregate_manifest_path.is_file():
+            return None
+        if any(not exists for _path, exists, _mtime, _size in signature):
+            return None
+        try:
+            aggregate_stat = self.aggregate_manifest_path.stat()
+        except OSError:
+            return None
+        newest_source = max((mtime for _path, _exists, mtime, _size in signature), default=0)
+        if aggregate_stat.st_mtime_ns < newest_source:
+            return None
+
+        parsed_rows: dict[Path, list[dict[str, Any]]] = {}
+        source_info: list[dict[str, Any]] = []
+        source_by_id: dict[str, Path] = {}
+        try:
+            for source_path in self.manifest_paths:
+                rows = server.load_manifest_records(source_path)
+                if not rows:
+                    return None
+                parsed_rows[source_path] = rows
+                source_info.append(
+                    {
+                        "path": self._relative_manifest_path(source_path),
+                        "label": source_path.stem,
+                        "exists": True,
+                        "valid": True,
+                        "rollouts": len(rows),
+                        "error": None,
+                    }
+                )
+                for row in rows:
+                    rollout_id = str(row.get("id") or "")
+                    if not rollout_id or rollout_id in source_by_id:
+                        return None
+                    source_by_id[rollout_id] = source_path
+
+            aggregate_rows = server.load_manifest_records(self.aggregate_manifest_path)
+            aggregate_ids = {str(row.get("id") or "") for row in aggregate_rows}
+            if aggregate_ids != set(source_by_id):
+                return None
+            self._write_manifest_cache_meta(
+                signature=signature,
+                source_info=source_info,
+                source_by_id=source_by_id,
+            )
+            return self._cache_records(
+                signature=signature,
+                aggregate_rows=aggregate_rows,
+                source_info=source_info,
+                source_by_id=source_by_id,
+            )
+        except (OSError, json.JSONDecodeError, server.ValidationError, TypeError):
+            return None
 
     def _refresh_manifest_catalog(
         self,
@@ -175,6 +369,14 @@ class WebUIApplication(server.LF3RApplication):
             signature = self._manifest_source_signature()
             if not force and signature == self._manifest_catalog_signature:
                 return [dict(row) for row in self._manifest_records_cache]
+
+            if not force:
+                restored = self._restore_manifest_catalog(signature)
+                if restored is not None:
+                    return restored
+                bootstrapped = self._bootstrap_legacy_aggregate(signature)
+                if bootstrapped is not None:
+                    return bootstrapped
 
             records: list[dict[str, Any]] = []
             aggregate_rows: list[dict[str, Any]] = []
@@ -261,11 +463,16 @@ class WebUIApplication(server.LF3RApplication):
                 if path in source_info_by_path
             ]
             _atomic_jsonl_write(self.aggregate_manifest_path, aggregate_rows)
+            self._write_manifest_cache_meta(
+                signature=signature,
+                source_info=source_info,
+                source_by_id=source_by_id,
+            )
 
             self._manifest_records_cache = records
             self._manifest_info_cache = source_info
             self._manifest_source_by_id = source_by_id
-            self._manifest_catalog_signature = self._manifest_source_signature()
+            self._manifest_catalog_signature = signature
             return [dict(row) for row in records]
 
     def refresh_manifest_catalog(
@@ -294,7 +501,10 @@ class WebUIApplication(server.LF3RApplication):
             if suite:
                 suite_counts[suite] = suite_counts.get(suite, 0) + 1
         return {
-            "dataset_roles": [{"value": role, "count": count} for role, count in role_counts.items()],
+            "dataset_roles": [
+                {"value": role, "count": count}
+                for role, count in role_counts.items()
+            ],
             "task_suites": [
                 {"value": suite, "count": count}
                 for suite, count in suite_counts.items()
@@ -304,27 +514,9 @@ class WebUIApplication(server.LF3RApplication):
         }
 
     def load_rollouts(self) -> list[dict[str, Any]]:
-        records = self._refresh_manifest_catalog()
-        for record in records:
-            camera_paths = record.get("camera_video_paths")
-            if not isinstance(camera_paths, dict) or not camera_paths:
-                raise server.ValidationError(
-                    "Manifest record has invalid camera_video_paths: "
-                    + str(record.get("id"))
-                )
-            for camera, value in camera_paths.items():
-                if not isinstance(camera, str) or not camera.strip():
-                    raise server.ValidationError(
-                        "Manifest record has an invalid camera key: "
-                        + str(record.get("id"))
-                    )
-                if not isinstance(value, str) or not value.strip():
-                    raise server.ValidationError(
-                        "Manifest record has an invalid camera video path: "
-                        + str(record.get("id"))
-                    )
-                self.resolve_project_file(value, ".mp4")
-        return records
+        # Structural validation is performed only when source manifests change.
+        # Normal requests reuse the in-memory/persistent catalog directly.
+        return self._refresh_manifest_catalog()
 
 
 def discover_default_manifests(project_root: Path) -> list[Path]:
