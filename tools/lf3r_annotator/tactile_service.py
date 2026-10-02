@@ -45,7 +45,9 @@ class FailRecoveryTactileService:
         self._sprite_cache: OrderedDict[tuple[str, str, int, str], bytes] = OrderedDict()
         self._sprite_cache_lock = threading.Lock()
         self._sprite_cache_limit = 96
-        self._load()
+        self._manifest_rows: dict[str, dict[str, Any]] = {}
+        self._episode_locks: dict[str, threading.Lock] = {}
+        self._load_manifest()
 
     def _project_file(self, value: Any) -> Path:
         if not isinstance(value, str) or not value.strip():
@@ -100,70 +102,86 @@ class FailRecoveryTactileService:
                 result[finger] = finger_paths
         return result
 
-    def _load(self) -> None:
+    def _load_manifest(self) -> None:
+        """Discover episodes without reading their frame/event indices."""
         if not self.manifest_path.is_file():
             return
         try:
             manifest_rows = self._jsonl(self.manifest_path)
         except (OSError, json.JSONDecodeError):
             return
-
         for row in manifest_rows:
             rollout_id = str(row.get("id") or "").strip()
-            if not rollout_id:
+            if rollout_id:
+                self._manifest_rows[rollout_id] = row
+                self._episode_locks[rollout_id] = threading.Lock()
+
+    def _load_episode(self, rollout_id: str, row: dict[str, Any]) -> EpisodeTactile:
+        frames_path = self._project_file(row.get("synchronized_frames_path"))
+        events_path = self._project_file(row.get("tactile_events_path"))
+        streams = self._stream_paths(row)
+        frames = self._jsonl(frames_path)
+        event_rows = self._jsonl(events_path)
+
+        events: dict[str, dict[str, Any]] = {}
+        finger_events: dict[tuple[str, str], dict[str, Any]] = {}
+        for event in event_rows:
+            event_id = event.get("event_id")
+            if event_id is None:
                 continue
-            try:
-                frames_path = self._project_file(row.get("synchronized_frames_path"))
-                events_path = self._project_file(row.get("tactile_events_path"))
-                streams = self._stream_paths(row)
-                frames = self._jsonl(frames_path)
-                event_rows = self._jsonl(events_path)
-            except (OSError, ValueError, json.JSONDecodeError):
+            key = str(event_id)
+            events[key] = event
+            finger = str(event.get("finger") or event.get("finger_name") or "").strip().lower()
+            if finger:
+                finger_events[(finger, key)] = event
+
+        camera_pairs: dict[str, list[tuple[int, int]]] = {}
+        for row_index, frame_row in enumerate(frames):
+            indices = frame_row.get("camera_frame_indices")
+            if not isinstance(indices, dict):
                 continue
-
-            events: dict[str, dict[str, Any]] = {}
-            finger_events: dict[tuple[str, str], dict[str, Any]] = {}
-            for event in event_rows:
-                event_id = event.get("event_id")
-                if event_id is None:
+            for camera, value in indices.items():
+                try:
+                    frame_number = int(value)
+                except (TypeError, ValueError):
                     continue
-                key = str(event_id)
-                events[key] = event
-                finger = str(event.get("finger") or event.get("finger_name") or "").strip().lower()
-                if finger:
-                    finger_events[(finger, key)] = event
+                camera_pairs.setdefault(str(camera), []).append((frame_number, row_index))
 
-            camera_pairs: dict[str, list[tuple[int, int]]] = {}
-            for row_index, frame_row in enumerate(frames):
-                indices = frame_row.get("camera_frame_indices")
-                if not isinstance(indices, dict):
-                    continue
-                for camera, value in indices.items():
-                    try:
-                        frame_number = int(value)
-                    except (TypeError, ValueError):
-                        continue
-                    camera_pairs.setdefault(str(camera), []).append((frame_number, row_index))
+        camera_frames: dict[str, list[int]] = {}
+        camera_rows: dict[str, list[int]] = {}
+        for camera, pairs in camera_pairs.items():
+            pairs.sort(key=lambda item: item[0])
+            camera_frames[camera] = [item[0] for item in pairs]
+            camera_rows[camera] = [item[1] for item in pairs]
 
-            camera_frames: dict[str, list[int]] = {}
-            camera_rows: dict[str, list[int]] = {}
-            for camera, pairs in camera_pairs.items():
-                pairs.sort(key=lambda item: item[0])
-                camera_frames[camera] = [item[0] for item in pairs]
-                camera_rows[camera] = [item[1] for item in pairs]
+        return EpisodeTactile(
+            rollout_id=rollout_id,
+            frames=frames,
+            camera_frames=camera_frames,
+            camera_rows=camera_rows,
+            events=events,
+            finger_events=finger_events,
+            streams=streams,
+        )
 
-            self.episodes[rollout_id] = EpisodeTactile(
-                rollout_id=rollout_id,
-                frames=frames,
-                camera_frames=camera_frames,
-                camera_rows=camera_rows,
-                events=events,
-                finger_events=finger_events,
-                streams=streams,
-            )
+    def _episode(self, rollout_id: str) -> EpisodeTactile:
+        row = self._manifest_rows.get(rollout_id)
+        if row is None:
+            raise KeyError("tactile rollout not found")
+        # Separate locks let unrelated episodes load concurrently. Publish an
+        # index only when complete, and reuse it across all tactile endpoints.
+        with self._episode_locks[rollout_id]:
+            episode = self.episodes.get(rollout_id)
+            if episode is None:
+                try:
+                    episode = self._load_episode(rollout_id, row)
+                except (OSError, ValueError) as exc:
+                    raise KeyError("tactile rollout not found") from exc
+                self.episodes[rollout_id] = episode
+            return episode
 
     def has_rollout(self, rollout_id: str) -> bool:
-        return rollout_id in self.episodes
+        return rollout_id in self._manifest_rows
 
     @staticmethod
     def _nearest_index(values: list[int], requested: int) -> int:
@@ -185,9 +203,7 @@ class FailRecoveryTactileService:
         return episode.finger_events.get((finger, key)) or episode.events.get(key)
 
     def frame(self, rollout_id: str, camera: str, video_frame: int) -> dict[str, Any]:
-        episode = self.episodes.get(rollout_id)
-        if episode is None:
-            raise KeyError("tactile rollout not found")
+        episode = self._episode(rollout_id)
         frames = episode.camera_frames.get(camera)
         rows = episode.camera_rows.get(camera)
         if not frames or not rows:
@@ -246,9 +262,7 @@ class FailRecoveryTactileService:
         if cached is not None:
             return cached
 
-        episode = self.episodes.get(rollout_id)
-        if episode is None:
-            raise KeyError("tactile rollout not found")
+        episode = self._episode(rollout_id)
         frames = episode.camera_frames.get(camera)
         rows = episode.camera_rows.get(camera)
         if not frames or not rows:
@@ -376,9 +390,7 @@ class FailRecoveryTactileService:
     ) -> bytes:
         if kind not in KINDS:
             raise KeyError("unknown tactile image kind")
-        episode = self.episodes.get(rollout_id)
-        if episode is None:
-            raise KeyError("tactile rollout not found")
+        episode = self._episode(rollout_id)
         frames = episode.camera_frames.get(camera)
         rows = episode.camera_rows.get(camera)
         if not frames or not rows:
@@ -490,9 +502,7 @@ class FailRecoveryTactileService:
     def image(self, rollout_id: str, finger: str, event_id: str, kind: str) -> bytes:
         if finger not in FINGERS or kind not in KINDS:
             raise KeyError("unknown tactile image")
-        episode = self.episodes.get(rollout_id)
-        if episode is None:
-            raise KeyError("tactile rollout not found")
+        episode = self._episode(rollout_id)
         event = self._event(episode, finger, event_id)
         stream = episode.streams.get(finger, {}).get(kind)
         if event is None or stream is None:
