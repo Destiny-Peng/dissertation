@@ -47,10 +47,13 @@ class IndexedTmuxJobSupervisorTest(unittest.TestCase):
 
             second = IndexedTmuxJobSupervisor(root, tmux_binary="/bin/echo")
             second.register_handler("test", lambda _job: None)
-            with mock.patch.object(
-                second,
-                "_active_tmux_sessions",
-                return_value={"lf3r-annotator-active-job"},
+            with (
+                mock.patch.object(
+                    second,
+                    "_active_tmux_sessions",
+                    return_value={"lf3r-annotator-active-job"},
+                ),
+                mock.patch.object(second, "_start_monitor"),
             ):
                 stats = second.recover()
 
