@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import signal
 import threading
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -55,8 +56,11 @@ def _make_handler(app: WebUIApplication) -> type[WebUIHandler]:
 
 
 def main() -> None:
+    startup_started = time.perf_counter()
     args = _parse_args()
     project_root = args.project_root.resolve()
+
+    discovery_started = time.perf_counter()
     manifest_paths = (
         [
             path.expanduser().resolve()
@@ -67,6 +71,7 @@ def main() -> None:
         if args.manifest_paths is not None
         else discover_default_manifests(project_root)
     )
+    discovery_seconds = time.perf_counter() - discovery_started
     annotations = (
         args.annotations
         or project_root / "annotations/failure_annotations/v1"
@@ -75,18 +80,33 @@ def main() -> None:
     # Keep the core application default on the historical LIBERO service; the
     # WebUI explicitly opts into the additive ManiSkill3-aware subclass.
     WebUIApplication.rollout_service_class = WebUIRolloutGenerationService
+    print(
+        f"[startup] manifest discovery {discovery_seconds:.3f}s; "
+        f"initializing application with {len(manifest_paths)} manifest(s)...",
+        flush=True,
+    )
+    app_started = time.perf_counter()
     app = WebUIApplication(
         project_root,
         manifest_paths,
         annotations,
     )
+    app_seconds = time.perf_counter() - app_started
+    print(f"[startup] application initialized in {app_seconds:.3f}s", flush=True)
+
+    server_started = time.perf_counter()
     http_server = ThreadingHTTPServer(
         (args.host, args.port),
         _make_handler(app),
     )
+    server_seconds = time.perf_counter() - server_started
+    total_seconds = time.perf_counter() - startup_started
 
     print(
         f"LF3R annotator: http://{args.host}:{http_server.server_port}"
+    )
+    print(
+        f"[startup] HTTP bind {server_seconds:.3f}s; total {total_seconds:.3f}s"
     )
     print(f"Project root: {project_root}")
     if args.manifest_paths is None:
