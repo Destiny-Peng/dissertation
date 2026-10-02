@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.lf3r_annotator.webui_application import WebUIApplication
+TOOL_ROOT = Path(__file__).resolve().parents[1]
+if str(TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOL_ROOT))
+
+from webui_application import WebUIApplication  # noqa: E402
 
 
 class ManifestCatalogCacheTest(unittest.TestCase):
