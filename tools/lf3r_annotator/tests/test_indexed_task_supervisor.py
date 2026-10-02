@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.lf3r_annotator.indexed_task_supervisor import IndexedTmuxJobSupervisor
+TOOL_ROOT = Path(__file__).resolve().parents[1]
+if str(TOOL_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOL_ROOT))
+
+from indexed_task_supervisor import IndexedTmuxJobSupervisor  # noqa: E402
 
 
 class IndexedTmuxJobSupervisorTest(unittest.TestCase):
