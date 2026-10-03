@@ -15,6 +15,7 @@ DEFAULT_BASE = {
         "signal_mode": "fused",
         "pca_components": 64,
         "source_run_root": "",
+        "success_source_run_root": "",
         "population": "failure_only",
         "success_ratio": 0.0,
         "challenge_set_name": "",
@@ -323,8 +324,9 @@ def validate_config(config: Mapping[str, Any]) -> None:
             "data.signal_mode must be incremental, forward, backward, fused, "
             "perspectives_6d, fused_perspectives_8d, robodopamine_latent, or robodopamine_latent_plus_fused"
         )
-    if not isinstance(data.get("source_run_root", ""), str):
-        raise ValueError("data.source_run_root must be a project-relative baseline run path")
+    for source_field in ("source_run_root", "success_source_run_root"):
+        if not isinstance(data.get(source_field, ""), str):
+            raise ValueError(f"data.{source_field} must be a project-relative baseline run path")
     components = data.get("pca_components", 64)
     if isinstance(components, bool) or int(components) != components or not 1 <= int(components) <= 2560:
         raise ValueError("data.pca_components must be between 1 and 2560")

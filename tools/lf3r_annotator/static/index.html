@@ -816,8 +816,11 @@
                       </select>
                       <small class="analysis-run-field-help">2D: one progress + hop pair. 6D: three raw perspectives. 8D: fused progress/hop + the same six raw perspective features.</small>
                     </label>
-                    <label><span>Baseline run path (optional)</span><input id="localizationSourceRunRoot" type="text" placeholder="outputs/baselines/web_runs/…/robo_dopamine_…">
-                      <small>Use one annotated run for a matched input comparison. Leave empty to use the historical pool.</small></label>
+                    <label><span>Failure / shared Run (optional)</span><input id="localizationSourceRunRoot" type="text" list="localizationBaselineRunPaths" placeholder="Choose or paste a Robo-Dopamine Run path">
+                      <small>Failure source. Leave empty to use the historical pool.</small></label>
+                    <label><span>Success Run (optional)</span><input id="localizationSuccessSourceRunRoot" type="text" list="localizationBaselineRunPaths" placeholder="Choose the Run containing clean successes">
+                      <small>Can be a different Run. Leave empty to use successes from the failure/shared source. Saved clean-success annotations and the selected input signals are required.</small></label>
+                    <datalist id="localizationBaselineRunPaths"></datalist>
                     <label><span>Latent PCA dimensions</span><input id="localizationPcaComponents" type="number" min="1" max="2560" value="64">
                       <small>Fit using the training split only; default 2560 → 64D; presets offer 32, 64 and 128D.</small></label>
                     <label><span>Training population</span>

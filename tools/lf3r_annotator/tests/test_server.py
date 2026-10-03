@@ -2928,6 +2928,24 @@ print('fake localization experiment complete')
             "repeats": 1,
         }
 
+        # Independent baseline Runs are retained through preset/job serialization.
+        for role in ("failure", "success"):
+            source = self.root / "outputs" / (role + "_run")
+            source.mkdir(parents=True)
+            (source / "run.json").write_text(json.dumps({"baseline": "robo_dopamine"}))
+        spec["base"]["data"].update({
+            "source_run_root": "outputs/failure_run",
+            "success_source_run_root": "outputs/success_run",
+            "population": "failure_success",
+            "success_ratio": 0.2,
+        })
+        invalid_spec = json.loads(json.dumps(spec))
+        invalid_spec["base"]["data"]["success_source_run_root"] = "outputs/missing_run"
+        with self.assertRaises(urllib.error.HTTPError) as invalid:
+            self.request("/api/analysis/localization/run", {"spec": invalid_spec})
+        self.assertEqual(invalid.exception.code, 400)
+        invalid.exception.close()
+
         with self.request(
             "/api/analysis/localization/presets/save",
             {"spec": spec, "overwrite": False},
@@ -2953,6 +2971,9 @@ print('fake localization experiment complete')
         output_dir = self.root / final["output_dir"]
         self.assertTrue((output_dir / "metadata.json").is_file())
         self.assertTrue((output_dir / "summary.csv").is_file())
+        saved_config = json.loads((output_dir / "config.json").read_text())
+        self.assertEqual(saved_config["base"]["data"]["source_run_root"], "outputs/failure_run")
+        self.assertEqual(saved_config["base"]["data"]["success_source_run_root"], "outputs/success_run")
 
         with self.request("/api/analysis/localization") as response:
             runs = json.load(response)["localization"]["runs"]

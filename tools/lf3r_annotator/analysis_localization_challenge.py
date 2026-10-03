@@ -450,16 +450,17 @@ class AnalysisLocalizationChallengeMixin:
                 "Robo-Dopamine PyTorch Python is unavailable: "
                 + self._relative(self.robo_python)
             )
-        source_run_root = spec.get("base", {}).get("data", {}).get("source_run_root", "")
-        if not isinstance(source_run_root, str):
-            raise ValidationError("Baseline run path must be a string")
-        if source_run_root:
-            source_path = self._project_path(source_run_root)
-            if not (source_path / "run.json").is_file():
-                raise ValidationError("Baseline run path must point to a Robo-Dopamine run containing run.json")
-            run_metadata = json.loads((source_path / "run.json").read_text(encoding="utf-8"))
-            if run_metadata.get("baseline") != "robo_dopamine":
-                raise ValidationError("Baseline run path must contain Robo-Dopamine results")
+        for source_field in ("source_run_root", "success_source_run_root"):
+            source_run_root = spec.get("base", {}).get("data", {}).get(source_field, "")
+            if not isinstance(source_run_root, str):
+                raise ValidationError(f"{source_field}: Baseline run path must be a string")
+            if source_run_root:
+                source_path = self._project_path(source_run_root)
+                if not (source_path / "run.json").is_file():
+                    raise ValidationError(f"{source_field}: Baseline run path must contain run.json")
+                run_metadata = json.loads((source_path / "run.json").read_text(encoding="utf-8"))
+                if run_metadata.get("baseline") != "robo_dopamine":
+                    raise ValidationError(f"{source_field}: Baseline run path must contain Robo-Dopamine results")
         pool_root = self.baselines.baseline_root
         if not pool_root.is_dir():
             raise ValidationError("Baseline output pool does not exist")

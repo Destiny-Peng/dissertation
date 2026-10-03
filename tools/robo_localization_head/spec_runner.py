@@ -39,6 +39,7 @@ def _aligned_signal_records(
     manifest_rows: Mapping[str, Mapping[str, Any]],
     annotations: Path,
     audit_path: Path | None = None,
+    cohort: str = "all",
 ) -> tuple[
     dict[
         str,
@@ -63,14 +64,30 @@ def _aligned_signal_records(
             allow_empty=True,
         )
     )
+    if cohort not in {"all", "failure", "success"}:
+        raise ValueError("Unknown analysis source cohort")
+    if cohort != "all":
+        outcome = "terminal_failure" if cohort == "failure" else "clean_success"
+        fused_signals = {key: signal for key, signal in fused_signals.items()
+                         if signal.get("outcome") == outcome}
+        selected_ids = set(fused_signals)
+        events = [row for row in events if row["rollout_id"] in selected_ids]
+        no_event_failures = [row for row in no_event_failures if row["rollout_id"] in selected_ids]
+        clean_rollouts = [row for row in clean_rollouts if row["rollout_id"] in selected_ids]
+        fused_provenance = {**fused_provenance, "cohort": cohort,
+                            "usable_rollout_n_before_cohort_filter": fused_provenance.get("usable_rollout_n"),
+                            "usable_rollout_n": len(fused_signals), "event_n": len(events),
+                            "no_event_failure_rollout_n": len(no_event_failures),
+                            "clean_rollout_n": len(clean_rollouts)}
     if not fused_signals:
         if audit_path is not None:
             audit_path.write_text(json.dumps({"fused": fused_provenance}, indent=2), encoding="utf-8")
         reasons = Counter(row["reason"] for row in fused_provenance.get("excluded_rollouts", []))
+        cohort_label = f"{cohort} " if cohort != "all" else ""
         raise ValueError(
-            "no usable annotated fused Robo-Dopamine signals were found: "
+            f"no usable annotated {cohort_label}fused Robo-Dopamine signals were found: "
             f"{fused_provenance.get('completed_rollout_n', 0)} completed rollouts; "
-            f"exclusions={dict(reasons)}. Localization requires failure annotations; "
+            f"exclusions={dict(reasons)}. Localization requires saved outcome/event annotations; "
             "latent extraction alone does not provide training labels."
         )
 
@@ -331,6 +348,54 @@ def _aligned_signal_records(
     return records_by_mode, mode_provenance
 
 
+def _analysis_source_records(source_root, success_root, manifest_rows, annotations, audit_path):
+    """Keep each rollout's modalities aligned within its own source Run."""
+    if success_root is None or success_root == source_root:
+        return _aligned_signal_records(source_root, manifest_rows, annotations, audit_path)
+    try:
+        failure_modes, failure_provenance = _aligned_signal_records(
+            source_root, manifest_rows, annotations, cohort="failure"
+        )
+        success_modes, success_provenance = _aligned_signal_records(
+            success_root, manifest_rows, annotations, cohort="success"
+        )
+    except ValueError as error:
+        audit_path.write_text(json.dumps({"source_root": project_relative(source_root),
+            "success_source_root": project_relative(success_root), "error": str(error)}, indent=2))
+        raise
+    merged = {}
+    for mode in failure_modes:
+        failures, events, no_event, _ = failure_modes[mode]
+        successes, _, _, clean = success_modes[mode]
+        overlap = set(failures) & set(successes)
+        if overlap:
+            raise ValueError(f"Failure and success sources overlap: {sorted(overlap)[:5]}")
+        merged[mode] = ({**failures, **successes}, events, no_event, clean)
+    fused_failure = failure_provenance["fused"]
+    fused_success = success_provenance["fused"]
+    provenance = {
+        "anchor": "fused", "alignment": "same_run_same_native_frame_indices_per_rollout",
+        "selection_mode": "separate_failure_success_runs",
+        "sources": {"failure": {"root": project_relative(source_root), "provenance": failure_provenance},
+                    "success": {"root": project_relative(success_root), "provenance": success_provenance}},
+        "fused": {**fused_failure,
+                  "usable_rollout_n": len(merged["fused"][0]),
+                  "clean_rollout_n": len(merged["fused"][3]),
+                  "failure_rollout_n": len(failure_modes["fused"][0]),
+                  "success_rollout_n": len(success_modes["fused"][0]),
+                  "completed_rollout_n": fused_failure.get("completed_rollout_n", 0) + fused_success.get("completed_rollout_n", 0),
+                  "jobs_sources": fused_failure.get("jobs_sources", []) + fused_success.get("jobs_sources", [])},
+        "modes": {mode: {"available_rollout_n": len(value[0]),
+                          "excluded_rollout_n": failure_provenance["modes"][mode].get("excluded_rollout_n", 0) + success_provenance["modes"][mode].get("excluded_rollout_n", 0),
+                          "exclusions": failure_provenance["modes"][mode].get("exclusions", []) + success_provenance["modes"][mode].get("exclusions", []),
+                          "failure_rollout_n": len(failure_modes[mode][0]),
+                          "success_rollout_n": len(success_modes[mode][0])}
+                  for mode, value in merged.items()},
+    }
+    audit_path.write_text(json.dumps(provenance, indent=2))
+    return merged, provenance
+
+
 def _records_for_config(
     config: Mapping[str, Any],
     records_by_mode: Mapping[str, tuple[Any, Any, Any, Any]],
@@ -354,6 +419,10 @@ def _records_for_config(
             "Set data.source_run_root to a fully extracted annotated baseline run. "
             "See data_preflight.json for excluded rollouts."
         )
+    if (config.get("data", {}).get("population") == "failure_success"
+            and float(config["data"].get("success_ratio", 0)) > 0 and not records[3]):
+        raise ValueError("Positive success_ratio requires usable annotated clean success rollouts; "
+                         "choose a Success Run in data.success_source_run_root")
     return records
 
 
@@ -844,6 +913,9 @@ def run_spec(
 ) -> Path:
     normalized = specs.normalize_spec(spec)
     source_root = ensure_within_project(resolve_project_path(normalized["base"]["data"]["source_run_root"] or run_pool_root), "run source root")
+    success_path = normalized["base"]["data"].get("success_source_run_root", "")
+    success_root = (ensure_within_project(resolve_project_path(success_path), "success run source root")
+                    if success_path else None)
     manifest = ensure_within_project(resolve_project_path(manifest_path), "manifest")
     annotations = ensure_within_project(resolve_project_path(annotation_dir), "annotation directory")
     out = ensure_within_project(resolve_project_path(output_dir), "output directory")
@@ -853,14 +925,14 @@ def run_spec(
 
     log("data_load_start")
     load_started = time.perf_counter()
-    records_by_mode, provenance = _aligned_signal_records(
-        source_root,
-        load_manifest(manifest),
-        annotations,
-        audit_path=out / "data_preflight.json",
+    records_by_mode, provenance = _analysis_source_records(
+        source_root, success_root, load_manifest(manifest), annotations,
+        out / "data_preflight.json",
     )
 
-    log(f"data_load_done seconds={time.perf_counter() - load_started:.3f}")
+    log(f"data_load_done seconds={time.perf_counter() - load_started:.3f} "
+        f"available_rollouts={len(records_by_mode['fused'][0])} "
+        f"clean_success_rollouts={len(records_by_mode['fused'][3])}")
 
     all_summary: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
@@ -910,8 +982,10 @@ def run_spec(
         jobs: list[tuple[int, str, dict[str, Any]]] = []
         for config_index, config in enumerate(configurations):
             specs.validate_config(config)
-            if config["data"].get("source_run_root", "") != normalized["base"]["data"]["source_run_root"]:
-                raise ValueError("data.source_run_root must be shared by all configurations")
+            for source_field in ("source_run_root", "success_source_run_root"):
+                if config["data"].get(source_field, "") != normalized["base"]["data"].get(source_field, ""):
+                    raise ValueError(f"data.{source_field} must be shared by all configurations")
+            _records_for_config(config, records_by_mode)
             config_id = f"s{stage_index + 1:02d}_c{config_index + 1:03d}"
             configs_by_id[config_id] = config
             jobs.append((config_index, config_id, config))
@@ -1023,7 +1097,8 @@ def run_spec(
         "name": normalized["name"],
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "source_root": project_relative(source_root),
-        "selection_mode": "latest_usable_fused_anchor_aligned_input_signal",
+        "success_source_root": project_relative(success_root) if success_root else None,
+        "selection_mode": provenance.get("selection_mode", "latest_usable_fused_anchor_aligned_input_signal"),
         "configuration_count": len(all_summary),
         "training_run_count": len(all_records),
         "all_failure_prediction_count": len(all_failure_predictions),

@@ -133,6 +133,7 @@
         signal_mode: node("localizationSignalMode").value,
         pca_components: Math.round(n("localizationPcaComponents")),
         source_run_root: node("localizationSourceRunRoot").value.trim(),
+        success_source_run_root: node("localizationSuccessSourceRunRoot").value.trim(),
         population: population,
         success_ratio: population === "failure_only" ? 0 : n("localizationSuccessRatio"),
         challenge_set_name: forceChallenge ? challengeName : "",
@@ -178,6 +179,7 @@
     var loss = base.loss || {}, training = base.training || {};
     node("localizationSignalMode").value = data.signal_mode || "fused";
     node("localizationSourceRunRoot").value = data.source_run_root || "";
+    node("localizationSuccessSourceRunRoot").value = data.success_source_run_root || "";
     node("localizationPcaComponents").value = data.pca_components == null ? 64 : data.pca_components;
     node("localizationPopulation").value = data.population || "failure_only";
     node("localizationSuccessRatio").value = data.success_ratio == null ? 0 : data.success_ratio;
@@ -1277,10 +1279,28 @@
     } catch (_error) {}
   }
 
+  async function loadBaselineSourceRuns() {
+    var list = node("localizationBaselineRunPaths");
+    if (!list) return;
+    try {
+      var payload = await fetchJson("/api/baselines/runs?scope=all", { cache: "no-store" });
+      list.innerHTML = (payload.runs || []).filter(function (run) {
+        return run.baseline === "robo_dopamine"
+          && ["complete", "complete_with_errors"].indexOf(run.status) !== -1;
+      }).map(function (run) {
+        return '<option value="' + esc(run.run_root) + '" label="'
+          + esc((run.run_rollout_count || 0) + " rollouts · " + (run.created_at || run.run_root)) + '"></option>';
+      }).join("");
+    } catch (_error) {
+      // Manual path entry remains available if catalog discovery fails.
+      list.innerHTML = "";
+    }
+  }
+
   async function refresh() {
     if (!node("analysisTabLocalization")) return;
     try {
-      await Promise.all([loadPresets(), loadRuns(), loadChallengeSets()]);
+      await Promise.all([loadPresets(), loadRuns(), loadChallengeSets(), loadBaselineSourceRuns()]);
       refreshPreview();
     } catch (error) {
       node("localizationBuilderStatus").textContent = "Localization Lab error: " + error.message;

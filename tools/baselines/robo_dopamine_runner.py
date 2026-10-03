@@ -386,8 +386,9 @@ def run_persistent(
     worker_path = TOOLS_ROOT / "robo_dopamine_persistent_worker.py"
     if not worker_path.is_file():
         raise FileNotFoundError(worker_path)
-    plan_records = load_jsonl(plan_path) if resume else records
-    specs = build_job_specs(plan_records, args, config, raw_root)
+    # A saved plan already has resolved camera slots, goals, and sampling settings.
+    # Rebuilding it as a manifest would lose the original camera policy.
+    specs = load_jsonl(plan_path) if resume else build_job_specs(records, args, config, raw_root)
     if not specs:
         raise ValueError("No Robo-Dopamine jobs were selected")
 
