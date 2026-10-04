@@ -220,7 +220,7 @@
     var end = Number(node("repairBatchTaskEnd").value);
     var perTask = Number(node("repairBatchDemosPerTask").value);
     if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) {
-      throw new Error("Batch task range is invalid.");
+      throw new Error("Task range is invalid.");
     }
     if (!Number.isInteger(perTask) || perTask < 1 || perTask > 50) {
       throw new Error("Demos per task must be an integer from 1 to 50.");
@@ -238,7 +238,7 @@
       selected = selected.concat(taskRows.slice(0, perTask));
     }
     if (selected.length > 500) {
-      throw new Error("One Repair batch is limited to 500 rollouts.");
+      throw new Error("One multi-run launch is limited to 500 rollouts.");
     }
     return selected;
   }
@@ -261,23 +261,23 @@
       for (var task = start; task <= end; task += 1) {
         if (!taskCounts[String(task)]) missing.push(task);
       }
-      target.innerHTML = '<small>Batch selection</small><strong>'
+      target.innerHTML = '<small>Selection</small><strong>'
         + esc(rows.length + " rollout(s) selected · requested up to " + expected)
         + (missing.length ? esc(" · no eligible demos for task " + missing.join(", ")) : "")
         + "</strong>";
     } catch (error) {
-      target.innerHTML = '<small>Batch selection</small><strong class="repair-error">'
+      target.innerHTML = '<small>Selection</small><strong class="repair-error">'
         + esc(error.message) + "</strong>";
     }
   }
 
   function batchPayload() {
     var rows = selection();
-    if (!rows.length) throw new Error("No Repair-eligible rollouts match the batch range.");
+    if (!rows.length) throw new Error("No Repair-eligible rollouts match the selected range.");
     var payload = commonPayload();
     payload.rollout_id = rows[0].id;
     payload.rollout_ids = rows.map(function (row) { return row.id; });
-    payload.batch_selection = {
+    payload.run_group_selection = {
       manifest_source: String(node("repairBatchManifest").value || ""),
       task_suite: String(node("repairBatchSuite").value || ""),
       task_start: Number(node("repairBatchTaskStart").value),
@@ -308,7 +308,7 @@
     var validation = node("repairValidation");
     if (validation) {
       validation.className = "repair-validation";
-      validation.textContent = "Validate the batch configuration before launch. All selected rollouts are preflighted again on the server before the batch job is created.";
+      validation.textContent = "Validate the multi-run configuration before launch. All selected rollouts are preflighted again before the run group is created.";
     }
   }
 
@@ -318,9 +318,9 @@
       field.classList.toggle("hidden", !batch);
     });
     var validationButton = node("repairValidateButton");
-    if (validationButton) validationButton.textContent = batch ? "Validate batch" : "Validate inputs";
+    if (validationButton) validationButton.textContent = batch ? "Validate selected" : "Validate inputs";
     var runButton = node("repairRunButton");
-    if (runButton) runButton.textContent = (batch ? "Run batch " : "Run ") + modelLabel();
+    if (runButton) runButton.textContent = (batch ? "Run selected " : "Run ") + modelLabel();
     if (batch) {
       refreshOptions();
       invalidate();
@@ -346,13 +346,13 @@
         body: JSON.stringify(payload)
       });
       var data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Batch validation failed");
+      if (!response.ok) throw new Error(data.error || "Multi-run validation failed");
       var validation = data.validation || {};
       var blockers = validation.blockers || [];
       if (!validation.ready) {
         if (target) {
           target.className = "repair-validation repair-error";
-          target.textContent = "Batch blocked.\n- " + blockers.join("\n- ");
+          target.textContent = "Multi-run blocked.\n- " + blockers.join("\n- ");
         }
         validatedKey = "";
         node("repairRunButton").disabled = true;
@@ -362,7 +362,7 @@
       if (target) {
         target.className = "repair-validation repair-ok";
         target.textContent = [
-          "Batch representative validation passed.",
+          "Representative validation passed.",
           "Selected rollouts: " + payload.rollout_ids.length,
           "model = " + String(validation.model_name || selectedModel()),
           selectedModel() === "wan2_2" ? [
@@ -376,7 +376,7 @@
           "cut = " + (payload.cut_type === "frame"
             ? ("frame " + payload.cut_frame)
             : (Math.round(Number(payload.cut_progress) * 100) + "% progress")),
-          "All selected rollouts will be preflighted before the persistent batch job is launched.",
+          "All selected rollouts will be preflighted before the persistent run group is launched.",
           "Execution is sequential on the selected GPU."
         ].join("\n");
       }
@@ -386,7 +386,7 @@
       validatedKey = "";
       if (target) {
         target.className = "repair-validation repair-error";
-        target.textContent = "Batch validation failed: " + String(error.message || error);
+        target.textContent = "Multi-run validation failed: " + String(error.message || error);
       }
       if (node("repairRunButton")) node("repairRunButton").disabled = true;
       return false;
@@ -413,7 +413,7 @@
         { cache: "no-store" }
       );
       var data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not read Repair batch job");
+      if (!response.ok) throw new Error(data.error || "Could not read Repair multi-run job");
       var job = data.job || {};
       var current = state();
       if (current) current.job = job;
@@ -441,7 +441,7 @@
       }
     } catch (error) {
       if (node("repairJobStatus")) {
-        node("repairJobStatus").textContent = "Repair batch status error: " + String(error.message || error);
+        node("repairJobStatus").textContent = "Repair multi-run status error: " + String(error.message || error);
       }
     }
     pollTimer = window.setTimeout(function () { pollBatch(jobId); }, 1200);
@@ -471,7 +471,7 @@
     var runButton = node("repairRunButton");
     if (runButton) runButton.disabled = true;
     if (node("repairJobStatus")) {
-      node("repairJobStatus").textContent = "Submitting Repair batch…";
+      node("repairJobStatus").textContent = "Submitting Repair multi-run…";
     }
     try {
       var response = await fetch("/api/repair/synthetic-suffix/run", {
@@ -480,7 +480,7 @@
         body: JSON.stringify(payload)
       });
       var data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not start Repair batch");
+      if (!response.ok) throw new Error(data.error || "Could not start Repair multi-run");
       var job = data.job || {};
       var current = state();
       if (current) current.job = job;
@@ -495,7 +495,7 @@
     } catch (error) {
       if (runButton) runButton.disabled = false;
       node("repairValidation").className = "repair-validation repair-error";
-      node("repairValidation").textContent = "Batch submission failed: " + String(error.message || error);
+      node("repairValidation").textContent = "Multi-run submission failed: " + String(error.message || error);
     }
   }
 
@@ -511,14 +511,14 @@
     controls.innerHTML = [
       '<label><span>Run mode</span><select id="repairRunMode">',
       '<option value="single">Single rollout</option>',
-      '<option value="batch">Batch</option>',
+      '<option value="batch">Multiple rollouts</option>',
       '</select></label>',
       '<label data-repair-batch-field class="hidden"><span>Manifest</span><select id="repairBatchManifest"></select></label>',
       '<label data-repair-batch-field class="hidden"><span>Suite</span><select id="repairBatchSuite"></select></label>',
       '<label data-repair-batch-field class="hidden"><span>Task start</span><input id="repairBatchTaskStart" type="number" min="0" step="1" value="0"></label>',
       '<label data-repair-batch-field class="hidden"><span>Task end</span><input id="repairBatchTaskEnd" type="number" min="0" step="1" value="9"></label>',
       '<label data-repair-batch-field class="hidden"><span>Demos / task</span><input id="repairBatchDemosPerTask" type="number" min="1" max="50" step="1" value="1"></label>',
-      '<div id="repairBatchSelection" data-repair-batch-field class="repair-kv repair-config-span-2 hidden"><small>Batch selection</small><strong>—</strong></div>'
+      '<div id="repairBatchSelection" data-repair-batch-field class="repair-kv repair-config-span-2 hidden"><small>Selection</small><strong>—</strong></div>'
     ].join("");
     var firstConfig = panel.querySelector(".repair-config-grid");
     if (firstConfig && firstConfig.nextSibling) {
