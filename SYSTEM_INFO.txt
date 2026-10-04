@@ -91,3 +91,12 @@ Vulkan: existing NVIDIA ICD and libvulkan; validated through official headless G
 Assets: datasets/maniskill3; PhysX: cache/sapien; NVIDIA caches: cache/cuda and cache/nvidia
 Validation: core imports, official CLI, pip check, and 2-env 50-step GPU/RGBD rollout PASS; GPU 2 with 16518 MiB free before rollout
 Report: environment_reports/MANISKILL3_ENV_20261001_192202.md
+
+=== T-Rex environment check 2026-10-03T21:06:07.620768+08:00 ===
+Reused repos/ProcVLM/.venv: Python 3.10.21, Torch 2.10.0+cu128, Transformers 4.57.3; added only h5py 3.16.0. Official train/infer CLI, data imports/HDF5 I/O and small random-model GPU smoke PASS. Pre-existing decord wheel tag warning unchanged. No pretrained checkpoint or full training verified. Report: environment_reports/trex_20261003_210333/README.md
+
+=== T-Rex encoder weights 2026-10-03T21:39:11.445753+08:00 ===
+Official weights downloaded and verified; independent F6 VQ-VAE and deform encoder saved under checkpoints/T-Rex/encoders. Strict load and CPU forward PASS. Report: environment_reports/TREX_ENCODERS_20261003_213911.md
+
+=== Sharpa tactile representation ablation 2026-10-03T22:06:46.022619+08:00 ===
+Six frozen binary probe experiments complete using repos/ProcVLM/.venv; F6, pooled Deform and concat fusion with MLP/causal LSTM. Whole-rollout split 80/17/17, seed 42; FP32 TF32 disabled, normalization std floor 0.01. Causality and online equivalence PASS. Report: environment_reports/SHARPA_TACTILE_ABLATION_20261003_220051.md
