@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend_core import ValidationError
 from repair.wan import WanAdapter
 from repair.service import RepairService
-from repair.batch import RepairBatchService
+from repair.batch import RepairRunGroupService
 
 
 class WanRepairTest(unittest.TestCase):
@@ -156,15 +156,17 @@ class WanRepairTest(unittest.TestCase):
         self.assertFalse(condition['future_actions_used'])
         self.assertFalse(condition['sim_state_used'])
 
-    def test_batch_preparation_keeps_wan_config_and_worker_environment(self):
-        batch = RepairBatchService(self.project, Mock(), Mock(), self.service)
+    def test_group_preparation_keeps_wan_config_and_worker_environment(self):
+        group = RepairRunGroupService(self.project, Mock(), Mock(), self.service)
         with patch.object(self.service, '_gpu_plan', return_value={'requested_index': 0}):
             plan = self.service.validate_plan(self.payload, {'success': self.rollout})
-        item = batch._prepare_run(payload=self.payload, rollout=self.rollout, plan=plan, batch_id='repair-batch-test')
+        item = group._prepare_run(payload=self.payload, rollout=self.rollout, plan=plan, run_group='repair-group-test')
         self.assertEqual(item['worker_python'], sys.executable)
         directory = self.project / item['run_dir']
         config = json.loads((directory / 'config.json').read_text())
         provenance = json.loads((directory / 'provenance.json').read_text())
+        self.assertEqual(config['run_group'], 'repair-group-test')
+        self.assertEqual(provenance['run_group'], 'repair-group-test')
         self.assertEqual(config['world_model']['source_root'], str(self.source))
         self.assertTrue(config['generated_includes_condition'])
         self.assertFalse(provenance['runtime_libero_required'])

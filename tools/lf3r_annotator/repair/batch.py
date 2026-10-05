@@ -1,4 +1,4 @@
-"""Sequential persistent batch execution for Repair / Synthetic Suffix."""
+"""Sequential multi-run execution for Repair / Synthetic Suffix."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from backend_core import JobCoordinator, ValidationError
 from task_supervisor import TmuxJobSupervisor
 
 
-BATCH_ID_RE = re.compile(r"^repair-batch-[A-Za-z0-9._-]{1,120}$")
+RUN_GROUP_RE = re.compile(r"^repair-group-[A-Za-z0-9._-]{1,160}$")
 
 
 def _atomic_json(path: Path, payload: Any) -> None:
@@ -34,12 +34,12 @@ def _atomic_json(path: Path, payload: Any) -> None:
             os.unlink(name)
 
 
-class RepairBatchService:
+class RepairRunGroupService:
     """Run several normal Repair runs sequentially inside one tmux job.
 
-    Every selected rollout still receives its own normal ``repair-suffix-*``
-    artifact directory. The batch only owns orchestration/progress, so Compare
-    and downstream export keep consuming the existing per-run format.
+    Per-rollout artifacts remain normal ``repair-suffix-*`` directories.
+    The multi-run launch owns only one log directory containing the group
+    plan/status/results plus the aggregate and per-rollout logs.
     """
 
     def __init__(
@@ -53,13 +53,7 @@ class RepairBatchService:
         self.coordinator = coordinator
         self.tmux = tmux
         self.repair = repair
-        self.root = (
-            self.project_root
-            / "artifacts"
-            / "repair"
-            / "synthetic_suffix"
-            / "batches"
-        )
+        self.root = self.repair.log_root
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _relative(self, path: Path) -> str:
@@ -68,15 +62,24 @@ class RepairBatchService:
         except ValueError:
             return str(path.resolve())
 
-    def _batch_dir(self, batch_id: str) -> Path:
-        if not BATCH_ID_RE.fullmatch(str(batch_id)):
-            raise ValidationError("Invalid Repair batch id")
-        path = (self.root / batch_id).resolve()
+    def _group_dir(self, run_group: str) -> Path:
+        if not RUN_GROUP_RE.fullmatch(str(run_group)):
+            raise ValidationError("Invalid Repair run group")
+        path = (self.root / run_group).resolve()
         try:
             path.relative_to(self.root)
         except ValueError as error:
-            raise ValidationError("Repair batch path escapes artifact root") from error
+            raise ValidationError("Repair run-group path escapes log root") from error
         return path
+
+    @staticmethod
+    def _new_group_id(model_name: str, count: int) -> str:
+        stamp = dt.datetime.now().astimezone().strftime("%m%d_%H%M")
+        safe_model = re.sub(r"[^A-Za-z0-9._-]+", "-", model_name).strip("-") or "model"
+        return (
+            f"repair-group-{stamp}-{safe_model}-{int(count)}runs-"
+            f"{uuid.uuid4().hex[:6]}"
+        )
 
     @staticmethod
     def _read_json(path: Path, default: Any = None) -> Any:
@@ -135,8 +138,13 @@ class RepairBatchService:
                 "tail_policy": "pad final chunk, then trim generated tail",
             }
         if plan["model_name"] == "wan2_2":
-            return {"task": "i2v-A14B", "generated_includes_condition": True,
-                    "input_contract": "single cam_high RGB frame + original task instruction"}
+            return {
+                "task": "i2v-A14B",
+                "generated_includes_condition": True,
+                "input_contract": (
+                    "single cam_high RGB frame + original task instruction"
+                ),
+            }
         return {
             "rollout_mode": "autoregressive",
             "generated_includes_condition": False,
@@ -162,7 +170,7 @@ class RepairBatchService:
         payload: dict[str, Any],
         rollout: dict[str, Any],
         plan: dict[str, Any],
-        batch_id: str,
+        run_group: str,
     ) -> dict[str, Any]:
         run_id = self.repair._new_run_id(str(rollout["id"]))
         run_dir = self.repair._run_dir(run_id)
@@ -171,7 +179,12 @@ class RepairBatchService:
         wm_config = dict(payload.get("world_model") or {})
         wm_config["name"] = plan["model_name"]
         if plan["model_name"] == "wan2_2":
-            wm_config.update({key: plan["world_model"][key] for key in ("python", "checkpoint", "source_root")})
+            wm_config.update(
+                {
+                    key: plan["world_model"][key]
+                    for key in ("python", "checkpoint", "source_root")
+                }
+            )
         wm_config["gpu_index"] = int(plan["gpu"]["requested_index"])
         created_at = dt.datetime.now(dt.timezone.utc).isoformat()
         config = {
@@ -184,7 +197,7 @@ class RepairBatchService:
             "generated_includes_condition": plan["model_name"] == "wan2_2",
             "world_model": wm_config,
             "created_at": created_at,
-            "batch_id": batch_id,
+            "run_group": run_group,
         }
         input_payload = {
             "source_manifest": rollout.get("manifest_source"),
@@ -223,7 +236,7 @@ class RepairBatchService:
             "generation_config": self._generation_config(plan, rollout),
             "output_paths": {},
             "created_at": created_at,
-            "batch_id": batch_id,
+            "run_group": run_group,
         }
         status = {
             "run_id": run_id,
@@ -232,7 +245,7 @@ class RepairBatchService:
             "progress": 0.0,
             "error": None,
             "updated_at": created_at,
-            "batch_id": batch_id,
+            "run_group": run_group,
         }
         _atomic_json(run_dir / "config.json", config)
         _atomic_json(run_dir / "input.json", input_payload)
@@ -263,10 +276,11 @@ class RepairBatchService:
         rollout_map: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValidationError("Repair batch request must be a JSON object")
+            raise ValidationError("Repair multi-run request must be a JSON object")
         raw_ids = payload.get("rollout_ids")
         if not isinstance(raw_ids, list):
             raise ValidationError("rollout_ids must be an array")
+
         rollout_ids: list[str] = []
         seen: set[str] = set()
         for raw in raw_ids:
@@ -274,18 +288,26 @@ class RepairBatchService:
             if not rollout_id or rollout_id in seen:
                 continue
             if rollout_id not in rollout_map:
-                raise ValidationError(f"Unknown rollout in Repair batch: {rollout_id}")
+                raise ValidationError(
+                    f"Unknown rollout in Repair multi-run: {rollout_id}"
+                )
             seen.add(rollout_id)
             rollout_ids.append(rollout_id)
         if not rollout_ids:
-            raise ValidationError("Repair batch selection is empty")
+            raise ValidationError("Repair multi-run selection is empty")
         if len(rollout_ids) > 500:
-            raise ValidationError("Repair batch supports at most 500 rollouts per job")
+            raise ValidationError(
+                "Repair multi-run supports at most 500 rollouts per job"
+            )
 
         base_payload = dict(payload)
         base_payload.pop("rollout_ids", None)
+        base_payload.pop("run_group_selection", None)
         base_payload.pop("batch_selection", None)
-        prepared: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
+
+        prepared: list[
+            tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+        ] = []
         blocked: list[str] = []
         for rollout_id in rollout_ids:
             one = dict(base_payload)
@@ -293,45 +315,58 @@ class RepairBatchService:
             plan = self.repair.validate_plan(one, rollout_map)
             if not plan["ready"]:
                 blocked.append(
-                    rollout_id + ": " + "; ".join(plan.get("blockers") or ["blocked"])
+                    rollout_id
+                    + ": "
+                    + "; ".join(plan.get("blockers") or ["blocked"])
                 )
                 continue
             prepared.append((one, dict(rollout_map[rollout_id]), plan))
         if blocked:
             preview = blocked[:8]
-            suffix = "" if len(blocked) <= 8 else f"; +{len(blocked) - 8} more"
+            suffix = (
+                ""
+                if len(blocked) <= 8
+                else f"; +{len(blocked) - 8} more"
+            )
             raise ValidationError(
-                "Repair batch preflight failed: " + " | ".join(preview) + suffix
+                "Repair multi-run preflight failed: "
+                + " | ".join(preview)
+                + suffix
             )
 
-        batch_id = "repair-batch-" + uuid.uuid4().hex[:12]
-        batch_dir = self._batch_dir(batch_id)
-        batch_dir.mkdir(parents=True, exist_ok=False)
+        first_plan = prepared[0][2]
+        model_name = str(first_plan["model_name"])
+        run_group = self._new_group_id(model_name, len(prepared))
+        group_dir = self._group_dir(run_group)
+        group_dir.mkdir(parents=True, exist_ok=False)
+
         items = [
             self._prepare_run(
                 payload=one,
                 rollout=rollout,
                 plan=plan,
-                batch_id=batch_id,
+                run_group=run_group,
             )
             for one, rollout, plan in prepared
         ]
-        first_plan = prepared[0][2]
-        model_name = str(first_plan["model_name"])
-        selection_meta = payload.get("batch_selection")
+        selection_meta = payload.get("run_group_selection")
+        if not isinstance(selection_meta, dict):
+            selection_meta = payload.get("batch_selection")
         if not isinstance(selection_meta, dict):
             selection_meta = {}
+
+        created_at = dt.datetime.now(dt.timezone.utc).isoformat()
         plan_payload = {
             "schema_version": 1,
-            "batch_id": batch_id,
+            "run_group": run_group,
             "world_model": model_name,
             "gpu_index": int(first_plan["gpu"]["requested_index"]),
-            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "created_at": created_at,
             "selection": selection_meta,
             "items": items,
         }
-        batch_status = {
-            "batch_id": batch_id,
+        group_status = {
+            "run_group": run_group,
             "status": "queued",
             "phase": "queued",
             "progress": 0.0,
@@ -340,24 +375,25 @@ class RepairBatchService:
             "failed_runs": 0,
             "current_rollout": None,
             "current_run_id": None,
-            "updated_at": plan_payload["created_at"],
+            "updated_at": created_at,
         }
-        _atomic_json(batch_dir / "plan.json", plan_payload)
-        _atomic_json(batch_dir / "status.json", batch_status)
+        _atomic_json(group_dir / "plan.json", plan_payload)
+        _atomic_json(group_dir / "status.json", group_status)
 
-        job_id = batch_id
-        log_path = self.repair.log_root / f"{job_id}.log"
+        job_id = run_group
+        log_path = group_dir / "group.log"
         worker = Path(__file__).resolve().parent / "batch_worker.py"
         job = {
             "job_id": job_id,
             "job_type": self.repair.JOB_TYPE,
-            "batch": True,
-            "batch_id": batch_id,
+            "group": True,
+            "run_group": run_group,
             "status": "queued",
             "world_model": model_name,
             "gpu": str(first_plan["gpu"]["requested_index"]),
-            "submitted_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "run_dir": self._relative(batch_dir),
+            "submitted_at": created_at,
+            "run_dir": self._relative(group_dir),
+            "log_dir": self._relative(group_dir),
             "log_path": self._relative(log_path),
             "phase": "queued",
             "progress": 0.0,
@@ -377,8 +413,8 @@ class RepairBatchService:
                     str(worker),
                     "--project-root",
                     str(self.project_root),
-                    "--batch-dir",
-                    str(batch_dir),
+                    "--group-dir",
+                    str(group_dir),
                 ],
                 log_path,
                 interpreter=str(Path(sys.executable).resolve()),
@@ -399,10 +435,13 @@ class RepairBatchService:
             self.coordinator.restore(job_id, "repair")
 
     def on_poll(self, job: dict[str, Any]) -> None:
-        batch_id = str(job.get("batch_id") or job.get("job_id") or "")
-        if not batch_id:
+        run_group = str(job.get("run_group") or job.get("job_id") or "")
+        if not run_group:
             return
-        status = self._read_json(self._batch_dir(batch_id) / "status.json", {})
+        status = self._read_json(
+            self._group_dir(run_group) / "status.json",
+            {},
+        )
         if not isinstance(status, dict):
             return
         for key in (
@@ -425,8 +464,11 @@ class RepairBatchService:
         return_code: int | None,
         reason: str | None,
     ) -> None:
-        batch_id = str(job.get("batch_id") or job.get("job_id") or "")
-        status = self._read_json(self._batch_dir(batch_id) / "status.json", {})
+        run_group = str(job.get("run_group") or job.get("job_id") or "")
+        status = self._read_json(
+            self._group_dir(run_group) / "status.json",
+            {},
+        )
         worker_status = status.get("status") if isinstance(status, dict) else None
         if return_code == 0 and worker_status in {
             "complete",
@@ -447,7 +489,13 @@ class RepairBatchService:
                 (status or {}).get("error")
                 if isinstance(status, dict)
                 else None
-            ) or reason or f"Repair batch worker exited with code {return_code}"
+            ) or reason or (
+                f"Repair run-group worker exited with code {return_code}"
+            )
         job_id = str(job.get("job_id") or "")
         if job_id:
             self.coordinator.release(job_id)
+
+
+# Temporary import compatibility for tests and callers outside repair.__init__.
+RepairBatchService = RepairRunGroupService
