@@ -1,0 +1,42 @@
+# Executed from LF3R root after source ./project_env.sh.
+# Actual timestamped command outputs are indexed in manifest.json.
+# Environment creation:
+"$LF3R_CONDA_EXE" create -y -p "$CONDA_ENVS/LF3R-vera-jidm" python=3.11 pip
+# GPU runtime installation (sequential):
+uv pip install --python "$CONDA_ENVS/LF3R-vera-jidm/bin/python" torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128
+# IDM packages after saved upstream patch:
+uv pip install --python "$LF3R_VERA_JIDM_PYTHON" -e 'repos/VERA[idm]' -r tools/requirements-vera-jidm.txt
+# Subsequent correction: removed optional decord and added shared diffusers.
+"$LF3R_VERA_JIDM_PYTHON" -m pip uninstall -y decord
+uv pip install --python "$LF3R_VERA_JIDM_PYTHON" diffusers==0.34.0
+# Final dependency and CLI verification:
+"$LF3R_VERA_JIDM_PYTHON" -m pip check
+uv pip check --python "$LF3R_VERA_JIDM_PYTHON"
+tools/run_vera_jidm.sh --help
+# Final import/registry verification:
+export VERA_DATA_PREFIX="$PROJECT_ROOT" VERA_CKPT_ROOT="$CHECKPOINTS/vera-jidm" WANDB_MODE=disabled MPLCONFIGDIR="$CACHE/matplotlib" HF_HUB_OFFLINE=1
+"$LF3R_VERA_JIDM_PYTHON" tools/verify_vera_jidm.py
+# Syntax/patch checks:
+bash -n project_env.sh tools/setup_vera_jidm.sh tools/run_vera_jidm.sh
+git -C repos/VERA diff --check
+# Manifests:
+"$LF3R_VERA_JIDM_PYTHON" -m pip freeze
+"$LF3R_CONDA_EXE" list -p "$LF3R_ENV_VERA_JIDM" --explicit
+
+# CUDA validation: exact Python body run via "$LF3R_VERA_JIDM_PYTHON" - <<'PY'.
+import subprocess, json
+from datetime import datetime
+rows=subprocess.check_output(['nvidia-smi','--query-gpu=index,name,memory.free','--format=csv,noheader,nounits'],text=True).strip().splitlines()
+print(datetime.now().isoformat(),rows,flush=True)
+gpu=max((int(r.rsplit(',',1)[1]),int(r.split(',')[0])) for r in rows)
+if gpu[0]<2048:
+ raise SystemExit('CUDA check deferred: less than 2048 MiB free')
+import torch
+print('Torch',torch.__version__,'CUDA runtime',torch.version.cuda,'architectures',torch.cuda.get_arch_list(),flush=True)
+device=f'cuda:{gpu[1]}'
+assert torch.cuda.get_device_capability(gpu[1])==(12,0)
+x=torch.ones((32,32),device=device)
+y=x@x
+torch.cuda.synchronize(gpu[1])
+assert float(y[0,0])==32.0
+print('PASS Blackwell CUDA allocation + matmul',device,'peak bytes',torch.cuda.max_memory_allocated(gpu[1]),flush=True)

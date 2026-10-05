@@ -83,3 +83,46 @@ The five project-local uv environments and local checkpoints were reconstructed 
 | 2026-10-03T21:39:11.445753+08:00 | T-Rex | encoder_weights | 1 | TREX_ENCODERS_READY | Downloaded official midtrain checkpoint, verified SHA256, extracted real F6 VQ-VAE and deform weights; strict loading and CPU forward PASS. See environment_reports/TREX_ENCODERS_20261003_213911.md. |
 
 | 2026-10-03T22:06:46.022619+08:00 | Sharpa tactile | frozen_binary_six_group_ablation | 1 | SHARPA_TACTILE_ABLATION_COMPLETE | Completed six frozen-encoder probes, seed 42, rollout split 80/17/17; 6/7 failure and 8/9 success; pooled Deform 512D/finger. Causality, freeze, split, and real online equivalence PASS (max diff 1.49e-6). See environment_reports/SHARPA_TACTILE_ABLATION_20261003_220051.md and outputs/sharpa_tactile_ablation/20261003_220051/README.md. |
+
+| 2026-10-04T16:15:34.967932+08:00 | Sharpa tactile | three_class_framewise_six_groups | 1 | SHARPA_THREE_CLASS_COMPLETE | Hard background/success/failure targets; full valid trajectories; train-only weighted CE; exact original 80/17/17 rollout split retained. All six models retrained; 3-class metrics and 3x3 confusion matrices saved; causality and real online equivalence PASS (max diff 2.44e-6). See environment_reports/SHARPA_THREE_CLASS_20261004_160624.md. |
+
+| 2026-10-04T17:42:38.928807+08:00 | Sharpa tactile | class_weight_and_five_seed_ablation | 1 | SHARPA_WEIGHT_SEEDS_COMPLETE | 3 losses x 6 frozen probes x 5 seeds: 90 results (6 imported baseline, 84 new sequential trainings), fixed original rollout split and architectures. Hard labels/cache/encoder unchanged; formulas and complete artifact checks PASS. Report environment_reports/SHARPA_WEIGHT_SEEDS_20261004_172727.md. |
+
+| 2026-10-04T18:13:48.953071+08:00 | Sharpa tactile | interval_binary_six_groups_five_seeds | 1 | SHARPA_INTERVAL_BINARY_COMPLETE | 259 independent intervals; no background supervision; inverse-frequency weights from train 129 success/55 failure intervals. Original rollout split preserved. Frozen encoders, mean-pool MLP/final-state causal LSTM, timestep concat; 30 trainings completed. Label/padding/state/raw-prefix checks PASS. See environment_reports/SHARPA_INTERVAL_BINARY_20261004_180632.md. |
+
+
+Sharpa Align Key-window 3-class (20261004_232000): COMPLETE, 270 sequential frozen-feature MLP/GRU probes; 33 configs, top3 5 seeds; verification PASS; report environment_reports/SHARPA_ALIGN_WINDOWS_20261004_232000.md; outputs outputs/sharpa_align_windows/20261004_232000.
+
+
+Live annotation-tree comparison (Sharpa Align Key-window): BLOCKED after 3 non-destructive checks. Current annotation files differ from the prior snapshot; a referenced current record is missing. Stopped this supplementary check per AGENTS.md. The 270-run experiment uses the fixed extraction snapshot (same as stages 1–4), whose SHA256, feature/split/encoder hashes and model metrics all PASS. No annotation restoration or mutation performed. See outputs/sharpa_align_windows/20261004_232000/original_annotation_integrity.json.
+
+
+Sharpa Align online dataset revision (20261005_152000): DATASET COMPLETE; TRAINING NOT STARTED; 2 groups, 40 parameter cases, hard posterior-half Key labels, 629592 candidate windows verified. Balanced ready/train7376/class and4626/class; rollout split preserved. Report environment_reports/SHARPA_ALIGN_ONLINE_DATASET_20261005_152000.md.
+
+| 2026-10-05T15:52:40.209163+08:00 | VERA J-IDM | environment | 1 | JIDM_ENV_READY | Project-local Python 3.11.16, Torch 2.7.1+cu128 (Blackwell sm_120), VERA e9bf1c8033a3; J-IDM/dataset/Jacobian experiment imports, registry, no vera.video_model import, Hydra CLI, pip/UV checks and small single-GPU CUDA matmul PASS. No video/eval extras, checkpoints, datasets, inference or training. See environment_reports/vera_jidm_20261005_153647/README.md. |
+
+
+Sharpa corrected online-window training COMPLETE (2026-10-05T15:59:42.098191+08:00): 60 sequential frozen-feature probe runs, GPU 0, seeds 42–46; both ready label groups. Verification PASS. Report: environment_reports/SHARPA_ALIGN_ONLINE_TRAINING_20261005_155000.md; outputs: outputs/sharpa_align_online_training/20261005_155000; weekly: WeeklySummary/10.5/align_online_training.
+
+| 2026-10-05T16:25:42.599397+08:00 | VERA MimicGen J-IDM to LIBERO | transfer_evaluation | 1 | RUNNING | Official 11.3GB checkpoint + CoTracker3 weights downloaded; 50/50 demos camera/XML/state alignment PASS, 13885 pairs pre-registered, 3 SE3/OSC conversion tests PASS. Frozen inference running sequentially on GPU1; simulator playback/results pending. See environment_reports/VERA_LIBERO_JIDM_20261005_160738.md. |
+
+
+Sharpa merged Align + corrected encoder-window input COMPLETE (2026-10-05T16:54:47.557929+08:00): 114 rollouts, all merged; 60 sequential GPU0 runs; verification PASS, CPU replay12, causal/streaming GRU checks6. Report: environment_reports/SHARPA_MERGED_ONLINE_20261005_164000.md; outputs: outputs/sharpa_merged_online_training/20261005_164000; weekly: WeeklySummary/10.5/merged_online.
+
+| 2026-10-05T17:08:16.030704+08:00 | VERA MimicGen J-IDM to LIBERO | transfer_evaluation | 2 | COMPLETE_NOT_RELIABLE | 50 demos / 13885 true pairs complete; strict official checkpoint, all alignment and artifact checks PASS; GT success48/50, IDM0/50; action MAE0.276029 / MSE0.331941, arm MAE0.163206 vs zero0.139015. Open-loop frozen serving + fixed OSC mapping; no WM/training. See environment_reports/VERA_LIBERO_JIDM_20261005_160738.md. |
+
+
+Merged interval binary COMPLETE (2026-10-05T17:27:16.755841+08:00): two Key groups equivalent,30unique frozen-encoder runs,114intervals, originalsplit; GPU0 sequential; verificationPASS, CPUreplay6. Report: environment_reports/SHARPA_MERGED_INTERVAL_BINARY_20261005_172000.md; results: outputs/sharpa_merged_interval_binary/20261005_172000; weekly: WeeklySummary/10.5/merged_interval_binary.
+
+| 2026-10-05T17:31:09.715763+08:00 | VERA MimicGen → LIBERO | affine_diagnostic | 1 | COMPLETE_NOT_REPAIRED | All13885 pairs six-dim correlation/sign/scale, oracle+5fold trajectory-held-out affine; MAE0.140608/0.140788 vs zero0.139015; 30 paired short segments,4500 simsteps PASS; endpoint drift146.86/147.23mm vs raw156.76mm. No model rerun/WM/training. Report environment_reports/VERA_LIBERO_AFFINE_20261005_172652.md. |
+
+| 2026-10-05T17:40:30.150788+08:00 | LIBERO-specific VERA IDM | original_target_conversion | 2 | TARGETS_COMPLETE | 500 demos/137590 pairs converted via official SE3QuatDeltaAction+normalization; original7D IO/norm preserved; all label/roundtrip checks PASS, max difference1.863e-9; no flow/train/WM. Data datasets/libero_idm_targets/libero_10_20261005_173530; report environment_reports/LIBERO_IDM_TARGETS_libero_10_20261005_173530.md. |
+
+
+Causal hindsight prefix outcome COMPLETE (2026-10-05T17:45:26.862944+08:00): original259intervals,16equal slots per interval,binaryBCE;30 sequential GPU0 runs; verificationPASS incl6causal/streaming/reset checks. Report: environment_reports/SHARPA_CAUSAL_PREFIX_20261005_174000.md; outputs: outputs/sharpa_causal_prefix/20261005_174000; weekly: WeeklySummary/10.5/causal_prefix.
+
+
+Sharpa Align one-sided Gaussian COMPLETE (2026-10-05T18:11:56.412855+08:00): two Align-only groups,120 sequential frozen-feature GPU0 runs; fixed hard GT and annotated tail; sigma selected validation-only,5seeds/configuration. Verification PASS incl12causal/streaming/CPU replay checks. Report: environment_reports/SHARPA_GAUSSIAN_ONLINE_20261005_182000.md; outputs: outputs/sharpa_gaussian_online/20261005_182000; weekly: WeeklySummary/10.5/gaussian_online.
+
+
+Sharpa all-interaction Key-aligned curves COMPLETE (2026-10-05T18:50:57.947052+08:00): allval/test,2groups×6models,5seed mean within interaction then between-interaction mean/variance; seconds relative toKey;8PNG/8PDF including SD and literalvariance bands,22752CSV rows; verificationPASS. CPU only, no training. Report: environment_reports/SHARPA_KEY_ALIGNED_PROBABILITY_20261005_184000.md.

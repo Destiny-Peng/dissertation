@@ -1,0 +1,68 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index c266f3d..122c603 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -16,7 +16,7 @@ authors = [
+ # third_party/flow-planner/requirements.txt and project/okto requirements.
+ dependencies = [
+     "numpy>=1.24",
+-    "torch==2.6.0",  # pinned: flash-attn wheels are ABI-tied to the torch build
++    "torch==2.7.1",  # LF3R: Blackwell sm_120 requires CUDA 12.8 wheels
+     "omegaconf>=2.3",
+     "hydra-core>=1.3",
+     "einops",
+@@ -84,7 +84,7 @@ idm = [
+     "rotary-embedding-torch", # rotary positional embeddings (idm)
+     # VGGT visual backbone for the Jacobian IDM (both MimicGen + PushT). Public repo,
+     # pip-installable; pulls the VGGT-1B weights from facebook/VGGT-1B on first use.
+-    "vggt @ git+https://github.com/facebookresearch/vggt.git",
++    "vggt @ git+https://github.com/facebookresearch/vggt.git@a288dd0f14786c93483e45524328726ab7b1b4ce",
+ ]
+ # Sim environments for the example notebooks + eval (MimicGen / PushT). robomimic/robosuite/mimicgen
+ # carry their own MuJoCo assets, which is why they are an extra rather than core.
+diff --git a/vera/experiments/__init__.py b/vera/experiments/__init__.py
+index 344cfbb..1238205 100644
+--- a/vera/experiments/__init__.py
++++ b/vera/experiments/__init__.py
+@@ -10,7 +10,6 @@ from .jacobian_learning import JacobianLearningExperiment
+ from .joint_motion_jacobian_learning import JointMotionJacobianLearningExperiment
+ from .motion_policy_learning import MotionPolicyLearningExperiment
+ from .video_action_latent import VideoActionLatentExperiment
+-from .video_generation import VideoGenerationExperiment
+ 
+ # each key has to be a yaml file under '[project_root]/configurations/experiment' without .yaml suffix
+ exp_registry = dict(
+@@ -19,7 +18,6 @@ exp_registry = dict(
+     video_action_latent=VideoActionLatentExperiment,
+     motion_policy_learning=MotionPolicyLearningExperiment,
+     joint_motion_jacobian_learning=JointMotionJacobianLearningExperiment,
+-    video_generation=VideoGenerationExperiment,
+ )
+ 
+ 
+@@ -35,6 +33,12 @@ def build_experiment(
+     :param ckpt_path: optional checkpoint path for saving and loading
+     :return:
+     """
++    # Load WAN/video dependencies only when the video experiment is requested.
++    if cfg.experiment._name == "video_generation":
++        from .video_generation import VideoGenerationExperiment
++
++        exp_registry["video_generation"] = VideoGenerationExperiment
++
+     if cfg.experiment._name not in exp_registry:
+         raise ValueError(
+             f"Experiment {cfg.experiment._name} not found in registry {list(exp_registry.keys())}. "
+diff --git a/vera/utils/ckpt_utils.py b/vera/utils/ckpt_utils.py
+index cf5ca46..963982c 100644
+--- a/vera/utils/ckpt_utils.py
++++ b/vera/utils/ckpt_utils.py
+@@ -26,7 +26,7 @@ _USER_CKPT_CACHE_DIR = (
+ # Anchor "outputs/downloaded" to the repo root, not cwd — submission host and
+ # compute node run with different cwds, and a relative path makes them disagree.
+ _REPO_ROOT = Path(__file__).resolve().parents[3]
+-_DOWNLOADED_ROOT = _REPO_ROOT / "outputs" / "downloaded"
++_DOWNLOADED_ROOT = Path(os.environ.get("VERA_CKPT_ROOT", _REPO_ROOT / "outputs" / "downloaded"))
+ 
+ 
+ def _resolve_download_dir(download_dir: Path) -> Path:

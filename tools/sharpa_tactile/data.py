@@ -3,7 +3,7 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import numpy as np
-from .common import ROOT, FINGERS, read_jsonl, binary_timeline
+from .common import ROOT, FINGERS, read_jsonl, binary_timeline, three_class_timeline
 
 
 def load_sources(interval_path, manifest_path):
@@ -19,17 +19,21 @@ def load_sources(interval_path, manifest_path):
     return {rid: (manifest[rid], grouped[rid]) for rid in sorted(grouped)}
 
 
-def episode_arrays(record, intervals, camera='cam_high'):
+def episode_arrays(record, intervals, camera='cam_high', num_classes=2):
     """Recorded tick/event join: never nearest-neighbor or future-fill tactile data."""
     frames = read_jsonl(ROOT / record['synchronized_frames_path'])
     event_rows = read_jsonl(ROOT / record['tactile_events_path'])
     events = {(r['finger'], int(r['event_id'])): r for r in event_rows}
-    labels, conflicts = binary_timeline(intervals, record['total_frames'])
+    if num_classes == 3:
+        labels = three_class_timeline(intervals, record['total_frames'])
+        conflicts = np.zeros(len(labels), dtype=bool)
+    else:
+        labels, conflicts = binary_timeline(intervals, record['total_frames'])
     n = len(frames)
     f6 = np.zeros((n, 5, 6), dtype=np.float32)
     valid = np.ones(n, dtype=bool)
     camera_frames = np.full(n, -1, dtype=np.int64)
-    targets = np.full(n, -1, dtype=np.int64)
+    targets = np.full(n, 0 if num_classes == 3 else -1, dtype=np.int64)
     references = []
     for i, row in enumerate(frames):
         camera_value = row.get('camera_frame_indices', {}).get(camera)
@@ -37,6 +41,8 @@ def episode_arrays(record, intervals, camera='cam_high'):
             camera_frames[i] = int(camera_value)
             if 0 <= int(camera_value) < len(labels):
                 targets[i] = labels[int(camera_value)]
+            else:
+                valid[i] = False
         else:
             valid[i] = False
         refs = []
@@ -64,15 +70,17 @@ def episode_arrays(record, intervals, camera='cam_high'):
     supervised = np.flatnonzero((targets >= 0) & usable)
     if not len(supervised):
         raise ValueError(f'No valid labelled samples: {record["id"]}')
-    # Past unlabeled context is retained for LSTM. No post-label suffix is needed.
-    endpoints = np.flatnonzero(usable & (np.arange(n) <= supervised[-1]))
+    # Binary retains past unlabeled context through the last interval.
+    # Three-class supervises the complete usable rollout, including background suffixes.
+    endpoints = np.flatnonzero(usable) if num_classes == 3 else np.flatnonzero(usable & (np.arange(n) <= supervised[-1]))
     gaps = np.r_[True, np.diff(endpoints) != 1]
     return {'f6': f6, 'valid': valid, 'endpoints': endpoints, 'labels': targets[endpoints],
             'video_frames': camera_frames[endpoints], 'ticks': endpoints,
             'segment_starts': gaps, 'references': references,
             'audit': {'sync_rows': n, 'valid_ticks': int(valid.sum()),
-                      'usable_feature_rows': len(endpoints), 'failure_rows': int((targets[endpoints] == 1).sum()),
-                      'success_rows': int((targets[endpoints] == 0).sum()),
+                      'usable_feature_rows': len(endpoints), 'failure_rows': int((targets[endpoints] == (2 if num_classes == 3 else 1)).sum()),
+                      'success_rows': int((targets[endpoints] == (1 if num_classes == 3 else 0)).sum()),
+                      'background_rows': int((targets[endpoints] == 0).sum()) if num_classes == 3 else 0,
                       'conflicting_camera_frames': int(conflicts.sum()),
                       'discarded_labelled_ticks': int(((targets >= 0) & ~usable).sum())}}
 

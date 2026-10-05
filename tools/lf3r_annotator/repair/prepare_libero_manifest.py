@@ -38,8 +38,8 @@ PACKAGE_ROOT = (PROJECT_ROOT / "tools" / "lf3r_annotator").resolve()
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-CTRL_WORLD_WIDTH = 320
-CTRL_WORLD_HEIGHT = 192
+CTRL_WORLD_WIDTH = 1280
+CTRL_WORLD_HEIGHT = 720
 CTRL_CAMERA_SOURCES = {
     "cam_high": "agentview",
     "cam_front": "frontview",

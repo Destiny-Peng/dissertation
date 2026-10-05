@@ -52,8 +52,8 @@ class FrozenEncoders(nn.Module):
         return self.pool(features).reshape(images.shape[0], 2560)
 
 
-class BinaryProbe(nn.Module):
-    def __init__(self, input_kind, head_kind, hidden=128, layers=1):
+class FrameProbe(nn.Module):
+    def __init__(self, input_kind, head_kind, hidden=128, layers=1, num_classes=2):
         super().__init__()
         if input_kind not in ('f6', 'deform', 'f6_deform') or head_kind not in ('mlp', 'lstm'):
             raise ValueError('Unknown experimental group')
@@ -64,7 +64,8 @@ class BinaryProbe(nn.Module):
         width = 256 if input_kind == 'f6_deform' else 128
         self.context = nn.LSTM(width, hidden, layers, batch_first=True, bidirectional=False,
                                dropout=0.1 if layers > 1 else 0) if head_kind == 'lstm' else nn.Sequential(nn.Linear(width, hidden), nn.ReLU(), nn.Dropout(0.1))
-        self.prediction = nn.Linear(hidden, 2)
+        self.num_classes = num_classes
+        self.prediction = nn.Linear(hidden, num_classes)
         for key, dim in [('f6', 1280), ('deform', 2560)]:
             self.register_buffer(key + '_mean', torch.zeros(dim))
             self.register_buffer(key + '_std', torch.ones(dim))
@@ -91,10 +92,16 @@ class BinaryProbe(nn.Module):
         return self.prediction(value), new_state
 
 
+# Preserve the original binary experiment import and checkpoint compatibility.
+BinaryProbe = FrameProbe
+
+
 class OnlinePredictor:
     """Consume one right-hand tick at a time; no future samples or bidirectional state."""
     def __init__(self, checkpoint, device='cpu'):
         blob = torch.load(checkpoint, map_location='cpu', weights_only=True)
+        if blob.get('output_unit') in ('interval', 'align_window'):
+            raise ValueError('Use the matching IntervalProbe/AlignWindowProbe; OnlinePredictor is frame-wise')
         config = blob['model_config']
         self.device = torch.device(device)
         self.encoders = FrozenEncoders().to(device)
@@ -137,4 +144,5 @@ class OnlinePredictor:
                 return None
             deform_features = self.encoders.deform_features(torch.from_numpy(image).unsqueeze(0).to(self.device)).unsqueeze(1)
         logits, self.state = self.probe(f6_features, deform_features, state=self.state)
-        return float(logits.softmax(-1)[0, 0, 1].cpu())
+        probabilities = logits.softmax(-1)[0, 0].cpu()
+        return probabilities.numpy() if self.probe.num_classes == 3 else float(probabilities[1])

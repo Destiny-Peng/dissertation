@@ -100,3 +100,44 @@ Official weights downloaded and verified; independent F6 VQ-VAE and deform encod
 
 === Sharpa tactile representation ablation 2026-10-03T22:06:46.022619+08:00 ===
 Six frozen binary probe experiments complete using repos/ProcVLM/.venv; F6, pooled Deform and concat fusion with MLP/causal LSTM. Whole-rollout split 80/17/17, seed 42; FP32 TF32 disabled, normalization std floor 0.01. Causality and online equivalence PASS. Report: environment_reports/SHARPA_TACTILE_ABLATION_20261003_220051.md
+
+=== Sharpa three-class frame-wise ablation 2026-10-04T16:15:34.967932+08:00 ===
+Six frozen-encoder models completed in existing ProcVLM venv; labels background=0/success=1/failure=2; no smoothing or ignore labels. Exact original rollout split retained; full usable trajectories supervised. Verified causal heads, padding, metrics, freeze, binary compatibility, and real online three probabilities (max diff 2.44e-6). Report: environment_reports/SHARPA_THREE_CLASS_20261004_160624.md
+
+=== Sharpa class-weight and seed ablation 2026-10-04T17:42:38.928807+08:00 ===
+Existing ProcVLM venv; inverse-frequency/unweighted/normalized inverse-sqrt CE; seeds 42-46 on fixed split seed 42. Completed 90 frozen-probe results, 84 new sequential training jobs on cuda:1. Full artifact/weight/count/source identity checks PASS. Report: environment_reports/SHARPA_WEIGHT_SEEDS_20261004_172727.md
+
+=== Sharpa interval-level binary ablation 2026-10-04T18:13:48.953071+08:00 ===
+Six frozen probes, five seeds, 259 interval samples; old frame-wise experiments preserved. Closed interval boundary fields only, failure=1/success=0, no background loss. Fixed rollout split; train/val/test intervals 184/36/39. Interval-count class weights, interval-only F6 left padding, MLP mean pooling, causal LSTM final hidden. Checks PASS. Report: environment_reports/SHARPA_INTERVAL_BINARY_20261004_180632.md
+
+
+Sharpa Align Key-window 3-class (20261004_232000): COMPLETE, 270 sequential frozen-feature MLP/GRU probes; 33 configs, top3 5 seeds; verification PASS; report environment_reports/SHARPA_ALIGN_WINDOWS_20261004_232000.md; outputs outputs/sharpa_align_windows/20261004_232000.
+
+
+Sharpa Align online dataset revision (20261005_152000): DATASET COMPLETE; TRAINING NOT STARTED; 2 groups, 40 parameter cases, hard posterior-half Key labels, 629592 candidate windows verified. Balanced ready/train7376/class and4626/class; rollout split preserved. Report environment_reports/SHARPA_ALIGN_ONLINE_DATASET_20261005_152000.md.
+
+[2026-10-05T15:52:40.209163+08:00] VERA J-IDM environment: conda_envs/LF3R-vera-jidm; Python 3.11.16; Torch 2.7.1+cu128; torchvision 0.22.1+cu128; CUDA wheel runtime 12.8; driver 610.57.04; RTX PRO 6000 Blackwell Max-Q / sm_120. Small CUDA matmul on GPU 1 PASS. No system Python/CUDA changes. Report environment_reports/vera_jidm_20261005_153647/README.md.
+
+
+Sharpa corrected online-window training COMPLETE (2026-10-05T15:59:42.098191+08:00): 60 sequential frozen-feature probe runs, GPU 0, seeds 42–46; both ready label groups. Verification PASS. Report: environment_reports/SHARPA_ALIGN_ONLINE_TRAINING_20261005_155000.md; outputs: outputs/sharpa_align_online_training/20261005_155000; weekly: WeeklySummary/10.5/align_online_training.
+
+
+Sharpa merged Align + corrected encoder-window input COMPLETE (2026-10-05T16:54:47.557929+08:00): 114 rollouts, all merged; 60 sequential GPU0 runs; verification PASS, CPU replay12, causal/streaming GRU checks6. Report: environment_reports/SHARPA_MERGED_ONLINE_20261005_164000.md; outputs: outputs/sharpa_merged_online_training/20261005_164000; weekly: WeeklySummary/10.5/merged_online.
+
+[2026-10-05T17:08:16.030704+08:00] VERA MimicGen J-IDM transfer evaluation COMPLETE: official 11.3GB bundled VGGT checkpoint and CoTracker3 installed in checkpoints/vera-jidm, strict loads verified; all 13885 pairs /50 LIBERO-10 demos inferred, simulation playback completed sequentially on GPU1. GT48/50 versus IDM0/50 final success; artifact verification PASS. Uses project-local J-IDM and existing OpenVLA simulator environments; no WM/training/system changes. Report environment_reports/VERA_LIBERO_JIDM_20261005_160738.md.
+
+
+Merged interval binary COMPLETE (2026-10-05T17:27:16.755841+08:00): two Key groups equivalent,30unique frozen-encoder runs,114intervals, originalsplit; GPU0 sequential; verificationPASS, CPUreplay6. Report: environment_reports/SHARPA_MERGED_INTERVAL_BINARY_20261005_172000.md; results: outputs/sharpa_merged_interval_binary/20261005_172000; weekly: WeeklySummary/10.5/merged_interval_binary.
+
+[2026-10-05T17:31:09.715763+08:00] VERA affine diagnostic COMPLETE: reused frozen outputs and project-local J-IDM/OpenVLA envs; 4500 sequential simulator steps, no weights/inference/training/WM. Six-dim scalar calibration did not repair control. Report environment_reports/VERA_LIBERO_AFFINE_20261005_172652.md.
+
+[2026-10-05T17:40:30.150788+08:00] LIBERO original-IDM target conversion COMPLETE: 500 demos/137590 pairs, official achieved SE3/finger delta and unchanged checkpoint norm; J-IDM project-local Python, CPU only, no model/WM/training/system changes. Report environment_reports/LIBERO_IDM_TARGETS_libero_10_20261005_173530.md.
+
+
+Causal hindsight prefix outcome COMPLETE (2026-10-05T17:45:26.862944+08:00): original259intervals,16equal slots per interval,binaryBCE;30 sequential GPU0 runs; verificationPASS incl6causal/streaming/reset checks. Report: environment_reports/SHARPA_CAUSAL_PREFIX_20261005_174000.md; outputs: outputs/sharpa_causal_prefix/20261005_174000; weekly: WeeklySummary/10.5/causal_prefix.
+
+
+Sharpa Align one-sided Gaussian COMPLETE (2026-10-05T18:11:56.412855+08:00): two Align-only groups,120 sequential frozen-feature GPU0 runs; fixed hard GT and annotated tail; sigma selected validation-only,5seeds/configuration. Verification PASS incl12causal/streaming/CPU replay checks. Report: environment_reports/SHARPA_GAUSSIAN_ONLINE_20261005_182000.md; outputs: outputs/sharpa_gaussian_online/20261005_182000; weekly: WeeklySummary/10.5/gaussian_online.
+
+
+Sharpa all-interaction Key-aligned curves COMPLETE (2026-10-05T18:50:57.947052+08:00): allval/test,2groups×6models,5seed mean within interaction then between-interaction mean/variance; seconds relative toKey;8PNG/8PDF including SD and literalvariance bands,22752CSV rows; verificationPASS. CPU only, no training. Report: environment_reports/SHARPA_KEY_ALIGNED_PROBABILITY_20261005_184000.md.

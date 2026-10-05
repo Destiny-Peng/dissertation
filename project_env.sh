@@ -62,6 +62,10 @@ export LF3R_DENSEREWARD_CHECKPOINT="${CHECKPOINTS}/densereward-3frame-thinking"
 export LF3R_ENV_CTRL_WORLD="${CONDA_ENVS}/Ctrl-World"
 export LF3R_CTRL_WORLD_PYTHON="${LF3R_ENV_CTRL_WORLD}/bin/python"
 
+# J-IDM only; Python 3.11 and Blackwell-compatible PyTorch.
+export LF3R_ENV_VERA_JIDM="${CONDA_ENVS}/LF3R-vera-jidm"
+export LF3R_VERA_JIDM_PYTHON="${LF3R_ENV_VERA_JIDM}/bin/python"
+
 export LF3R_ENV_MANISKILL3="${CONDA_ENVS}/LF3R-maniskill3"
 export LF3R_MANISKILL3_PYTHON="${LF3R_ENV_MANISKILL3}/bin/python"
 export MS_ASSET_DIR="${DATASETS}/maniskill3"

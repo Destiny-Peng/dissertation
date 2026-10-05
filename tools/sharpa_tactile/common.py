@@ -46,3 +46,22 @@ def binary_timeline(events, total):
         labels[start:end+1] = value
     labels[conflict] = -1
     return labels, conflict
+
+
+def three_class_timeline(events, total):
+    """Closed hard-label intervals; background elsewhere. Reject ambiguous overlaps."""
+    import numpy as np
+    labels = np.zeros(total, dtype=np.int64)
+    for event in events:
+        key = int(event['event_key'])
+        if key not in (6, 7, 8, 9):
+            continue
+        start, end = int(event['start_frame']), int(event['end_frame'])
+        if not 0 <= start <= end < total:
+            raise ValueError(f'Invalid interval: {event}')
+        value = 2 if key in (6, 7) else 1
+        region = labels[start:end + 1]
+        if ((region != 0) & (region != value)).any():
+            raise ValueError(f'Conflicting success/failure intervals: {event}')
+        region[:] = value
+    return labels
