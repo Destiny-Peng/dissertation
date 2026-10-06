@@ -16,24 +16,22 @@ webui/
   server.py                 minimal standalone HTTP server
   tactile_service.py        synchronized tactile reader / sprite service
   static/tactile/           standalone tactile UI
+  tests/test_tactile_service.py
 
 tools/
-  sharpa_tactile/           SHARPA tactile experiment package
+  sharpa_tactile/           complete SHARPA tactile experiment package
   export_failrecovery_media.py
   plot_failrecovery_tactile.py
   extract_trex_encoders.py
   run_trex.sh
   run_sharpa_tactile_ablation.sh
-
-tests/
-  test_tactile_service.py
 ```
 
 Large data, model checkpoints, generated outputs and third-party repositories are intentionally not copied into source control.
 
 ## Expected data layout
 
-The WebUI and the existing SHARPA scripts retain the dataset layout used by the dissertation project:
+The WebUI and SHARPA scripts retain the dataset layout used by the dissertation project:
 
 ```text
 datasets/
@@ -44,9 +42,9 @@ datasets/
       ...
 ```
 
-The manifest entries should provide the existing fields used by the exported dataset, including `camera_video_paths`, `synchronized_frames_path`, `tactile_events_path`, and `tactile_stream_paths`.
+Manifest entries use the existing exported fields, including `camera_video_paths`, `synchronized_frames_path`, `tactile_events_path`, and `tactile_stream_paths`.
 
-You can either copy the dataset into this repository or symlink `datasets/lf3r_failure_rollouts` to the existing dataset location.
+Copy the dataset into this repository or symlink `datasets/lf3r_failure_rollouts` to the existing dataset location.
 
 ## Run the tactile WebUI
 
@@ -59,6 +57,12 @@ python webui/server.py --root . --host 127.0.0.1 --port 8765
 Then open `http://127.0.0.1:8765/`.
 
 The standalone UI keeps the optimized synchronized rendering path from the dissertation WebUI: one five-finger sprite per synchronized frame, a small sprite prefetch window, and de-duplicated tactile-series requests.
+
+Service test:
+
+```bash
+python -m unittest webui.tests.test_tactile_service -v
+```
 
 ## SHARPA tactile experiments
 
@@ -85,8 +89,6 @@ bash tools/run_sharpa_tactile_ablation.sh verify --output outputs/example
 bash tools/run_sharpa_tactile_ablation.sh train --output outputs/example --device cuda:0
 ```
 
-The exact available experiment commands are listed by running the wrapper without a valid command.
-
 ## Encoder extraction
 
 `tools/extract_trex_encoders.py` extracts and verifies the frozen F6 and deform encoders from the pinned T-Rex source checkpoint. By default it expects:
@@ -101,10 +103,10 @@ and writes standalone encoder weights under:
 checkpoints/T-Rex/encoders/
 ```
 
-## Dataset export helpers
+## Dataset helpers
 
 `tools/export_failrecovery_media.py` and `tools/plot_failrecovery_tactile.py` are included because they produce and inspect the synchronized tactile representation consumed by both the WebUI and the SHARPA experiments.
 
-## What is intentionally excluded
+## Intentionally excluded
 
 This split does not include LIBERO, repair/world-model code, general LF3R annotation/results pages, Robo-Dopamine/SAFE/ProcVLM integrations, generated experiment outputs, raw tactile datasets, model checkpoints, or vendored third-party repositories.
