@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/../project_env.sh"
-TREX_REPO="${PROJECT_ROOT}/repos/T-Rex"
-TREX_PYTHON="${LF3R_TREX_PYTHON:-${PROJECT_ROOT}/repos/ProcVLM/.venv/bin/python}"
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+TREX_REPO="${TREX_REPO:-${PROJECT_ROOT}/repos/T-Rex}"
+TREX_PYTHON="${TREX_PYTHON:-python}"
+
+if [[ ! -d "${TREX_REPO}" ]]; then
+    echo "T-Rex repo not found: ${TREX_REPO}" >&2
+    echo "Set TREX_REPO or place T-Rex under repos/T-Rex." >&2
+    exit 2
+fi
+
+export PROJECT_ROOT
 export PYTHONPATH="${TREX_REPO}:${TREX_REPO}/dataset_quickstart/src${PYTHONPATH:+:${PYTHONPATH}}"
 export PYTHONDONTWRITEBYTECODE=1
 export WANDB_MODE="${WANDB_MODE:-offline}"
+
 case "${1:-}" in
     train|infer)
         TREX_COMMAND="$1"
         shift
-        if [[ "$TREX_COMMAND" == "infer" ]]; then
-            TREX_COMMAND=test
-        fi
+        [[ "$TREX_COMMAND" == "infer" ]] && TREX_COMMAND=test
         exec "$TREX_PYTHON" "${TREX_REPO}/scripts/${TREX_COMMAND}.py" "$@"
         ;;
     python)

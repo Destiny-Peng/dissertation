@@ -1,3 +1,0 @@
-flashinfer-python
-flashinfer-cubin
-flashinfer-jit-cache

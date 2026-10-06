@@ -1,54 +1,21 @@
-# Rebuildable or large project-local artifacts. Keep their manifests,
-# reports, and provenance notes in tracked LF3R-owned files instead.
-/cache/
-/checkpoints/
-/conda_envs/
-/datasets/
-/logs
-/outputs/
-/migration_reports
-/WeeklySummary
-/tmp
-# Ignore third-party clones by default. ProcVLM and Robo-Dopamine are
-# managed as squash subtrees; commit their local changes directly in LF3R.
-/repos/*
-!/repos/ProcVLM/
-!/repos/Robo-Dopamine/
-# Local bootstrap distribution kept under tools; rebuild it separately.
-/tools/miniforge3/
-/tools/**/.venv/
-/tools/**/node_modules/
-
-# Python and local tool state.
 __pycache__/
 *.py[cod]
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-
-# Local editor and OS state.
+.venv/
+venv/
+.env
 .DS_Store
-.vscode/
-.idea/
 
-# Large generated media/model artifacts if they appear outside ignored roots.
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.pkl
-*.npz
-*.npy
+# Local data / weights / external repos
+datasets/
+checkpoints/
+repos/
+outputs/
+artifacts/
+
+# Experiment caches
 *.pt
 *.pth
-*.safetensors
-*.ckpt
+*.npz
+*.npy
+*.mp4
 *.bin
-*.log
-Robo-Dopamine-Bench/**
-*.zip
-*.tar.gz
-artifacts/
