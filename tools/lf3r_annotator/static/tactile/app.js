@@ -17,6 +17,8 @@
     camera: "",
     series: null,
     seriesKey: "",
+    loadingSeriesKey: "",
+    loadingSeriesPromise: null,
     seriesSerial: 0,
     eventLookup: null,
     currentFrame: 0,
@@ -204,6 +206,9 @@
   function resetTactileState() {
     state.series = null;
     state.seriesKey = "";
+    state.loadingSeriesKey = "";
+    state.loadingSeriesPromise = null;
+    state.seriesSerial += 1;
     state.eventLookup = null;
     state.lastSyncKey = "";
     state.appliedSpriteKey = "";
@@ -489,37 +494,48 @@
     playhead.setAttribute("x2", x.toFixed(2));
   }
 
-  async function ensureSeries(record, camera) {
+  function ensureSeries(record, camera) {
     var key = record.id + "|" + camera;
-    if (state.seriesKey === key && state.series) return state.series;
+    if (state.seriesKey === key && state.series) return Promise.resolve(state.series);
+    if (state.loadingSeriesKey === key && state.loadingSeriesPromise) return state.loadingSeriesPromise;
+
     var serial = ++state.seriesSerial;
     statusNode.textContent = "Loading tactile timeline…";
-    try {
-      var response = await fetch(
-        "/api/tactile/" + encodeURIComponent(record.id) + "/series?camera=" + encodeURIComponent(camera),
-        { cache: "no-store" }
-      );
-      var body = await response.json();
-      if (serial !== state.seriesSerial) return null;
-      if (!response.ok) throw new Error(body.error || "Tactile timeline request failed");
-      state.seriesKey = key;
-      state.series = body.tactile;
-      state.eventLookup = buildEventLookup(state.series);
-      state.lastSyncKey = "";
-      state.appliedSpriteKey = "";
-      state.requestedSpriteKey = "";
-      renderCurve();
-      return state.series;
-    } catch (error) {
-      if (serial !== state.seriesSerial) return null;
-      state.seriesKey = key;
-      state.series = null;
-      state.eventLookup = null;
-      statusNode.textContent = "Tactile unavailable: " + String(error.message || error);
-      curveNode.innerHTML = '<div class="placeholder">f6 history unavailable.</div>';
-      grid.innerHTML = "";
-      return null;
-    }
+    state.loadingSeriesKey = key;
+    state.loadingSeriesPromise = (async function () {
+      try {
+        var response = await fetch(
+          "/api/tactile/" + encodeURIComponent(record.id) + "/series?camera=" + encodeURIComponent(camera),
+          { cache: "no-store" }
+        );
+        var body = await response.json();
+        if (serial !== state.seriesSerial) return null;
+        if (!response.ok) throw new Error(body.error || "Tactile timeline request failed");
+        state.seriesKey = key;
+        state.series = body.tactile;
+        state.eventLookup = buildEventLookup(state.series);
+        state.lastSyncKey = "";
+        state.appliedSpriteKey = "";
+        state.requestedSpriteKey = "";
+        renderCurve();
+        return state.series;
+      } catch (error) {
+        if (serial !== state.seriesSerial) return null;
+        state.seriesKey = key;
+        state.series = null;
+        state.eventLookup = null;
+        statusNode.textContent = "Tactile unavailable: " + String(error.message || error);
+        curveNode.innerHTML = '<div class="placeholder">f6 history unavailable.</div>';
+        grid.innerHTML = "";
+        return null;
+      } finally {
+        if (state.loadingSeriesKey === key) {
+          state.loadingSeriesKey = "";
+          state.loadingSeriesPromise = null;
+        }
+      }
+    })();
+    return state.loadingSeriesPromise;
   }
 
   function renderSynchronizedFrame(record, camera, match, frame, force) {
@@ -608,6 +624,9 @@
     state.camera = String(this.value || "cam_high");
     state.seriesKey = "";
     state.series = null;
+    state.loadingSeriesKey = "";
+    state.loadingSeriesPromise = null;
+    state.seriesSerial += 1;
     state.eventLookup = null;
     state.lastSyncKey = "";
     state.appliedSpriteKey = "";
