@@ -135,24 +135,11 @@ class AnalysisJobService(
         if not status["executable"]:
             status["error"] = "Analysis environment Python executable is missing"
             return status
-        try:
-            result = subprocess.run(
-                [str(path), "-c", "import matplotlib, numpy, pandas"],
-                cwd=str(self.project_root),
-                env={**os.environ, "MPLBACKEND": "Agg"},
-                capture_output=True,
-                text=True,
-                timeout=15,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            status["error"] = str(error)
-            return status
-        if result.returncode != 0:
-            status["error"] = (
-                result.stderr or result.stdout or "Analysis dependency import failed"
-            ).strip()[-2000:]
-            return status
+
+        # A valid executable is sufficient to launch analysis jobs. Importing the
+        # scientific stack can be slow on shared/network storage and should not
+        # disable the UI before the job is even started. Missing dependencies are
+        # reported by the analysis job itself with the real import traceback.
         status["ready"] = True
         return status
 
