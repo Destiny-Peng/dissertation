@@ -265,17 +265,16 @@ def _localization_interval_error(predicted_frame: int, annotation: dict[str, Any
             intervals.append((left, right))
     if not intervals:
         return None
-    # A rollout-level localization prediction is scored against the closest
-    # annotated causal-to-observable failure interval.
-    def signed_error(interval: tuple[int, int]) -> int:
-        left, right = interval
-        if predicted_frame < left:
-            return predicted_frame - left
-        if predicted_frame > right:
-            return predicted_frame - right
-        return 0
-    left, right = min(intervals, key=lambda interval: abs(signed_error(interval)))
-    return signed_error((left, right)), left, right
+    # Match the localization experiments: rollout-level localization is
+    # evaluated against the first annotated failure event only.
+    left, right = intervals[0]
+    if predicted_frame < left:
+        error = predicted_frame - left
+    elif predicted_frame > right:
+        error = predicted_frame - right
+    else:
+        error = 0
+    return error, left, right
 
 
 def _existing_localization_statistics(
