@@ -249,6 +249,98 @@ def _progress_threshold_sweep(
     return pd.DataFrame(rows)
 
 
+def _localization_interval_error(predicted_frame: int, annotation: dict[str, Any]) -> tuple[int, int, int] | None:
+    events = annotation.get("failure_events") or []
+    intervals: list[tuple[int, int]] = []
+    for event in events:
+        causal = event.get("causal_onset_frame")
+        observable = event.get("observable_onset_frame")
+        if causal is None or observable is None:
+            continue
+        try:
+            left, right = int(causal), int(observable)
+        except (TypeError, ValueError):
+            continue
+        if left <= right:
+            intervals.append((left, right))
+    if not intervals:
+        return None
+    # A rollout-level localization prediction is scored against the closest
+    # annotated causal-to-observable failure interval.
+    def signed_error(interval: tuple[int, int]) -> int:
+        left, right = interval
+        if predicted_frame < left:
+            return predicted_frame - left
+        if predicted_frame > right:
+            return predicted_frame - right
+        return 0
+    left, right = min(intervals, key=lambda interval: abs(signed_error(interval)))
+    return signed_error((left, right)), left, right
+
+
+def _existing_localization_statistics(
+    rollouts: dict[str, dict[str, Any]],
+    source_maps: dict[str, dict[str, Path]],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows: list[dict[str, Any]] = []
+    for rollout_id, rollout in rollouts.items():
+        run_root = source_maps.get("robo_dopamine", {}).get(rollout_id)
+        if run_root is None:
+            continue
+        prediction_path = run_root / "raw" / rollout_id / "localization_prediction.json"
+        if not prediction_path.is_file():
+            continue
+        try:
+            prediction = json.loads(prediction_path.read_text(encoding="utf-8"))
+            predicted_frame = int(prediction["predicted_frame"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue
+        scored = _localization_interval_error(predicted_frame, rollout["annotation"])
+        if scored is None:
+            continue
+        error, causal_frame, observable_frame = scored
+        rows.append({
+            "rollout_id": rollout_id,
+            "source_run": str(run_root),
+            "checkpoint": prediction.get("checkpoint"),
+            "checkpoint_stage": prediction.get("checkpoint_stage"),
+            "checkpoint_config_id": prediction.get("checkpoint_config_id"),
+            "checkpoint_repeat": prediction.get("checkpoint_repeat"),
+            "signal_mode": prediction.get("signal_mode"),
+            "predicted_frame": predicted_frame,
+            "causal_frame": causal_frame,
+            "observable_frame": observable_frame,
+            "interval_error_frames": error,
+            "in_interval": error == 0,
+        })
+    detail = pd.DataFrame(rows)
+    summaries: list[dict[str, Any]] = []
+    if not detail.empty:
+        group_fields = ["source_run", "checkpoint"]
+        for keys, group in detail.groupby(group_fields, dropna=False):
+            errors = group["interval_error_frames"].astype(int).tolist()
+            absolute = [abs(value) for value in errors]
+            summaries.append({
+                "source_run": keys[0],
+                "checkpoint": keys[1],
+                "checkpoint_stage": group.iloc[0].get("checkpoint_stage"),
+                "checkpoint_config_id": group.iloc[0].get("checkpoint_config_id"),
+                "checkpoint_repeat": group.iloc[0].get("checkpoint_repeat"),
+                "signal_mode": group.iloc[0].get("signal_mode"),
+                "n": len(errors),
+                "in_interval_rate": sum(value == 0 for value in errors) / len(errors),
+                "within_1": sum(value <= 1 for value in absolute) / len(errors),
+                "within_3": sum(value <= 3 for value in absolute) / len(errors),
+                "within_5": sum(value <= 5 for value in absolute) / len(errors),
+                "median_absolute_error_frames": float(pd.Series(absolute).median()),
+                "mae_frames": sum(absolute) / len(errors),
+                "mse_frames": sum(value * value for value in errors) / len(errors),
+                "before_interval_rate": sum(value < 0 for value in errors) / len(errors),
+                "after_interval_rate": sum(value > 0 for value in errors) / len(errors),
+            })
+    return pd.DataFrame(summaries), detail
+
+
 def main() -> int:
     args = parse_args()
     selection_path = project_path(args.selection)
@@ -275,6 +367,15 @@ def main() -> int:
     threshold_sweep.to_csv(
         output_dir / "rollout_outcome_threshold_sweep.csv",
         index=False,
+    )
+    localization_summary, localization_predictions = _existing_localization_statistics(
+        rollouts, source_maps
+    )
+    localization_summary.to_csv(
+        output_dir / "rollout_outcome_localization_summary.csv", index=False
+    )
+    localization_predictions.to_csv(
+        output_dir / "rollout_outcome_localization_predictions.csv", index=False
     )
 
     coverage_rows = []
@@ -334,6 +435,11 @@ def main() -> int:
             "threshold_calibration": "final_success_terminal_score_quantile",
             "summary_rows": int(len(summary)),
             "prediction_rows": int(len(predictions)),
+            "saved_localization": {
+                "policy": "read_existing_batch_localization_prediction_only",
+                "summary_rows": int(len(localization_summary)),
+                "prediction_rows": int(len(localization_predictions)),
+            },
             "progress_threshold_sweep": {
                 "methods": [
                     method
@@ -350,6 +456,8 @@ def main() -> int:
             "summary_rows": int(len(summary)),
             "prediction_rows": int(len(predictions)),
             "threshold_sweep_rows": int(len(threshold_sweep)),
+            "localization_summary_rows": int(len(localization_summary)),
+            "localization_prediction_rows": int(len(localization_predictions)),
         },
     }
     (output_dir / "metadata.json").write_text(
