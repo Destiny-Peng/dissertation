@@ -1065,6 +1065,34 @@
       + '</tbody></table></div></details>';
   }
 
+  function renderAllFailureStatistics(rows) {
+    var available = (rows || []).filter(function (row) { return row.all_failure_metrics; });
+    if (!available.length) {
+      return '<p class="analysis-card-note">No saved all-failure inference is available for this stage.</p>';
+    }
+    return '<div class="analysis-table-wrap"><table class="analysis-table"><thead><tr>'
+      + '<th>Config</th><th>Rollouts</th><th>Repeats</th><th>In interval</th><th>First event</th>'
+      + '<th>±3</th><th>Median |err|</th><th>MAE</th><th>MSE</th><th>Before</th><th>After</th>'
+      + '</tr></thead><tbody>'
+      + available.map(function (row) {
+        var m = row.all_failure_metrics;
+        return '<tr class="' + (row.best ? 'localization-best-row' : '') + '">'
+          + '<td><strong>' + esc(row.label || row.config_id) + '</strong></td>'
+          + '<td class="numeric">' + esc(m.rollout_n) + '</td>'
+          + '<td class="numeric">' + esc(m.repeat_n) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.in_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.first_event_in_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.within_3, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.median_absolute_interval_error_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.mae_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.mse_samples, false) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.before_interval_rate, true) + '</td>'
+          + '<td class="numeric">' + formatMetric(m.after_interval_rate, true) + '</td>'
+          + '</tr>';
+      }).join("")
+      + '</tbody></table></div>';
+  }
+
   function renderRunResult(result) {
     state.activeRunResult = result;
     var shell = node("localizationRunResult");
@@ -1128,7 +1156,12 @@
             + renderRepeatDetails(row)
             + '</td></tr>';
         }).join("")
-        + '</tbody></table></div></section>';
+        + '</tbody></table></div>'
+        + '<details class="analysis-result-details localization-section" open>'
+        + '<summary>All-failure inference statistics</summary>'
+        + '<p class="analysis-card-note">Statistics reuse saved all_failure_predictions.csv; no model inference is repeated.</p>'
+        + renderAllFailureStatistics(rows)
+        + '</details></section>';
     }).join("");
 
     host.innerHTML = header + stages;
