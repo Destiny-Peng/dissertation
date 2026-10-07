@@ -321,73 +321,6 @@ class AnalysisLocalizationResultsMixin:
             repeats.sort(key=lambda row: int(row["repeat"]))
         return by_config
 
-    def _localization_all_failure_metrics(
-        self,
-        directory: Path,
-    ) -> dict[tuple[str, str], dict[str, Any]]:
-        """Aggregate already-saved all-failure inference without rerunning the model."""
-        path = directory / "all_failure_predictions.csv"
-        if not path.is_file():
-            return {}
-        grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        try:
-            with path.open("r", newline="", encoding="utf-8") as handle:
-                for row in csv.DictReader(handle):
-                    stage = str(row.get("stage") or "main")
-                    config_id = str(row.get("config_id") or "")
-                    if config_id:
-                        grouped.setdefault((stage, config_id), []).append(row)
-        except OSError:
-            return {}
-
-        result: dict[tuple[str, str], dict[str, Any]] = {}
-        for key, rows in grouped.items():
-            errors: list[int] = []
-            first_hits: list[bool] = []
-            rollout_ids: set[str] = set()
-            repeats: set[int] = set()
-            for row in rows:
-                try:
-                    error = int(float(str(row.get("interval_error_samples") or "")))
-                except (TypeError, ValueError):
-                    continue
-                errors.append(error)
-                rollout_id = str(row.get("rollout_id") or "").strip()
-                if rollout_id:
-                    rollout_ids.add(rollout_id)
-                try:
-                    repeats.add(int(float(str(row.get("repeat") or ""))))
-                except (TypeError, ValueError):
-                    pass
-                value = str(row.get("first_event_in_interval") or "").strip().lower()
-                if value in {"true", "1", "yes"}:
-                    first_hits.append(True)
-                elif value in {"false", "0", "no"}:
-                    first_hits.append(False)
-            if not errors:
-                continue
-            absolute = [abs(value) for value in errors]
-            n = len(errors)
-            result[key] = {
-                "prediction_n": n,
-                "rollout_n": len(rollout_ids),
-                "repeat_n": len(repeats),
-                "in_interval_rate": sum(value == 0 for value in errors) / n,
-                "first_event_in_interval_rate": (
-                    sum(first_hits) / len(first_hits) if first_hits else None
-                ),
-                "within_1": sum(value <= 1 for value in absolute) / n,
-                "within_3": sum(value <= 3 for value in absolute) / n,
-                "within_5": sum(value <= 5 for value in absolute) / n,
-                "median_absolute_interval_error_samples": float(statistics.median(absolute)),
-                "mae_samples": float(sum(absolute) / n),
-                "mse_samples": float(sum(value * value for value in errors) / n),
-                "before_interval_rate": sum(value < 0 for value in errors) / n,
-                "after_interval_rate": sum(value > 0 for value in errors) / n,
-                "derived_from": "all_failure_predictions.csv",
-            }
-        return result
-
     def _localization_best_repeats(
         self,
         directory: Path,
@@ -438,7 +371,6 @@ class AnalysisLocalizationResultsMixin:
 
         repeat_metrics = self._localization_repeat_metrics(directory)
         best_repeats = self._localization_best_repeats(directory)
-        all_failure_metrics = self._localization_all_failure_metrics(directory)
 
         best_by_stage: dict[str, str] = {}
         stage_meta: dict[str, dict[str, Any]] = {}
@@ -563,7 +495,6 @@ class AnalysisLocalizationResultsMixin:
                 else:
                     row["best_repeat"] = best_repeats.get((stage, config_id))
                 row["repeats"] = repeat_metrics.get((stage, config_id), [])
-                row["all_failure_metrics"] = all_failure_metrics.get((stage, config_id))
                 base_seed = row.get("training.seed")
                 base_split_seed = row.get("training.split_seed")
                 vary_model_seed = str(row.get("training.vary_model_seed", "True")).lower() not in {"false", "0", "no"}
