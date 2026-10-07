@@ -141,3 +141,49 @@ Sharpa Align one-sided Gaussian COMPLETE (2026-10-05T18:11:56.412855+08:00): two
 
 
 Sharpa all-interaction Key-aligned curves COMPLETE (2026-10-05T18:50:57.947052+08:00): allval/test,2groups×6models,5seed mean within interaction then between-interaction mean/variance; seconds relative toKey;8PNG/8PDF including SD and literalvariance bands,22752CSV rows; verificationPASS. CPU only, no training. Report: environment_reports/SHARPA_KEY_ALIGNED_PROBABILITY_20261005_184000.md.
+
+
+Sharpa online decision evaluation COMPLETE (2026-10-05T19:23:15.107573+08:00): frozenoriginalAlign/DeformGRU/sigma8/seed42, no training;441validation-only thresholdpairs, tau_decide.55/tau_fail.10;testeventBA63.33%,FPR40%,undecided8.33%;firsttrigger instability recorded;verificationPASS. Report: environment_reports/SHARPA_ONLINE_DECISION_20261005_191800.md.
+
+
+F6 temporal sampling ablation COMPLETE (2026-10-05T20:02:46.477484+08:00): originalAlign/Gaussian sigma8/F6GRU/seed42,9uniqueconfigurations(8newGPU0runs),Feature/Rawstep0..3+multi,allval/testdense0;minimalverificationPASS. Report: environment_reports/SHARPA_F6_TEMPORAL_SAMPLING_20261005_195800.md; weekly: WeeklySummary/10.5/f6_temporal_sampling/20261005_195800.
+
+
+F6 temporal sampling allstep0–8 andmulti0–3 FIVESEEDS COMPLETE (2026-10-05T20:33:09.365744+08:00):95unique results(76newGPU0runs),seeds42–46,19configurations,encoder frozen cached;allval/teststep0;minimalverificationPASS. Baseline56.86±10.57%,Featuremulti50.52±4.48%,Rawmulti45.31±4.92%BA. Report: environment_reports/SHARPA_F6_TEMPORAL_SAMPLING_SEEDS_20261005_203200.md.
+
+
+Final Align failure Key critical reward COMPLETE (2026-10-05T23:43:22.816238+08:00):35n/m configs×5seeds=175GPU0 frozen-feature runs;only finalfailure Key positive,success/earlier Keys ignored;last-frame labels,plain BCE,original rollout split. Verification PASS. Validation-selected n0,m0;testKeyBA45.47±4.90%,recall0% in all175runs;fixedtesteventBA37.38±6.87%. Report: environment_reports/SHARPA_CRITICAL_REWARD_FINAL_20261005_231500.md.
+
+
+Deform early-warning COMPLETE (2026-10-06T13:14:22.604775+08:00):final Align failure end anchor,5H×5seeds=25GPU0 frozen-feature runs;train-balanced BCE,H>0 terminal masked,H0 persistent state,natural val/test/original rollout split. Verification PASS. Frame BA/P/R/F1/FPR/AP/ROC,event detection/firstalarm lead/withinband rate,normalized matrices andval/test Key-aligned curves saved. Report: environment_reports/SHARPA_EARLY_WARNING_20261006_001500.md.
+
+[2026-10-06T14:02:40.447837+08:00] User-authorized LIBERO J-IDM formal finetuning queued after all500 flow packs and verification. Initial observation200 optimizer steps plus held-out validation/checkpoint, then monitoring disabled; first round10000 steps. Queue PID 1155930. Run outputs/vera-libero-training/authorized_20261006_135637. Training has not started yet.
+
+
+Early-warning A/B COMPLETE (2026-10-06T14:08:52.968510+08:00):A50newfrozen F6/Fusion GPU0heads+25reusedDeform=75comparisonresults;B75CPUval-onlyeventcalibrations,noDeformretraining. Allchecks/copySHA PASS. DeformearlymeanAPhighest,F6terminalbest,Fusionnotstable;calibrationreducesFPRbutrecall/effectivefirstalarmcoverage low. Report: environment_reports/SHARPA_EARLY_WARNING_BRANCHES_20261006_135300.md.
+
+[2026-10-06T16:55:05.045411+08:00] LIBERO J-IDM preprocessing parallel on GPUs0/1, default952px flow/window4/iterations8/batch1; completed16 trajectories retained, detached parent PID1, pipeline PID1958556. User-authorized GPU parallelism; training remains after preparation/verification.
+
+Failure-only event3/4 COMPLETE (2026-10-06T17:09:18.213169+08:00):45GPU0 frozen-featureGRU heads,3regimes×3modalities×5seeds;23failure rollouts,19train/4val,no test. Label3 dropped_object/4 wrong_object;interval-only context,frame4 andframe3or4. Balanced BCE by interval/frame counts,valBA bestepoch;verification andweeklycopySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_20261006_165000.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+Failure-only frame3 COMPLETE (2026-10-06T19:24:47.375679+08:00):15 frozen-featurecuda:0 GRU runs,3modalities×5seeds;positiveevent3only,frame4negative;original19/4rollout split,no test. Valmetrics andweeklycopySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_FRAME3_20261006_185200.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+Failure-label refresh COMPLETE(2026-10-06T22:34:02.843618+08:00):30frozen-featureGRUruns cuda:1,frame3/frame4×3modal×5seeds;24failure20train4val,no test. Frame3-only success92×15inference,any.5hit=rolloutFP;no success training/selection. Allreplay/copySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_REFRESH_20261006_214500_updated.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+Dynamic-threshold COMPLETE 2026-10-06T23:39:01.644772+08:00: frozen Deform early-warning curves;50MLP/GRU heads+150OOF fold fits;5H×5seeds. Original17val3foldcalibration,17test evaluation. Source syntax/prediction replay PASS;25 fixed thresholds and confusion matrices exactly match previous15% calibration;weeklycopySHA PASS. No stable advantage overfixedthreshold. Report:WeeklySummary/10.5/10.5early_warning_dynamic_threshold.md.
+
+Loss300 critical COMPLETE 2026-10-07T14:05:28.012748+08:00: outputs/sharpa_critical_reward_final/20261007_134800_loss300; loss-based checkpoint/patience checks PASS,weeklycopySHA PASS.
+
+Loss300 threshold COMPLETE 2026-10-07T14:06:57.653692+08:00: outputs/sharpa_early_warning_dynamic_threshold/20261007_134800_loss300; loss-based checkpoint/patience checks PASS,weeklycopySHA PASS.
+
+20261007 interval padding audit: 15 checkpoints reproduced; packed/tail changes preserve classes; length stump val BA83.33%; report recovered CPU-only from complete numeric outputs.
+
+2026-10-07T14:38:35.969764+08:00 LIBERO IDM subset200 training chain: GPU1-only remaining flow construction, batch cap2/headroom6GiB after GPU2 shared-memory OOM; fixed200 selection, original whole-episode splits and VERA IO/scales, 10000-step auto-training after verification. PID 3510611; outputs/vera-libero-training/subset200_20261007_143539.
+
+Tactile value-trend COMPLETE 2026-10-07T14:42:39.319885+08:00: outputs/sharpa_value_trend/20261007_143233; original Align anchors, Deform seed42, shared proxy/future + 5H focal/risk heads; max300 val-loss patience50; GPU parallel0/1/2. WeeklySummary/10.5/10.5value_trend.md.
+
+20261007_170000: completed60 Deform interval duration/prefix runs onGPU0/1/2; no installation; original5 checkpoints reused; numeric replay and artifact copies verified.
+
+Deform early-warning BA300 COMPLETE 2026-10-07T14:57:25.769466+08:00: outputs/sharpa_early_warning_ba300/20261007_145353; 5H seed42, original balanced BCE, max300 BA patience50. Best epochs unchanged; val/test probabilities exactly reproduce original seed42; report WeeklySummary/10.5/10.5early_warning_ba300.md.
+
+Validation PR diagnostic COMPLETE 2026-10-07T15:28:38.705087+08:00: outputs/sharpa_early_warning_pr_diagnostic/20261007_152227; H0/8/15 seed42,max30/patience8; 75 full epoch state_dicts, six metric curves, no test/calibration. WeeklySummary/10.5/10.5early_warning_pr_diagnostic.md.

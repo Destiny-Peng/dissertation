@@ -126,3 +126,97 @@ Sharpa Align one-sided Gaussian COMPLETE (2026-10-05T18:11:56.412855+08:00): two
 
 
 Sharpa all-interaction Key-aligned curves COMPLETE (2026-10-05T18:50:57.947052+08:00): allval/test,2groups×6models,5seed mean within interaction then between-interaction mean/variance; seconds relative toKey;8PNG/8PDF including SD and literalvariance bands,22752CSV rows; verificationPASS. CPU only, no training. Report: environment_reports/SHARPA_KEY_ALIGNED_PROBABILITY_20261005_184000.md.
+
+
+Sharpa online decision evaluation COMPLETE (2026-10-05T19:23:15.107573+08:00): frozenoriginalAlign/DeformGRU/sigma8/seed42, no training;441validation-only thresholdpairs, tau_decide.55/tau_fail.10;testeventBA63.33%,FPR40%,undecided8.33%;firsttrigger instability recorded;verificationPASS. Report: environment_reports/SHARPA_ONLINE_DECISION_20261005_191800.md.
+
+
+F6 temporal sampling ablation COMPLETE (2026-10-05T20:02:46.477484+08:00): originalAlign/Gaussian sigma8/F6GRU/seed42,9uniqueconfigurations(8newGPU0runs),Feature/Rawstep0..3+multi,allval/testdense0;minimalverificationPASS. Report: environment_reports/SHARPA_F6_TEMPORAL_SAMPLING_20261005_195800.md; weekly: WeeklySummary/10.5/f6_temporal_sampling/20261005_195800.
+
+
+F6 temporal sampling allstep0–8 andmulti0–3 FIVESEEDS COMPLETE (2026-10-05T20:33:09.365744+08:00):95unique results(76newGPU0runs),seeds42–46,19configurations,encoder frozen cached;allval/teststep0;minimalverificationPASS. Baseline56.86±10.57%,Featuremulti50.52±4.48%,Rawmulti45.31±4.92%BA. Report: environment_reports/SHARPA_F6_TEMPORAL_SAMPLING_SEEDS_20261005_203200.md.
+
+
+Final Align failure Key critical reward COMPLETE (2026-10-05T23:43:22.816238+08:00):35n/m configs×5seeds=175GPU0 frozen-feature runs;only finalfailure Key positive,success/earlier Keys ignored;last-frame labels,plain BCE,original rollout split. Verification PASS. Validation-selected n0,m0;testKeyBA45.47±4.90%,recall0% in all175runs;fixedtesteventBA37.38±6.87%. Report: environment_reports/SHARPA_CRITICAL_REWARD_FINAL_20261005_231500.md.
+
+| 2026-10-06T12:40:29.430994+08:00 | LIBERO J-IDM | training_data_preparation | 1 | RUNNING | Whole-trajectory splits400/50/50 fixed; original IO/norm retained; MegaFlow official weights SHA PASS. First flow pack initializing under shared HDD I/O load; no flow/training yet. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+
+Deform early-warning COMPLETE (2026-10-06T13:14:22.604775+08:00):final Align failure end anchor,5H×5seeds=25GPU0 frozen-feature runs;train-balanced BCE,H>0 terminal masked,H0 persistent state,natural val/test/original rollout split. Verification PASS. Frame BA/P/R/F1/FPR/AP/ROC,event detection/firstalarm lead/withinband rate,normalized matrices andval/test Key-aligned curves saved. Report: environment_reports/SHARPA_EARLY_WARNING_20261006_001500.md.
+
+| 2026-10-06T13:22:14.311743+08:00 | LIBERO J-IDM | preparation_worker | 1 | RUNNING | First full packed demo passed; sequential all500 default MegaFlow packing then official data/loss verification. GPU1; background preparation only. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-06T13:58:42.008318+08:00 | LIBERO J-IDM | authorized_finetuning | 1 | QUEUED | User explicitly authorized formal training; supersedes AGENTS.md default no-large-training restriction. Wait for full-data verification, then10000 optimizer steps; finite initial observation and measured ETA report. Run outputs/vera-libero-training/authorized_20261006_135637. |
+
+
+Early-warning A/B COMPLETE (2026-10-06T14:08:52.968510+08:00):A50newfrozen F6/Fusion GPU0heads+25reusedDeform=75comparisonresults;B75CPUval-onlyeventcalibrations,noDeformretraining. Allchecks/copySHA PASS. DeformearlymeanAPhighest,F6terminalbest,Fusionnotstable;calibrationreducesFPRbutrecall/effectivefirstalarmcoverage low. Report: environment_reports/SHARPA_EARLY_WARNING_BRANCHES_20261006_135300.md.
+
+| 2026-10-06T16:53:31.414748+08:00 | LIBERO J-IDM | preparation_worker | 1 | RUNNING | User-authorized parallel preparation on GPUs['0', '1']; original default MegaFlow settings, disjoint shards and completed packs preserved; verification and training follow after all shards exit. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-06T16:55:05.045411+08:00 | LIBERO J-IDM | parallel_preprocessing | 1 | RUNNING | User explicitly authorized parallel GPU jobs; GPUs0/1, disjoint250-demo shards, default MegaFlow settings. Previous session processes exited after16 demos; stale status archived, resumed via PID1-owned detached supervisor 1958556. Training queue restored. |
+
+| 2026-10-06T17:08:02.847986+08:00 | LIBERO J-IDM | preparation_worker | 1 | RUNNING | User-authorized parallel preparation on GPUs['0', '1', '2'], batches[2, 4, 1]; shared lock-protected trajectory pool, original MegaFlow settings and completed packs preserved; verification/training follow all workers. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-06T17:09:10.196550+08:00 | LIBERO J-IDM | parallel_preprocessing_batch_upgrade | 1 | RUNNING | User-authorized GPUs0/1/2 batch2/4/1; dynamic lock-protected trajectory pool; 18 completed packs retained; pipeline PID2039473. Teacher952px/window4/8iterations, original IDM IO unchanged. |
+
+Failure-only event3/4 COMPLETE (2026-10-06T17:09:18.213169+08:00):45GPU0 frozen-featureGRU heads,3regimes×3modalities×5seeds;23failure rollouts,19train/4val,no test. Label3 dropped_object/4 wrong_object;interval-only context,frame4 andframe3or4. Balanced BCE by interval/frame counts,valBA bestepoch;verification andweeklycopySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_20261006_165000.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+| 2026-10-06T17:17:34.576682+08:00 | LIBERO J-IDM | preparation_worker | 1 | RUNNING | User-authorized parallel preparation on GPUs['0', '1', '2'], batches[2, 4, 1]; shared lock-protected trajectory pool, original MegaFlow settings and completed packs preserved; verification/training follow all workers. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-06T17:19:10.908402+08:00 | LIBERO J-IDM | auto_batch_preprocessing | 1 | RUNNING | GPUs0/1/2 automatically grow from initial2/4/1 using real CUDA peak and global free/cache capacity; ceiling32,2GiB headroom, runtime batch_control.json. Original teacher/IDM IO unchanged; pipeline PID2093461. |
+
+| 2026-10-06T18:15:45.128210+08:00 | LIBERO J-IDM | preparation_worker | 1 | RETRYING | Pack shard1 exited1; completed packs preserved. See logs/libero_jidm_pack_gpu1_20261006_171734_attempt1.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+Failure-only frame3 COMPLETE (2026-10-06T19:24:47.375679+08:00):15 frozen-featurecuda:0 GRU runs,3modalities×5seeds;positiveevent3only,frame4negative;original19/4rollout split,no test. Valmetrics andweeklycopySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_FRAME3_20261006_185200.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+| 2026-10-06T21:50:22.810720+08:00 | LIBERO J-IDM | GPU1 runtime batch increase | 1 | RUNNING | GPU1 cap4->6 with current driver free approximately33GiB; hot update, no model reload; per-window peak estimator still applies. |
+
+Failure-label refresh COMPLETE(2026-10-06T22:34:02.843618+08:00):30frozen-featureGRUruns cuda:1,frame3/frame4×3modal×5seeds;24failure20train4val,no test. Frame3-only success92×15inference,any.5hit=rolloutFP;no success training/selection. Allreplay/copySHA PASS. Report:environment_reports/SHARPA_FAILURE_RELABEL_REFRESH_20261006_214500_updated.md. HEAD:57358ff76818aa3388284f28349995b62ad2a706.
+
+| 2026-10-06T22:44:21.918232+08:00 | LIBERO J-IDM | preparation_worker | 1 | RETRYING | Pack shard0 exited1; completed packs preserved. See logs/libero_jidm_pack_gpu0_20261006_171734_attempt1.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+Dynamic-threshold COMPLETE 2026-10-06T23:39:01.644772+08:00: frozen Deform early-warning curves;50MLP/GRU heads+150OOF fold fits;5H×5seeds. Original17val3foldcalibration,17test evaluation. Source syntax/prediction replay PASS;25 fixed thresholds and confusion matrices exactly match previous15% calibration;weeklycopySHA PASS. No stable advantage overfixedthreshold. Report:WeeklySummary/10.5/10.5early_warning_dynamic_threshold.md.
+
+| 2026-10-06T23:51:44.961092+08:00 | LIBERO J-IDM | preparation_worker | 1 | RETRYING | Pack shard0 exited1; completed packs preserved. See logs/libero_jidm_pack_gpu0_20261006_224428_attempt2.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-07T01:45:57.805637+08:00 | LIBERO J-IDM | preparation_worker | 1 | RETRYING | Pack shard2 exited1; completed packs preserved. See logs/libero_jidm_pack_gpu2_20261006_171734_attempt1.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-07T01:46:07.721597+08:00 | LIBERO J-IDM | preparation_worker | 1 | RETRYING | Pack shard1 exited1; completed packs preserved. See logs/libero_jidm_pack_gpu1_20261006_181550_attempt2.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+| 2026-10-07T01:46:10.676190+08:00 | LIBERO J-IDM | preparation_worker | 1 | BLOCKED | Pack shard0 failed three times; see logs/libero_jidm_pack_gpu0_20261006_235150_attempt3.log. Report environment_reports/LIBERO_JIDM_TRAINING_PREP_20261006_123234.md. |
+
+Dynamic threshold variation audit 2026-10-07T13:32:55.046921+08:00: project ProcVLM venv, CPU numpy/matplotlib, no retraining/checkpoint forward.850test sequences nonconstant;logit archive algebra maxerror5.63e-7. H45 medianrange MLP.00902/GRU.03017;preanchor excludingfirst16ticks .00298/.00816.20optimizerupdates perfit not verified converged;claims limited to nearconstant learned thresholds. Individual-seed change plot/CSV andREADME audit copied withSHA PASS. Report:outputs/sharpa_early_warning_dynamic_threshold/20261006_224500/threshold_audit.md.
+
+LIBERO J-IDM 2026-10-07T13:52:01.878720+08:00: user explicitly authorized restart after disk-full stop, capped at 200 total demos (182 reused, 18 pending), GPU0/1/2, no automatic training launch. selection_200.json is the fixed allowlist.
+
+Loss300 rerun STARTED 2026-10-07T13:54:33.285468+08:00: critical35×5 andDeformthresholdMLP/GRU5H×5seeds;cuda2 sequential;details environment_reports/SHARPA_LOSS300_20261007_134800.md.
+
+LIBERO J-IDM capped restart 2026-10-07T14:04:13.753894+08:00: BLOCKED, 190/200 cached. A packing worker failed; see per-GPU logs. No automatic retries.. See outputs/vera-libero-training/authorized_20261006_135637/limited_preparation.json.
+
+Loss300 critical COMPLETE 2026-10-07T14:05:28.012729+08:00: outputs/sharpa_critical_reward_final/20261007_134800_loss300; loss-based checkpoint/patience checks PASS,weeklycopySHA PASS.
+
+Loss300 threshold COMPLETE 2026-10-07T14:06:57.653672+08:00: outputs/sharpa_early_warning_dynamic_threshold/20261007_134800_loss300; loss-based checkpoint/patience checks PASS,weeklycopySHA PASS.
+
+LIBERO J-IDM 2026-10-07T14:35:39.535160+08:00: user authorized training after selected200 demos; resumed remaining10 after one CUDA OOM with GPU caps2/4/3,6GiB headroom,expandable CUDA segments. Frozen verification and official IO/scales preserved; training10000 optimizer steps with bounded observer. Run outputs/vera-libero-training/subset200_20261007_143539.
+
+LIBERO J-IDM capped restart 2026-10-07T14:36:00.486953+08:00: BLOCKED, 190/200 cached. A packing worker failed; see per-GPU logs. No automatic retries.. See outputs/vera-libero-training/subset200_20261007_143539/limited_preparation.json.
+
+## Interval padding audit 20261007
+
+Audit command retry status: BLOCKED after three non-destructive failures (syntax, cuDNN backward eval mode, relative report path). No further GPU audit retry performed. Numeric checkpoint comparisons and length-only results completed before the third error; CPU-only report recovery completed from saved artifacts. Deliverable status: COMPLETE. Original annotations/checkpoints unchanged.
+
+Tactile value-trend COMPLETE 2026-10-07T14:42:39.319885+08:00: outputs/sharpa_value_trend/20261007_143233; original Align anchors, Deform seed42, shared proxy/future + 5H focal/risk heads; max300 val-loss patience50; GPU parallel0/1/2. WeeklySummary/10.5/10.5value_trend.md.
+
+## Interval duration controls 20261007_170000 — COMPLETE
+
+Deform+GRU only, original19/4 split and snapshot, seeds42–46, max30/patience8 valBA. 60 new runs on three GPUs +5 reused original. Source labels/checkpoints unchanged. K32 full BA88.89%; matched BA100% on4val intervals; prefix curve nonmonotonic. Report WeeklySummary/10.5/10.5interval_duration_controls.md.
+
+Deform early-warning BA300 COMPLETE 2026-10-07T14:57:25.769466+08:00: outputs/sharpa_early_warning_ba300/20261007_145353; 5H seed42, original balanced BCE, max300 BA patience50. Best epochs unchanged; val/test probabilities exactly reproduce original seed42; report WeeklySummary/10.5/10.5early_warning_ba300.md.
+
+LIBERO J-IDM capped restart 2026-10-07T15:19:12.099223+08:00: VERIFYING_SUBSET, 200/200 cached. All 200 cached; verifying subset before authorized training. See outputs/vera-libero-training/subset200_20261007_143539/limited_preparation.json.
+
+Validation PR diagnostic COMPLETE 2026-10-07T15:28:38.705087+08:00: outputs/sharpa_early_warning_pr_diagnostic/20261007_152227; H0/8/15 seed42,max30/patience8; 75 full epoch state_dicts, six metric curves, no test/calibration. WeeklySummary/10.5/10.5early_warning_pr_diagnostic.md.
+
+LIBERO IDM 2026-10-07T18:31:50.684627+08:00:200demo/58594pair verification PASS;157train/19val/24test. Training attempt1 failed at optimizer_step0 on BF16-to-NumPy visualization. Saved patch vera-jidm-bf16-visualization.patch; restarting attempt2 with original architecture,scales,loss,bf16.
+
+LIBERO IDM 2026-10-07T20:07:58.712178+08:00:training attempt2 failed before optimizer updates: optional W&B logger dereferenced None. Guard added after loss computation, batch increased1->2,accumulation16->8,effective16;full19episode validation enabled. Authorized training attempt3;stop if it fails. Run outputs/vera-libero-training/subset200_batch2_20261007_200758.
