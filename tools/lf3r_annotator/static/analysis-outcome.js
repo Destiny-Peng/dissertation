@@ -79,8 +79,16 @@
       });
       option.disabled = !row || Number(row.available_rollouts || 0) <= 0;
     });
+    var availableMethods = state.coverage.filter(function (row) {
+      return Number(row.available_rollouts || 0) > 0;
+    }).map(function (row) {
+      return row.method;
+    });
     if (select.selectedOptions.length && select.selectedOptions[0].disabled) {
       select.value = "all";
+    }
+    if (select.value === "all" && availableMethods.length === 1) {
+      select.value = availableMethods[0];
     }
     state.method = select.value;
   }
