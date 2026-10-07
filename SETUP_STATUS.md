@@ -220,3 +220,7 @@ Validation PR diagnostic COMPLETE 2026-10-07T15:28:38.705087+08:00: outputs/shar
 LIBERO IDM 2026-10-07T18:31:50.684627+08:00:200demo/58594pair verification PASS;157train/19val/24test. Training attempt1 failed at optimizer_step0 on BF16-to-NumPy visualization. Saved patch vera-jidm-bf16-visualization.patch; restarting attempt2 with original architecture,scales,loss,bf16.
 
 LIBERO IDM 2026-10-07T20:07:58.712178+08:00:training attempt2 failed before optimizer updates: optional W&B logger dereferenced None. Guard added after loss computation, batch increased1->2,accumulation16->8,effective16;full19episode validation enabled. Authorized training attempt3;stop if it fails. Run outputs/vera-libero-training/subset200_batch2_20261007_200758.
+
+| 2026-10-07T21:12:53.128933+08:00 | LIBERO J-IDM | training | 3 | BLOCKED | Third attempt completed30updates then DataLoader CUDA initialization abort. Spawn fix prepared; no fourth launch. Report environment_reports/LIBERO_JIDM_TRAINING_FAILURE_20261007_211253.md. |
+
+LIBERO IDM 2026-10-07T21:36:28.398544+08:00:user explicitly approved restart after3 failures. Applied spawn loader context and picklable initializer; batch2/accum8; bounded observation40updates, full19demo validation and initial checkpoint before monitoring stops; regular checkpoints200updates. Run outputs/vera-libero-training/subset200_spawn_20261007_213628.

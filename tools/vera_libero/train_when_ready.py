@@ -28,6 +28,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=Path, required=True)
     parser.add_argument('--run', type=Path, required=True)
+    parser.add_argument('--observe-steps', type=int, default=200)
     args = parser.parse_args()
     assert args.data.resolve().is_relative_to(ROOT / 'datasets')
     assert args.run.resolve().is_relative_to(ROOT / 'outputs')
@@ -68,11 +69,11 @@ def main():
                'experiment.training.batch_size=2',
                'experiment.training.optim.accumulate_grad_batches=8',
                'experiment.training.enable_progress_bar=false',
-               'experiment.validation.val_every_n_step=1600',
+               f'experiment.validation.val_every_n_step={args.observe_steps * 8}',
                'experiment.training.checkpointing.every_n_train_steps=200',
                f'hydra.run.dir={args.run}',
                '+lf3r_observer._target_=vera_libero.training_observer.TrainingObserver',
-               f'+lf3r_observer.run_dir={args.run}', '+lf3r_observer.observe_steps=200']
+               f'+lf3r_observer.run_dir={args.run}', f'+lf3r_observer.observe_steps={args.observe_steps}']
     with (args.run / 'training.log').open('w') as log:
         log.write('COMMAND ' + json.dumps(command) + '\n')
         log.flush()

@@ -1,0 +1,53 @@
+diff --git a/vera/experiments/data_modules/base_data_module.py b/vera/experiments/data_modules/base_data_module.py
+index 82da2b8..657939d 100644
+--- a/vera/experiments/data_modules/base_data_module.py
++++ b/vera/experiments/data_modules/base_data_module.py
+@@ -1,5 +1,6 @@
+ import os
+ from collections import Counter
++from functools import partial
+ from typing import Any, Set
+ 
+ import lightning.pytorch as pl
+@@ -57,6 +58,10 @@ class BaseDataModule(pl.LightningDataModule):
+             print(f"[DataModule] Dataset metadata: {self.dataset_metadata}")
+ 
+     def _select_dataset_cfg_node(self, split: str):
++        if split == "test":
++            test_cfg = self.root_cfg.get("test_dataset")
++            if test_cfg is not None:
++                return test_cfg
+         if split == "validation":
+             validation_cfg = self.root_cfg.get("validation_dataset")
+             if validation_cfg is not None:
+@@ -379,6 +384,7 @@ class BaseDataModule(pl.LightningDataModule):
+         prefetch_factor = getattr(split_cfg.data, "prefetch_factor", None)
+         persistent_workers_cfg = bool(getattr(split_cfg.data, "persistent_workers", True))
+         persistent_workers = persistent_workers_cfg and (num_workers > 0)
++        multiprocessing_context = getattr(split_cfg.data, "multiprocessing_context", None)
+         shuffle = self._get_shuffle(split, dataset, split_cfg.data.shuffle)
+         generator = self._get_loader_generator(split, shuffle)
+ 
+@@ -390,7 +396,8 @@ class BaseDataModule(pl.LightningDataModule):
+                 f"shuffle_seed={getattr(split_cfg.data, 'shuffle_seed', None) if shuffle else None}, "
+                 f"persistent_workers={persistent_workers}, "
+                 f"prefetch_factor={prefetch_factor if num_workers > 0 else None}, "
+-                f"pin_memory={pin_memory}"
++                f"pin_memory={pin_memory}, "
++                f"multiprocessing_context={multiprocessing_context if num_workers > 0 else None}"
+             )
+             self._logged_loader_settings.add(loader_label)
+ 
+@@ -403,10 +410,9 @@ class BaseDataModule(pl.LightningDataModule):
+             generator=generator,
+             prefetch_factor=prefetch_factor if (num_workers > 0) else None,
+             persistent_workers=persistent_workers,
++            multiprocessing_context=multiprocessing_context if num_workers > 0 else None,
+             collate_fn=self._safe_default_collate,
+-            worker_init_fn=lambda worker_id: self._worker_init(
+-                dataset, split_cfg.data, worker_id
+-            ),
++            worker_init_fn=partial(self._worker_init, dataset, split_cfg.data),
+         )
+ 
+     def _dataloader(self, split: str) -> TRAIN_DATALOADERS | EVAL_DATALOADERS:

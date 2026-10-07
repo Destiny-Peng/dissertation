@@ -129,6 +129,12 @@ class TrainingObserver(Callback):
         if not self.parameter_changed or not any(g > 0 for g in self.gradients):
             raise RuntimeError('Training progressed without a verified parameter update')
         checkpoints = list((self.run_dir / 'checkpoints').glob('*.ckpt'))
+        if not checkpoints:
+            # Preserve the initial verified progress before the regular 200-step save.
+            path = self.run_dir / 'checkpoints' / 'initial_verified.ckpt'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            trainer.save_checkpoint(path)
+            checkpoints = [path]
         if not checkpoints or not all(p.stat().st_size > 0 for p in checkpoints):
             return
         state = self._record(trainer, 'HEALTHY_MONITORING_STOPPED')
