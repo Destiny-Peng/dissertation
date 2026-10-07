@@ -563,6 +563,33 @@ function workspaceDashboardRenderRolloutOutcome(snapshot) {
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.precision)) + '</td>'
       + '<td class="numeric">' + escapeHtml(workspacePercent(metrics.f1)) + '</td></tr>';
   });
+  var localizationRows = (
+    snapshot && snapshot.rollout_outcome_snapshot
+    && Array.isArray(snapshot.rollout_outcome_snapshot.localization_summary)
+  ) ? snapshot.rollout_outcome_snapshot.localization_summary : [];
+  if (localizationRows.length) {
+    html += '</tbody></table>'
+      + '<h4>Localization checkpoint on this batch</h4>'
+      + '<table class="analysis-table analysis-summary-table" aria-label="Saved localization checkpoint statistics">'
+      + '<thead><tr><th>Checkpoint</th><th>N</th><th>In interval</th><th>±1</th><th>±3</th><th>±5</th>'
+      + '<th>Median |err|</th><th>MAE</th><th>Before</th><th>After</th></tr></thead><tbody>';
+    localizationRows.forEach(function (row) {
+      var checkpoint = String(row.checkpoint || "");
+      var label = row.checkpoint_config_id
+        ? String(row.checkpoint_config_id) + " / repeat " + String(row.checkpoint_repeat == null ? "?" : row.checkpoint_repeat)
+        : (checkpoint ? checkpoint.split("/").slice(-3).join("/") : "saved checkpoint");
+      html += '<tr title="' + escapeHtml(checkpoint) + '"><th scope="row">' + escapeHtml(label) + '</th>'
+        + '<td class="numeric">' + escapeHtml(String(row.n == null ? "n/a" : row.n)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.in_interval_rate)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.within_1)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.within_3)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.within_5)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(String(row.median_absolute_error_frames == null ? "n/a" : row.median_absolute_error_frames)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(String(row.mae_frames == null ? "n/a" : Number(row.mae_frames).toFixed(2))) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.before_interval_rate)) + '</td>'
+        + '<td class="numeric">' + escapeHtml(workspacePercent(row.after_interval_rate)) + '</td></tr>';
+    });
+  }
   host.innerHTML = html + '</tbody></table>';
   if (badge) {
     badge.className = "analysis-badge ok";
