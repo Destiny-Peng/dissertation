@@ -15,6 +15,7 @@ from typing import Any
 
 from analysis_constants import (
     ANALYSIS_BASELINE_METHODS,
+    OUTCOME_EVALUATION_METHODS,
     ANALYSIS_TABLE_FILES,
     ROLLOUT_OUTCOME_TABLE_FILES,
     ROLLOUT_OUTCOME_REQUIRED_FILES,
@@ -242,7 +243,7 @@ class AnalysisJobService(
 
     def start_outcome_evaluation_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.require_environment()
-        allowed_fields = {"analysis_kind", "scope", "output_label"}
+        allowed_fields = {"analysis_kind", "scope", "method", "output_label"}
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:
             raise ValidationError(
@@ -250,16 +251,45 @@ class AnalysisJobService(
                 + ", ".join(sorted(unknown_fields))
             )
         scope = validate_run_scope(payload.get("scope"))
+        method = str(payload.get("method") or "all").strip().lower()
+        if method != "all" and method not in OUTCOME_EVALUATION_METHODS:
+            raise ValidationError(
+                "method must be one of: all, "
+                + ", ".join(OUTCOME_EVALUATION_METHODS)
+            )
+
         sources = self.baselines.outcome_evaluation_sources(scope)
-        evaluation_ids = list(sources["evaluation_rollout_ids"])
-        if not evaluation_ids:
+        completed_ids = list(sources["evaluation_rollout_ids"])
+        if not completed_ids:
             raise ValidationError(
                 f"No completed annotations matched scope {scope}"
             )
-        if not any(row["available_rollouts"] for row in sources["coverage"]):
-            raise ValidationError(
-                f"No saved baseline outputs matched completed annotations in scope {scope}"
-            )
+
+        if method == "all":
+            selected_methods = list(OUTCOME_EVALUATION_METHODS)
+            evaluation_ids = completed_ids
+            if not any(row["available_rollouts"] for row in sources["coverage"]):
+                raise ValidationError(
+                    f"No saved baseline outputs matched completed annotations in scope {scope}"
+                )
+        else:
+            selected_methods = [method]
+            available_ids = set(sources["source_maps"].get(method, {}))
+            evaluation_ids = [
+                rollout_id
+                for rollout_id in completed_ids
+                if rollout_id in available_ids
+            ]
+            if not evaluation_ids:
+                raise ValidationError(
+                    f"No saved {method} outputs matched completed annotations in scope {scope}"
+                )
+
+        selected_coverage = [
+            row
+            for row in sources["coverage"]
+            if row.get("method") in selected_methods
+        ]
 
         label = str(payload.get("output_label") or "web_outcome").strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", label):
@@ -282,23 +312,34 @@ class AnalysisJobService(
         selection_doc = {
             "schema_version": 1,
             "scope": scope,
+            "method": method,
+            "methods": selected_methods,
             "selection": [{"id": rollout_id} for rollout_id in evaluation_ids],
         }
         source_map_doc = {
             "schema_version": 1,
             "scope": scope,
+            "method": method,
+            "methods": selected_methods,
             "source_resolution": "newest_parseable_output_per_rollout",
-            "source_maps": sources["source_maps"],
-            "coverage": sources["coverage"],
+            "source_maps": {
+                selected_method: sources["source_maps"][selected_method]
+                for selected_method in selected_methods
+            },
+            "coverage": selected_coverage,
         }
         command = [
             str(self.analysis_python), str(script),
             "--selection", str(selection_path),
             "--source-map", str(source_map_path),
+        ]
+        for selected_method in selected_methods:
+            command.extend(["--method", selected_method])
+        command.extend([
             "--manifest", str(self.manifest_path),
             "--annotations-dir", str(self.annotation_root / "records"),
             "--output-dir", str(output_temp),
-        ]
+        ])
 
         self.analysis_root.mkdir(parents=True, exist_ok=True)
         self.log_root.mkdir(parents=True, exist_ok=True)
@@ -314,12 +355,14 @@ class AnalysisJobService(
                 "analysis_kind": "rollout_outcome_evaluation",
                 "status": "queued",
                 "scope": scope,
+                "method": method,
+                "methods": selected_methods,
                 "selected_rollouts": len(evaluation_ids),
                 "scope_rollouts": int(sources["scope_rollouts"]),
                 "incomplete_annotation_rollouts": int(
                     sources["incomplete_annotation_rollouts"]
                 ),
-                "coverage": sources["coverage"],
+                "coverage": selected_coverage,
                 "command": command,
                 "output_dir": self._relative(output_final),
                 "output_temp": self._relative(output_temp),
