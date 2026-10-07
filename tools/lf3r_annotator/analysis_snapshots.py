@@ -526,6 +526,8 @@ class AnalysisSnapshotsMixin:
         predictions_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["predictions"]
         threshold_sweep_path = directory / ROLLOUT_OUTCOME_TABLE_FILES["threshold_sweep"]
         coverage_path = directory / "method_coverage.csv"
+        localization_summary_path = directory / "rollout_outcome_localization_summary.csv"
+        localization_predictions_path = directory / "rollout_outcome_localization_predictions.csv"
         summary = self._read_csv(summary_path)
         coverage = self._read_csv(coverage_path)
         threshold_sweep = (
@@ -557,6 +559,11 @@ class AnalysisSnapshotsMixin:
             "threshold_sweep": threshold_sweep,
             "threshold_sweep_available": threshold_sweep_path.is_file(),
             "method_coverage": coverage,
+            "localization_summary": (
+                self._read_csv(localization_summary_path)
+                if localization_summary_path.is_file() else []
+            ),
+            "localization_predictions_available": localization_predictions_path.is_file(),
             "config": metadata.get("rollout_outcome_classification") or {},
         }
 
