@@ -10,6 +10,7 @@
   };
   var state = {
     scope: "libero_10",
+    method: "all",
     coverage: [],
     scopePopulation: 0,
     evaluationPopulation: 0,
@@ -38,6 +39,50 @@
 
   function activeJob() {
     return state.job && ["queued", "running"].indexOf(state.job.status) !== -1;
+  }
+
+  function selectedMethod() {
+    var select = node("analysisOutcomeRunMethod");
+    return select ? select.value : state.method;
+  }
+
+  function selectedMethodLabel() {
+    var method = selectedMethod();
+    return method === "all" ? "all available methods" : (labels[method] || method);
+  }
+
+  function selectedCoverageAvailable() {
+    var method = selectedMethod();
+    if (method === "all") {
+      return state.coverage.some(function (row) {
+        return Number(row.available_rollouts || 0) > 0;
+      });
+    }
+    var row = state.coverage.find(function (candidate) {
+      return candidate.method === method;
+    });
+    return Boolean(row && Number(row.available_rollouts || 0) > 0);
+  }
+
+  function updateMethodOptions() {
+    var select = node("analysisOutcomeRunMethod");
+    if (!select) return;
+    Array.prototype.forEach.call(select.options, function (option) {
+      if (option.value === "all") {
+        option.disabled = !state.coverage.some(function (row) {
+          return Number(row.available_rollouts || 0) > 0;
+        });
+        return;
+      }
+      var row = state.coverage.find(function (candidate) {
+        return candidate.method === option.value;
+      });
+      option.disabled = !row || Number(row.available_rollouts || 0) <= 0;
+    });
+    if (select.selectedOptions.length && select.selectedOptions[0].disabled) {
+      select.value = "all";
+    }
+    state.method = select.value;
   }
 
   function setStatus(message, kind) {
@@ -80,11 +125,8 @@
   function updateButton() {
     var button = node("analysisOutcomeRunButton");
     if (!button) return;
-    var hasAnyCoverage = state.coverage.some(function (row) {
-      return Number(row.available_rollouts || 0) > 0;
-    });
     button.disabled = state.loading || activeJob() || !environmentReady()
-      || state.evaluationPopulation <= 0 || !hasAnyCoverage;
+      || state.evaluationPopulation <= 0 || !selectedCoverageAvailable();
   }
 
   async function loadCoverage() {
@@ -105,6 +147,7 @@
       state.evaluationPopulation = Number(payload.evaluation_population || 0);
       state.incompleteAnnotations = Number(payload.incomplete_annotation_rollouts || 0);
       renderCoverage();
+      updateMethodOptions();
       var availableText = state.coverage.map(function (row) {
         var scopeAvailable = Number(
           row.available_scope_rollouts == null ? row.available_rollouts || 0 : row.available_scope_rollouts
@@ -177,7 +220,11 @@
       if (state.job.status === "queued" || state.job.status === "running") {
         setStatus(
           "Outcome evaluation " + state.job.status + " · "
-            + state.job.selected_rollouts + " completed annotation(s) · CPU post-processing only.",
+            + (state.job.method === "all"
+              ? "all available methods"
+              : (labels[state.job.method] || state.job.method || "selected method"))
+            + " · " + state.job.selected_rollouts
+            + " eval-ready rollout(s) · CPU post-processing only.",
           ""
         );
         state.polling = false;
@@ -209,8 +256,13 @@
       setStatus("Output label may contain only letters, numbers, dot, underscore, or hyphen.", "error");
       return;
     }
+    state.method = selectedMethod();
     node("analysisOutcomeRunLog").textContent = "";
-    setStatus("Resolving newest saved output per rollout and starting outcome evaluation…", "");
+    setStatus(
+      "Resolving newest saved output per rollout for " + selectedMethodLabel()
+        + " and starting outcome evaluation…",
+      ""
+    );
     try {
       var response = await fetch("/api/analysis/run", {
         method: "POST",
@@ -218,6 +270,7 @@
         body: JSON.stringify({
           analysis_kind: "rollout_outcome_evaluation",
           scope: state.scope,
+          method: state.method,
           output_label: label
         })
       });
@@ -257,6 +310,21 @@
     initialized = true;
     node("analysisOutcomeRunForm").addEventListener("submit", start);
     node("analysisOutcomeRunScope").addEventListener("change", loadCoverage);
+    node("analysisOutcomeRunMethod").addEventListener("change", function () {
+      state.method = selectedMethod();
+      updateButton();
+      var row = state.coverage.find(function (candidate) {
+        return candidate.method === state.method;
+      });
+      if (state.method !== "all" && row) {
+        setStatus(
+          (labels[state.method] || state.method) + " has "
+            + Number(row.available_rollouts || 0) + "/"
+            + state.evaluationPopulation + " eval-ready rollout(s).",
+          Number(row.available_rollouts || 0) > 0 ? "" : "warning"
+        );
+      }
+    });
     loadCoverage();
     recover();
     updateButton();
