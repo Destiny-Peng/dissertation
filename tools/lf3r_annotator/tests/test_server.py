@@ -1380,6 +1380,63 @@ printf '\\n' >> "$ROOT/manifest.jsonl"
             0,
         )
 
+    def test_outcome_evaluation_can_target_one_method(self) -> None:
+        self.seed_baseline_outputs()
+        self.app.store.write(
+            self.rollout,
+            {
+                "annotator": "test",
+                "review_status": "complete",
+                "outcome_label": "success",
+                "failure_type": "none_success",
+                "confidence": 5,
+                "failure_events": [],
+                "notes": "",
+            },
+        )
+        script = self.root / "tools" / "analyze_baseline_rollout_outcomes.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("# fake outcome evaluator\n", encoding="utf-8")
+
+        service = self.app.analysis_jobs
+        service.require_environment = mock.Mock()
+        service.tmux.submit = mock.Mock()
+        job = service.start_outcome_evaluation_run({
+            "analysis_kind": "rollout_outcome_evaluation",
+            "scope": "libero_10",
+            "method": "robo_dopamine",
+            "output_label": "robo_only",
+        })
+        try:
+            self.assertEqual(job["method"], "robo_dopamine")
+            self.assertEqual(job["methods"], ["robo_dopamine"])
+            self.assertEqual(job["selected_rollouts"], 1)
+            self.assertEqual(
+                [row["method"] for row in job["coverage"]],
+                ["robo_dopamine"],
+            )
+            self.assertEqual(
+                job["command"][job["command"].index("--method") + 1],
+                "robo_dopamine",
+            )
+            source_map = json.loads(
+                (self.root / job["source_map_path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(source_map["methods"], ["robo_dopamine"])
+            self.assertEqual(
+                set(source_map["source_maps"]),
+                {"robo_dopamine"},
+            )
+            selection = json.loads(
+                (self.root / job["selection_path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                selection["selection"],
+                [{"id": self.rollout["id"]}],
+            )
+        finally:
+            service.coordinator.release(job["job_id"])
+
     def _seed_run_filter_records(self) -> list[dict]:
         records = [
             {**self.rollout, "id": name, "ground_truth_outcome": outcome}

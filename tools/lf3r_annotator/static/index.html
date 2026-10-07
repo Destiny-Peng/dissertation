@@ -583,6 +583,14 @@
                     <option value="controlled_analysis">Controlled</option>
                   </select>
                 </label>
+                <label><span>Method</span>
+                  <select id="analysisOutcomeRunMethod">
+                    <option value="all" selected>All available methods</option>
+                    <option value="procvlm">ProcVLM</option>
+                    <option value="rynnvalue">RynnValue</option>
+                    <option value="robo_dopamine">Robo-Dopamine</option>
+                  </select>
+                </label>
                 <label><span>Output label</span>
                   <input id="analysisOutcomeOutputLabel" type="text" value="web_outcome" maxlength="64"
                     pattern="[A-Za-z0-9][A-Za-z0-9._-]*">

@@ -39,19 +39,29 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selection", type=Path, required=True)
     parser.add_argument("--source-map", type=Path, required=True)
+    parser.add_argument(
+        "--method",
+        dest="methods",
+        action="append",
+        choices=ROLLOUT_OUTCOME_METHODS,
+        help="Evaluate only the selected method; repeat to include multiple methods.",
+    )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--annotations-dir", type=Path, default=DEFAULT_ANNOTATIONS)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args()
 
 
-def _load_source_map(path: Path) -> dict[str, dict[str, Path]]:
+def _load_source_map(
+    path: Path,
+    methods: tuple[str, ...],
+) -> dict[str, dict[str, Path]]:
     document = json.loads(path.read_text(encoding="utf-8"))
     raw_maps = document.get("source_maps") if isinstance(document, dict) else None
     if not isinstance(raw_maps, dict):
         raise ValueError("source-map JSON must contain source_maps")
     result: dict[str, dict[str, Path]] = {}
-    for method in ROLLOUT_OUTCOME_METHODS:
+    for method in methods:
         raw = raw_maps.get(method) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"source map for {method} must be an object")
@@ -68,11 +78,12 @@ def _load_rollouts(
     manifest_path: Path,
     annotation_dir: Path,
     source_maps: dict[str, dict[str, Path]],
+    methods: tuple[str, ...],
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], dict[str, list[str]]]:
     _selection_doc, selections = load_selection(selection_path)
     manifest = load_manifest(manifest_path)
     rollouts: dict[str, dict[str, Any]] = {}
-    source_runs: dict[str, set[str]] = {method: set() for method in ROLLOUT_OUTCOME_METHODS}
+    source_runs: dict[str, set[str]] = {method: set() for method in methods}
 
     for selection in selections:
         rollout_id = str(selection["id"])
@@ -87,7 +98,7 @@ def _load_rollouts(
             "methods": {},
             "method_errors": {},
         }
-        for method in ROLLOUT_OUTCOME_METHODS:
+        for method in methods:
             run_root = source_maps[method].get(rollout_id)
             if run_root is None:
                 rollout["method_errors"][method] = "no saved output for this rollout"
@@ -247,12 +258,14 @@ def main() -> int:
     output_dir = project_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    source_maps = _load_source_map(source_map_path)
+    selected_methods = tuple(dict.fromkeys(args.methods or ROLLOUT_OUTCOME_METHODS))
+    source_maps = _load_source_map(source_map_path, selected_methods)
     rollouts, selections, source_runs = _load_rollouts(
         selection_path=selection_path,
         manifest_path=manifest_path,
         annotation_dir=annotation_dir,
         source_maps=source_maps,
+        methods=selected_methods,
     )
 
     summary, predictions = compute_rollout_outcome_classification(rollouts)
@@ -265,7 +278,7 @@ def main() -> int:
     )
 
     coverage_rows = []
-    for method in ROLLOUT_OUTCOME_METHODS:
+    for method in selected_methods:
         available = [
             rollout_id
             for rollout_id, rollout in rollouts.items()
@@ -304,7 +317,7 @@ def main() -> int:
         "manifest_sha256": sha256(manifest_path),
         "annotations_dir": str(annotation_dir),
         "rollouts": [row["id"] for row in selections],
-        "methods": list(ROLLOUT_OUTCOME_METHODS),
+        "methods": list(selected_methods),
         "source_runs": source_runs,
         "source_resolution": (
             "newest parseable completed output per rollout; "
@@ -322,7 +335,11 @@ def main() -> int:
             "summary_rows": int(len(summary)),
             "prediction_rows": int(len(predictions)),
             "progress_threshold_sweep": {
-                "methods": list(PROGRESS_SWEEP_METHODS),
+                "methods": [
+                    method
+                    for method in PROGRESS_SWEEP_METHODS
+                    if method in selected_methods
+                ],
                 "aggregations": list(PROGRESS_SWEEP_AGGREGATIONS),
                 "thresholds": list(PROGRESS_SWEEP_THRESHOLDS),
                 "rows": int(len(threshold_sweep)),
