@@ -130,7 +130,26 @@
     host.innerHTML = html + '</tbody></table>';
   }
 
+  function renderEnvironmentStatus() {
+    var target = node("analysisOutcomeEnvironment");
+    if (!target) return;
+    var environment = window.workspaceState && workspaceState.analysisEnvironment;
+    if (!environment) {
+      target.textContent = "Analysis environment: unavailable (workspace state has no environment status).";
+      target.className = "analysis-run-selection warning";
+      return;
+    }
+    var path = environment.absolute_path || environment.path || "unknown";
+    var dependencies = Array.isArray(environment.dependencies) ? environment.dependencies.join(", ") : "";
+    var message = "Analysis Python: " + path + " · " + (environment.ready ? "ready" : "NOT READY");
+    if (dependencies) message += " · dependencies: " + dependencies;
+    if (environment.error) message += " · " + environment.error;
+    target.textContent = message;
+    target.className = "analysis-run-selection" + (environment.ready ? "" : " warning");
+  }
+
   function updateButton() {
+    renderEnvironmentStatus();
     var button = node("analysisOutcomeRunButton");
     if (!button) return;
     button.disabled = state.loading || activeJob() || !environmentReady()
